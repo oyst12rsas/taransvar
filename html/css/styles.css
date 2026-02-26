@@ -1,0 +1,233 @@
+/* General Styles */
+body {
+    font-family: 'Open Sans', sans-serif;
+    background-color: #f8f9fa;
+    padding-top: 70px; /* Offset for fixed navbar */
+}
+
+.navbar {
+    padding: 1rem 0;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.hero-section {
+    background-color: #007bff;
+    padding: 100px 0;
+}
+
+.hero-section h1 {
+    font-weight: 700;
+    font-size: 3rem;
+}
+
+.hero-section p {
+    font-size: 1.25rem;
+}
+
+.card {
+    margin-bottom: 20px;
+    border: none;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    transition: transform 0.3s ease;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+}
+
+.card-body {
+    padding: 20px;
+}
+
+.btn {
+    font-weight: 600;
+    padding: 10px 20px;
+}
+
+.btn-light {
+    background-color: #fff;
+    color: #007bff;
+}
+
+.btn-outline-light {
+    border-color: #fff;
+    color: #fff;
+}
+
+.btn-outline-light:hover {
+    background-color: #fff;
+    color: #007bff;
+}
+
+.progress {
+    height: 20px;
+    border-radius: 10px;
+}
+
+.progress-bar {
+    background-color: #007bff;
+    border-radius: 10px;
+}
+
+footer {
+    background-color: #343a40;
+    color: #fff;
+    padding: 20px 0;
+}
+
+footer p {
+    margin: 0;
+}
+
+/* Status Indicators */
+.status-indicator {
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 5px;
+}
+
+.status-indicator.active {
+    background-color: #28a745;
+    box-shadow: 0 0 10px #28a745;
+}
+
+/* Service Cards */
+.service-card {
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    transition: transform 0.3s ease;
+}
+
+.service-card:hover {
+    transform: translateY(-5px);
+}
+
+.service-card .card-header {
+    padding: 30px 20px;
+}
+
+/* Quick Access Cards */
+.quick-access-card {
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.quick-access-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+}
+
+/* Plan Cards */
+.plan-card {
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.plan-card .card-header {
+    padding: 20px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.plan-card .card-body {
+    padding: 30px 20px;
+}
+
+/* Custom Colors */
+.bg-purple {
+    background-color: #6f42c1;
+}
+
+.text-purple {
+    color: #6f42c1;
+}
+
+/* Social Links */
+.social-links .btn {
+    margin-right: 10px;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* WhatsApp Button */
+.whatsapp-btn {
+    background-color: #25d366;
+    border-color: #25d366;
+}
+
+.whatsapp-btn:hover {
+    background-color: #128c7e;
+    border-color: #128c7e;
+}
+
+/* Modal Styles */
+.modal-content {
+    border-radius: 10px;
+    overflow: hidden;
+    border: none;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.modal-header {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    padding: 15px 20px;
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.modal-footer {
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
+    padding: 15px 20px;
+}
+
+/* Form Styles */
+.form-control {
+    border-radius: 5px;
+    padding: 10px 15px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.form-control:focus {
+    box-shadow: 0 0 0 0.25rem rgba(0, 123, 255, 0.25);
+    border-color: #007bff;
+}
+
+.form-label {
+    font-weight: 600;
+    margin-bottom: 5px;
+}
+
+.form-text {
+    color: #6c757d;
+    font-size: 0.875rem;
+}
+
+/* Responsive Styles */
+@media (max-width: 768px) {
+    .hero-section {
+        padding: 60px 0;
+    }
+    
+    .hero-section h1 {
+        font-size: 2.5rem;
+    }
+
+    .hero-section p {
+        font-size: 1rem;
+    }
+    
+    .display-4 {
+        font-size: 2.5rem;
+    }
+    
+    .lead {
+        font-size: 1rem;
+    }
+}

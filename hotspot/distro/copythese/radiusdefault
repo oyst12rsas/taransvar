@@ -1,0 +1,23 @@
+authorize {
+#	files
+    sql
+}
+authenticate {
+}
+preacct {
+#   files
+}
+accounting {
+	sql
+}
+session {
+	sql
+}
+post-auth {
+	sql
+	Post-Auth-Type REJECT {
+    # log failed authentications in SQL, too.
+    sql
+    attr_filter.access_reject
+    }
+}

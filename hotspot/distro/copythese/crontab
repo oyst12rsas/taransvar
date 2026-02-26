@@ -1,0 +1,4 @@
+* * * * * /usr/bin/perl /root/wifi/perl/sleepingbeauty.pl >> /root/wifi/log/cronlog.txt
+*/10 * * * * /usr/bin/perl /root/wifi/perl/syssnapshot.pl >> /root/wifi/log/cronlog.txt
+* * * * * /usr/bin/perl /home/oystein/programming/misc/crontasks.pl
+

@@ -1,0 +1,32 @@
+To install:
+(below, programming/ refers to "/user/<your user name>/programming")
+- Get document "Taransvar Gatekeeper". It lists packages to install and more
+- sudo cp programming/www /var/www/html
+
+To run: 
+- Check if there's programming/misc/install.pl
+- sudo crontab -u root -e
+	- Add: * * * * * perl programming/misc/crontasks.pl
+
+To diagnose:
+- cd programming/misc
+- sudo perl diagnose.pl
+
+To compile and start (later, crontasks.pl will start the system):
+- cd programming/misc/compile.pl
+
+To see what's going on:
+- sudo dmesg -w
+- In web browser: localhost
+
+NOTE! You should check the document mentioned above... This is probably not the full list:
+sudo apt-get update
+sudo apt-get upgrade
+sudo apt-get install apache2
+sudo apt install mysql-server
+sudo mysql_secure_installation
+root pass: kdSømlå
+sudo apt install php libapache2-mod-php php-mysql
+
+
+

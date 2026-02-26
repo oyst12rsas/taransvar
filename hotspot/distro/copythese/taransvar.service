@@ -1,0 +1,7 @@
+[Unit]
+Description=taransvar
+[Service]
+ExecStart=/bin/sh /home/setup/iptables.sh >> /home/setup/log/systemd.txt
+[Install]
+WantedBy=multi-user.target
+

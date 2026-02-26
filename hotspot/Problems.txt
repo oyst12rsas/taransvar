@@ -1,0 +1,10 @@
+Problems 250121:
+- no interface in /etc/ipfm.conf. Should be e.g DEVICE enp1s0
+- some http warnings 
+
+
+While installing....
+- Running install may ruin the www-files.. Install copying from hotspot/html  to localhost/hotspot (that contains changed files..)
+- Changes to pl scripts++ happens to programming/hotspot while it's running from /root/setup
+- Precautions/preparations:
+	- copy hotspot/www to hotspot/

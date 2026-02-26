@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>Taransvar - Cyber Security</title>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <meta content="" name="keywords">
+    <meta content="" name="description">
+
+    <link href="img/favicon.ico" rel="icon">
+
+  
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.10.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.4.1/font/bootstrap-icons.css" rel="stylesheet">
+
+ 
+    <link href="lib/animate/animate.min.css" rel="stylesheet">
+    <link href="lib/owlcarousel/assets/owl.carousel.min.css" rel="stylesheet">
+    <link href="lib/lightbox/css/lightbox.min.css" rel="stylesheet">
+
+    <link href="css/bootstrap.min.css" rel="stylesheet">
+
+</head>
+
+<body>
+
+    <div id="spinner" class="show bg-white position-fixed translate-middle w-100 vh-100 top-50 start-50 d-flex align-items-center justify-content-center">
+    <div class="spinner-border position-relative text-primary" style="width: 6rem; height: 6rem;" role="status"></div>
+    <img src="img/logospinner.png" alt="Loading" class="position-absolute top-50 start-50 translate-middle" style="width: 3rem; height: 3rem;">
+</div>
+
+  
+    <div class="container-fluid py-4 px-5 wow fadeIn" data-wow-delay="0.1s">
+    <div class="row align-items-center top-bar">
+        <div class="col-lg-4 col-md-12 text-center text-lg-start">
+    <a href="" class="navbar-brand m-0 p-0 logo-container">
+        <img src="img/ablogo.png" alt="Logo" class="logo">
+    </a>
+</div>
+        <div class="col-lg-8 col-md-7 d-none d-lg-block">
+            <div class="row">
+                <div class="col-6">
+                    <div class="info-item">
+                        <div class="icon-container">
+                            <div class="icon-wrapper">
+                                <i class="far fa-clock"></i>
+                            </div>
+                        </div>
+                        <div class="text-container">
+                            <p class="info-title">Opening Hour</p>
+                            <h6 class="info-value">Mon - Fri, 8:00 - 9:00</h6>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-6">
+                    <div class="info-item">
+                        <div class="icon-container">
+                            <div class="icon-wrapper">
+                                <i class="far fa-envelope"></i>
+                            </div>
+                        </div>
+                        <div class="text-container">
+                            <p class="info-title">Email Us</p>
+                            <h6 class="info-value"><img src="img/email-b.png" alt="Phone" width="150" height="30"></h6>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<nav class="navbar navbar-expand-lg bg-primary navbar-dark sticky-top py-lg-0 px-lg-5 wow fadeIn" data-wow-delay="0.1s">
+    <a href="#" class="navbar-brand ms-3 d-lg-none">MENU</a>
+    <button type="button" class="navbar-toggler me-3" data-bs-toggle="collapse" data-bs-target="#navbarCollapse">
+        <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarCollapse">
+        <div class="navbar-nav me-auto p-3 p-lg-0">
+            <a href="index.html" class="nav-item nav-link active">Home</a>
+
+            <div class="nav-item dropdown">
+                <a href="about.html" class="nav-link dropdown-toggle " data-bs-toggle="dropdown">About Us</a>
+                <div class="dropdown-menu border-0 rounded-0 rounded-bottom m-0">
+                    <a href="about.html#about_us" class="dropdown-item">Our Story</a>
+					<a href="about.html#our-mission" class="dropdown-item">Our Mission</a>
+					<a href="about.html#what-we-do" class="dropdown-item">What We Do</a>
+					<a href="about.html#our-values" class="dropdown-item">Our Values</a>
+                    <a href="about.html#contact-info" class="dropdown-item">Contact Info</a>
+					
+                </div>
+            </div>
+
+            <a href="project.html" class="nav-item nav-link">Contribute</a>
+      
+            <a href="contact.html" class="nav-item nav-link">Contact Us</a>
+        </div>
+        <a href="project.html#join-us" class="custom-get-started-btn">
+    Get Started
+</a>
+
+
+
+    </div>
+</nav>
+
+    <div class="container-fluid p-0 mb-5 wow fadeIn" data-wow-delay="0.1s">
+        <div id="header-carousel" class="carousel slide" data-bs-ride="carousel" data-bs-interval="10000">
+            <div class="carousel-indicators">
+                <button type="button" data-bs-target="#header-carousel" data-bs-slide-to="0" class="active" aria-current="true" aria-label="Slide 1">
+                    <img class="img-fluid" src="img/carousel-1.jpg" alt="Image">
+                </button>
+                <button type="button" data-bs-target="#header-carousel" data-bs-slide-to="1" aria-label="Slide 2">
+                    <img class="img-fluid" src="img/carousel-2.jpg" alt="Image">
+                </button>
+                <button type="button" data-bs-target="#header-carousel" data-bs-slide-to="2" aria-label="Slide 3">
+                    <img class="img-fluid" src="img/carousel-3.jpg" alt="Image">
+                </button>
+            </div>
+            <div class="carousel-inner">
+                <div class="carousel-item active">
+                    <img class="w-100" src="img/carousel-1.jpg" alt="Image">
+                    <div class="carousel-caption">
+                        <div class="p-3" style="max-width: 900px;">
+                            <h1 class="animated slideInDown text-uppercase" style="color: #faf8f7">Internet is anarchy</h1>
+                    <p class="animated slideInUp text-primary" style="font-size: 1.9rem; font-weight: 900;">It doesn't have to be that way</p>
+                    <p class="animated fadeIn" style="font-size: 1.7rem; font-weight: 600;">We're fixing it</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="carousel-item">
+                    <img class="w-100" src="img/carousel-2.jpg" alt="Image">
+                    <div class="carousel-caption">
+                        <div class="p-3" style="max-width: 900px;">
+                            <h1 class="animated slideInDown text-uppercase " style="color: #faf8f7">Anarchy: Securing my customers only</h1>
+                    <p class="animated slideInUp text-primary" style="font-size: 1.9rem; font-weight: 900;">Our Approach: Building a Strong, Unified Network</p>
+                    <p class="animated fadeIn" style="font-size: 1.7rem; font-weight: 600; ">Together, We Fortify Every Layer of Protection</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="carousel-item">
+                    <img class="w-100" src="img/carousel-3.jpg" alt="Image">
+                    <div class="carousel-caption">
+                        <div class="p-3" style="max-width: 900px;">
+                            <h1 class="animated slideInDown text-uppercase" style="color: #faf8f7" >We Bridge the Gap</h1>
+                    <p class="animated slideInUp text-primary" style="font-size: 1.9rem; font-weight: 900;">Legal Traffic Meets Trusted Receivers</p>
+                    <p class="animated fadeIn" style="font-size: 1.7rem; font-weight: 600; ">With This Approach, Hacking is No Longer Viable</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <button class="carousel-control-prev" type="button" data-bs-target="#header-carousel"
+                data-bs-slide="prev">
+                <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+                <span class="visually-hidden">Previous</span>
+            </button>
+            <button class="carousel-control-next" type="button" data-bs-target="#header-carousel"
+                data-bs-slide="next">
+                <span class="carousel-control-next-icon" aria-hidden="true"></span>
+                <span class="visually-hidden">Next</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="container-xxl py-5">
+        <div class="container">
+            <div class="row g-5">
+                <div class="col-lg-6 wow fadeInUp" data-wow-delay="0.1s">
+                    <div class="img-border">
+                        <img class="img-fluid" src="img/topmax.jpg" alt="">
+                    </div>
+                </div>
+                <div class="col-lg-6 wow fadeInUp" data-wow-delay="0.5s">
+                    <div class="h-100">
+                        <h6 class="section-title bg-white text-start text-primary pe-3">About Us</h6>
+                        <h1 class="display-6 mb-4 " style="color: #5EEAD4;">Welcome to <span class="text-primary">Taransvar  </span></h1>
+                        <p>Taransvar is a registered mental health organization focused on helping individuals achieve better mental well-being by fostering focus and overcoming triggers that disrupt progress. We specialize in understanding how the brain’s synaptic connections shape behavior and use this knowledge to help rewire destructive habits into positive ones through coaching. Whether you work on this journey alone or with support, we provide tools to make it easier and more effective. </p>
+                        <p class="mb-4">Our work spans two key areas: <b>mental health</b> and <b>cybersecurity</b>. In mental health, we treat challenges as destructive habits that can be reshaped with the right guidance. In cybersecurity, we advocate for stronger online governance and propose innovative solutions, like an NGO-owned global network, to combat cybercrime. At Taransvar, we’re dedicated to improving both mental well-being and digital safety.</p>
+                        
+                        <a class="btn btn-primary rounded-pill py-3 px-5" href="about.html#about_us">Read More</a>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container-xxl py-5">
+        <div class="container">
+            <div class="row g-5">
+                <div class="col-lg-6 wow fadeInUp" data-wow-delay="0.1s">
+                    <div class="h-100">
+                        <h6 class="section-title bg-white text-start text-primary pe-3">How it works</h6>
+                        <h1 class="display-6 mb-4" style="color: #5EEAD4;">Conceptual Outline</h1>
+						<p class="mb-4">Here is a description of such a network, how we’re planning to bring this about, and how you can become part of this.</p>
+						<p class="mb-4">When a computer (PC A) becomes infected within the network of a telecom company (Tele A), it is flagged as a potential risk. If PC A attempts to launch an attack on another computer (PC B) within the network of a different telecom company (Tele B), PC B’s firewall detects the malicious traffic and reports the attempted breach.</p>
+						<p class="mb-4">Tele B then notifies Tele A that PC A has been involved in an attack. However, PC A may continue its malicious activity by attempting to attack another computer (PC C) in a third telecom network (Tele C). Once again, Tele C’s firewall detects the attack and reports it.</p>
+						<p class="mb-4">In response, Tele A wraps all future traffic from PC A in a labeled data package, informing other networks that this computer has been reported for involvement in attacks. This process ensures that PC A’s activity is flagged for awareness across multiple telecom networks, helping to prevent further malicious attempts while maintaining overall network stability.</p>
+
+						
+                    </div>
+					
+                </div>
+                <div class="col-lg-6 wow fadeInUp" data-wow-delay="0.5s">
+                    <div class="img-border">
+                        <img class="img-fluid" src="img/feature.jpg" alt="">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container-fluid pt-5 pb-3">
+        <div class="container">
+            <div class="row">
+                <div class="col-lg-4 mb-5 wow fadeInUp" >
+                    <h6 class="section-title bg-white text-start text-primary pe-3" >Why Us</h6>
+                        <h1 class="display-6 mb-4" style="color: #5EEAD4;">Safer<span class="text-primary">Digital future </span> for all</h1>
+                    <h4 class="font-weight-normal text-muted mb-4" >So why should anybody support Taransvar to do this job? There are a few organizations that could do the job. However, unlike profit-driven IT giants, we at prioritize ethical solutions that protect global internet traffic while addressing mental health, offering a future where technology serves people, not profits. </h4>
+                    <a href="about.html#our-mission" class="btn btn-primary py-md-2 px-md-4 font-weight-semi-bold">Discover More</a>
+                </div>
+                <div class="col-lg-8 wow fadeInUp">
+                    <div class="row">
+                        <div class="col-md-6 mb-5 wow fadeInUp">
+                            <div class="d-flex">
+                                <i class="fa fa-3x fa-laptop-code text-primary mr-4"></i>
+                                <div class="d-flex flex-column">
+                                    <h4 class="font-weight-bold mb-3"style="color: #5EEAD4;">Holistic Safety and Well-Being</h4>
+                                    <p>Cybersecurity isn't just about technology but also about protecting people’s peace of mind, ensuring that vulnerable communities are secure online, and mitigating stressors that come with cyber threats. </p>
+                                    <a class=" btn btn-primary py-md-2 px-md-4 font-weight-semi-bold" href="about.html#our-values">Read More <i class="fa fa-angle-double-right"></i></a>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-5 wow fadeInUp">
+                            <div class="d-flex">
+                                <i class="fa fa-3x fa-code text-primary mr-4"></i>
+                                <div class="d-flex flex-column">
+                                    <h4 class="font-weight-bold mb-3" style="color: #5EEAD4;">Community Empowerment</h4>
+                                    <p>The initiative isn't just a technical program but a mission to empower communities, providing both digital safety and educational outreach that aligns with the NGO’s holistic mission to uplift underprivileged areas.</p>
+                                    <a class="btn btn-primary py-md-2 px-md-4 font-weight-semi-bold" href="about.html#our-values">Read More <i class="fa fa-angle-double-right"></i></a>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-5 wow fadeInUp">
+                            <div class="d-flex">
+                                <i class="fa fa-3x fa-envelope-open-text text-primary mr-4"></i>
+                                <div class="d-flex flex-column">
+                                    <h4 class="font-weight-bold mb-3" style="color: #5EEAD4;">Inclusive Access and Support</h4>
+                                    <p>This initiative uniquely prioritizes underserved and vulnerable communities, offering them protection that large, for-profit cybersecurity companies may overlook. This proactive stance builds trust.</p>
+                                    <a class="btn btn-primary py-md-2 px-md-4 font-weight-semi-bold" href="about.html#our-values">Read More <i class="fa fa-angle-double-right"></i></a>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-5 wow fadeInUp">
+                            <div class="d-flex">
+                                <i class="fa fa-3x fa-chart-line text-primary mr-4"></i>
+                                <div class="d-flex flex-column">
+                                    <h4 class="font-weight-bold mb-3" style="color: #5EEAD4;">Mental Health Impact of Cybersecurity Breaches</h4>
+                                    <p>Cyber incidents can have significant psychological impacts, including stress, anxiety, and trauma. The program is positioned to prevent these issues by securing networks and educating people on safe practices.</p>
+                                    <a class="btn btn-primary py-md-2 px-md-4 font-weight-semi-bold" href="about.html#our-values">Read More <i class="fa fa-angle-double-right"></i></a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+        <div class="discount wow zoomIn" data-wow-delay="0.1s">
+            <div class="container">
+                <div class="section-header text-center">
+                    <p><b>We are building a global system to secure the Internet and are looking for partners who value a safer digital world and want to be part of this transformative effort. We seek collaboration from IT security experts, telecom companies, major corporations, governments, and universities.
+
+Cybercrime costs businesses hundreds of billions each year, yet it can be controlled if we prioritize long-term solutions over short-term profits.
+
+We need:</b></p>
+                    <h2>can you offer us your <span> support</span></h2>
+                </div>
+                <div class="container discount-text">
+                    
+                    <a class="btn" href="contact.html#contact-form">Contact Us</a>
+
+
+                </div>
+            </div>
+        </div>
+    
+    <div class="container-xxl py-5">
+        <div class="container">
+		
+		<div class="text-center mx-auto mb-5 wow fadeInUp" data-wow-delay="0.1s" style="max-width: 600px;">
+                <h6 class="section-title bg-white text-start text-primary pe-3">Support Us</h6>
+                        <h1 class="display-6 mb-4" style="color: #5EEAD4;">What we, <span class="text-primary">NEED  </span></h1>
+            </div>
+		
+            <div class="row g-5">
+                <div class="col-lg-6 wow fadeInUp" data-wow-delay="0.5s">
+                    <div class="h-100">
+                                            			
+					<ul class="list-unstyled text-text-white">
+                    <li class="mb-2"><i class="fa fa-check text-white me-2"></i>Technical help to develop telecom security systems.</li>
+                    <li class="mb-2"><i class="fa fa-check text-white me-2"></i>Financial support for branding and a seat at the decision-making table.</li>
+                    </ul>
+						
+                        <a class="btn btn-primary rounded-pill py-3 px-5" href="project.html#contribution-opportunities">Read More</a>
+                    </div>
+                </div>
+                <div class="col-lg-6 wow fadeInUp" data-wow-delay="0.5s">
+                    <div class="h-100">
+                        <ul class="list-unstyled text-white">
+						<li class="mb-2"><i class="fa fa-check text-white me-2"></i>Clients who want to benefit from and support a secure global network.</li>
+						<li class="mb-2"><i class="fa fa-check text-white me-2"></i>General advice or feedback to improve our approach.</li>
+						</ul>
+                        
+                        <a class="btn btn-primary rounded-pill py-3 px-5" href="project.html#contribution-opportunities">Read More</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+<div class="container-xxl py-5">
+    <div class="container">
+        <div class="text-center mx-auto mb-5 wow fadeInUp" data-wow-delay="0.1s" style="max-width: 600px;">
+            <h6 class="section-title bg-white text-start text-primary pe-3">Faqs</h6>
+            <h1 class="display-6 mb-4" style="color: #5EEAD4;">#1 Bridging Divides, <span class="text-primary">Building</span> CyberPeace</h1>
+        </div>
+        
+        <div class="row g-1">
+            <section id="faq" class="faq section">
+                <div class="container" data-aos="fade-up">
+                    <div class="row">
+                        <div class="col-12">
+                            <div class="custom-accordion" id="accordion-faq">
+                   
+                                <div class="accordion-item">
+                                    <h2 class="mb-0" style="color: #5EEAD4;">
+                                        <button class="btn btn-link" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-faq-1">
+                                            How Can Individuals and Organizations Get Involved?
+                                        </button>
+                                    </h2>
+                                    <div id="collapse-faq-1" class="collapse show" aria-labelledby="headingOne" data-parent="#accordion-faq">
+                                        <div class="accordion-body">
+                                            The internet first emerged among universities, and we believe global cybersecurity should follow a similar path—starting with universities, schools, and other institutions interested in making the internet safer. Our core system is open-source, allowing anyone to contribute to its development.
+
+											Beyond technical contributions, individuals and organizations can support our mission by spreading the word among key stakeholders. Those who actively participate will be rewarded for their contributions.
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="accordion-item">
+                                    <h2 class="mb-0" style="color: #5EEAD4;">
+                                        <button class="btn btn-link collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-faq-2">
+                                            What investment opportunities are available for partners?
+                                        </button>
+                                    </h2>
+                                    <div id="collapse-faq-2" class="collapse" aria-labelledby="headingTwo" data-parent="#accordion-faq">
+                                        <div class="accordion-body">
+                                            As an NGO, Taransvar has limited access to traditional investors. However, we are open to signing contracts for strategic collaborations. Partners can gain exclusive or non-exclusive rights to specific business segments, offering valuable opportunities for those who align with our vision.
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="accordion-item">
+                                    <h2 class="mb-0" style="color: #5EEAD4;">
+                                        <button class="btn btn-link collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-faq-3">
+                                            How does Taransvar plan to collaborate with universities and governments?
+                                        </button>
+                                    </h2>
+                                    <div id="collapse-faq-3" class="collapse" aria-labelledby="headingThree" data-parent="#accordion-faq">
+                                        <div class="accordion-body">
+                                            We aim to introduce structured governance in a space currently dominated by cyber anarchy. To achieve this, we are actively seeking partnerships to define and implement effective solutions. Given the global implications of cybersecurity, universities and governments have a crucial role in shaping this field.
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="accordion-item">
+                                    <h2 class="mb-0" style="color: #5EEAD4;">
+                                        <button class="btn btn-link collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-faq-4">
+                                            What is the market potential for Taransvar’s cybersecurity system?
+                                        </button>
+                                    </h2>
+                                    <div id="collapse-faq-4" class="collapse" aria-labelledby="headingFour" data-parent="#accordion-faq">
+                                        <div class="accordion-body">
+                                            Cybercrime costs the global economy hundreds of billions of dollars annually. By effectively addressing this issue, our market potential is immense. The future of cybersecurity requires a single global governing unit—without it, we risk maintaining the chaotic status quo.
+
+											We believe Taransvar is best suited for this role, as our concept is driven by an NGO committed to addressing cybersecurity and mental health—two interconnected global challenges.
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="accordion-item">
+                                    <h2 class="mb-0" style="color: #5EEAD4;">
+                                        <button class="btn btn-link collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-faq-5">
+                                            What are the potential benefits for telecom companies partnering with Taransvar?
+                                        </button>
+                                    </h2>
+                                    <div id="collapse-faq-5" class="collapse" aria-labelledby="headingFive" data-parent="#accordion-faq">
+                                        <div class="accordion-body">
+                                            <p>Telecom companies that partner with Taransvar will gain access to a global network designed to prevent cyber attacks. They will enhance the value of their services by offering secure connections, attracting more customers, and reducing the risks associated with cybercrime.Currently, telecom companies profit from cybersecurity by protecting their customers but without fundamentally solving the issue. They capture only a fraction of the total cybersecurity market.</p>
+
+											<p>With our approach, telecom companies can become prime partners in securing the internet. This enhances their value proposition—moving beyond mere traffic providers to security enablers at the core network level.</p>
+
+											<p>A key outcome of our model will be the creation of a split internet:</p>
+<ol>
+											<li>A secure network where cybercrime is unsustainable because hackers lose their botnets immediately.</li>
+											<li>An unregulated “dark net” where hackers continue to operate.</li> </ol>
+											Telecom companies that partner with us early will gain a significant advantage in shaping and securing the internet of the future.
+
+
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="accordion-item">
+                                    <h2 class="mb-0" style="color: #5EEAD4;">
+                                        <button class="btn btn-link collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-faq-6">
+                                            How can I contribute to Taransvar's cybersecurity project?
+                                        </button>
+                                    </h2>
+                                    <div id="collapse-faq-6" class="collapse" aria-labelledby="headingSix" data-parent="#accordion-faq">
+                                        <div class="accordion-body">
+                                            You can contribute by offering technical assistance, providing financial support, or connecting us with relevant partners, such as telecom companies, governments, and universities. You can also join our advisory boards or provide strategic guidance.
+                                        </div>
+                                    </div>
+                                </div>
+
+                               
+
+                                <div class="accordion-item">
+                                    <h2 class="mb-0" style="color: #5EEAD4;">
+                                        <button class="btn btn-link collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-faq-8">
+                                            Is Taransvar Gatekeeper compatible with all types of networks?
+                                        </button>
+                                    </h2>
+                                    <div id="collapse-faq-8" class="collapse" aria-labelledby="headingEight" data-parent="#accordion-faq">
+                                        <div class="accordion-body">
+                                            Taransvar Gatekeeper currently operates on TCP packets, the primary protocol exploited by cybercriminals. While additional protocols may be supported in the future, large-scale deployments will integrate our system with designated routing hardware, ensuring compatibility with all relevant network protocols.
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="accordion-item">
+                                    <h2 class="mb-0" style="color: #5EEAD4;">
+                                        <button class="btn btn-link collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-faq-9">
+                                            What makes Taransvar Gatekeeper different from other cybersecurity systems?
+                                        </button>
+                                    </h2>
+                                    <div id="collapse-faq-9" class="collapse" aria-labelledby="headingNine" data-parent="#accordion-faq">
+                                        <div class="accordion-body">
+                                            Most cybersecurity solutions focus solely on protecting their owners or a specific group of customers from external or internal threats. In contrast, Taransvar is designed to make cybercrime impossible or unsustainable across all liberal networks.
+
+											By prioritizing systemic security over isolated protection, we offer a transformative approach that benefits the entire digital ecosystem.
+                                        </div>
+                                    </div>
+                                </div>
+
+                                
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+</div>
+
+
+
+<div class="fb-page" 
+     data-href="https://www.facebook.com/groups/3183712935217140" 
+     data-tabs="timeline" 
+     data-width="500" 
+     data-height="600" 
+     data-small-header="false" 
+     data-adapt-container-width="true" 
+     data-hide-cover="false" 
+     data-show-facepile="true">
+    <blockquote cite="https://www.facebook.com/groups/3183712935217140" class="fb-xfbml-parse-ignore">
+        <a href="https://www.facebook.com/groups/3183712935217140">Join Our Facebook Group</a>
+    </blockquote>
+</div>
+
+
+
+    <div class="container-xxl py-5">
+        <div class="container">
+            <div class="text-center mx-auto mb-5 wow fadeInUp" data-wow-delay="0.1s" style="max-width: 600px;">
+                <h6 class="section-title bg-white text-center text-primary px-3">Services</h6>
+                <h1 class="display-6 mb-4" style="color: #5EEAD4;">We Focuse On Making All Sectors Secure</h1>
+            </div>
+            <div class="row g-4">
+                <div class="col-lg-4 col-md-6 wow fadeInUp" data-wow-delay="0.1s">
+                    <a class="service-item d-block rounded text-center h-100 p-4" href="">
+                        <img class="img-fluid rounded mb-4" src="img/service-1.jpg" alt="">
+                        <h4 class="mb-0" style="color: #5EEAD4;">Global Secured Network Services</h4>
+                    </a>
+                </div>
+                <div class="col-lg-4 col-md-6 wow fadeInUp" data-wow-delay="0.3s">
+                    <a class="service-item d-block rounded text-center h-100 p-4" href="">
+                        <img class="img-fluid rounded mb-4" src="img/service-2.jpg" alt="">
+                        <h4 class="mb-0" style="color: #5EEAD4;">Cyber Security as a Service</h4>
+                    </a>
+                </div>
+                <div class="col-lg-4 col-md-6 wow fadeInUp" data-wow-delay="0.5s">
+                    <a class="service-item d-block rounded text-center h-100 p-4" href="">
+                        <img class="img-fluid rounded mb-4" src="img/service-3.jpg" alt="">
+                        <h4 class="mb-0" style="color: #5EEAD4;">Client and Device Certification</h4>
+                    </a>
+                </div>
+                <div class="col-lg-4 col-md-6 wow fadeInUp" data-wow-delay="0.1s">
+                    <a class="service-item d-block rounded text-center h-100 p-4" href="">
+                        <img class="img-fluid rounded mb-4" src="img/service-4.jpg" alt="">
+                        <h4 class="mb-0" style="color: #5EEAD4;">Security Systems for Enterprises and Telecoms</h4>
+                    </a>
+                </div>
+                <div class="col-lg-4 col-md-6 wow fadeInUp" data-wow-delay="0.3s">
+                    <a class="service-item d-block rounded text-center h-100 p-4" href="">
+                        <img class="img-fluid rounded mb-4" src="img/service-5.jpg" alt="">
+                        <h4 class="mb-0" style="color: #5EEAD4;">Consultancy and Penetration Testing</h4>
+                    </a>
+                </div>
+                <div class="col-lg-4 col-md-6 wow fadeInUp" data-wow-delay="0.5s">
+                    <a class="service-item d-block rounded text-center h-100 p-4" href="">
+                        <img class="img-fluid rounded mb-4" src="img/service-6.jpg" alt="">
+                        <h4 class="mb-0" style="color: #5EEAD4;">Privacy and Data Protection Solutions</h4>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+ 
+    
+
+    <div class="container-fluid bg-dark text-body footer mt-5 pt-5 wow fadeIn" data-wow-delay="0.1s">
+        <div class="container py-5">
+            <div class="row g-5">
+                <div class="col-lg-3 col-md-6">
+                    <h5 class="text-light mb-4">Address</h5>
+                    <p class="mb-2"><i class="fa fa-map-marker-alt me-3"></i>Embakasi, Nairobi, Kenya</p>
+					<p class="mb-2"><i class="fa fa-phone-alt me-3"></i><img src="img/phoneno.png" alt="Phone" width="200" height="40"></p>
+                    
+                    <p class="mb-2"><i class="fa fa-envelope me-3"></i><img src="img/email.png" alt="Phone" width="200" height="40"></p>
+                    <div class="d-flex pt-2">
+                        
+                      
+                        
+                        
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6">
+                    <h5 class="text-light mb-4">Quick Links</h5>
+                    <a class="btn btn-link" href="index.html">Home</a>
+                    <a class="btn btn-link" href="about.html">About Us</a>
+                    <a class="btn btn-link" href="project.html">Contribute</a>
+                    <a class="btn btn-link" href="contact.html">Contact Us</a>
+                    
+                </div>
+ <!-- Gallery Section Start -->
+<div class="col-lg-3 col-md-6">
+    <h5 class="text-light mb-4">Gallery</h5>
+    <div class="gallery-container row g-2">
+        <div class="col-4 gallery-item wow fadeIn" data-wow-delay="0.1s">
+            <div class="img-wrapper">
+                <a href="img/project-1.jpg" data-lightbox="gallery" data-title="Image 1">
+                    <img class="img-fluid rounded" src="img/project-1.jpg" alt="Image 1">
+                    <div class="img-overlay">
+                        <i class="fas fa-search-plus"></i>
+                    </div>
+                </a>
+            </div>
+        </div>
+        <div class="col-4 gallery-item wow fadeIn" data-wow-delay="0.2s">
+            <div class="img-wrapper">
+                <a href="img/project-2.jpg" data-lightbox="gallery" data-title="Image 2">
+                    <img class="img-fluid rounded" src="img/project-2.jpg" alt="Image 2">
+                    <div class="img-overlay">
+                        <i class="fas fa-search-plus"></i>
+                    </div>
+                </a>
+            </div>
+        </div>
+        <div class="col-4 gallery-item wow fadeIn" data-wow-delay="0.3s">
+            <div class="img-wrapper">
+                <a href="img/project-3.jpg" data-lightbox="gallery" data-title="Image 3">
+                    <img class="img-fluid rounded" src="img/project-3.jpg" alt="Image 3">
+                    <div class="img-overlay">
+                        <i class="fas fa-search-plus"></i>
+                    </div>
+                </a>
+            </div>
+        </div>
+        <div class="col-4 gallery-item wow fadeIn" data-wow-delay="0.4s">
+            <div class="img-wrapper">
+                <a href="img/project-4.jpg" data-lightbox="gallery" data-title="Image 4">
+                    <img class="img-fluid rounded" src="img/project-4.jpg" alt="Image 4">
+                    <div class="img-overlay">
+                        <i class="fas fa-search-plus"></i>
+                    </div>
+                </a>
+            </div>
+        </div>
+        <div class="col-4 gallery-item wow fadeIn" data-wow-delay="0.5s">
+            <div class="img-wrapper">
+                <a href="img/project-5.jpg" data-lightbox="gallery" data-title="Image 5">
+                    <img class="img-fluid rounded" src="img/project-5.jpg" alt="Image 5">
+                    <div class="img-overlay">
+                        <i class="fas fa-search-plus"></i>
+                    </div>
+                </a>
+            </div>
+        </div>
+        <div class="col-4 gallery-item wow fadeIn" data-wow-delay="0.6s">
+            <div class="img-wrapper">
+                <a href="img/project-6.jpg" data-lightbox="gallery" data-title="Image 6">
+                    <img class="img-fluid rounded" src="img/project-6.jpg" alt="Image 6">
+                    <div class="img-overlay">
+                        <i class="fas fa-search-plus"></i>
+                    </div>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- Gallery Section End -->
+
+
+                <div class="col-lg-3 col-md-6">
+                    
+                    <img src="img/logo-w.png" alt="Logo" class="logo">
+                    <p>Creating pathways to better mental health through accessible services and community engagement.</p>
+                    
+               
+                </div>
+            </div>
+        </div>
+        <div class="container-fluid copyright">
+            <div class="container">
+                <div class="row">
+                    <div class="col-md-6 text-center text-md-start mb-3 mb-md-0">
+                        &copy; <a href="#">Taransvar</a>, All Right Reserved.
+                    </div>
+                    <div class="col-md-6 text-center text-md-end">
+                        
+                         
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+
+    <a href="#" class="btn btn-lg btn-primary btn-lg-square rounded-circle back-to-top"><i class="bi bi-arrow-up"></i></a>
+
+
+
+    <script src="https://code.jquery.com/jquery-3.4.1.min.js"></script>
+    <script src="js/bootstrap.bundle.min.js"></script>
+    <script src="lib/wow/wow.min.js"></script>
+    <script src="lib/easing/easing.min.js"></script>
+    <script src="lib/waypoints/waypoints.min.js"></script>
+    <script src="lib/counterup/counterup.min.js"></script>
+    <script src="lib/owlcarousel/owl.carousel.min.js"></script>
+    <script src="lib/lightbox/js/lightbox.min.js"></script>
+
+    <script src="js/main.js"></script>
+	
+    <script>
+        new WOW().init();
+    </script>
+<script src="js/scroll.js"></script>	
+
+<script async defer crossorigin="anonymous" 
+src="https://connect.facebook.net/en_US/sdk.js#xfbml=1&version=v12.0"></script>
+
+	
+</body>
+
+</html>
+

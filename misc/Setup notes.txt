@@ -1,0 +1,15 @@
+Setup notes...
+- Router should have public IP. Port shown by honey.php will not be correct if there's NAT between.
+- Make sure the external and internal IP shown by ifconfig are the one stored in dashboard Setup (http://localhost)
+- run misc/setup_network.pl to set up Ubuntu24 for routing
+- Re-run taralink if you make changes to Servers, Partner, Infection, Inspections. For others, also re-run tarakernel.
+- Make sure cron jobs are running. To see/edit: sudo crontab -u root -e 
+
+Misc:
+- sudo dmesg | grep urg_ptr to check use of urg_ptr
+
+Demo:
+- honey.php (requires public ip or two VPS running)
+- tagging (don't see outbound tagging)
+- blacklisting? (b/w listing not yet updated)
+

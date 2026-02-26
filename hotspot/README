@@ -1,0 +1,30 @@
+- Check: Login msg... 
+- Change internal IP address
+- Install.pl still contains code of setup_network.pl...
+- fix dhcpcommit.pl elsewhere
+- Radius servers are hardcoded in db.pl (search 192.168.100.12)
+
+***** Install instructions *********
+NOTE! We assume you already installed our "Gatekeeper" system.
+
+- To become root user, type: "sudo su -" <enter>
+
+********** Install Linux packages that are not part of the Gatekeeper system ********
+sudo su
+apt-get update -y && apt-get upgrade -y
+apt-get install ipfm freeradius freeradius-mysql -y 
+
+************ Install the Taransvar hotspot system ***********
+- cd to hotsport directory (sibling to tarakernel, taralink, misc++)
+- Type "sh distro/install.sh" <enter>
+
+Now open your browser and type "localhost"<enter>
+This should display a login box.. 
+
+*********** To fix after ***********
+sudo crontab -u root -e
+- Then fix the path of crontasks.pl (contains oystein which is wrong)
+
+************ If trouble **************
+- Type "localhost" in the browser, log in (username and login is printed there) and click "Logs" in top menu, then "Status" in left menu and then the link to show server status. There should be green text saying all is well. Otherwise red text telling what's wrong. If this doens't help, then copy all the text and send it to support. 
+- Make sure if tarakernel is running, taralink must also run. sudo dmesg -w 

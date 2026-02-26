@@ -1,0 +1,17 @@
+Show debug messages without blank lines 
+sudo dmesg -w | grep -v "^[[:space:]]*$"
+
+Find files containing text (in current directory and sub folders..):
+grep -rnw '.' -e 'pattern'
+
+Find file named...
+find <directory …> -type f -name "<pattern>"
+
+List all iptables rules
+sudo iptables -L -v -n | more
+
+List nat rules (e.g to check if MASQUERADE is active)
+
+
+There's a memory leak in taralink. This is one way you can monitor ()
+ps -C taralink -o comm,pid,pmem,pcpu,stat,vsz,time,sz,rss

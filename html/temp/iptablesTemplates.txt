@@ -1,0 +1,28 @@
+#Field found: SSH: incoming/Inside(1)
+/sbin/iptables -A INPUT -i enp1s0 -p tcp --dport 22 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+/sbin/iptables -A OUTPUT -o enp1s0 -p tcp --sport 22 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+
+#Field found: Samba: incoming/Inside(1)
+/sbin/iptables -A INPUT -i enp1s0 -p tcp --dport 139 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+/sbin/iptables -A OUTPUT -o enp1s0 -p tcp --sport 139 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+/sbin/iptables -A INPUT -i enp1s0 -p tcp --dport 445 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+/sbin/iptables -A OUTPUT -o enp1s0 -p tcp --sport 445 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+/sbin/iptables -A INPUT -i enp1s0 -p udp --dport 137 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+/sbin/iptables -A OUTPUT -o enp1s0 -p udp --sport 137 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+/sbin/iptables -A INPUT -i enp1s0 -p udp --dport 138 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+/sbin/iptables -A OUTPUT -o enp1s0 -p udp --sport 138 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+
+#Field found: HTTP: incoming/Inside(1)
+/sbin/iptables -A INPUT -i enp1s0 -p tcp --dport 80 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+/sbin/iptables -A OUTPUT -o enp1s0 -p tcp --sport 80 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+/sbin/iptables -A INPUT -i enp1s0 -p tcp --dport 443 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+/sbin/iptables -A OUTPUT -o enp1s0 -p tcp --sport 443 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+
+
+#Logging
+/sbin/iptables -N LOGGING
+/sbin/iptables -A INPUT -j LOGGING
+/sbin/iptables -A OUTPUT -j LOGGING
+/sbin/iptables -A LOGGING -d 224.0.0.251 -j DROP
+/sbin/iptables -A LOGGING -m limit --limit 10/min -j LOG --log-prefix "IPTables-Dropped: " --log-level 4
+/sbin/iptables -A LOGGING -j DROP

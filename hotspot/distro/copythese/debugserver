@@ -1,0 +1,472 @@
+#!/usr/bin/perl  
+#print "Content-type: text/html\n\n";
+use strict;
+use warnings; 
+#use autodie; - commented.. disables error handling on file open...
+use DBI;
+
+my $szTempFile = "cgitempfile.last";
+#my $szTempFile = "/usr/lib/cgi-bin/monna.txt";
+
+my $szSpecialAccessFor = "192.168.100.11";	#"none" to disable access from others than localhost. 
+
+my $database = "taransvar";
+my $hostname = "localhost";
+my $port = "3306";
+my $user = "scriptUsrAces3f3";
+my $password = "rErte8Oi98!%&e";
+
+use CGI ':standard';
+
+print header(); 
+print start_html();
+print "<title>Taransvar server technical info</title>";
+my $szParam = "";
+
+for my $i (param()) {
+    $szParam = $i;#print "<b>", $i, "</b>: ", param($i), "<br>\n";
+}
+
+if (defined $ENV{REMOTE_ADDR}) {
+	if ($ENV{REMOTE_ADDR} ne "127.0.0.1")
+	{
+		if (($szParam ne "theCode" || param("theCode") ne "hereIam") && $ENV{REMOTE_ADDR} ne $szSpecialAccessFor)
+		{
+			print "Sorry, but you have to open this from the server.</body></html>";
+			exit(0);
+		}
+		else {
+			print "The code found..: ".param("theCode")." <br>";
+		}
+			
+	}
+} else
+{
+	print "Running from command line...\n";
+}
+
+use File::stat;
+use Time::localtime;
+
+open my $fh, '<', $szTempFile or do {#die "Can't open file $!";
+		print "<html><body><font color=\"red\">Log file ($szTempFile) not found! Cron job is probably not running!</font></body></html>";
+		return;
+	};
+
+my $cFileChange = stat($fh)->mtime;
+my $szFileChangeTime = ctime($cFileChange);
+
+
+my $nSecondsSinceChanged = time() - $cFileChange;
+
+if ($nSecondsSinceChanged > 10 * 60)	#More than 10 minutes since file created... Cron jobs probably stopped
+{
+	print "<br><font color=\"red\">**** ERROR! ****<br>The statistics file is more than 10 minutes old ($szFileChangeTime).<br>Please inform the supervisor!</font><br><br>";
+}
+
+my $file_content = do { local $/; <$fh> };
+close $fh;
+
+#print "<br>Log file was written: $szFileChangeTime (now is $szCurrentTime)<br>Time: ".time()."<br>Seconds since changed: $nSecondsSinceChanged<br>Hours: $nHoursSince<br>";
+
+use IO::Socket::INET;
+
+sub get_local_ip_address {
+    my $socket = IO::Socket::INET->new(
+        Proto       => 'udp',
+        PeerAddr    => '8.8.8.8', #'198.41.0.4', # a.root-servers.net
+        PeerPort    => '53', # DNS
+    );
+
+    # A side-effect of making a socket connection is that our IP address
+    # is available from the 'sockhost' method
+    my $local_ip_address = $socket->sockhost;
+
+    return $local_ip_address;
+}
+
+
+#my $local_ip_address = get_local_ip_address();
+
+#print "Server IP address is: ".$local_ip_address."<br>Client Ip address is: ".$ENV{REMOTE_ADDR};
+
+my $szWAN = "";	#Don't mess with thses. they're used elsewhere
+my $szLAN = "";
+
+my $szNotFoundConst = "[not found]";
+my $szWANdevice = $szNotFoundConst;
+my $szLANdevice = $szNotFoundConst;
+my $szGateway = $szNotFoundConst;
+my $szWANdeviceIP = $szNotFoundConst;
+my $szDNS = $szNotFoundConst;
+
+my $szHtml = "<table border=\"1\">";
+
+while (1)
+{
+
+	#my @strings = $file_content =~ /(?:^|\s)([A-Za-z]+-\d+)(?:\s|$)/g;
+	if ($file_content =~ /gatheredstart:(\w*)>(.*?)<gatheredend(.*)$/s)
+	{
+		my $szTopic = $1;
+		my $szFound = substr $2, 1;
+		my $nFoundLength = (length $szFound);
+		my $szTheRest = $3;
+		my $szModified = $szFound;
+		my $new = $szModified =~ s/\n/<br>/rg;
+		$new = $new =~ s/ /&nbsp;/rg;
+
+		#given ($szTopic) {
+		#	when ($_ eq "asdf") {
+		#		$szTopic = '<font color="red">'.$szTopic.'</font>';
+		#	}
+		#	default {
+		#		$szTopic = '<font color="red">Unhandled: '.$szTopic.'</font>';
+		#	}
+		#}
+
+
+
+		if ($szTopic eq "iptables_nat") {
+			my $bSub = $szFound =~ /MASQUERADE/;
+			if (!$bSub) {
+				my $szWarning = "THIS COMPITER IS NOT SET UP TO FORWARD TRAFFIC! (will not work as router)";
+				$szTopic = '<font color="red">'.$szTopic.'<br><b>'.$szWarning.'</b></font>';
+				$szWAN .= "<p>$szWarning (see \"iptables_nat\" section below)</p>";
+			}
+			else {
+				$szTopic = '<font color="green">'.$szTopic.'<br><b>MASQUERADE found!</b></font>';
+			}
+			
+		}
+		else
+		{
+			if ($szTopic eq "ip_forward") {
+				
+				if (my $szSub = $szFound =~ /forward = 0/) {
+					my $szWarning = "Forwarding disabled, this computer will not work as router!";
+					$szTopic = '<font color="red">'.$szTopic.'<br><b>$szWarning</b></font><br><br>To fix, run: sysctl -w net.ipv4.ip_forward=1';
+					$szWAN .= "<p>$szWarning (see \"ip_forward\" section below)</p>";
+				}
+			}
+			else {
+				if ($szTopic eq "dhcp_lease") {
+					if (length $szFound < 10) {
+						$szTopic = '<font color="red">'.$szTopic.'<br><b>No client computers tried to connect yet!</b><br>Maybe something wrong on them or the cabling between?</font>';
+					}
+				}
+				else {
+					if ($szTopic eq "syslog") {
+						#Do nothing yet......
+					}
+					else {
+						if ($szTopic eq "log_files") {
+							#Do nothing yet......
+						}
+						else {
+							if ($szTopic eq "cron_log") {
+								if (length $szFound < 10) {
+									$szTopic = '<font color="red">'.$szTopic.'<br><b>Seems like no background jobs are running. Users will not be granted access as they log in!<br>(Guess this task is ran manually)</b></font>';
+								}
+							}
+							else {
+								if ($szTopic eq "iproute") {
+									#default via 192.168.100.1 dev eno1  proto static  metric 100 
+									#169.254.0.0/16 dev eno1  scope link  metric 1000 
+									#192.168.100.0/24 dev eno1  proto kernel  scope link  src 192.168.100.13  metric 100 
+									my $szResult;
+									
+									if ($szFound =~ /default via\s(\S*)\sdev(\s*)(\w*)(.*) src\s(\S*) (\S*)/s) {
+										$szWANdevice = $3;
+										$szGateway = $1;
+										$szWANdeviceIP = $5;
+										$szResult = "Gateway: $szGateway, device: $szWANdevice, IP: $szWANdeviceIP";
+									}
+									else
+									{
+										$szResult = "Unable to decode:";
+									}
+									
+									$new = "<b>".$szResult."</b><br>".$new;
+									#$szTopic = '<font color="red">'.$szTopic.'<br><b>Seems like no background jobs are running. Users will not be granted access as they log in!<br>(Guess this task is ran manually)</b></font>';
+								} else {
+									my $szSub = substr $szTopic, 0, 4;
+									if ($szSub eq "ping") {
+										if ($szFound =~ /1 packets transmitted, 1 received, 0% packet loss, time 0ms/) {
+											$szTopic = '<font color="green">'.$szTopic.'<br>Has internet access</font>';
+										} else {
+											$szTopic = '<font color="red">'.$szTopic.'<br><b>NO internet access</b></font><br>';
+											$szWAN .= "Ping fails. Seems not to have Internet access!<br>";
+										}
+									} else {
+										if ($szTopic eq "nmcli") {
+											#Get line by line
+											my @lines = split /\n/, $szFound;
+											my $szDevice = "";
+											my $szResult = "";
+											my $nFound = 0;
+											foreach my $szLine (@lines) {
+												$nFound += 1;
+												#my $szLine = $_;
+												#$szResult .= "Line: $szLine<br>";
+												if ($szDevice eq "lo" && length $szLine > 1) {
+													#Don't do anything with loopback ... skip until next device 
+												}
+												else
+												{
+													if ($szLine =~ /GENERAL.DEVICE:(\s*)(\w*)/) {
+														$szDevice = $2;
+														if ($szDevice ne "lo") {
+															$szResult .= "<br>Device found: <b>$2</b><br>";
+														}
+													}
+
+													if ($szLine =~ /GENERAL.STATE:(\s*)(\w*)/) {
+														$szResult .= "State is: $2<br>";
+													}
+									##################CHECK IF CAN IDENTIFY THIS AS LAN OR TELL THAT WAN IS WIRED OR CONFLICTS WITH WHAT'S ALREADY IDENTIFIED#####################################
+
+													if ($szLine =~ /GENERAL.CONNECTION:(\s*)(\w*)/) {
+														$szResult .= "Connection: $2<br>";
+														#my $szConnectionType = $2;
+														#if ($szConnectionType eq "Wired")
+														
+													}
+
+													if ($szLine =~ /IP4.DNS\[1\]:(\s*)(\S*)/) {
+														if ($szWANdevice eq $szNotFoundConst) {
+															$szWANdevice = $szDevice;	#There's DNS on this device... It's definitely the WAN adapter..
+														}
+														
+														if ($szWANdevice ne $szDevice)
+														{
+															$szWAN .= "<p>WAN adapter was set to $szWANdevice, but $szDevice has DNS, so it's most likely the WAN adapter! You should check into this!<p>";
+															
+														}
+														else
+														{
+															$szDNS = $2;
+														}
+														$szResult .= "DNS: $2<br>";
+														#my $szConnectionType = $2;
+														#if ($szConnectionType eq "Wired")
+														
+													}
+																			
+												}
+												
+											}
+											#$new = "<b>".$szResult."</b><br>".$new;
+											$szTopic .= "<br>".$szResult."<br>";
+										} else {
+											if ($szTopic eq "df") {
+												my @lines = split /\n/, $szFound;
+												my $szResult = "<br>";
+												foreach my $szLine (@lines) {
+													#$szResult .= "Checking $szLine: ";
+													if ($szLine =~ /(\d+)%(\s+)(\S+?)/) {
+														my $nPercent = $1 +0;
+														if ($nPercent >60) {
+															$szResult .= "<font color=\"red\">More than 60% ($nPercent) used on $2</font><br>Time to delete some log files?";
+														}
+													}
+													else
+													{
+														$szResult .= "Does not contain %: $szLine<br>";
+													}
+
+													######################################
+												}
+												$szTopic .= $szResult;
+											} else {
+												if ($szTopic eq "ps" || $szTopic eq "lspci" || $szTopic eq "lsusb") {
+													$szTopic = 'FYI: '.$szTopic;
+												} else {
+													if ($szTopic eq "ifconfig") {
+														my $szInterface = "";
+														my @lines = split /\n/, $szFound;
+														my $szResult = "<br>";
+														#Parse the lines looking for network devices. 
+														foreach my $szLine (@lines) {
+															#Check if it's an interface..
+															if ($szLine =~ /^(\w+) (.*)/) {
+																$szInterface = $1;
+																if ($szInterface ne "lo") {
+																	$szTopic .= "<br>Found: $1";
+																}
+															}
+															
+															if ($szLine =~ /inet addr:(\S*)/) {
+																my $szIP = $1;
+																if ($szInterface ne "lo") {
+																	$szTopic .= " $szIP";
+																	
+																	if ($szIP eq "192.168.0.1") {
+																		#Internal nic found... asdfasdf
+																		#$szLAN .= "Internal network found: $szInterface"; 
+																		if ($szLANdevice eq $szNotFoundConst) {
+																			$szLANdevice = $szInterface;
+																		} else {
+																			$szLAN .= "LAN mismatch: $szLANdevice while ifconfig suggests $szInterface";
+																		}
+																	}
+																	else {
+																		$szTopic .= "Other IP: $szIP";
+																	}
+																}
+															} #else {
+															#	$szTopic .= "Other line: $szLine";
+															#}
+															
+															
+															
+														}
+
+														
+													} else {
+														$szTopic = '<font color="red">Unhandled: '.$szTopic.'</font>';
+													}
+													
+													
+													
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		
+		$szHtml .= "<tr><td>$szTopic</td><td>$new</td></tr>\n";
+
+		#foreach (@strings) {
+		#	my @cFound = $_;
+		#	print "First: ".$cFound[0]."\n";
+		#}
+		#print $szFound."\n";
+		#my $nOffset = $nFoundLength +10;
+		$file_content =$szTheRest; #substr $file_content, $nOffset;
+	}
+	else {
+		last;
+	}
+	
+}
+
+
+#Check server load
+open $fh, '<', "/proc/loadavg" or die "Can't open file $!";
+my $new = do { local $/; <$fh> };
+close $fh;
+
+$szHtml .= "<tr><td>loadavg</td><td>$new</td></tr>\n";
+
+
+$szHtml .= "</table>";
+
+#Check found setup with database
+my $dsn = "DBI:mysql:database=$database;host=$hostname;port=$port";
+my $dbh = DBI->connect($dsn, $user, $password);
+my $sth = $dbh->prepare(
+        'select WAN, LAN from setup')
+        or die "prepare statement failed: $dbh->errstr()";
+$sth->execute() or die "execution failed: $dbh->errstr()";
+if (my $cSetup = $sth->fetchrow_hashref()) 
+{
+	if ($szWANdevice ne $cSetup->{'WAN'}) {
+		$szWAN .= "<br>WAN adapter configuration mismatch: Database: ".$cSetup->{'WAN'}.", log examination: $szWANdevice";
+	}
+
+	if ($szLANdevice ne $cSetup->{'LAN'}) {
+		$szLAN .= "<br>LAN adapter configuration mismatch: Database: ".$cSetup->{'LAN'}.", log examination: $szLANdevice";
+	}
+	
+	if ($cSetup->{'WAN'} eq "" || $cSetup->{'LAN'} eq "")
+	{
+		$szWAN .= "Either LAN or WAN is not registered in the database. This will probably cause problem for some of the routines.";
+	}
+	
+} else {
+	print '<font color="red">Unable to read setup!</font>';
+}
+
+
+print "<h2>Configuration summary</h2>";
+print "<table><tr><td>WAN device:</td><td>$szWANdevice</td></tr>\n";
+print "<tr><td>LAN device</td><td>$szLANdevice</td></tr>\n";
+print "<tr><td>Gateway</td><td>$szGateway</td></tr>\n";
+print "<tr><td>LAN device IP</td><td>$szWANdeviceIP</td></tr>\n";
+print "</table>";
+
+if ($szWAN eq "" && $szLAN eq "")
+{
+	print '<font color="green"><br>Your server setup seems to be correct and all systems working!</b></font><br><br>';
+}
+else
+{
+	print "<h2>WAN info</h2>";
+	print '<font color="red">'.$szWAN.'</font>';
+	print "<h2>LAN info</h2>";
+	print '<font color="red">'.$szLAN.'</font><br><br>';
+
+
+		my $szWarning = "$szWAN, $szLAN";
+		my $szSection = "";
+
+		my $database = "taransvar";
+		my $hostname = "localhost";
+		my $port = "3306";
+		my $user = "scriptUsrAces3f3";
+		my $password = "rErte8Oi98!%&e";
+
+		my $dsn = "DBI:mysql:database=$database;host=$hostname;port=$port";
+		my $dbh = DBI->connect($dsn, $user, $password);
+		my $szDBWarn = $szWarning;
+		$szDBWarn =~ s/\'/\`/ig;
+
+		my $sth = $dbh->prepare(
+			"select systemMessageId from systemMessage where seen = b'0' and message = '$szDBWarn' order by systemMessageId desc limit 1")
+			or die "prepare statement failed: $dbh->errstr()";
+		$sth->execute() or die "execution failed: $dbh->errstr()";
+		if (my $cMsg = $sth->fetchrow_hashref()) 
+		{
+			my $nMessageId = $cMsg->{'systemMessageId'};
+
+			my $sth = $dbh->prepare(
+				"update systemMessage set count = least(255,count + 1), lastDiscovered = now() where systemMessageId = $nMessageId")
+				or die "prepare statement failed: $dbh->errstr()";
+			$sth->execute() or die "execution failed: $dbh->errstr()";
+			$sth->finish();
+		}
+		else {
+			my $sth = $dbh->prepare(
+				"insert into systemMessage (message, sysSnapshotSection) values ('$szDBWarn', '$szSection')")
+				or die "prepare statement failed: $dbh->errstr()";
+			$sth->execute() or die "execution failed: $dbh->errstr()";
+			$sth->finish();
+		}
+
+}
+
+print $szHtml;
+
+
+#ip route
+#system("ip route >> $szTempFile");
+
+#open my $fTempHandle, '<', $szTempFile;
+#chomp(my @cLines = <$fTempHandle>);
+#close $fTempHandle;
+
+#foreach (@cLines) {
+ #   print "<tr><td>$_</td></tr>\n";    # Print each entry in our new array to the file
+#}
+
+#print "</table></td></tr>";
+
+print end_html();
+

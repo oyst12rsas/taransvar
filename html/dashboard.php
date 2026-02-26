@@ -1,0 +1,8 @@
+<html>
+<body>
+<h1>You are logged in...</h1>
+
+<a href="logout.php">Log out</a>
+</body>
+</html>
+
