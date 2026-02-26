@@ -30,11 +30,11 @@ apt-get install -y ipfm
 apt update -y
 apt upgrade -y
 
-read -n 1 -s -p "About to installing perl libraries (this should be checked manually..) \n"
+#read -n 1 -s -p "About to install perl libraries (this should be checked manually..)"
 PERL_MM_USE_DEFAULT=1 
 perl -MCPAN -e "URI"
 perl -MCPAN -e "LWP"
-read -n 1 -s -p "Finished installing perl libraries (this should be checked manually..) \n"
+#read -n 1 -s -p "Finished installing perl libraries (this should be checked manually..)"
 
 #if ! perl connect.pl; then
 #	read -n 1 -s  "The database is already there... So aborting the installation. Press a key."
@@ -46,7 +46,7 @@ printf "Installing the database\n"
 printf "The install routine may now generate some error message while trying to create DB user.\n"
 mysql -e "create database taransvar;"
 
-perl createUsers.pl
+perl misc/createUsers.pl
 if [ $? -eq 0 ]; then
 	printf "Able to create users...\n"
 else
@@ -56,7 +56,7 @@ fi
 
 printf "Now checking if user successfully created.. This sould not generate error..\n"
 
-perl connect.pl
+perl misc/connect.pl
 if [ $? -eq 0 ]
 then
 	printf "Successfully connected (database and user seems correct installed)..\n"
