@@ -21,8 +21,8 @@ my $szPingTestTempFile = $szSysRoot."log/pingtest.txt";
 my $database = "taransvar";
 my $hostname = "localhost";
 my $port = "3306";
-my $user = "perl";
-my $password = "RevSjoko731";
+my $user = "scriptUsrAces3f3";
+my $password = "rErte8Oi98e-2_#";
 
 my $dsn = "DBI:mysql:database=$database;host=$hostname;port=$port";
 my $dbh = DBI->connect($dsn, $user, $password);# or die "Unable to connect: $dbh->errstr()";

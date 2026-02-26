@@ -1,8 +1,4 @@
 <?php 
-/*$szDBHost = "localhost";
-$szDBDBName = "radius";
-$szDBUserName = "radiuser9";
-$szDBPass = "pass4638radiJFK";*/
 $global_PBO_connection = false;
 
 //Should implement: http://stackoverflow.com/questions/23064698/simple-search-feature-mysql-prepared-statement-issue

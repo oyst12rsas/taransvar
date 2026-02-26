@@ -6,7 +6,7 @@ use DBI;
 use Data::Dumper qw(Dumper);
 use File::Copy;
 
-use lib ('/root/taransvar/perl');
+use lib '.'; # ('/root/taransvar/perl');
 use func;
 
 #TO DO!
