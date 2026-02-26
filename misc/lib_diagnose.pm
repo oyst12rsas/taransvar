@@ -165,7 +165,7 @@ sub createUsersOk {
 		
 		if ($bUserOk) {
 
-			my $szSQL = "GRANT insert, update, delete, select ON taransvar.* TO $szUser;";
+			my $szSQL = "GRANT insert, update, delete, select ON taransvar.* TO '$szUser'@'localhost';";
 			if (runSqlCmdLineOk($szSQL)) {
 				print "Seems like able to grant privileges for user all DBs..\n";
 			} else {
