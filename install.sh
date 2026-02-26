@@ -7,6 +7,11 @@ if [ "$(id -u)" -ne 0 ]; then
         exit 1
 fi
 
+#Uses these because some scripts are also run from crontab (can't relate to current user while installing)
+mkdir /root
+mkdir /root/setup
+mkdir /root/setup/log
+
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 echo $SCRIPT_DIR
 cd $SCRIPT_DIR
