@@ -66,7 +66,11 @@ fi
 
 printf "Now checking if user successfully created.. This sould not generate error..\n"
 
-perl misc/connect.pl
+(
+	cd misc
+	perl connect.pl
+)
+
 if [ $? -eq 0 ]
 then
 	printf "Successfully connected (database and user seems correct installed)..\n"
