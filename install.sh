@@ -51,7 +51,12 @@ printf "Installing the database\n"
 printf "The install routine may now generate some error message while trying to create DB user.\n"
 mysql -e "create database taransvar;"
 
-perl misc/createUsers.pl
+(
+	#Run from misc dir because of library
+	cd misc
+	perl createUsers.pl
+)
+
 if [ $? -eq 0 ]; then
 	printf "Able to create users...\n"
 else
