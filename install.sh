@@ -130,5 +130,7 @@ fi
 printf "**** Gatekeeper is now installed ****\n\nThis system also contains routines to run your computer as a wifi hotspot\n(given that you are connected through cable but also have a wifi adapter)\n\nAbout to install hotspot now.\n\n"
 read -n 1 -s -p "Press Ctrl-C to abort or any key to coontinue."
 
-bash hotspot/distro/install.sh
-
+(
+	cd hotspot
+	bash distro/install.sh
+)

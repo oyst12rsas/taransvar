@@ -99,7 +99,10 @@ systemctl restart mysql
 
 #Network setup is handled much better by Gatekeeper system...
 #perl /root/wifi/perl/setup_network.pl 
-perl /root/wifi/perl/install.pl 
+(
+    cd perl
+    perl install.pl 
+)
 #perl /root/wifi/perl/callCheckCert.pl
 
 service cron reload
@@ -108,10 +111,6 @@ service cron reload
 mv /etc/freeradius/sites-enabled/default /etc/freeradius/sites-enabled/default.old
 cp distro/copythese/radiusdefault /etc/freeradius/sites-enabled/default
 sed -i "s/#$INCLUDE sql.conf/$INCLUDE sql.conf/"  /etc/freeradius/radiusd.conf
-
-cd ../..
-
-mv home home.old
 
 perl /root/wifi/perl/checkSleepingRunning.pl
 
