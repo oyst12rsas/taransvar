@@ -89,8 +89,8 @@ fi
 service cron reload
 
 #mariadb < ../db/create.sql
-mariadb taransvar < ../db/taransvar.sql
-mariadb taransvar < ../db/postcreate.sql
+mariadb taransvar < db/taransvar.sql
+mariadb taransvar < db/postcreate.sql
 
 echo "Database created. Copying files/"
 
@@ -99,20 +99,27 @@ mkdir /root/taransvar/perl
 cp *.* /root/taransvar/perl
 
 echo "Copying html files..."
-cp -r ../html /var/www
+cp -r html /var/www
 
-perl compile.pl install
+(
+	cd misc
+	perl compile.pl install
+)
+
 if [ $? -eq 0 ]
 then
 	printf "Successfully compiled..\n"
-	cp ../taralink/taralink /root/taransvar
+	cp taralink/taralink /root/taransvar
 else
 	printf "******* ERROR ****** Could not compile taralink...\n"
 	read -n 1 -s -p "Ctrl-C to break or press any key to coontinue"
 fi
 
-perl setup_network.pl
-perl startup.pl
+(
+	cd misc
+	perl setup_network.pl
+	perl startup.pl
+)
 #perl install.pl - nothing left here 
 
 #echo "Seems like the installation succeeded.\n\n"
@@ -120,8 +127,8 @@ perl startup.pl
 #echo "- cd ../hotspot"
 #echo "- sudo bash distro/install.sh"
 
-printf "Gatekeeper is now installed. About to install hotspot.\n"
+printf "**** Gatekeeper is now installed ****\n\nThis system also contains routines to run your computer as a wifi hotspot\n(given that you are connected through cable but also have a wifi adapter)\n\nAbout to install hotspot now.\n\n"
 read -n 1 -s -p "Press Ctrl-C to abort or any key to coontinue."
 
-bash ../hotspot/distro/install.sh
+bash hotspot/distro/install.sh
 

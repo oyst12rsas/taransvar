@@ -1,0 +1,3 @@
+To do
+
+- Currently, copies the perl scripts to /root/taransvar/perl for running as cron script... should be able to sed the crontab file and run from installed directory.
