@@ -64,7 +64,7 @@ class CDb extends CBasic
 		$szDBHost = "localhost";
 		$szDBDBName = "taransvar";
 		$szDBUserName = "scriptUsrAces3f3";
-		$szDBPass = "rErte8Oi98!%&e";
+		$szDBPass = "rErte8Oi98e-2_#";//"rErte8Oi98!%&e";
 		}
 		
             try {

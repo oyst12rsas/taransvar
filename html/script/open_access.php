@@ -25,8 +25,8 @@ function getConnection()
 {
 	$servername = "localhost";
 	$username = "scriptUsrAces3f3";
-	$password = "rErte8Oi98!%&e";
-	$dbname = "absecurity";
+	$password = "rErte8Oi98e-2_#"; //"rErte8Oi98!%&e";
+	$dbname = "taransvar";
 
 	// Create connection
 	$conn = new mysqli($servername, $username, $password, $dbname);

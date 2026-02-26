@@ -132,7 +132,8 @@ sub createUsersOk {
 	#So trying first 1 then 2
 
 	my @users = (
-		['scriptUsrAces3f3','rErte8Oi98!%&e']
+		['scriptUsrAces3f3','rErte8Oi98e-2_#']
+#		['scriptUsrAces3f3','rErte8Oi98!%&e']	- old password (changed 260225)
 #		['perl','RevSjoko731'],
 #		['perl1','dJuAmmy25@6fDw1'],
 #		['radiuser9','pass4638radiJFK']
