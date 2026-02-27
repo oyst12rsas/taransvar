@@ -570,8 +570,8 @@ sub setupWifiNicAsHotspot {
     print "Using internet interface: $internet_interface\n";
 
     #print "Enter your (short) name (it will be part of the SSID for the hotspot): ";
-    chomp(my $szName = <STDIN>);
-    my $ssid = "Taransvar Hotspot";
+    #chomp(my $szName = <STDIN>);
+    my $ssid = "Taransvar_Hotspot";
     
     #print "Enter WPA passphrase (min 8 characters): ";
     #chomp(my $wpa_passphrase = <STDIN>);

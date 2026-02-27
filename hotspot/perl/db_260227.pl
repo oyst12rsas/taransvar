@@ -216,41 +216,58 @@ $sth = $dbUpdate->prepare($szSQL) or die "prepare statement failed: $dbh->errstr
 $sth->execute() or die "$szSQL: execution failed: $dbh->errstr()";
 
 my @NewCommentsFile;                  # make an array to store new file lines
-
-#1) Reset (optional but recommended while testing)
+push(@NewCommentsFile, "/sbin/iptables -t nat -F PREROUTING\n");
+push(@NewCommentsFile, "/sbin/iptables -t nat -F POSTROUTING\n");
 push(@NewCommentsFile, "/sbin/iptables -F\n");
-push(@NewCommentsFile, "/sbin/iptables -t nat -F\n");
 push(@NewCommentsFile, "/sbin/iptables -P FORWARD DROP\n");
 push(@NewCommentsFile, "/sbin/iptables -P INPUT DROP\n");
 push(@NewCommentsFile, "/sbin/iptables -P OUTPUT DROP\n");	#OT 250226
 
-#2) Always allow loopback + established traffic (this prevents random breakage)
-push(@NewCommentsFile, "/sbin/iptables -A INPUT  -i lo -j ACCEPT\n");
-push(@NewCommentsFile, "/sbin/iptables -A OUTPUT -o lo -j ACCEPT\n");
-push(@NewCommentsFile, "/sbin/iptables -A INPUT  -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n");
-push(@NewCommentsFile, "/sbin/iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n");
-
-#3) Allow DHCP on Wi-Fi (ISC DHCP server)
-#Client → server: udp 68 → 67, server → client: udp 67 → 68
-push(@NewCommentsFile, "/sbin/iptables -A INPUT  -i $szServerInternalNic -p udp --sport 68 --dport 67 -j ACCEPT\n");
-push(@NewCommentsFile, "/sbin/iptables -A OUTPUT -o $szServerInternalNic -p udp --sport 67 --dport 68 -j ACCEPT\n");
-
-#4) Allow clients to reach the portal on TCP/80 (local INPUT)
-push(@NewCommentsFile, "/sbin/iptables -A INPUT  -i $szServerInternalNic -p tcp --dport 80 -j ACCEPT\n");
-push(@NewCommentsFile, "/sbin/iptables -A OUTPUT -o $szServerInternalNic -p tcp --sport 80 -j ACCEPT\n");
-
-#5) Force HTTP to the portal (optional, but matches your “always end up on login” for HTTP)
-push(@NewCommentsFile, "/sbin/iptables -t nat -A PREROUTING -i $szServerInternalNic -p tcp --dport 80 -j REDIRECT --to-ports 80\n");
-
-#6) NAT for later (internet after login)
 push(@NewCommentsFile, "/sbin/iptables -t nat -A POSTROUTING -o $szServerExternalNic -j MASQUERADE\n");
 
-#7) After login, whitelist the client (add rules dynamically)
-#When a client logs in and you want to allow them out:
+#Allow all on localhost
+push(@NewCommentsFile, "/sbin/iptables -A INPUT -i lo -j ACCEPT\n");
+push(@NewCommentsFile, "/sbin/iptables -A OUTPUT -o lo -j ACCEPT\n");
+#push(@NewCommentsFile, "/sbin/iptables -A -s lo -j ACCEPT\n");
+#push(@NewCommentsFile, "/sbin/iptables -A -o lo -j ACCEPT\n");
 
+#Allow DNS
+push(@NewCommentsFile, "/sbin/iptables -A FORWARD -p udp --dport 53 -m state --state NEW,ESTABLISHED -j ACCEPT\n");
+push(@NewCommentsFile, "/sbin/iptables -A OUTPUT -o $szServerExternalNic -p udp --dport 53 -m state --state NEW,ESTABLISHED -j ACCEPT\n");
+push(@NewCommentsFile, "/sbin/iptables -A INPUT -i $szServerExternalNic -p udp --sport 53 -m state --state ESTABLISHED,RELATED -j ACCEPT\n");
 
+#Allow dhcp
+push(@NewCommentsFile, "/sbin/iptables -A INPUT -i $szServerInternalNic -p udp --dport 67:68 --sport 67:68 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT\n");
+push(@NewCommentsFile, "/sbin/iptables -A OUTPUT -o $szServerInternalNic -p udp --sport 67:68 --dport 67:68 -m state --state ESTABLISHED,RELATED -j ACCEPT\n");
 
+push(@NewCommentsFile, "/sbin/iptables -A OUTPUT -o $szServerExternalNic -p udp --sport 68 --dport 67 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT\n");
+push(@NewCommentsFile, "/sbin/iptables -A INPUT -i $szServerExternalNic -p udp --dport 68 --sport 67 -m state --state ESTABLISHED,RELATED -j ACCEPT\n");
 
+#Allow NTP
+push(@NewCommentsFile, "/sbin/iptables -A OUTPUT -p udp --dport 123 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT\n");
+push(@NewCommentsFile, "/sbin/iptables -A INPUT -p udp --sport 123 -m state --state ESTABLISHED,RELATED -j ACCEPT\n");
+
+#Allow internal ping
+push(@NewCommentsFile, "/sbin/iptables -A INPUT -p icmp --icmp-type 8 -s 0/0 -d $szServerInternalIp -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT\n");
+push(@NewCommentsFile, "/sbin/iptables -A OUTPUT -p icmp --icmp-type 0 -s $szServerInternalIp -d 0/0 -m state --state ESTABLISHED,RELATED -j ACCEPT\n");
+
+#Allow external ping
+push(@NewCommentsFile, "/sbin/iptables -A OUTPUT -p icmp --icmp-type 8 -o $szServerExternalNic -d 0/0 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT\n");
+push(@NewCommentsFile, "/sbin/iptables -A INPUT -p icmp --icmp-type 0 -s 0/0 -i $szServerExternalNic -m state --state ESTABLISHED,RELATED -j ACCEPT\n");
+
+#Allow external whois
+push(@NewCommentsFile, "/sbin/iptables -A OUTPUT -o $szServerExternalNic -p udp --dport 43 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT\n");
+push(@NewCommentsFile, "/sbin/iptables -A INPUT -i $szServerExternalNic -p udp --sport 43 -m state --state ESTABLISHED,RELATED -j ACCEPT\n");
+push(@NewCommentsFile, "/sbin/iptables -A OUTPUT -o $szServerExternalNic -p tcp --dport 43 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT\n");
+push(@NewCommentsFile, "/sbin/iptables -A INPUT -i $szServerExternalNic -p tcp --sport 43 -m state --state ESTABLISHED,RELATED -j ACCEPT\n");
+
+#Allow Linux updates
+push(@NewCommentsFile, "/sbin/iptables -A OUTPUT -o $szServerExternalNic -d 91.189.88.152 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT\n");
+push(@NewCommentsFile, "/sbin/iptables -A INPUT -i $szServerExternalNic -s 91.189.88.152 -m state --state ESTABLISHED,RELATED -j ACCEPT\n");
+
+#Not in use, so no longer: Allow spesific Radius server 
+#push(@NewCommentsFile, "/sbin/iptables -A INPUT  -s 192.168.100.12 -p udp --dport 1812 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT\n");
+#push(@NewCommentsFile, "/sbin/iptables -A OUTPUT -d 192.168.100.12 -p udp --sport 1812 -m state --state ESTABLISHED,RELATED -j ACCEPT\n");
 
 
 
@@ -266,7 +283,6 @@ while (my $ref = $sth->fetchrow_hashref())
     print "Radius server found: $szRadiusServerIP\n";
 
     #Allow spesific Radius server 
-
     push(@NewCommentsFile, "/sbin/iptables -A INPUT  -s $szRadiusServerIP -p udp --dport 1812 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT\n");
     push(@NewCommentsFile, "/sbin/iptables -A OUTPUT -d $szRadiusServerIP -p udp --sport 1812 -m state --state ESTABLISHED,RELATED -j ACCEPT\n");
 }
@@ -291,17 +307,12 @@ while (my $ref = $sth->fetchrow_hashref())
 	my $nAccess = $ref->{'hasaccess'};
 	if ($nAccess) {
 		$szAccessText = "Has access";
-		#my $line = "/sbin/iptables -t nat -A PREROUTING -i $szServerInternalNic -s $szIp -j ACCEPT\n"; 
-		#push(@NewCommentsFile, $line);    
-
-		push(@NewCommentsFile, "/sbin/iptables -I FORWARD 1 -i $szServerInternalNic -s $szIp -o $szServerExternalNic -m conntrack --ctstate NEW,ESTABLISHED,RELATED -j ACCEPT");
-		push(@NewCommentsFile, "/sbin/iptables -I FORWARD 2 -i $szServerExternalNic -d $szIp -o $szServerInternalNic -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT");
-
-		#push(@NewCommentsFile, $line);    
-		#$line = "/sbin/iptables -A FORWARD -i $szServerInternalNic -s $szIp -j ACCEPT\n"; 
-		#push(@NewCommentsFile, $line);    
-		#$line = "/sbin/iptables -A FORWARD -o $szServerInternalNic -d $szIp -j ACCEPT\n"; 
-		#push(@NewCommentsFile, $line);    
+		my $line = "/sbin/iptables -t nat -A PREROUTING -i $szServerInternalNic -s $szIp -j ACCEPT\n"; 
+		push(@NewCommentsFile, $line);    
+		$line = "/sbin/iptables -A FORWARD -i $szServerInternalNic -s $szIp -j ACCEPT\n"; 
+		push(@NewCommentsFile, $line);    
+		$line = "/sbin/iptables -A FORWARD -o $szServerInternalNic -d $szIp -j ACCEPT\n"; 
+		push(@NewCommentsFile, $line);    
 	}
 	else {
 		$szAccessText = "NO ACCESS";

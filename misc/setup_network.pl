@@ -312,6 +312,7 @@ subnet 192.168.$szIternalNett.0 netmask 255.255.255.0 {
     option subnet-mask 255.255.255.0;
     option broadcast-address 192.168.$szIternalNett.255; 
     option routers 192.168.$szIternalNett.1;
+    option domain-name-servers 1.1.1.1, 8.8.8.8;    
 } ";
 	
 	print $szWrite;

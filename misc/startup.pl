@@ -19,7 +19,7 @@ sub add {
 	open(my $fh, '>>', $filename) or die "Could not open file '$filename' $!";
 	print $fh getNiceTimestamp().": $szTxt\n";
 	close $fh;
-	print "done\n";
+	print $szTxt."\n";
 }
 
 

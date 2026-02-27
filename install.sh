@@ -96,7 +96,7 @@ echo "Database created. Copying files/"
 
 mkdir /root/taransvar
 mkdir /root/taransvar/perl
-cp *.* /root/taransvar/perl
+cp misc/*.* /root/taransvar/perl
 
 echo "Copying html files..."
 cp -r html /var/www
