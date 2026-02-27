@@ -3,6 +3,17 @@ use warnings;
 use autodie;
 use DBI;
 
+sub sleepingBeautyCount {
+	#NOTE! This function is in both checkSleepingRunning.pl and sleepingBeauty.pl (put in lib file)
+        my @pids = `pgrep -f 'perl .*sleepingbeauty\\.pl'`;
+        chomp @pids;
+        my $nBeautiesFound = scalar @pids;
+
+        print "Running sleepingbeauty instances: $nBeautiesFound\n";
+        return $nBeautiesFound;
+}
+
+
 #my $szSysRoot = "/home/setup/";
 my $szSysRoot = "/root/wifi/";
 
@@ -14,24 +25,9 @@ my $nCounts = 0;
 
 while (1)
 {
-    system("ps -aux | grep sleepingbeauty > $szTempFile");
 
-    open my $info, $szTempFile or die "Could not open $szTempFile: $!";
-    my $nBeautiesFound = 0;
+    my $nBeautiesFound = sleepingBeautyCount();
 
-    while( my $line = <$info>)  {   
-        #if (index($line, "sleepingbeauty.pl") != -1) 
-        #if ($line =~ /\d:\d\d perl \S*perl\/sleepingbeauty/)
-        if ($line =~ /perl \S*perl\/sleepingbeauty/)
-        {
-	        print "Found: $line";    
-		    $nBeautiesFound++;
-	    } else {
-            print "Not..: $line";    
-        }
-    }
-
-    close $info;
     my $szDatestring = gmtime();
 
     if ($nBeautiesFound)

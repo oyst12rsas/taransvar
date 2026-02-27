@@ -6,6 +6,16 @@ use DBI;
 use lib ('/root/taransvar/perl');
 use func;	#NOTE! See comment above regarding lib..
 
+sub sleepingBeautyCount {
+       #NOTE! This function is in both checkSleepingRunning.pl and sleepingBeauty.pl (put in lib file)
+	my @pids = `pgrep -f 'perl .*sleepingbeauty\\.pl'`;
+	chomp @pids;
+	my $nBeautiesFound = scalar @pids;
+
+	print "Running sleepingbeauty instances: $nBeautiesFound\n";
+	return $nBeautiesFound;
+}
+
 #my $szSysRoot = "/home/setup/";
 my $szSysRoot = "/root/wifi/";
 
@@ -17,24 +27,14 @@ my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
 open(my $fLogH, '>', $szLogFile) or die "Could not open log file '$szLogFile' $!";
 print $fLogH "sleepingbeauty started $hour:$min:$sec\n";
 
-system("ps -aux | grep sleepingbeauty > $szTempFile");
+#my @pids = `pgrep -f 'perl .*sleepingbeauty\\.pl'`;
+#chomp @pids;
+#my $nBeautiesFound = scalar @pids;
 
-open my $info, $szTempFile or die "Could not open $szTempFile: $!";
-my $nBeautiesFound = 0;
+#print "Running sleepingbeauty instances: $nBeautiesFound\n";
+my $nBeautiesFound = sleepingBeautyCount();
 
-while( my $line = <$info>)  {   
-	print $line;    
-
-    #if (index($line, "sleepingbeauty.pl") != -1) 
-    if ($line =~ /\d:\d\d \S*perl \S*perl\/sleepingbeauty/)
-    {
-		$nBeautiesFound++;
-	}
-}
-
-close $info;
-
-if ($nBeautiesFound > 1)
+if ($nBeautiesFound > 3)
 {
     my $szTxt = "$nBeautiesFound beauties found (including this one)... exiting...\n";
 	print $szTxt;
