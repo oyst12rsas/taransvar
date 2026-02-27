@@ -294,8 +294,8 @@ while (my $ref = $sth->fetchrow_hashref())
 		#my $line = "/sbin/iptables -t nat -A PREROUTING -i $szServerInternalNic -s $szIp -j ACCEPT\n"; 
 		#push(@NewCommentsFile, $line);    
 
-		push(@NewCommentsFile, "/sbin/iptables -I FORWARD 1 -i $szServerInternalNic -s $szIp -o $szServerExternalNic -m conntrack --ctstate NEW,ESTABLISHED,RELATED -j ACCEPT");
-		push(@NewCommentsFile, "/sbin/iptables -I FORWARD 2 -i $szServerExternalNic -d $szIp -o $szServerInternalNic -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT");
+		push(@NewCommentsFile, "/sbin/iptables -I FORWARD 1 -i $szServerInternalNic -s $szIp -o $szServerExternalNic -m conntrack --ctstate NEW,ESTABLISHED,RELATED -j ACCEPT\n");
+		push(@NewCommentsFile, "/sbin/iptables -I FORWARD 2 -i $szServerExternalNic -d $szIp -o $szServerInternalNic -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n");
 
 		#push(@NewCommentsFile, $line);    
 		#$line = "/sbin/iptables -A FORWARD -i $szServerInternalNic -s $szIp -j ACCEPT\n"; 
@@ -309,15 +309,7 @@ while (my $ref = $sth->fetchrow_hashref())
 
 	print "$szIp, $szAccessText\n";
 }
-    $sth->finish;
-    
- #Grant access to hotspot login screen (all http is forarded to internal web server)
- push(@NewCommentsFile, "/sbin/iptables -t nat -A PREROUTING -i $szServerInternalNic -p tcp -j DNAT --to $szLoginPage\n");
- #New test - then accept it...
- push(@NewCommentsFile, "/sbin/iptables -A INPUT -i $szServerInternalNic -d $szServerInternalIp -j ACCEPT\n");
- 
- push(@NewCommentsFile, "/sbin/iptables -A FORWARD -o $szServerInternalNic -j ACCEPT\n");	#Maybe this is wrong?
- push(@NewCommentsFile, "/sbin/iptables -A OUTPUT -o $szServerInternalNic -s $szServerInternalIp -j ACCEPT\n");	#and this is correct? OT 250226
+$sth->finish;
  
 #Add iptables rules from web interface
 #my $szIpTablesFromWebFile = "/var/www/html/temp/iptablesTemplates.txt";
