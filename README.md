@@ -15,3 +15,7 @@ If you're too impatient to check document... To clone the project to your comput
 
 You can also try it yourself without installing:
 ... we're working on it... Please ask us if you're interested.
+
+
+Known issues:
+- (Wnen running install again??): it "hangs" on sudo apt install iptables-persistent until you press enter. This is a known linux issue
