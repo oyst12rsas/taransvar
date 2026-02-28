@@ -19,3 +19,5 @@ You can also try it yourself without installing:
 
 Known issues:
 - (Wnen running install again??): it "hangs" on sudo apt install iptables-persistent until you press enter. This is a known linux issue
+- misc/startup.pl is supposed to run on startup to set up network properly. Run it manually if trouble.
+- there's also misc/diagnsoe.pl A if problems (A means it's the main server with clients (check top of script)
