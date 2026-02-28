@@ -571,7 +571,8 @@ sub setupWifiNicAsHotspot {
 
     #print "Enter your (short) name (it will be part of the SSID for the hotspot): ";
     #chomp(my $szName = <STDIN>);
-    my $ssid = "Taransvar_Hotspot";
+	my $random_number = int(rand(99)) + 1;
+    my $ssid = "Taransvar_Hotspot$random_number";
     
     #print "Enter WPA passphrase (min 8 characters): ";
     #chomp(my $wpa_passphrase = <STDIN>);
@@ -585,7 +586,6 @@ sub setupWifiNicAsHotspot {
     run_command("sudo apt install hostapd");
     run_command("sudo apt install iptables-persistent");
     
-
     run_command("sudo systemctl unmask hostapd");
     run_command("sudo systemctl enable hostapd");
 
