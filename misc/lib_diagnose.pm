@@ -139,7 +139,7 @@ sub createUsersOk {
 	#my $dbh = getConnection();
 	my $bOk = 1;
 
-	for (my $n = 0; $n < 1; $n++) {
+	for (my $n = 0; $n < @users; $n++) {
 		my $szUser = $users[$n][0];
 		my $bUserOk = 1;
 		if (!mysqlUserExist($szUser)) {

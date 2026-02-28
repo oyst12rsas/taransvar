@@ -118,7 +118,6 @@ fi
 (
 	cd misc
 	perl setup_network.pl
-	perl startup.pl
 )
 #perl install.pl - nothing left here 
 
@@ -127,10 +126,33 @@ fi
 #echo "- cd ../hotspot"
 #echo "- sudo bash distro/install.sh"
 
-printf "**** Gatekeeper is now installed ****\n\nThis system also contains routines to run your computer as a wifi hotspot\n(given that you are connected through cable but also have a wifi adapter)\n\nAbout to install hotspot now.\n\n"
-read -n 1 -s -p "Press Ctrl-C to abort or any key to coontinue."
+printf "**** Gatekeeper is now installed ****\n\nThis system also contains routines to run your computer as a wifi hotspot\n"
+printf "It requies that you have an additional network device and will share the one in which you're not connected to internet with others\n\n"
+
+#read -n 1 -s -p "Press Ctrl-C to abort or any key to coontinue."
+
+read -p "Do you want to install the hotspot system? [y/n]: " answer
+
+# Convert input to lowercase to handle 'Y' or 'y'
+case "$answer" in
+    [yY][eE][sS]|[yY])
+        echo "Installing hotspot..."
+		pause 10
+        (
+			cd hotspot
+			bash distro/install.sh
+		)
+        ;;
+    *)
+        echo "Skipping hotspot installation"
+		pause 10
+        exit 1
+        ;;
+esac
 
 (
-	cd hotspot
-	bash distro/install.sh
+	cd misc
+	perl setup_network.pl
+	perl startup.pl
 )
+
