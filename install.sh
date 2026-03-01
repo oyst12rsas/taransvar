@@ -15,15 +15,17 @@ mkdir /root/setup/log
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 echo $SCRIPT_DIR
 cd $SCRIPT_DIR
-#read -p "Press enter to continue"
-#echo "Press x to exit the script"
-#read -n 1 -p "Input Selection:" mainmenuinput
-
+printf "\nInstalling Taransvar Cyber Solution\n"
+read -t 5 -p "Continuing in 5 seconds..."
 printf "Installing required linux packages...\n"  
 
 apt update -y
-apt-get install -y mariadb-server apache2
-apt-get install -y perl libdbd-mysql-perl libmariadb-dev libmnl-dev
+if [ -d /var/lib/mysql ] && [ "$(ls -A /var/lib/mysql 2>/dev/null)" ]; then
+    echo "Existing database data detected — skipping MariaDB install"
+else
+    apt-get install -y mariadb-server
+fi
+apt-get install -y apache2 perl libdbd-mysql-perl libmariadb-dev libmnl-dev
 apt-get install -y php libapache2-mod-php php-mysql
 apt-get install -y gcc make curl libcurl4-openssl-dev dhcpdump net-tools conntrack
 apt-get install -y libdbi-perl libdbd-mysql-perl conntrack dhcpdump isc-dhcp-server
@@ -137,7 +139,7 @@ read -p "Do you want to install the hotspot system? [y/n]: " answer
 case "$answer" in
     [yY][eE][sS]|[yY])
         echo "Installing hotspot..."
-		pause 10
+		read -t 5 -p "Continuing in 5 seconds..."
         (
 			cd hotspot
 			bash distro/install.sh
@@ -145,7 +147,7 @@ case "$answer" in
         ;;
     *)
         echo "Skipping hotspot installation"
-		pause 10
+		read -t 5 -p "Continuing in 5 seconds..."
         exit 1
         ;;
 esac
