@@ -539,7 +539,7 @@ sub OLD_VERSION_start_process_dhcpdump {
 sub start_process_dhcpdump {
     my ($iface) = @_;
 
-    if (programWithParamsRunning("dhcp_capture.pl"))
+    if (programWithParamsRunning("dhcp_capture.pl") || programWithParamsRunning("tshark -i $iface"))
     {
         print "*************** dhcp_capture.pl already running on $iface\n";
         return;

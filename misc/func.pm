@@ -246,7 +246,7 @@ sub ipOfDevice {
 sub programWithParamsRunning {
 	#Call it with e.g "tshark -i wlp1n0"
     my ($cmd) = @_;
-	my $szPsLog = qx("ps -aux | grep \"$cmd\"");
+	my $szPsLog = `ps -aux | grep "$cmd"`;
 	my @lines = split("\n", $szPsLog);
 	foreach (@lines) {
 		#print "Checking $_\n";
