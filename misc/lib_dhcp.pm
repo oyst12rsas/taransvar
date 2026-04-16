@@ -16,7 +16,7 @@ our @ISA= qw( Exporter );
 our @EXPORT_OK = qw();
 
 # these are exported by default.
-our @EXPORT = qw(get_tshark_args getTsharkStartParams start_process_dhcpdump process_dhcpdump_testing checkArchiveDhcpFiles dhcpServerStatusOk );
+our @EXPORT = qw(get_tshark_args start_process_dhcpdump process_dhcpdump_testing checkArchiveDhcpFiles dhcpServerStatusOk );
 
 use autodie;
 use DBI;
@@ -510,25 +510,15 @@ sub get_tshark_args {
     );
 }
 
-#	sudo tshark -i wlx088af12de289 -l -nn -Y 'bootp' -T fields -e frame.time_epoch -e ip.src -e ip.dst -e bootp.hw.mac_addr -e bootp.ip.your -e bootp.option.hostname -e bootp.option.vendor_class_id -e bootp.option.dhcp
-sub getTsharkStartParams {
-	#Called both when starting tshark in process_dhcpdump and dhcp_capture.pl (infinite process reading DHCP records)
-	print "getTsharkStartParams() shouldn't be called anymore.\n";
-	return 1/0;
-	my ($iface) = @_;
-	my $cArgs = join(" ", get_tshark_args($iface));
-	return $cArgs;
-}
 
-
-sub process_dhcpdump {
+sub OLD_VERSION_start_process_dhcpdump {
     my ($iface) = @_;
     if (is_tshark_running($iface)) {
-        print "tshark already running on $iface\n";
+        print "*************** tshark already running on $iface\n";
         return;
     }
 
-    print "Starting tshark DHCP capture on $iface...\n";
+    print "**************** Starting tshark DHCP capture on $iface...\n";
 
 	my $cmd = join(" ", get_tshark_args($iface));
 
@@ -538,12 +528,43 @@ sub process_dhcpdump {
 	die "fork failed: $!" unless defined $pid;
 
 	if ($pid == 0) {
-    	exec("/usr/bin/perl", "/root/taransvar/perl/dhcp_capture.pl")
+    	exec("/usr/bin/perl", "/root/taransvar/perl/dhcp_capture.pl $iface")
         	or die "exec failed: $!";
 	}
 
-	print "Started dhcp_capture.pl with PID $pid\n$cmd\n";
+	print "******************* Started dhcp_capture.pl with PID $pid\n$cmd\n";
 }
+
+
+sub start_process_dhcpdump {
+    my ($iface) = @_;
+
+    if (programWithParamsRunning("dhcp_capture.pl"))
+    {
+        print "*************** dhcp_capture.pl already running on $iface\n";
+        return;
+    }
+
+	my $pid = fork();
+	die "fork failed: $!" unless defined $pid;
+
+    if ($pid)
+    {
+        #This is the original process... continue
+        return;
+    }
+
+    #now, this is the newly created child process. 
+
+    print "**************** Starting tshark DHCP capture on $iface...\n";
+
+    my $szScript = "/root/taransvar/perl/dhcp_capture.pl";
+  	exec("/usr/bin/perl", $szScript, $iface)
+        	or die "exec failed: $!";
+
+    print "************ Started dhcp_capture.pl with PID $pid: $szScript $iface\n";
+}
+
 
 
 sub checkArchiveDhcpFiles {
@@ -698,6 +719,3 @@ sub dhcpServerStatusOk {
 }
 
 1;
-
-
-

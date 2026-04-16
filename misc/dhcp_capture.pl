@@ -1,7 +1,10 @@
 #dhcp_capture.pl
 
-#use lib ('/root/taransvar/perl');
-use lib ('.');
+#Check if records are being added: 
+#select * from dhcpEvent order by dhcpEventId desc limit 5;
+
+use lib ('/root/taransvar/perl');
+#use lib ('.');
 		
 use strict;
 use warnings;
@@ -28,21 +31,6 @@ use POSIX qw(strftime);
 
 my $pidfile = "/tmp/dhcp_capture.pid";
 
-sub already_running_removed {
-    if (-f $pidfile) {
-        open my $pf, "<", $pidfile or die "Cannot open $pidfile: $!";
-        my $oldpid = <$pf>;
-        close $pf;
-        chomp $oldpid;
-
-        if ($oldpid && $oldpid =~ /^\d+$/ && kill 0, $oldpid) {
-            print "dhcp_capture.pl already running with PID $oldpid\n";
-            return 1;
-        }
-    }
-    return 0;
-}
-
 sub write_pidfile {
     open my $pf, ">", $pidfile or die "Cannot write $pidfile: $!";
     print $pf "$$\n";
@@ -52,8 +40,6 @@ sub write_pidfile {
 END {
     unlink $pidfile if -f $pidfile;
 }
-
-
 
 sub ip_to_int_or_undef {
     my ($ip) = @_;

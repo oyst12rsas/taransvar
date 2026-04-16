@@ -280,6 +280,7 @@ EOF
     system($file) == 0
         or die "Applying iptables script failed\n";
 
+    #If script didn't abort by now, we assume it's ok and abort the rollback
     if (defined $rollback_pid && $rollback_pid =~ /^\d+$/) {
         kill 'TERM', $rollback_pid;
         print "Rollback timer cancelled after successful apply.\n";

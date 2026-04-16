@@ -246,7 +246,7 @@ sub ipOfDevice {
 sub programWithParamsRunning {
 	#Call it with e.g "tshark -i wlp1n0"
     my ($cmd) = @_;
-	my $szPsLog = getDumpTxt("ps -aux | grep \"$cmd\"");
+	my $szPsLog = qx("ps -aux | grep \"$cmd\"");
 	my @lines = split("\n", $szPsLog);
 	foreach (@lines) {
 		#print "Checking $_\n";
@@ -343,11 +343,13 @@ sub getFileLines {
 
 sub getDumpTxt {
 	my ($szCmdLine) = @_;
-	my $szLogFile = getSysRoot()."/log/getDumpTxt.txt";
-	system("$szCmdLine > $szLogFile");
-	my $szDump = getFileContents($szLogFile);
-	#print "getDumpText returning:\n$szDump\n<end of dump>\n";
-	return $szDump;
+    # better use `commandline`  or  qx(commandline)
+	return qx($szCmdLine);
+#	my $szLogFile = getSysRoot()."/log/getDumpTxt.txt";
+#	system("$szCmdLine > $szLogFile");
+#	my $szDump = getFileContents($szLogFile);
+#	#print "getDumpText returning:\n$szDump\n<end of dump>\n";
+#	return $szDump;
 }
 
 sub uptime {
