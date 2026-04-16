@@ -21,6 +21,88 @@ use lib_net;
 
 use POSIX qw(setsid);
 
+sub check_dhcpEvent {
+	my ($conn) = @_;
+	my $szSQL = "select dhcpEventId, seenAt, interfaceName, srcIp, inet_ntoa(srcIp) as src, dstIp, inet_ntoa(dstIp) as dst, clientMac, yourIp, inet_ntoa(yourIp) as aYourIp, coalesce(hostname,'') as hostname, vendorClass, dhcpMessageType from dhcpEvent where handled = 0 limit 10";
+
+	my $sth = $conn->prepare($szSQL);
+	print "Handling unhandled dhcpEvent records\n";
+	$sth->execute() or die "execution failed: $sth->errstr()";
+	my $lookup = $conn->prepare("select unitId, ipAddress, inet_ntoa(ipAddress) as ip, coalesce(description,'') as description, hostname from unit where left(mac,6) = UNHEX(?)");
+	my $update = $conn->prepare("update dhcpEvent set unitId = ?, handled = b'1' where dhcpEventId = ?");
+
+	#These statments will be initialized if needed...
+	my $insert = 0;
+	my $updateHostname = 0;
+	my $updateIp = 0;
+	my $updateUnit = 0;
+
+	while (my $row = $sth->fetchrow_hashref()) {
+		my $bUnitUpdated = 0;
+		print "Found id: $row->{'dhcpEventId'}: $row->{'src'}, $row->{'dst'}, $row->{'aYourIp'}, $row->{'clientMac'}, $row->{'hostname'}, $row->{'clientMac'}\n";
+		my $mac = $row->{clientMac}; 		
+		$mac =~ s/://g; 
+ 		$lookup->execute(uc($mac)) or die "execution failed: $sth->errstr()";
+		if (my $unit = $lookup->fetchrow_hashref()) {
+			print "   Unit nr $unit->{'unitId'} found: $unit->{'ip'}, $unit->{'description'}, $unit->{'hostname'}\n";
+			$update->execute($unit->{'unitId'}, $row->{'dhcpEventId'}) or die "execution failed: $sth->errstr()";
+
+			if ((!defined $unit->{'hostname'} || $unit->{'hostname'} eq "") && $row->{'hostname'} ne "") {
+				if (!$updateHostname) {
+					$updateHostname = $conn->prepare("update unit set hostname = ?, lastSeen = now() where unitId = ?");
+				}
+				$updateHostname->execute($row->{'hostname'}, $unit->{'unitId'}) or die "execution failed: $sth->errstr()";
+				$bUnitUpdated = 1;
+				print "Hostname changed from $unit->{'hostname'} to $row->{'hostname'}\n";
+			} else {
+				#print "Hostname was set: $unit->{'hostname'}\n";
+			}
+
+			if (!$unit->{'ipAddress'} && $row->{'yourIp'} > 0) {
+				if (!$updateIp) {
+					$updateIp = $conn->prepare("update unit set ipAddress = ?, lastSeen = now() where unitId = ?");
+				}
+
+				$updateIp->execute($row->{'yourIp'}, $unit->{'unitId'}) or die "execution failed: $sth->errstr()";
+				$bUnitUpdated = 1;
+				print "IP changed from $unit->{'ipAddress'} to $row->{'yourIp'}\n";
+				
+			}
+			else {
+					print "IP was set or not yet available: $unit->{'ip'}\n";
+			}
+
+			if (!$bUnitUpdated) {
+				#unit->lastSeen is not yet updated... do so.
+				if (!$updateUnit) {
+					$updateUnit = $conn->prepare("update unit set lastSeen = now() where unitId = ?");
+				}
+				$updateUnit->execute($unit->{'unitId'}) or die "execution failed: $sth->errstr()";
+			}
+
+		} else {
+			if (!$insert) {
+				$insert = $conn->prepare("insert into unit (mac, ipAddress, hostname, lastSeen) value (UNHEX(?), inet_aton(?), ?, now())");
+			}
+			$insert->execute(uc($mac), $row->{'yourIp'}, $row->{'hostname'}) or die "execution failed: $sth->errstr()";
+		}
+	}
+	$lookup->finish;
+	$update->finish;
+	$sth->finish;
+
+	if ($insert) {
+		$insert->finish;
+	}
+
+	if ($updateHostname) {
+		$updateHostname->finish;
+	}
+
+	if ($updateIp) {
+		$updateIp->finish;
+	}
+}
 
 
 
@@ -185,6 +267,7 @@ sub handle_syslogThreat_record {
 
 sub handle_syslogThreat_table
 {
+	#finding unitId for records in syslogThreat by calling conntrack... Should probably also put in 
 	my ($dbh) = @_;
 
 	my $szSQL = "select syslogId, syslogThreatId, src_ip, inet_ntoa(src_ip) as src, src_port, dst_ip, inet_ntoa(dst_ip) as dst, dst_port, protocol, service from syslogThreat where handled is null limit 1000";
@@ -288,6 +371,8 @@ my $nNumberOfWhoIsLookupsPerIteration = 5;	#Increase if too few have owner name 
 my $nice_timestamp = getNiceTimestamp();
 print "Started: $nice_timestamp\n\n";
 
+my $pSetup = getSetup();
+
 my $dbh = getConnection();
 setCronLibDbh($dbh);
 
@@ -303,13 +388,15 @@ if (!runningAsCron() && !runningBootCheck())	#Run "sudo perl crontasks.pl whatev
 	#  That way you can check any debug code without the cron job distrubing the process.
 	#Displays a warning in dashboard so don't forget to disable this code...
 
-	handle_syslogThreat_table($dbh);
+	print "handle_syslogThreat_table() not yet put in production...\n";
+	#handle_syslogThreat_table($dbh);
+	#check_dhcpEvent($dbh);	
 
 	#print (networkSetupOk()?"Network set up properly":"Failed to set up network!");
 	#checkRequests();
 	#startTaraLinkOk();
     #handleConntrack($dbh);
-	#process_dhcpdump($dbh);	#NOTE! Maybe it's risky to run it this often?
+	#start_process_dhcpdump($pSetup->{"internalNic"});	#NOTE! Just making sure dhcp_capture.pl is running..
 	#checkDbVersion($dbh);
 	
 	#workshopSetup();
@@ -367,12 +454,12 @@ if (0) #NO LONGER DO THIS HERE... Handled by by startup.pl
  #   my $nice_timestamp = sprintf ( "%04d%02d%02d-%02d:%02d:%02d", $year+1900,$mon+1,$mday,$hour,$min,$sec);
 
 checkRequests();	#See lib_cron.pm 	check setup.requestReboot  (Set from hotspot setup menu choice)	
-
 createDirectories();
 #fixDevicesOldWay(); - 260311 - Don't do this... it messed up good setup when there's multiple NICs
 updateGlobalDemo(); #NOTE! Not reflecting the new code where each user may have individual demo setup (not yet working properly)
 workshopSetup();	#If workshopId is set in dashboard setup, it will register other computers with same workshopId as partners.
 start_iptables_monitor();	#Check if iptables_log_monitor.pl is already running. If not, starts it
+start_process_dhcpdump($pSetup->{"internalNic"});	#NOTE! Just making sure dhcp_capture.pl is running..
 
 #handleRequestsForDmsg();
 
@@ -395,30 +482,26 @@ $| = 1; # Disable output buffering
 #Now check if gets here after running approximately 10 seconds..
 my $nCount = 0;
 
-if ($ARGV[0]) {
-	#asdfasdf
-#	exit;
-	
-}
-
 while (time() - $nTimeStarted < 52)
 {
 	#Call script with some parameter do do debugging
 	#Enable some warnings here so you remember to enable again...
 	#saveWarning("handleConntrack() removed from cron job");
 
-	process_dhcpdump($dbh);	#NOTE! Maybe it's risky to run it this often?
-        handleConntrack($dbh);	#NOTE! Import port assignments. Import dhcp leases before this..
+	check_dhcpEvent($dbh);	
+    handleConntrack($dbh);	#NOTE! Import port assignments. Import dhcp leases before this..
 	logDmesg();
 	checkWhoIs($dbh, $nNumberOfWhoIsLookupsPerIteration);
 	sendPendingWgets();
 
-        print "\nWaiting to do repetitive tasks (dmesg capture, whois lookups, ++?). Ctrl-C to break\n";
+	print "\nWaiting to do repetitive tasks (dmesg capture, whois lookups, ++?). Ctrl-C to break\n";
 	sleep $nSecondsToSleepBetweenIterations;
 	my $nSecondsSinceStart = time() - $nTimeStarted;
 	print "$nSecondsSinceStart seconds.\n";
 	$nCount++;
 }
+
+$dbh->disconnect;
 
 if ($nCount < 5 && $nSecondsToSleepBetweenIterations > 0) {
 	print "****** WARNING crontasks.pl only managed to make $nCount iterations.\nYou may consider to reduce \$nSecondsToSleepBetweenIterations from ".$nSecondsToSleepBetweenIterations."\n";  

@@ -14,7 +14,7 @@ use Exporter qw(import);
 our @EXPORT_OK = qw();
 
 # these are exported by default.
-our @EXPORT = qw( getSysRoot getLogRoot getPerlScriptDir getIptablesLogFileName getDbNow getConnection getNiceTimestamp trim validIp getLastInsertId getString doExecute addWarningRecord getSourceRoot ableToPing ipOfDevice moduleRunning programRunning getFileContents getFileLines getDumpTxt uptime getDevices isLanAddress getSetup resetSetup getProcessId doKill addToLogFile getNewestFile setSetupField setNetworkStatus );
+our @EXPORT = qw( getSysRoot getLogRoot getPerlScriptDir getIptablesLogFileName getDbNow getConnection getNiceTimestamp trim validIp getLastInsertId getString doExecute addWarningRecord getSourceRoot ableToPing ipOfDevice programWithParamsRunning programRunning moduleRunning getFileContents getFileLines getDumpTxt uptime getDevices isLanAddress getSetup resetSetup getProcessId doKill addToLogFile getNewestFile setSetupField setNetworkStatus );
 
 my $cSetup = 0;
 
@@ -243,7 +243,23 @@ sub ipOfDevice {
 }
 
 
+sub programWithParamsRunning {
+	#Call it with e.g "tshark -i wlp1n0"
+    my ($cmd) = @_;
+	my $szPsLog = getDumpTxt("ps -aux | grep \"$cmd\"");
+	my @lines = split("\n", $szPsLog);
+	foreach (@lines) {
+		#print "Checking $_\n";
+		if (index($_, "grep \"$cmd") == -1 && index($_, "grep $cmd") == -1 && index($_, "nano $cmd") == -1) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+
 sub programRunning {
+	#NOTE! programWithParamsRunning() may be better....
 	my ($szProgramName, $szNotRunning) = @_;
 	my $szPsLog = getDumpTxt("ps -aux | grep ".substr($szProgramName, 0, length($szProgramName)-1));
 	

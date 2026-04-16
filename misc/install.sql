@@ -134,8 +134,50 @@ alter table syslogThreat add description varchar(255);
 alter table syslogThreat add count integer not null default 1;
 update setup set dbVersion = 57;
 
+#version 58 (260414)
+CREATE TABLE dhcpEvent (
+    dhcpEventId BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    seenAt DATETIME(6) NOT NULL,
+    interfaceName VARCHAR(64) NOT NULL,
+    srcIp INT UNSIGNED NULL,
+    dstIp INT UNSIGNED NULL,
+    clientMac VARCHAR(17) NOT NULL,
+    yourIp INT UNSIGNED NULL,
+    hostname VARCHAR(255) NULL,
+    vendorClass VARCHAR(255) NULL,
+    dhcpMessageType TINYINT UNSIGNED NULL,  
+    rawLine TEXT NULL,
+	handled bit(1) not null default b'0',
+    PRIMARY KEY (dhcpEventId),
+    KEY idx_seenAt (seenAt),
+    KEY idx_clientMac (clientMac),
+    KEY idx_yourIp (yourIp),
+    KEY idx_srcIp (srcIp)
+);
+
+CREATE TABLE dhcpClientState (
+    dhcpClientStateId BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    clientMac VARCHAR(17) NOT NULL,
+    currentIp INT UNSIGNED NULL,
+    hostname VARCHAR(255) NULL,
+    vendorClass VARCHAR(255) NULL,
+    firstSeen DATETIME(6) NULL,
+    lastSeen DATETIME(6) NULL,
+    eventCount INT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (dhcpClientStateId),
+    UNIQUE KEY uq_clientMac (clientMac),
+    KEY idx_currentIp (currentIp),
+    KEY idx_lastSeen (lastSeen)
+);
+
+update setup set dbVersion = 58;
+
+#version 59 (260415)
+alter table dhcpEvent add unitId int unsigned null;
+#update setup set dbVersion = 59;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 58;
+#update setup set dbVersion = 60;
 
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 

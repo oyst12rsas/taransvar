@@ -19,7 +19,11 @@ printf "\nInstalling Taransvar Cyber Solution\n"
 read -t 5 -p "Continuing in 5 seconds..."
 printf "Installing required linux packages...\n"  
 
-apt update -y
+apt-get update -y
+
+#This is missing in small systems so make sure it's installed
+apt-get install -y debconf-utils
+
 if [ -d /var/lib/mysql ] && [ "$(ls -A /var/lib/mysql 2>/dev/null)" ]; then
     echo "Existing database data detected — skipping MariaDB install"
 else
@@ -30,17 +34,19 @@ apt-get install -y apache2 perl libdbd-mysql-perl libmariadb-dev libmnl-dev
 apt-get install -y php libapache2-mod-php php-mysql
 apt-get install -y gcc make curl libcurl4-openssl-dev dhcpdump net-tools conntrack
 apt-get install -y libdbi-perl libdbd-mysql-perl conntrack dhcpdump isc-dhcp-server
-apt-get install -y curl libcurl4-openssl-dev whois iptables libcjson-dev
-apt install -y ipset  
+apt-get install -y curl libcurl4-openssl-dev whois iptables libcjson-dev ipset
+
+echo "wireshark-common wireshark-common/install-setuid boolean false" | debconf-set-selections
+DEBIAN_FRONTEND=noninteractive apt-get install -y tshark
 
 #Now also install for hotspot... 
 apt-get install -y ipfm
 
 #260307 - install for get() used in lib_cron.pm
-sudo apt install -y libwww-perl
+sudo apt-get install -y libwww-perl
 
-apt update -y
-apt upgrade -y
+apt-get update -y
+apt-get upgrade -y
 
 #read -n 1 -s -p "About to install perl libraries (this should be checked manually..)"
 PERL_MM_USE_DEFAULT=1 

@@ -16,7 +16,7 @@ our @ISA= qw( Exporter );
 our @EXPORT_OK = qw();
 
 # these are exported by default.
-our @EXPORT = qw( process_dhcpdump process_dhcpdump_testing checkArchiveDhcpFiles dhcpServerStatusOk );
+our @EXPORT = qw(get_tshark_args getTsharkStartParams start_process_dhcpdump process_dhcpdump_testing checkArchiveDhcpFiles dhcpServerStatusOk );
 
 use autodie;
 use DBI;
@@ -37,8 +37,9 @@ my $szInternalNic = ""; #Will contain the name of internal network interface
 
 
 sub startDhcpdump {
-        my $szLogTxt = "/root/setup/log/log.txt";
-        system ("ps -aux | grep dhcpdump > $szLogTxt");
+	#NOTE! tshark is used instead, so this routine should probably just be disabled...		
+    my $szLogTxt = "/root/setup/log/log.txt";
+    system ("ps -aux | grep dhcpdump > $szLogTxt");
 #root      130423  0.0  0.0  28724  7552 ?        S    17:47   0:00 sudo dhcpdump -i enp3s0
 #root      130424  0.0  0.0   9788  6144 ?        S    17:47   0:00 dhcpdump -i enp3s0
 #root      137891  0.0  0.0  17812  2176 pts/1    S+   18:13   0:00 grep --color=auto dhcpdump
@@ -147,31 +148,31 @@ sub logDhcpDump {
 sub doSave {
 	my ($dbh, $szIP, $szDummy, $szHexID, $szLongMac, $szVendorClass, $szHostname, $szDate, $szTime) = @_;
 
-        my $szMsg = "In doSave(): clientId: hexId: $szHexID, hostname: $szHostname, mac: $szLongMac"; 
-        print "$szMsg\n";
-        #addWarningRecord($dbh, $szMsg);
+    my $szMsg = "In doSave(): clientId: hexId: $szHexID, hostname: $szHostname, mac: $szLongMac"; 
+    print "$szMsg\n";
+    #addWarningRecord($dbh, $szMsg);
 
-        if ($szLongMac =~ /^(\w*):(\w*):(\w*):(\w*):(\w*):(\w*):(\w*):(\w*):(\w*):(\w*):(\w*):(\w*):(\w*):(\w*):(\w*):(\w*)/)
-        {
-                my $szMac = $1.$2.$3.$4.$5.$6.$7.$8.$9.$10.$11.$12.$13.$14.$15.$16;
+    if ($szLongMac =~ /^(\w*):(\w*):(\w*):(\w*):(\w*):(\w*):(\w*):(\w*):(\w*):(\w*):(\w*):(\w*):(\w*):(\w*):(\w*):(\w*)/)
+    {
+        my $szMac = $1.$2.$3.$4.$5.$6.$7.$8.$9.$10.$11.$12.$13.$14.$15.$16;
         
-#                my $szSQL = "select s.clientId, sessionId, discovered, inet_ntoa(ip) as ip from dhcpSession s join unit u on unitId = clientId where mac = X'$szMac' and dhcpClientId = X'$szHexID' order by sessionId desc limit 1;";
-                my $szSQL = "select unitId from unit where mac = X'$szMac' and dhcpClientId = X'$szHexID' order by unitId desc limit 1;";
-                print "$szSQL\n";
+		#my $szSQL = "select s.clientId, sessionId, discovered, inet_ntoa(ip) as ip from dhcpSession s join unit u on unitId = clientId where mac = X'$szMac' and dhcpClientId = X'$szHexID' order by sessionId desc limit 1;";
+        my $szSQL = "select unitId from unit where mac = X'$szMac' and dhcpClientId = X'$szHexID' order by unitId desc limit 1;";
+        print "$szSQL\n";
                 
-                my $sth = $dbh->prepare($szSQL) or die "prepare statement failed: $dbh->errstr()";
-                $sth->execute() or die "execution failed: $sth->errstr()";
- #               my $nClientId = 0;
-                my $nUnitId = 0;
-                if (my $cSetup = $sth->fetchrow_hashref()) 
-                {
+        my $sth = $dbh->prepare($szSQL) or die "prepare statement failed: $dbh->errstr()";
+        $sth->execute() or die "execution failed: $sth->errstr()";
+ 		#my $nClientId = 0;
+        my $nUnitId = 0;
+        if (my $cSetup = $sth->fetchrow_hashref()) 
+        {
                 	#$nClientId = $cSetup->{'clientId'};
                 	$nUnitId = $cSetup->{'unitId'};
                 	my $szMsg = "Unit $szHexID already exists with id ".$cSetup->{'unitId'}."\n";
-                        print "print $szMsg\n";
-		        #addWarningRecord($dbh, $szMsg);
+					print "print $szMsg\n";
+		        	#addWarningRecord($dbh, $szMsg);
 		        
-		        my $szSQL = "update unit set lastSeen = '$szDate $szTime', ipAddress = inet_aton('$szIP') where unitId = $nUnitId";
+		        	my $szSQL = "update unit set lastSeen = '$szDate $szTime', ipAddress = inet_aton('$szIP') where unitId = $nUnitId";
 	                my $sth = $dbh->prepare($szSQL) or die "prepare statement failed: $dbh->errstr()";
 	                $sth->execute() or die "execution failed: $sth->errstr()";
 		        #addWarningRecord($dbh, $szSQL);
@@ -185,72 +186,67 @@ sub doSave {
                 	#} else {
                 	        #Save a new session... below... ($nClientId is set)
                 	#        }
-                } else {
-                        print "This is a new client... Saving!\n";
+        } else 
+		{
+            print "This is a new client... Saving!\n";
                	        #$nClientId = storeNewClient($szHexID, $szMac, $szVendorClass, $szHostname, $szIP, $dbh);
                	        $nUnitId = storeNewClient($szHexID, $szMac, $szVendorClass, $szHostname, $szIP, $dbh);
                	        if (!defined($szHostname) || $szHostname eq "") {
                	        	$szHostname = $szHexID;
                	        }
                         my $szMsg = "New unit $szHostname saved with id $nUnitId";
-                        print "print $szMsg\n";
-		        addWarningRecord($dbh, $szMsg);
-                }
-                $sth->finish;
+                    print "print $szMsg\n";
+		    addWarningRecord($dbh, $szMsg);
+        }
+                
+		$sth->finish;
                 
       	        #if ($nClientId > 0) {
-      	        if ($nUnitId > 0) {
-      	        	#******* First check if this is the active session...
-      	        	$szSQL = "select sessionId, inet_ntoa(ip) as ip, discovered from dhcpSession where clientId = $nUnitId order by sessionId desc limit 1";
-      	        	#asdfasdf
-	                my $sth = $dbh->prepare($szSQL) or die "prepare statement failed: $dbh->errstr()";
-	                $sth->execute() or die "execution failed: $sth->errstr()";
-	 #               my $nClientId = 0;
-	                my $nSessionId = 0;
-	                if (my $cSession = $sth->fetchrow_hashref()) 
-	                {
-	                	my $szMsg;
-	                	if ($cSession->{"ip"} eq $szIP) {
-	                		$nSessionId = $cSession->{"sessionId"};
-	                		$szMsg = "Existing session found: ".$nSessionId.", ip: ".$cSession->{"ip"}.", last discovered ".$cSession->{"discovered"};
+	    if ($nUnitId > 0) {
+      	    #******* First check if this is the active session...
+      	    $szSQL = "select sessionId, inet_ntoa(ip) as ip, discovered from dhcpSession where clientId = $nUnitId order by sessionId desc limit 1";
+	        my $sth = $dbh->prepare($szSQL) or die "prepare statement failed: $dbh->errstr()";
+	        $sth->execute() or die "execution failed: $sth->errstr()";
+	 #       my $nClientId = 0;
+	        my $nSessionId = 0;
+	        if (my $cSession = $sth->fetchrow_hashref()) 
+	        {
+	            my $szMsg;
+	        	if ($cSession->{"ip"} eq $szIP) {
+	                $nSessionId = $cSession->{"sessionId"};
+	                $szMsg = "Existing session found: ".$nSessionId.", ip: ".$cSession->{"ip"}.", last discovered ".$cSession->{"discovered"};
 				} else {
 					$szMsg = "Existing session found but IP address differs (so making new session).. New: ".$szIP.", pervious: ".$cSession->{"ip"};
 				}
 				#addWarningRecord($dbh, $szMsg);
-                		print "$szMsg\n";
-      	        	}
-      	        	if (!$nSessionId) {
-	      	                #Store a new session...
+                print "$szMsg\n";
+      	    }
+      		if (!$nSessionId) {
+	      	    #Store a new session...
       	        
-	      	                #$szSQL = "insert into dhcpSession (clientId, ip, discovered) values ($nClientId, inet_aton('$szIP'), '$szDate $szTime')";
-	      	                $szSQL = "insert into dhcpSession (clientId, ip, discovered) values ($nUnitId, inet_aton('$szIP'), '$szDate $szTime')";
-	      	                print "$szSQL\n";
-	                        my $sth = $dbh->prepare($szSQL) or die "prepare statement failed: $dbh->errstr()";
-	                        $sth->execute() or die "execution failed: $sth->errstr()";
-	                        $sth->finish;
-	                        my $nSessionId = getLastInsertId($dbh);
-	                        my $szMsg = "New session saved with id $nSessionId..!";
-	                        print "$szMsg\n";
-			        #addWarningRecord($dbh, $szMsg);
-	                }
-                } else {
-		        addWarningRecord($dbh, "***** ERROR *** while saving...");
-                }
-                
+	      	    #$szSQL = "insert into dhcpSession (clientId, ip, discovered) values ($nClientId, inet_aton('$szIP'), '$szDate $szTime')";
+	      	    $szSQL = "insert into dhcpSession (clientId, ip, discovered) values ($nUnitId, inet_aton('$szIP'), '$szDate $szTime')";
+	      	    print "$szSQL\n";
+	            my $sth = $dbh->prepare($szSQL) or die "prepare statement failed: $dbh->errstr()";
+	            $sth->execute() or die "execution failed: $sth->errstr()";
+	            $sth->finish;
+	            my $nSessionId = getLastInsertId($dbh);
+	            my $szMsg = "New session saved with id $nSessionId..!";
+	            print "$szMsg\n";
+		        #addWarningRecord($dbh, $szMsg);
+	        }
+        } else {
+		    addWarningRecord($dbh, "***** ERROR *** while saving...");
         }
-        else
-        {
-                print "********* Unable to interpret mac address...\n";
-        } 
+                
+    }
+    else
+    {
+        print "********* Unable to interpret mac address...\n";
+    } 
 }
 
-sub process_dhcpdump_dummy {
-	#This is now the one run from crontasks.pl as cron job
-}
-
-sub process_dhcpdump_testing {
-}
-sub process_dhcpdump {
+sub process_dhcpdump_put_wifi_NIC_in_promiscouse_mode_when_restarting_dhcp {
 	my ($dbh) = @_;
 	if (!$dbh || !defined($dbh))
 	{
@@ -472,7 +468,84 @@ sub process_dhcpdump {
 		updateCheckedTimeInSetup($dbh, $nRecordsInserted);
 	}
 } #sub process_dhcpdump()
-	
+
+
+sub is_tshark_running {
+
+    my ($iface) = @_;
+
+	return programWithParamsRunning("tshark -i $iface");
+
+#    my @pids = `pgrep -f tshark`;
+#    chomp @pids;
+
+#    foreach my $pid (@pids) {
+#        my $cmdline = `ps -p $pid -o args=`;
+#        if ($cmdline =~ /\b-i\s+$iface\b/) {
+#            return 1;
+#        }
+#    }
+
+#    return 0;
+}	
+
+sub get_tshark_args {
+    my ($iface) = @_;
+
+    return (
+        "tshark",
+        "-i", $iface,
+        "-l",
+        "-nn",
+        "-Y", "bootp",
+        "-T", "fields",
+        "-e", "frame.time_epoch",
+        "-e", "ip.src",
+        "-e", "ip.dst",
+        "-e", "bootp.hw.mac_addr",
+        "-e", "bootp.ip.your",
+        "-e", "bootp.option.hostname",
+        "-e", "bootp.option.vendor_class_id",
+        "-e", "bootp.option.dhcp",
+    );
+}
+
+#	sudo tshark -i wlx088af12de289 -l -nn -Y 'bootp' -T fields -e frame.time_epoch -e ip.src -e ip.dst -e bootp.hw.mac_addr -e bootp.ip.your -e bootp.option.hostname -e bootp.option.vendor_class_id -e bootp.option.dhcp
+sub getTsharkStartParams {
+	#Called both when starting tshark in process_dhcpdump and dhcp_capture.pl (infinite process reading DHCP records)
+	print "getTsharkStartParams() shouldn't be called anymore.\n";
+	return 1/0;
+	my ($iface) = @_;
+	my $cArgs = join(" ", get_tshark_args($iface));
+	return $cArgs;
+}
+
+
+sub process_dhcpdump {
+    my ($iface) = @_;
+    if (is_tshark_running($iface)) {
+        print "tshark already running on $iface\n";
+        return;
+    }
+
+    print "Starting tshark DHCP capture on $iface...\n";
+
+	my $cmd = join(" ", get_tshark_args($iface));
+
+    system("$cmd > /tmp/dhcp_stream.log 2>/dev/null &");
+
+	my $pid = fork();
+	die "fork failed: $!" unless defined $pid;
+
+	if ($pid == 0) {
+    	exec("/usr/bin/perl", "/root/taransvar/perl/dhcp_capture.pl")
+        	or die "exec failed: $!";
+	}
+
+	print "Started dhcp_capture.pl with PID $pid\n$cmd\n";
+}
+
+
 sub checkArchiveDhcpFiles {
 	if (!-d getLogRoot()."dhcp/handled") {
 		my $szMsg = "****** ERROR **** Archive directory for dhcp doesn't exist. cron task is probably not running properly.";
