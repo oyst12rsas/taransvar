@@ -2,8 +2,9 @@
 
 # This script assumes:
 # - no NAT for the site subnet
-# - local devices behind ASA use fixed IPs in the assigned 10.<countryId>.<partnerId>.0/24
+# - local devices behind peers use fixed IPs in the assigned 10.<countryId>.<partnerId>.0/24
 # - the VPS will route those subnets through the corresponding IPsec tunnels
+# - strongSwan should use swanctl + charon-systemd (NOT starter/ipsec.conf)
 
 use strict;
 use warnings;
@@ -12,9 +13,10 @@ my $CONF = "/root/taransvar/vpn_vps.conf";
 
 my %cfg = read_config($CONF);
 
-my $wan_if     = required(\%cfg, "VPS_WAN_IF");
-my $public_ip  = required(\%cfg, "VPS_PUBLIC_IP");
-my $core_local = $cfg{CORE_LOCAL_SUBNET} // "10.0.0.0/8";
+my $wan_if      = required(\%cfg, "VPS_WAN_IF");
+my $public_ip   = required(\%cfg, "VPS_PUBLIC_IP");
+my $core_local  = $cfg{CORE_LOCAL_SUBNET} // "10.0.0.0/8";
+my $vps_vpn_ip  = $cfg{VPS_VPN_IP} // "";
 
 my @sites = get_sites(\%cfg);
 die "No SITE<n> entries found in $CONF\n" unless @sites;
@@ -22,8 +24,9 @@ die "No SITE<n> entries found in $CONF\n" unless @sites;
 install_packages();
 write_sysctl();
 write_swanctl_conf($public_ip, $core_local, \@sites);
-write_secrets_conf(\@sites);
-write_iptables_script($wan_if, $core_local, \@sites);
+write_secrets_conf($public_ip, \@sites);
+write_iptables_script($wan_if, $core_local, $vps_vpn_ip, \@sites);
+assign_vps_vpn_ip($vps_vpn_ip) if $vps_vpn_ip ne '';
 enable_and_restart_services();
 
 print "\nDone.\n";
@@ -31,8 +34,9 @@ print "Wrote:\n";
 print "  /etc/sysctl.d/99-taransvar-ipsec.conf\n";
 print "  /etc/swanctl/conf.d/taransvar-sites.conf\n";
 print "  /etc/swanctl/conf.d/taransvar-secrets.conf\n";
-print "  /root/taransvar/iptables_ipsec_vps.sh\n\n";
-print "Next: apply matching Cisco ASA config for each site.\n";
+print "  /root/taransvar/iptables_ipsec_vps.sh\n";
+print "  VPS_VPN_IP assigned to lo\n" if $vps_vpn_ip ne '';
+print "\nNext: apply matching peer config for each site.\n";
 
 sub read_config {
     my ($file) = @_;
@@ -92,12 +96,16 @@ sub get_sites {
 }
 
 sub install_packages {
-    print "Installing strongSwan and dependencies...\n";
+    print "Installing strongSwan swanctl/charon-systemd stack...\n";
+
     system("apt-get update") == 0
         or die "apt-get update failed\n";
 
-    system("DEBIAN_FRONTEND=noninteractive apt-get install -y strongswan strongswan-swanctl libcharon-extra-plugins iptables") == 0
+    system("DEBIAN_FRONTEND=noninteractive apt-get install -y charon-systemd strongswan-swanctl libcharon-extra-plugins iptables") == 0
         or die "Package install failed\n";
+
+    # Remove legacy starter stack if present
+    system("DEBIAN_FRONTEND=noninteractive apt-get remove -y strongswan-starter strongswan strongswan-charon >/dev/null 2>&1");
 }
 
 sub write_sysctl {
@@ -125,14 +133,14 @@ sub write_swanctl_conf {
     print $fh "connections {\n";
 
     for my $s (@$sites) {
-        my $name   = $s->{name};
-        my $rid    = $s->{remote_id};
-        my $rsub   = $s->{remote_subnet};
+        my $name = $s->{name};
+        my $rid  = $s->{remote_id};
+        my $rsub = $s->{remote_subnet};
 
         print $fh <<"EOF";
   $name {
     version = 2
-    proposals = aes256-sha256-modp2048
+    proposals = aes256-sha256-modp2048,aes128-sha256-modp2048,aes256-sha1-modp2048
     local_addrs = $public_ip
 
     local {
@@ -148,7 +156,7 @@ sub write_swanctl_conf {
       ${name}_child {
         local_ts = $core_local
         remote_ts = $rsub
-        esp_proposals = aes256-sha256-modp2048
+        esp_proposals = aes256-sha256-modp2048,aes128-sha256-modp2048,aes256-sha1-modp2048
         start_action = trap
         dpd_action = restart
       }
@@ -168,7 +176,7 @@ EOF
 }
 
 sub write_secrets_conf {
-    my ($sites) = @_;
+    my ($public_ip, $sites) = @_;
 
     my $file = "/etc/swanctl/conf.d/taransvar-secrets.conf";
     open(my $fh, ">", $file) or die "Cannot write $file: $!\n";
@@ -182,7 +190,8 @@ sub write_secrets_conf {
 
         print $fh <<"EOF";
   ${name}_psk {
-    id-1 = $rid
+    id-1 = $public_ip
+    id-2 = $rid
     secret = "$psk"
   }
 
@@ -194,7 +203,7 @@ EOF
 }
 
 sub write_iptables_script {
-    my ($wan_if, $core_local, $sites) = @_;
+    my ($wan_if, $core_local, $vps_vpn_ip, $sites) = @_;
 
     my $file = "/root/taransvar/iptables_ipsec_vps.sh";
     open(my $fh, ">", $file) or die "Cannot write $file: $!\n";
@@ -204,6 +213,7 @@ sub write_iptables_script {
 set -e
 
 WAN_IF='$wan_if'
+VPS_VPN_IP='$vps_vpn_ip'
 
 echo "Applying IPsec/VPS firewall rules..."
 
@@ -226,7 +236,7 @@ iptables -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-m
 iptables -A INPUT   -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
-# SSH to VPS
+# SSH to VPS public side
 iptables -A INPUT -p tcp --dport 22 -j ACCEPT
 
 # IKE/IPsec
@@ -235,6 +245,16 @@ iptables -A INPUT -i "\$WAN_IF" -p udp --dport 4500 -j ACCEPT
 iptables -A INPUT -i "\$WAN_IF" -p esp -j ACCEPT
 
 EOF
+
+    if ($vps_vpn_ip ne '') {
+        print $fh <<"EOF";
+# Optional VPS VPN IP handling
+iptables -A INPUT -d "\$VPS_VPN_IP" -p icmp -j ACCEPT
+iptables -A INPUT -d "\$VPS_VPN_IP" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables -A INPUT -d "\$VPS_VPN_IP" -j DROP
+
+EOF
+    }
 
     for my $s (@$sites) {
         my $subnet = $s->{remote_subnet};
@@ -272,24 +292,36 @@ EOF
                   ") >/dev/null 2>&1 & echo \$!'";
         $rollback_pid = `$cmd`;
         chomp $rollback_pid;
+        print "DEBUG rollback_pid=[$rollback_pid]\n";
 
         die "Starting rollback timer failed\n"
+            #unless defined $rollback_pid && $rollback_pid =~ /^\\d+\$/;
             unless defined $rollback_pid && $rollback_pid =~ /^\d+$/;
+
     }
 
     system($file) == 0
         or die "Applying iptables script failed\n";
 
-    #If script didn't abort by now, we assume it's ok and abort the rollback
-    if (defined $rollback_pid && $rollback_pid =~ /^\d+$/) {
+  #  if (defined $rollback_pid && $rollback_pid =~ /^\\d+\$/) {
+ if (defined $rollback_pid && $rollback_pid =~ /^\d+$/) { 
         kill 'TERM', $rollback_pid;
         print "Rollback timer cancelled after successful apply.\n";
     }
 }
 
+sub assign_vps_vpn_ip {
+    my ($vpn_ip) = @_;
+    return if !$vpn_ip;
+
+    print "Ensuring VPS VPN IP $vpn_ip exists on lo...\n";
+    system("sh -c \"ip -4 addr show dev lo | grep -q '\\b$vpn_ip/' || ip addr add $vpn_ip/8 dev lo\"") == 0
+        or die "Failed to assign VPS_VPN_IP $vpn_ip to lo\n";
+}
+
 sub enable_and_restart_services {
-    system("systemctl enable strongswan-starter >/dev/null 2>&1") == 0
-        or warn "Could not enable strongswan-starter\n";
+    system("systemctl disable strongswan-starter >/dev/null 2>&1");
+    system("systemctl stop strongswan-starter >/dev/null 2>&1");
 
     system("systemctl enable strongswan >/dev/null 2>&1") == 0
         or warn "Could not enable strongswan\n";
