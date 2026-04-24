@@ -752,6 +752,38 @@ static void on_sigint(int sig)
     g_stop = 1;
 }
 
+
+void checkMysql()
+{
+    MYSQL *conn = getConnection();
+    char *lpSQL = "select dmesgUpdated from setup";
+
+	MYSQL_RES *res;
+	MYSQL_ROW row;
+		
+	if (mysql_query(conn, lpSQL)) {
+		fprintf(stderr, "taralink: %s\n", mysql_error(conn));
+		reportErrorReadin("setup");
+		return;
+	}
+
+	res = mysql_use_result(conn);
+	//res = mysql_store_result(conn);		
+	if (!res) {
+	   	fprintf(stderr, "mysql_store_result failed: %s\n", mysql_error(conn));
+		return;
+	}		
+
+	if ((row = mysql_fetch_row(res)) != NULL)
+        printf("dmesg field updated (and able to connect to mysql): %s\n", row[0]);
+	else
+        printf("************* ERROR *********** Couldn't read setup.. Table is probably empty.. \n");
+
+    mysql_free_result(res);
+	mysql_close(conn);
+}
+
+
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -798,6 +830,8 @@ int main(void)
         printf("%s - sent to kernel\n", text);
     else
         printf("Unable to send message to kernel\n");
+
+    checkMysql();
 
     while (!g_stop)
     {

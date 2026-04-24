@@ -73,7 +73,10 @@ sub createSpecificUser {
 	my ($szUser, $szHost, $szPass) = @_;
 	
 	my $szCreateUser = ($szHost eq ""?$szUser:"\'$szUser\'@\'$szHost\'");
-	my $szSQL = "create user $szCreateUser identified WITH mysql_native_password by \'$szPass\'";
+
+	#my $szSQL = "create user $szCreateUser identified WITH mysql_native_password by \'$szPass\'";
+	#ØT 260424 - Error with mysql_native_password. Ok when removed.. native passwords should no longer be used... Only in old versions of mysql.
+	my $szSQL = "create user $szCreateUser identified by \'$szPass\'";
 	if (runSqlCmdLineOk($szSQL)) {
 		#return 1;
 		#print "Run sql seemd to succeed..\n"; 
