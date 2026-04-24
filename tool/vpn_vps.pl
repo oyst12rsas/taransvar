@@ -188,8 +188,8 @@ sub write_secrets_conf {
         my $psk  = escape_dq($s->{psk});
         my $rid  = $s->{remote_id};
 
-        print $fh <<"EOF";
-  ${name}_psk {
+print $fh <<"EOF";
+  ike-$name {
     id-1 = $public_ip
     id-2 = $rid
     secret = "$psk"
@@ -315,7 +315,7 @@ sub assign_vps_vpn_ip {
     return if !$vpn_ip;
 
     print "Ensuring VPS VPN IP $vpn_ip exists on lo...\n";
-    system("sh -c \"ip -4 addr show dev lo | grep -q '\\b$vpn_ip/' || ip addr add $vpn_ip/8 dev lo\"") == 0
+    system("sh -c \"ip -4 addr show dev lo | grep -q '\\b$vpn_ip/' || ip addr add $vpn_ip/32 dev lo\"") == 0
         or die "Failed to assign VPS_VPN_IP $vpn_ip to lo\n";
 }
 

@@ -118,15 +118,27 @@ echo "Copying (rsync) html files..."
 #cp -r html /var/www
 rsync -a --exclude '.git' html/ /var/www/html/
 
+echo "We're now about to do network installation.\n\nIf you know how to set this up youself, then you probably want to skip this.\n\n"
+read -p "Do you want to run network installation script? (y/n): " answer
+
+if [[ "$answer" == "y" || "$answer" == "Y" ]]; then
+    echo "Running network installation..."
+	pause 5
+
 (
 	cd misc
 	perl setup_network.pl
 )
+else
+    echo "Skipping network installation.\n"
+fi
+
 
 (
 	cd misc
 	perl compile.pl install
 )
+
 
 if [ $? -eq 0 ]
 then
