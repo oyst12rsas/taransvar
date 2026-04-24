@@ -118,7 +118,7 @@ echo "Copying (rsync) html files..."
 #cp -r html /var/www
 rsync -a --exclude '.git' html/ /var/www/html/
 
-echo "We're now about to do network installation.\n\nIf you know how to set this up youself, then you probably want to skip this.\n\n"
+printf "\nWe're now about to do network installation.\n\nIf you know how to set this up youself, then you probably want to skip this.\n\n"
 read -p "Do you want to run network installation script? (y/n): " answer
 
 if [[ "$answer" == "y" || "$answer" == "Y" ]]; then

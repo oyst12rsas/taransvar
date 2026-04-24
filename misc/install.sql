@@ -174,7 +174,7 @@ update setup set dbVersion = 58;
 
 #version 59 (260415)
 alter table dhcpEvent add unitId int unsigned null;
-#update setup set dbVersion = 59;
+update setup set dbVersion = 59;
 
 #******** NEXT TIME ALSO add *****
 #update setup set dbVersion = 60;
