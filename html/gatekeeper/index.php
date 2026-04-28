@@ -1,6 +1,6 @@
 <?php
 session_start();
-$nRequiredDbVersion=58;	//NOTE! Make sure this line is always number 3 because that's claimed below.
+$nRequiredDbVersion=59;	//NOTE! Make sure this line is always number 3 because that's claimed below.
 include "dbfunc.php";
 
 $szErrorMessage = "";	//Use it to print message...

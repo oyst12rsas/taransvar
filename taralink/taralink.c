@@ -774,8 +774,13 @@ void checkMysql()
 		return;
 	}		
 
-	if ((row = mysql_fetch_row(res)) != NULL)
-        printf("dmesg field updated (and able to connect to mysql): %s\n", row[0]);
+	if ((row = mysql_fetch_row(res)) != NULL) 
+    {
+        if (row[0])
+            printf("dmesg field updated (and able to connect to mysql): %s\n", row[0]);
+        else
+            printf("***** WARNING ****** dmesg not imported in setup. crontab is probably not running crontasks.pl. This is going to create problems.\n");
+    }
 	else
         printf("************* ERROR *********** Couldn't read setup.. Table is probably empty.. \n");
 

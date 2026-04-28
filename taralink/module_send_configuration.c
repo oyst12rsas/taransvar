@@ -70,136 +70,6 @@ void reportErrorReadin(char *lpWhat)
         addWarningRecord(szMsg);
 }
 
-
-bool getSetupStringOk(MYSQL *conn, MYSQL *updateConn, char *cSetupString, int nBuffSize, bool bReadChangesOnly)
-{
-	MYSQL_RES *res;
-	MYSQL_ROW row;
-	*cSetupString = 0;
-	char *lpSQL = "select lpad(hex(ifnull(adminIp,0)),8,'0'), \
-			lpad(hex(ifnull(internalIP,0)),8,'0'), \
-			lpad(hex(ifnull(nettmask,0)),8,'0'), \
-			if (handled,1,0), \
-			ifnull(blockIncomingTaggedTrafficThreshold,0), \
-			if(showStatus,1,0) as showStatus, \
-			if (showPreRoutePartner,1,0), \
-			if (showPreRouteNonPartner,1,0), \
-			if (showForwardPartner,1,0), \
-			if (showForwardNonPartner,1,0), \
-			if (showUrgentPtrUsage,1,0), \
-			if (showOwnerless,1,0), \
-			if (showOther,1,0), \
-			if (showNew1,1,0), \
-			if (showNew2,1,0), \
-			if (doTagging,1,0), \
-			if (doReportTraffic,1,0), \
-			if (doInspection,1,0), \
-			if (doBlocking,1,0), \
-			if (doOther,1,0), \
-			dontDmesgIPs from setup";
-		
-	if (mysql_query(conn, lpSQL)) {
-		fprintf(stderr, "taralink: %s\n", mysql_error(conn));
-		reportErrorReadin("setup");
-		return 0;
-	}
-
-	res = mysql_use_result(conn);
-	//res = mysql_store_result(conn);		
-	if (!res) {
-	   	fprintf(stderr, "mysql_store_result failed: %s\n", mysql_error(conn));
-		return 0;
-	}		
-
-	if ((row = mysql_fetch_row(res)) != NULL)
-	{
-		printf("Found setup row...\n");
-		if (!bReadChangesOnly || !atoi(row[3]))
-		{
-			printf("processing it...\n");
-			union _showStatusBitsUnion cShowStatusBits;
-			cShowStatusBits.nValues = 0; //Initialize the whole union / structure
-			//cShowStatusBits.bits.nDummy = 0;
-			int nField = 5;
-			cShowStatusBits.bits.showStatus  = atoi(row[nField++]);
-			cShowStatusBits.bits.showPreRoutePartner  = atoi(row[nField++]);
-			cShowStatusBits.bits.showPreRouteNonPartner  = atoi(row[nField++]);
-			cShowStatusBits.bits.showForwardPartner  = atoi(row[nField++]);
-			cShowStatusBits.bits.showForwardNonPartner  = atoi(row[nField++]);
-			cShowStatusBits.bits.showUrgentPtrUsage  = atoi(row[nField++]);
-			cShowStatusBits.bits.showOwnerless  = atoi(row[nField++]);
-			cShowStatusBits.bits.showOther  = atoi(row[nField++]);
-			cShowStatusBits.bits.showNew1  = atoi(row[nField++]);
-			cShowStatusBits.bits.showNew2  = atoi(row[nField++]);
-			cShowStatusBits.bits.doTagging  = atoi(row[nField++]);
-			cShowStatusBits.bits.doReportTraffic = atoi(row[nField++]);
-			cShowStatusBits.bits.doInspection  = atoi(row[nField++]);
-			cShowStatusBits.bits.doBlocking  = atoi(row[nField++]);
-			cShowStatusBits.bits.doOther  = atoi(row[nField++]);
-
-			#define N_MAX_DONT_DMSG_IPs 150
-			int nDontMsgFldNo = nField++;	
-			char szDontDmesgIPs[N_MAX_DONT_DMSG_IPs];
-			szDontDmesgIPs[0] = 0;
-			uint32_t ip_numeric = 0;
-			if (row[nDontMsgFldNo] && *row[nDontMsgFldNo])
-			{
-				//strcpy(szDontDmesgIPs, row[nDontMsgFldNo]);
-				snprintf(szDontDmesgIPs, sizeof(szDontDmesgIPs), "%s", row[nDontMsgFldNo]);					
-				if (strlen(szDontDmesgIPs) > N_MAX_DONT_DMSG_IPs - 50)
-					printf("************ WARNING **** Consider increasing buffer for IPs not to log to dmesg from %u (currently in use: %zu)\n", N_MAX_DONT_DMSG_IPs, strlen(szDontDmesgIPs));
-
-				//NOTE! For now only handles one IP address
-				if (strlen(szDontDmesgIPs))
-					ip_numeric = inet_addr(szDontDmesgIPs);
-			}
-			else
-				printf("No IP not to send dmesg set..\n");
-
-			unsigned int  nBlockingThreshold = atoi(row[4]);
-			snprintf(cSetupString, nBuffSize, "SETUP|%s^%s^%s^%01X^%02X^%02X^|", row[0], row[1], row[2], nBlockingThreshold, cShowStatusBits.nValues, ip_numeric);
-				//strcpy(cReply+strlen(cReply), "SETUP|");
-				//strcpy(cReply+strlen(cReply), row[0]);
-				//strcpy(cReply+strlen(cReply), "|");
-			//printf("Setup added now : %s^%s^%s\n", row[0], row[1], row[2]);
-			if (!atoi(row[3])) {
-				printf("Setting setup as handled..\n");
-				if (mysql_query(updateConn, "update setup set handled = b'1'")) {
-					fprintf(stderr, "%s\n", mysql_error(updateConn));
-					addWarningRecord("****** ERROR Error updating setup handled field (meaning it will read again)");
-			    	mysql_free_result(res);
-					return 0;
-				}
-		  	}
-			else
-				printf("setup was handled.. not setting\n");
-					//printf("Finished processing it...\n");
-		}  
-		else
-			printf("Not adding setup.. handled was: %s\n", row[3]);
-	}
-	else
-	{
-		//Used to report failure to read setup to global DB server, but we no longer have that server
-   	    //unsigned long nMinutes = minutesSincePing(); 
-       	//if (nMinutes >= 10)
-        //{
-			//setPing();
-  	         /*
-    	     char szUrl[255];
-          	strcpy(szUrl, "http://81.88.19.252/script/config_update.php?f=ping&status=Unable_to_read_setup");
-           *szWgetBuff = 0;
-            wget(szUrl, szWgetBuff, sizeof(szWgetBuff));  //Using global static buffers because reply doesn't come immediately.
-   	        //printf("%s\n", szUrl);
-       	    */
-		//}
-        //printf("Minutes: %lu (%s)\n", nMinutes, szWgetBuff);
-		//printf("************ ERROR! Unable to read the setup\n");
-	}	
-   	mysql_free_result(res);
-	return 1;
-}//getSetupStringOk()
-
 bool getSetupStringNewOk(MYSQL *conn, MYSQL *updateConn, char *cSetupString, int nBuffSize, bool bReadChangesOnly)
 {
 	MYSQL_RES *res;
@@ -295,9 +165,9 @@ bool getSetupStringNewOk(MYSQL *conn, MYSQL *updateConn, char *cSetupString, int
 				printf("No IP not to send dmesg set (fld no: %d)..\n", nDontMsgFldNo);
 
 			//printf("Converting ips\n");				
-			uint32_t adminIP = (uint32_t)strtoul(row[0], NULL, 10);
-			uint32_t internalIP = (uint32_t)strtoul(row[1], NULL, 10);
-			uint32_t nettmask = (uint32_t)strtoul(row[2], NULL, 10);
+			uint32_t adminIP = (uint32_t)strtoul(row[0]?row[0]:"0", NULL, 10);
+			uint32_t internalIP = (uint32_t)strtoul(row[1]?row[1]:"0", NULL, 10);
+			uint32_t nettmask = (uint32_t)strtoul(row[2]?row[2]:"0", NULL, 10);
 
 			unsigned int  nBlockingThreshold = atoi(row[4]);
 
@@ -307,7 +177,7 @@ bool getSetupStringNewOk(MYSQL *conn, MYSQL *updateConn, char *cSetupString, int
 				//strcpy(cReply+strlen(cReply), "|");
 
 			printf("Setup added now : %s^%s^%s\n", (row[0]?row[0]:"N/A"), (row[1]?row[1]:"N/A"), (row[2]?row[2]:"N/A"));
-			if (!atoi(row[3])) {
+			if (!atoi(row[3]?row[3]:"0")) {
 				//printf("Setting setup as handled..\n");
 				if (mysql_query(updateConn, "update setup set handled = b'1'")) {
 					fprintf(stderr, "%s\n", mysql_error(updateConn));

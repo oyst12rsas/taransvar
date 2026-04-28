@@ -1,378 +1,858 @@
 #!/usr/bin/perl
 use strict;
 use warnings;
+use Getopt::Long qw(GetOptions);
 
 # VPN_router_diagnose.pl
-#
-# Reads configured peers from /etc/swanctl/conf.d/*.conf
-# Compares them with active SAs from swanctl --list-sas
-# Uses a small static test-target map for exact overlay IPs / ports
-#
-# Adjust only these few values for this node:
+# Split: TEST_TARGETS are routed site peers to test outward.
+#        VPN_CLIENT_POOLS are NATed access clients hidden behind VPS SNAT.
+# Default is diagnose-only. Use --fix-iptables to add missing iptables rules.
+# Use --fix-routes on the VPS to add/replace missing return routes to LANs behind routed site peers.
 
-my $NODE_NAME      = "VPS";
-my $OVERLAY_LOCAL  = "10.47.0.1";
-my $CONF_GLOB      = "/etc/swanctl/conf.d/*.conf";
+our $NODE_NAME     = "UNCONFIGURED";
+our $OVERLAY_LOCAL = "";
+our $CONF_GLOB     = "/etc/swanctl/conf.d/*.conf";
 
-# Optional exact test IP / ports per configured connection name.
-# If test_ip is omitted, the script will try to derive a gateway-like IP
-# from remote_ts (e.g. 10.47.1.0/24 -> 10.47.1.1).
-my %TEST_TARGETS = (
-    'TORSAS_ROUTERVM' => {
-        test_ip => '10.47.1.1',
-        ports   => [80, 443],
-    },
-    'TORSAS_COWRIE' => {
-        test_ip => '10.47.0.2',
-        ports   => [2222],
-    },
-);
+# Local machine-specific configuration.
+# Preferred workflow:
+#   1. Keep vpn_router_diagnose.local.template.pl in the GitHub/repo directory.
+#   2. Copy it once to ~/vpn_router_diagnose.local.pl and edit the home copy.
+#   3. The home copy overrides script defaults and survives future downloads/git pulls.
+#
+# Load order:
+#   1. ~/vpn_router_diagnose.local.pl              (user-owned override)
+#   2. ./vpn_router_diagnose.local.template.pl    (repo template fallback/documentation)
+#   3. safe internal defaults                     (no site-specific checks)
+our $HOME_LOCAL     = user_home() . "/vpn_router_diagnose.local.pl";
+our $CWD_LOCAL      = "./vpn_router_diagnose.local.pl";
+our $REPO_TEMPLATE  = "./vpn_router_diagnose.local.template.pl";
+our $LOCAL_CONFIG   = undef;
+our $LOCAL_CONFIG_KIND = "safe internal defaults";
+our $LOCAL_CONFIG_VERSION = 1;
+our $XFRM_IF      = "";
+our $XFRM_IF_ID   = undef;
+our @XFRM_ROUTES  = ();
+our @LOCAL_LAN_ROUTES = ();
+
+our %TEST_TARGETS = ();
+
+our %ROUTED_SITE_LANS = ();
+
+our %VPN_CLIENT_POOLS = ();
+
+my ($FIX_IPTABLES, $FIX_ROUTES, $FIX_XFRM, $SHOW_CONF, $PRINT_LOCAL_TEMPLATE, $HELP) = (0, 0, 0, 0, 0, 0);
+my @FINDINGS;
+my %COUNTS = ( OK => 0, WARN => 0, ERROR => 0, FIX => 0, MISSING => 0 );
+GetOptions(
+    'fix-iptables' => \$FIX_IPTABLES,
+    'fix-routes'   => \$FIX_ROUTES,
+    'fix-xfrm'     => \$FIX_XFRM,
+    'show-conf'    => \$SHOW_CONF,
+    'print-local-template' => \$PRINT_LOCAL_TEMPLATE,
+    'help'         => \$HELP,
+) or die "Invalid option. Use --help\n";
+
+if ($HELP) { print_usage(); exit 0; }
+if ($PRINT_LOCAL_TEMPLATE) { print_local_template(); exit 0; }
 
 print_banner();
-
+($LOCAL_CONFIG, $LOCAL_CONFIG_KIND) = load_config_with_template($HOME_LOCAL, $CWD_LOCAL, $REPO_TEMPLATE);
 my %configured = parse_swanctl_conf($CONF_GLOB);
 my ($sas_text, %active) = get_active_sas();
 
 section("Node");
-print "Node name     : $NODE_NAME\n";
-print "Overlay local : $OVERLAY_LOCAL\n";
-print "Config glob   : $CONF_GLOB\n";
+print "Node name       : $NODE_NAME\n";
+print "Overlay local   : $OVERLAY_LOCAL\n";
+print "Config glob     : $CONF_GLOB\n";
+print "Mode            : diagnose" . ($FIX_IPTABLES ? " + FIX iptables" : "") . ($FIX_ROUTES ? " + FIX routes" : "") . ($FIX_XFRM ? " + FIX xfrm" : "") . (!$FIX_IPTABLES && !$FIX_ROUTES && !$FIX_XFRM ? " only" : "") . "\n";
+if (defined $LOCAL_CONFIG) {
+    print "Local config    : $LOCAL_CONFIG ($LOCAL_CONFIG_KIND loaded)\n";
+} else {
+    print "Local config    : not found; using safe internal defaults only\n";
+    print "                  No site-specific checks will run without local/template config.\n";
+    print "                  First-time setup:\n";
+    print "                  perl VPN_router_diagnose.pl --print-local-template > vpn_router_diagnose.local.template.pl\n";
+    print "                  cp ./vpn_router_diagnose.local.template.pl ~/vpn_router_diagnose.local.pl\n";
+    print "                  nano ~/vpn_router_diagnose.local.pl\n";
+    finding("WARN", "No local config or repo template found; using safe minimal defaults", "Create a visible local config: cp ./vpn_router_diagnose.local.template.pl ~/vpn_router_diagnose.local.pl, then enable the section for this machine.");
+}
+print "XFRM interface  : " . ($XFRM_IF ? $XFRM_IF . (defined($XFRM_IF_ID) ? " if_id=$XFRM_IF_ID" : "") : "not configured") . "\n";
 
-section("Interfaces");
-run("ip -br a");
+section("Interfaces"); run("ip -br a");
+section("Routes"); run("ip route"); run("ip rule"); run("ip route show table 220 2>/dev/null || true");
 
-section("Routes");
-run("ip route");
-run("ip rule");
-run("ip route show table 220 2>/dev/null || true");
+section("XFRM interface and local route checks");
+check_or_fix_xfrm_interface($FIX_XFRM);
+check_or_fix_xfrm_routes($FIX_ROUTES);
+check_or_fix_local_lan_routes($FIX_ROUTES);
 
-section("strongSwan active SAs");
-print $sas_text || "(no output)\n";
+section("strongSwan active SAs"); print $sas_text || "(no output)\n";
+if (!$sas_text || $sas_text !~ /ESTABLISHED/) {
+    finding("ERROR", "No ESTABLISHED strongSwan SA found", no_sa_advice(\%configured));
+}
 
 section("Configured peers summary");
 for my $name (sort keys %configured) {
     my $cfg = $configured{$name};
     my $status = exists $active{$name} ? "ACTIVE" : "INACTIVE";
-
-    print "\n[$status] $name\n";
-    print "  peer_id   : " . ($cfg->{peer_id}   // '') . "\n";
-    print "  child     : " . ($cfg->{child}     // '') . "\n";
-    print "  remote_ts : " . ($cfg->{remote_ts} // '') . "\n";
-    print "  local_ts  : " . ($cfg->{local_ts}  // '') . "\n";
-    print "  remote_ip : " . ($cfg->{remote_addrs} // '') . "\n";
-
-    my $test_ip = get_test_ip($name, $cfg);
-    print "  test_ip   : " . ($test_ip // 'UNKNOWN') . "\n";
+    my $role = exists $TEST_TARGETS{$name} ? "sitePeer/testTarget" : "configured";
+    print "\n[$status] $name ($role)\n";
+    print "  file         : " . ($cfg->{file} // '') . "\n";
+    print "  peer_id      : " . ($cfg->{peer_id} // '') . "\n";
+    print "  child        : " . ($cfg->{child} // '') . "\n";
+    print "  local_ts     : " . ($cfg->{local_ts} // '') . "\n";
+    print "  remote_ts    : " . ($cfg->{remote_ts} // '') . "\n";
+    print "  if_id_in     : " . ($cfg->{if_id_in} // '') . "\n";
+    print "  if_id_out    : " . ($cfg->{if_id_out} // '') . "\n";
+    print "  pools        : " . ($cfg->{pools} // '') . "\n";
+    print "  remote_ip    : " . ($cfg->{remote_addrs} // '') . "\n";
+    print "  test_ip      : " . (exists($TEST_TARGETS{$name}) ? get_test_ip($name, $cfg) : 'not a TEST_TARGET') . "\n";
+    if (exists($TEST_TARGETS{$name}) && !exists($active{$name})) {
+        finding("WARN", "Configured site peer $name is not active", inactive_peer_advice($name, $cfg));
+    }
 }
 
 section("Unexpected active SAs");
-my $found_unexpected = 0;
+my $unexpected = 0;
 for my $name (sort keys %active) {
     next if exists $configured{$name};
-    $found_unexpected = 1;
+    $unexpected = 1;
     print "[WARN] Active SA not found in config parse: $name\n";
+    finding("WARN", "Active SA $name was not found in parsed config", "Check parser/config naming, or inspect /etc/swanctl/conf.d/*.conf manually.");
 }
-print "None\n" unless $found_unexpected;
+print "None\n" unless $unexpected;
 
-section("Detailed peer checks");
-for my $name (sort keys %configured) {
+section("Detailed site peer checks");
+for my $name (sort keys %TEST_TARGETS) {
     my $cfg    = $configured{$name};
     my $sa     = $active{$name};
-    my $testip = get_test_ip($name, $cfg);
-
-    section("Peer: $name");
-
-    print "Configured : yes\n";
-    print "Active     : " . ($sa ? "yes" : "no") . "\n";
-    print "peer_id    : " . ($cfg->{peer_id} // '') . "\n";
-    print "local_ts   : " . ($cfg->{local_ts} // '') . "\n";
-    print "remote_ts  : " . ($cfg->{remote_ts} // '') . "\n";
+    my $testip = $cfg ? get_test_ip($name, $cfg) : $TEST_TARGETS{$name}{test_ip};
+    section("Site peer: $name");
+    print "Configured : " . ($cfg ? "yes" : "no") . "\n";
+    print "Active     : " . ($sa  ? "yes" : "no") . "\n";
     print "test_ip    : " . ($testip // 'UNKNOWN') . "\n";
-
-    if ($sa) {
-        print "\n-- SA block --\n";
-        print $sa->{block};
-
-        print "\n-- SA interpretation --\n";
-        print "ESTABLISHED : " . ($sa->{established} ? "yes" : "no") . "\n";
-        print "IN bytes    : " . ($sa->{in_bytes}  // 0) . "\n";
-        print "IN packets  : " . ($sa->{in_pkts}   // 0) . "\n";
-        print "OUT bytes   : " . ($sa->{out_bytes} // 0) . "\n";
-        print "OUT packets : " . ($sa->{out_pkts}  // 0) . "\n";
-        print "Remote seen : " . ($sa->{remote_underlay} // 'UNKNOWN') . "\n";
-    }
-
+    print_sa_interpretation($sa) if $sa;
     if ($testip) {
         print "\n-- Route checks --\n";
         run("ip route get $testip");
         run("ip route get $testip from $OVERLAY_LOCAL");
-
         print "\n-- Overlay ping --\n";
-        run("ping -I $OVERLAY_LOCAL -c 2 $testip");
-
+        my $ping_ok = run("ping -I $OVERLAY_LOCAL -c 2 $testip");
+        if ($ping_ok) { finding("OK", "Overlay ping to $name ($testip) works from $OVERLAY_LOCAL", undef); }
+        else { finding("ERROR", "Overlay ping to $name ($testip) failed from $OVERLAY_LOCAL", "Check SA, xfrm policy/state, ipsec0 routes, and peer firewall."); }
         my $ports = $TEST_TARGETS{$name}{ports} || [];
         if (@$ports) {
             print "\n-- TCP port checks --\n";
             for my $port (@$ports) {
-                run("nc -vz -w 2 $testip $port");
+                my $ok = run("nc -vz -w 2 $testip $port");
+                finding($ok ? "OK" : "WARN", "TCP $testip:$port " . ($ok ? "is reachable" : "is not reachable"), $ok ? undef : "If this service should be open, check listener and firewall on $testip.");
             }
         }
-    } else {
-        print "\n[WARN] No test_ip available for this peer\n";
     }
 }
+
+section("Routed site LAN return-route checks");
+for my $name (sort keys %ROUTED_SITE_LANS) {
+    check_or_fix_routed_site_lan($name, $ROUTED_SITE_LANS{$name}, $FIX_ROUTES);
+}
+
+section("VPN client pool checks");
+my @clients = active_vpn_clients(\%active);
+if (!@clients) {
+    print "No active roadwarrior/client virtual IPs detected in swanctl output.\n";
+} else {
+    for my $c (@clients) {
+        print "\nActive client SA: $c->{conn}\n";
+        print "  virtual_ip : $c->{vip}\n";
+        print "  underlay   : " . ($c->{underlay} // 'UNKNOWN') . "\n";
+        print "  pool       : " . ($c->{pool_name} // 'UNKNOWN/NO MATCH') . "\n";
+        print "  local_ts   : " . ($c->{local_ts} // '') . "\n";
+        print "  remote_ts  : " . ($c->{remote_ts} // '') . "\n";
+        if ($c->{pool}) {
+            check_or_fix_client_pool($c->{pool}, $FIX_IPTABLES);
+        } else {
+            print "  [WARN] Client virtual IP does not match any VPN_CLIENT_POOLS client_net.\n";
+            finding("WARN", "Client virtual IP $c->{vip} does not match configured VPN_CLIENT_POOLS", "Add/adjust a pool entry or move clients to the expected pool.");
+        }
+    }
+}
+
+section("iptables INPUT/FORWARD/NAT snapshot");
+run("sudo iptables -L INPUT -n -v --line-numbers");
+run("sudo iptables -L FORWARD -n -v --line-numbers");
+run("sudo iptables -t nat -L POSTROUTING -n -v --line-numbers");
 
 section("XFRM");
 run("sudo ip xfrm policy");
 run("sudo ip xfrm state");
 
-section("Interpretation hints");
-print <<'EOF';
-- Configured but inactive:
-    present in config, absent from swanctl --list-sas
+if ($SHOW_CONF) { section("Suggested swanctl config"); print_suggested_swanctl_conf(); }
 
-- Active and ESTABLISHED:
-    tunnel exists
+print_final_diagnosis();
+exit(($COUNTS{ERROR} || $COUNTS{MISSING}) ? 2 : ($COUNTS{WARN} ? 1 : 0));
 
-- OUT > 0 and IN = 0:
-    local node is sending into tunnel, but nothing returns
 
-- Both IN/OUT = 0:
-    traffic is not entering the tunnel at all
 
-- ip route get <test_ip> goes via default gateway:
-    overlay route is wrong for policy-based IPsec
+sub user_home {
+    return $ENV{SUDO_USER} ? (getpwnam($ENV{SUDO_USER}))[7] || $ENV{HOME} : $ENV{HOME};
+}
 
-- ip route get <test_ip> from <overlay_local> should typically stay local
-  (e.g. dev lo) so XFRM can catch it in policy-based setups
+sub load_config_with_template {
+    my ($home_local, $cwd_local, $repo_template) = @_;
+    my @candidates = (
+        [$home_local,    "home local config"],
+        [$cwd_local,     "current-directory local config"],
+        [$repo_template, "repo template fallback"],
+    );
+    for my $pair (@candidates) {
+        my ($file, $kind) = @$pair;
+        next unless defined $file && -f $file;
+        print "[INFO] Loading $kind: $file\n";
+        my $loaded = load_config_file($file);
+        if ($loaded) {
+            if ($kind ne "repo template fallback" && defined $repo_template && -f $repo_template) {
+                compare_local_with_template($file, $repo_template);
+            }
+            if ($kind eq "repo template fallback") {
+                print "[INFO] To customize this machine, copy the template to your home directory:\n";
+                print "       cp $repo_template $home_local\n" if defined $home_local;
+                print "       nano $home_local\n\n" if defined $home_local;
+                finding("WARN", "Using repo template instead of user local config", "Copy it to ~/vpn_router_diagnose.local.pl and edit it. The home copy will not be overwritten by GitHub downloads.");
+            }
+            return ($file, $kind);
+        }
+        return ($file, "$kind failed");
+    }
+    return (undef, "internal defaults");
+}
 
-- If test_ip is UNKNOWN:
-    add it to %TEST_TARGETS or make remote_ts derivation fit your convention
+sub load_config_file
+ {
+    my ($file) = @_;
+    my $rv = do $file;
+    if (!defined $rv) {
+        my $err = $@ || $! || "unknown error";
+        finding("ERROR", "Failed to load local/template config $file", "Fix syntax/permissions in $file. Perl error: $err");
+        return 0;
+    }
+    return 1;
+}
+
+sub compare_local_with_template {
+    my ($home_local, $repo_template) = @_;
+    return unless defined $home_local && defined $repo_template;
+    return unless -f $home_local && -f $repo_template;
+
+    my $diff = `diff -q '$home_local' '$repo_template' 2>/dev/null`;
+    if ($diff) {
+        print "[INFO] Local config differs from repo template (expected after customization).\n";
+        print "       Review template updates with:\n";
+        print "       diff -u $home_local $repo_template\n";
+    } else {
+        print "[INFO] Local config is identical to the repo template. Edit $home_local if this machine needs custom values.\n";
+    }
+}
+
+sub print_local_template {
+    print <<'EOF';
+# vpn_router_diagnose.local.template.pl
+# Copy to ~/vpn_router_diagnose.local.pl and edit for THIS machine:
+#   cp ./vpn_router_diagnose.local.template.pl ~/vpn_router_diagnose.local.pl
+#   nano ~/vpn_router_diagnose.local.pl
+#
+# IMPORTANT:
+# - This template is intentionally safe: examples are commented out.
+# - Do not leave VPS routed-LAN settings enabled on routervm, or vice versa.
+# - Missing checks are better than wrong fixes.
+
+$CONF_GLOB = "/etc/swanctl/conf.d/*.conf";
+
+# -----------------------------
+# RouterVM example: uncomment and adapt on routervm only
+# -----------------------------
+# $NODE_NAME     = "routervm";
+# $OVERLAY_LOCAL = "10.47.1.1";
+# $XFRM_IF       = "ipsec0";
+# $XFRM_IF_ID    = 42;   # 0x2a
+#
+# %TEST_TARGETS = (
+#     'VPS' => { test_ip => '10.47.0.1', ports => [80, 443] },
+# );
+#
+# @XFRM_ROUTES = (
+#     { dst => "10.47.0.0/24", dev => "ipsec0" },
+# );
+#
+# @LOCAL_LAN_ROUTES = (
+#     { dst => "192.168.50.0/24", dev => "wlx088af12de289", src => "192.168.50.1" },
+# );
+#
+# # RouterVM normally NATs DHCP WiFi clients to 10.47.1.1 for VPN traffic,
+# # so it should NOT define ROUTED_SITE_LANS for 192.168.50.0/24.
+# %ROUTED_SITE_LANS = ();
+#
+# %VPN_CLIENT_POOLS = ();
+
+# -----------------------------
+# VPS example: uncomment and adapt on VPS only
+# -----------------------------
+# $NODE_NAME     = "VPS";
+# $OVERLAY_LOCAL = "10.47.0.1";
+# $XFRM_IF       = "ipsec0";
+# $XFRM_IF_ID    = 1;
+#
+# %TEST_TARGETS = (
+#     'TORSAS_ROUTERVM' => { test_ip => '10.47.1.1', ports => [80, 443] },
+#     'TORSAS_COWRIE'   => { test_ip => '10.47.0.2', ports => [2222] },
+# );
+#
+# @XFRM_ROUTES = (
+#     { dst => "10.0.0.0/8", dev => "ipsec0" },
+# );
+#
+# @LOCAL_LAN_ROUTES = ();
+#
+# # Enable this ONLY if you intentionally preserve real LAN client IPs
+# # behind routervm. Leave empty if routervm NATs 192.168.50.0/24 to 10.47.1.1.
+# %ROUTED_SITE_LANS = ();
+# # Example routed mode only:
+# # %ROUTED_SITE_LANS = (
+# #   'TORSAS_ROUTERVM_WIFI' => {
+# #       lan_net   => '192.168.50.0/24',
+# #       via       => '10.47.1.1',
+# #       peer_name => 'TORSAS_ROUTERVM',
+# #       test_host => '192.168.50.101',
+# #   },
+# # );
+#
+# %VPN_CLIENT_POOLS = (
+#     'vpnClients' => {
+#         client_net       => '192.168.250.0/24',
+#         nat_to           => $OVERLAY_LOCAL,
+#         allowed_dst      => '10.0.0.0/8',
+#         local_service_ip => $OVERLAY_LOCAL,
+#         service_ports    => [80, 443],
+#     },
+# );
+
+1;
 EOF
-
-exit 0;
-
-sub print_banner {
-    print "\n=========================================\n";
-    print " VPN Router Diagnose\n";
-    print "=========================================\n";
 }
 
-sub section {
-    my ($title) = @_;
-    print "\n-----------------------------------------\n";
-    print " $title\n";
-    print "-----------------------------------------\n";
+sub get_xfrm_interface_info {
+    my ($dev) = @_;
+    my $out = `ip -d link show $dev 2>&1`;
+    return ($? == 0, $out);
 }
 
-sub run {
-    my ($cmd) = @_;
-    print "\n\$ $cmd\n";
-    system($cmd);
+sub infer_if_id_from_config {
+    my %ids;
+    for my $name (keys %configured) {
+        my $cfg = $configured{$name};
+        for my $k (qw(if_id_in if_id_out)) {
+            next unless defined $cfg->{$k} && $cfg->{$k} ne '';
+            $ids{$cfg->{$k}} = 1;
+        }
+    }
+    my @ids = sort keys %ids;
+    return @ids == 1 ? $ids[0] : undef;
 }
+
+sub xfrm_id_from_link_text {
+    my ($txt) = @_;
+    return undef unless defined $txt;
+    return hex($1) if $txt =~ /xfrm\s+if_id\s+0x([0-9a-fA-F]+)/;
+    return $1 if $txt =~ /xfrm\s+if_id\s+(\d+)/;
+    return undef;
+}
+
+sub check_or_fix_xfrm_interface {
+    my ($fix) = @_;
+    if (!defined($XFRM_IF) || $XFRM_IF eq '') {
+        print "XFRM interface check skipped: XFRM_IF is not configured in local config.\n";
+        return 1;
+    }
+    my ($exists, $info) = get_xfrm_interface_info($XFRM_IF);
+    print "\$ ip -d link show $XFRM_IF\n$info";
+    my $want_id = defined($XFRM_IF_ID) ? $XFRM_IF_ID : infer_if_id_from_config();
+    if (!$exists) {
+        my $advice = defined($want_id)
+            ? "Create it: sudo ip link add $XFRM_IF type xfrm if_id $want_id; sudo ip link set $XFRM_IF up. Persist it with systemd."
+            : "Either remove if_id_in/out from swanctl config to use policy mode, or set XFRM_IF_ID in ~/vpn_router_diagnose.local.pl and create $XFRM_IF.";
+        finding("ERROR", "XFRM interface $XFRM_IF is missing", $advice);
+        print "[ERROR] XFRM interface $XFRM_IF is missing\nAdvice: $advice\n";
+        if ($fix && defined($want_id)) {
+            my $ok = run("sudo ip link add $XFRM_IF type xfrm if_id $want_id && sudo ip link set $XFRM_IF up");
+            finding($ok ? "FIX" : "ERROR", ($ok ? "Created $XFRM_IF if_id $want_id" : "Failed creating $XFRM_IF"), $ok ? undef : $advice);
+        }
+        return 0;
+    }
+    my $actual_id = xfrm_id_from_link_text($info);
+    if (!defined($actual_id)) {
+        finding("ERROR", "$XFRM_IF exists but does not look like an XFRM interface", "Recreate it as: sudo ip link del $XFRM_IF; sudo ip link add $XFRM_IF type xfrm if_id <ID>; sudo ip link set $XFRM_IF up");
+        return 0;
+    }
+    if (defined($want_id) && $actual_id != $want_id) {
+        finding("ERROR", "$XFRM_IF if_id mismatch: interface=$actual_id expected=$want_id", "Recreate it: sudo ip link del $XFRM_IF; sudo ip link add $XFRM_IF type xfrm if_id $want_id; sudo ip link set $XFRM_IF up");
+        return 0;
+    }
+    finding("OK", "$XFRM_IF exists with if_id $actual_id", undef);
+    return 1;
+}
+
+sub route_destination_uses_dev {
+    my ($dst, $dev) = @_;
+    return 0 unless defined($dst) && $dst ne '' && defined($dev) && $dev ne '';
+
+    my ($cmd, $out);
+
+    if ($dst =~ m{/}) {
+        # CIDR route table entry check. `ip route get 10.0.0.0/8` is not valid
+        # for validating a route entry and causes false MISSING diagnostics.
+        $cmd = "ip route show exact $dst";
+        $out = `$cmd 2>&1`;
+        print "\$ $cmd\n" . ($out ne '' ? $out : "(no matching route)\n");
+        return ($out =~ /^\Q$dst\E\s+.*\bdev\s+\Q$dev\E\b/m) ? 1 : 0;
+    }
+
+    # Single host/IP routing decision check.
+    $cmd = "ip route get $dst";
+    $out = `$cmd 2>&1`;
+    print "\$ $cmd\n$out";
+    return ($out =~ /\bdev\s+\Q$dev\E\b/) ? 1 : 0;
+}
+
+sub check_or_fix_xfrm_routes {
+    my ($fix) = @_;
+    if (!@XFRM_ROUTES) { print "No XFRM routes configured in local config.\n"; return; }
+    for my $r (@XFRM_ROUTES) {
+        my $dst = $r->{dst}; my $dev = $r->{dev} || $XFRM_IF;
+        next unless $dst;
+        if (route_destination_uses_dev($dst, $dev)) { finding("OK", "Route to $dst uses $dev", undef); next; }
+        my $cmd = "sudo ip route replace $dst dev $dev";
+        finding("MISSING", "Route to $dst does not use $dev", "Run: $cmd. Persist with your systemd route service or run this script with --fix-routes.");
+        print "[MISSING] would run: $cmd\n" unless $fix;
+        if ($fix) { my $ok = run($cmd); finding($ok ? "FIX" : "ERROR", ($ok ? "Installed route $dst dev $dev" : "Failed installing route $dst dev $dev"), $ok ? undef : "Run manually: $cmd"); }
+    }
+}
+
+sub check_or_fix_local_lan_routes {
+    my ($fix) = @_;
+    if (!@LOCAL_LAN_ROUTES) { print "No local LAN route repairs configured in local config.\n"; return; }
+    for my $r (@LOCAL_LAN_ROUTES) {
+        my $dst = $r->{dst}; my $dev = $r->{dev}; my $src = $r->{src};
+        next unless $dst && $dev;
+        if (route_destination_uses_dev($dst, $dev)) { finding("OK", "Local LAN route to $dst uses $dev", undef); next; }
+        my $cmd = "sudo ip route replace $dst dev $dev" . (defined($src) && $src ne '' ? " src $src" : "");
+        finding("ERROR", "Local LAN route to $dst is wrong; replies may leave via the wrong interface", "Run: $cmd. Fixes ipsec0 In reply followed by enp1s0 Out to WiFi client.");
+        print "[ERROR] would run: $cmd\n" unless $fix;
+        if ($fix) { my $ok = run($cmd); finding($ok ? "FIX" : "ERROR", ($ok ? "Repaired local LAN route $dst dev $dev" : "Failed repairing local LAN route $dst"), $ok ? undef : "Run manually: $cmd"); }
+    }
+}
+
+
+sub no_sa_advice {
+    my ($configured_ref) = @_;
+    my @cmds;
+    for my $conn (sort keys %$configured_ref) {
+        my $child = $configured_ref->{$conn}{child} // '';
+        if ($child ne '') {
+            push @cmds, "sudo swanctl --initiate --child $child    # connection $conn";
+        } else {
+            push @cmds, "sudo swanctl --initiate --ike $conn";
+        }
+    }
+    my $init = @cmds ? join("; ", @cmds) : "sudo swanctl --list-conns   # find the child name, then: sudo swanctl --initiate --child NAME";
+    return "Run: sudo systemctl status strongswan-swanctl; sudo swanctl --load-all; $init";
+}
+
+sub inactive_peer_advice {
+    my ($name, $cfg) = @_;
+    my $child = $cfg->{child} // '';
+    my $cmd = $child ne '' ? "sudo swanctl --initiate --child $child" : "sudo swanctl --initiate --ike $name";
+    return "Try: $cmd; then check sudo journalctl -u strongswan-swanctl -n 100";
+}
+
+sub finding {
+    my ($level, $summary, $advice) = @_;
+    $level = uc($level // 'WARN');
+    $COUNTS{$level}++ if exists $COUNTS{$level};
+    push @FINDINGS, { level => $level, summary => $summary, advice => $advice };
+}
+
+sub print_final_diagnosis {
+    section("Final diagnosis");
+    print "OK      : $COUNTS{OK}\n";
+    print "FIXED   : $COUNTS{FIX}\n";
+    print "WARN    : $COUNTS{WARN}\n";
+    print "MISSING : $COUNTS{MISSING}\n";
+    print "ERROR   : $COUNTS{ERROR}\n";
+
+    my @bad = grep { $_->{level} ne 'OK' && $_->{level} ne 'FIX' } @FINDINGS;
+    if (!@bad) {
+        print "\nNo unresolved errors found by scripted checks.\n";
+        return;
+    }
+
+    print "\nProblems found and what to do:\n";
+    my $n = 1;
+    for my $f (@bad) {
+        print "\n$n. [$f->{level}] $f->{summary}\n";
+        print "   Advice: $f->{advice}\n" if defined $f->{advice} && $f->{advice} ne '';
+        $n++;
+    }
+
+    print "\nInterpretation hints for unresolved problems:\n";
+    print "- TEST_TARGETS are routed site peers/subnets to probe outward. Do not put NATed clients there.\n";
+    print "- VPN_CLIENT_POOLS are incoming access clients hidden behind VPS NAT. Phones and laptops fit here.\n";
+    print "- INPUT controls access to VPS services, e.g. http://10.47.0.1/.\n";
+    print "- FORWARD controls whether VPS routes traffic onwards. INPUT access does not make VPS an internet gateway.\n";
+    print "- POSTROUTING SNAT hides client VPN addresses from routed site peers.\n";
+    print "- ROUTED_SITE_LANS are real LANs behind site peers. They need a VPS return route if you do not NAT them.\n";
+    print "- If routervm sees LAN_CLIENT > 10.47.0.1 go Out on ipsec0 but no reply comes In, fix route on VPS: ip route replace LAN_NET via ROUTERVM_OVERLAY_IP.\n";
+    print "- strongSwan IN/OUT counters are from the VPS/IPsec perspective.\n";
+}
+
+sub print_usage {
+    print "Usage:\n";
+    print "  sudo perl VPN_router_diagnose.pl\n";
+    print "  sudo perl VPN_router_diagnose.pl --fix-iptables\n";
+    print "  sudo perl VPN_router_diagnose.pl --fix-routes\n";
+    print "  sudo perl VPN_router_diagnose.pl --fix-xfrm\n";
+    print "  sudo perl VPN_router_diagnose.pl --show-conf\n";
+    print "  perl VPN_router_diagnose.pl --print-local-template > vpn_router_diagnose.local.template.pl\n";
+    print "\nConfig load order:\n";
+    print "  1. ~/vpn_router_diagnose.local.pl             user-owned config, preferred\n";
+    print "  2. ./vpn_router_diagnose.local.template.pl   repo template fallback\n";
+    print "  3. internal defaults                         last resort\n";
+    print "\nOptions:\n";
+    print "  --fix-iptables          Add missing firewall/NAT rules without flushing tables.\n";
+    print "  --fix-routes            Add/replace missing routes configured in local config.\n";
+    print "  --fix-xfrm              Create missing XFRM interface if XFRM_IF_ID is configured.\n";
+    print "  --show-conf             Print suggested swanctl config for NATed clients.\n";
+    print "  --print-local-template  Print a repo/local config template.\n";
+    print "  --help                  Show help.\n";
+}
+sub print_banner { print "\n=========================================\n VPN Router Diagnose v13 canonical\n=========================================\n"; }
+sub section { my ($t)=@_; print "\n-----------------------------------------\n $t\n-----------------------------------------\n"; }
+sub run { my ($cmd)=@_; print "\n\$ $cmd\n"; system($cmd); return ($? == 0); }
+sub sh_quote { my ($s)=@_; $s =~ s/'/'\"'\"'/g; return "'$s'"; }
 
 sub get_test_ip {
     my ($name, $cfg) = @_;
-
-    if (exists $TEST_TARGETS{$name} && $TEST_TARGETS{$name}{test_ip}) {
-        return $TEST_TARGETS{$name}{test_ip};
-    }
-
-    my $rts = $cfg->{remote_ts} // '';
-    return derive_test_ip_from_ts($rts);
+    return $TEST_TARGETS{$name}{test_ip} if exists $TEST_TARGETS{$name} && $TEST_TARGETS{$name}{test_ip};
+    return derive_test_ip_from_ts($cfg->{remote_ts} // '');
 }
 
 sub derive_test_ip_from_ts {
     my ($ts) = @_;
-
-    # Simple convention:
-    # 10.47.1.0/24 -> 10.47.1.1
-    # 10.47.0.2/32 -> 10.47.0.2
-    if ($ts =~ /^(\d+\.\d+\.\d+)\.0\/24$/) {
-        return "$1.1";
-    }
-    if ($ts =~ /^(\d+\.\d+\.\d+\.\d+)\/32$/) {
-        return $1;
-    }
+    return "$1.1" if $ts =~ /^(\d+\.\d+\.\d+)\.0\/24$/;
+    return $1 if $ts =~ /^(\d+\.\d+\.\d+\.\d+)\/32$/;
     return undef;
 }
 
 sub parse_swanctl_conf {
     my ($glob) = @_;
     my %peers;
-
     for my $file (glob($glob)) {
         open my $fh, '<', $file or next;
         local $/ = undef;
         my $text = <$fh>;
         close $fh;
-
-        my @lines = split /\n/, $text;
-
-        my $in_connections = 0;
-        my $in_conn        = 0;
-        my $in_local       = 0;
-        my $in_remote      = 0;
-        my $in_children    = 0;
-        my $in_child       = 0;
-
         my @stack;
-        my $current_conn;
-        my $current_child;
-
-        for my $raw (@lines) {
+        my $conn;
+        for my $raw (split /\n/, $text) {
             my $line = $raw;
-            $line =~ s/#.*$//;
-            $line =~ s/^\s+//;
-            $line =~ s/\s+$//;
+            $line =~ s/#.*$//; $line =~ s/^\s+//; $line =~ s/\s+$//;
             next if $line eq '';
-
-            if ($line =~ /^connections\s*\{$/) {
-                $in_connections = 1;
-                push @stack, 'connections';
-                next;
+            if ($line =~ /^connections\s*\{$/) { push @stack, 'connections'; next; }
+            if (@stack && $stack[-1] eq 'connections' && $line =~ /^([A-Za-z0-9_.-]+)\s*\{$/) {
+                $conn = $1;
+                $peers{$conn} ||= { file=>$file, name=>$conn, child=>'', peer_id=>'', local_id=>'', remote_addrs=>'', local_ts=>'', remote_ts=>'', pools=>'', if_id_in=>'', if_id_out=>'' };
+                push @stack, 'conn'; next;
             }
-
-            if ($in_connections && !$in_conn && $line =~ /^([A-Za-z0-9_.-]+)\s*\{$/) {
-                $current_conn = $1;
-                $peers{$current_conn} ||= {
-                    file         => $file,
-                    name         => $current_conn,
-                    child        => '',
-                    peer_id      => '',
-                    remote_addrs => '',
-                    local_ts     => '',
-                    remote_ts    => '',
-                };
-                $in_conn = 1;
-                push @stack, 'conn';
-                next;
-            }
-
-            if ($in_conn && $line =~ /^remote_addrs\s*=\s*(.+)$/) {
-                $peers{$current_conn}{remote_addrs} = trim($1);
-                next;
-            }
-
-            if ($in_conn && $line =~ /^local\s*\{$/) {
-                $in_local = 1;
-                push @stack, 'local';
-                next;
-            }
-
-            if ($in_conn && $line =~ /^remote\s*\{$/) {
-                $in_remote = 1;
-                push @stack, 'remote';
-                next;
-            }
-
-            if ($in_conn && $line =~ /^children\s*\{$/) {
-                $in_children = 1;
-                push @stack, 'children';
-                next;
-            }
-
-            if ($in_children && !$in_child && $line =~ /^([A-Za-z0-9_.-]+)\s*\{$/) {
-                $current_child = $1;
-                $peers{$current_conn}{child} = $current_child;
-                $in_child = 1;
-                push @stack, 'child';
-                next;
-            }
-
-            if ($in_local && $line =~ /^id\s*=\s*(.+)$/) {
-                $peers{$current_conn}{local_id} = trim($1);
-                next;
-            }
-
-            if ($in_remote && $line =~ /^id\s*=\s*(.+)$/) {
-                $peers{$current_conn}{peer_id} = trim($1);
-                next;
-            }
-
-            if ($in_child && $line =~ /^local_ts\s*=\s*(.+)$/) {
-                $peers{$current_conn}{local_ts} = trim($1);
-                next;
-            }
-
-            if ($in_child && $line =~ /^remote_ts\s*=\s*(.+)$/) {
-                $peers{$current_conn}{remote_ts} = trim($1);
-                next;
-            }
-
-            if ($line eq '}') {
-                my $ctx = pop @stack // '';
-                if ($ctx eq 'local') {
-                    $in_local = 0;
-                }
-                elsif ($ctx eq 'remote') {
-                    $in_remote = 0;
-                }
-                elsif ($ctx eq 'child') {
-                    $in_child = 0;
-                    $current_child = undef;
-                }
-                elsif ($ctx eq 'children') {
-                    $in_children = 0;
-                }
-                elsif ($ctx eq 'conn') {
-                    $in_conn = 0;
-                    $current_conn = undef;
-                }
-                elsif ($ctx eq 'connections') {
-                    $in_connections = 0;
-                }
-                next;
-            }
+            next unless defined $conn;
+            if ($line =~ /^remote_addrs\s*=\s*(.+)$/) { $peers{$conn}{remote_addrs}=trim($1); next; }
+            if ($line =~ /^pools\s*=\s*(.+)$/)        { $peers{$conn}{pools}=trim($1); next; }
+            if ($line =~ /^local\s*\{$/)              { push @stack, 'local'; next; }
+            if ($line =~ /^remote\s*\{$/)             { push @stack, 'remote'; next; }
+            if ($line =~ /^children\s*\{$/)           { push @stack, 'children'; next; }
+            if (@stack && $stack[-1] eq 'children' && $line =~ /^([A-Za-z0-9_.-]+)\s*\{$/) { $peers{$conn}{child}=$1; push @stack, 'child'; next; }
+            if (@stack && $stack[-1] eq 'local'  && $line =~ /^id\s*=\s*(.+)$/) { $peers{$conn}{local_id}=trim($1); next; }
+            if (@stack && $stack[-1] eq 'remote' && $line =~ /^id\s*=\s*(.+)$/) { $peers{$conn}{peer_id}=trim($1); next; }
+            if (@stack && $stack[-1] eq 'child'  && $line =~ /^local_ts\s*=\s*(.+)$/) { $peers{$conn}{local_ts}=trim($1); next; }
+            if (@stack && $stack[-1] eq 'child'  && $line =~ /^remote_ts\s*=\s*(.+)$/) { $peers{$conn}{remote_ts}=trim($1); next; }
+            if (@stack && $stack[-1] eq 'child'  && $line =~ /^if_id_in\s*=\s*(.+)$/) { $peers{$conn}{if_id_in}=trim($1); next; }
+            if (@stack && $stack[-1] eq 'child'  && $line =~ /^if_id_out\s*=\s*(.+)$/) { $peers{$conn}{if_id_out}=trim($1); next; }
+            if ($line eq '}') { my $ctx = pop @stack // ''; $conn = undef if $ctx eq 'conn'; next; }
         }
     }
-
     return %peers;
 }
 
 sub get_active_sas {
     my $text = `sudo swanctl --list-sas 2>&1`;
-    my %sas;
-
-    my @lines = split /\n/, $text;
-    my @blocks;
-    my $cur = '';
-
-    for my $line (@lines) {
-        if ($line =~ /^[A-Za-z0-9_.-]+:\s+#\d+,\s+/) {
-            push @blocks, $cur if $cur ne '';
-            $cur = $line . "\n";
-        } else {
-            $cur .= $line . "\n" if $cur ne '';
-        }
+    my %sas; my @blocks; my $cur='';
+    for my $line (split /\n/, $text) {
+        if ($line =~ /^[A-Za-z0-9_.-]+:\s+#\d+,\s+/) { push @blocks, $cur if $cur ne ''; $cur = "$line\n"; }
+        else { $cur .= "$line\n" if $cur ne ''; }
     }
     push @blocks, $cur if $cur ne '';
-
     for my $block (@blocks) {
         next unless $block =~ /^([A-Za-z0-9_.-]+):\s+#\d+,\s+/m;
         my $name = $1;
-
-        my ($remote_underlay) = $block =~ /remote\s+'.*?'\s+\@\s+(\d+\.\d+\.\d+\.\d+)/m;
-        my ($in_bytes,  $in_pkts)  = $block =~ /in\s+\S+,\s+(\d+)\s+bytes,\s+(\d+)\s+packets/m;
-        my ($out_bytes, $out_pkts) = $block =~ /out\s+\S+,\s+(\d+)\s+bytes,\s+(\d+)\s+packets/m;
-
-        $sas{$name} = {
-            block          => $block,
-            established    => ($block =~ /ESTABLISHED/) ? 1 : 0,
-            remote_underlay=> $remote_underlay,
-            in_bytes       => $in_bytes  // 0,
-            in_pkts        => $in_pkts   // 0,
-            out_bytes      => $out_bytes // 0,
-            out_pkts       => $out_pkts  // 0,
-        };
+        my ($underlay) = $block =~ /remote\s+'.*?'\s+\@\s+(\d+\.\d+\.\d+\.\d+)/m;
+        my ($vip)      = $block =~ /remote\s+'.*?'\s+\@\s+\d+\.\d+\.\d+\.\d+\[\d+\]\s+\[(\d+\.\d+\.\d+\.\d+)\]/m;
+        my ($in_b,$in_p)   = $block =~ /in\s+\S+.*?,\s+(\d+)\s+bytes,\s+(\d+)\s+packets/m;
+        my ($out_b,$out_p) = $block =~ /out\s+\S+.*?,\s+(\d+)\s+bytes,\s+(\d+)\s+packets/m;
+        my ($local_ts)  = $block =~ /\n\s+local\s+(.+)$/m;
+        my ($remote_ts) = $block =~ /\n\s+remote\s+(.+)$/m;
+        $sas{$name} = { block=>$block, established=>($block =~ /ESTABLISHED/) ? 1 : 0, remote_underlay=>$underlay, virtual_ip=>$vip, in_bytes=>$in_b//0, in_pkts=>$in_p//0, out_bytes=>$out_b//0, out_pkts=>$out_p//0, local_ts=>trim($local_ts//''), remote_ts=>trim($remote_ts//'') };
     }
-
     return ($text, %sas);
 }
 
-sub trim {
-    my ($s) = @_;
-    $s =~ s/^\s+// if defined $s;
-    $s =~ s/\s+$// if defined $s;
-    return $s;
+sub print_sa_interpretation {
+    my ($sa)=@_;
+    print "\n-- SA block --\n$sa->{block}";
+    print "\n-- SA interpretation --\n";
+    print "ESTABLISHED : " . ($sa->{established} ? "yes" : "no") . "\n";
+    print "IN bytes    : $sa->{in_bytes}\nIN packets  : $sa->{in_pkts}\nOUT bytes   : $sa->{out_bytes}\nOUT packets : $sa->{out_pkts}\n";
+    print "Remote seen : " . ($sa->{remote_underlay} // 'UNKNOWN') . "\n";
 }
+
+sub active_vpn_clients {
+    my ($active_ref)=@_; my @clients;
+    for my $conn (sort keys %$active_ref) {
+        my $sa=$active_ref->{$conn}; my $vip=$sa->{virtual_ip}; next unless $vip;
+        my ($pool_name,$pool)=find_pool_for_ip($vip);
+        push @clients, { conn=>$conn, vip=>$vip, underlay=>$sa->{remote_underlay}, local_ts=>$sa->{local_ts}, remote_ts=>$sa->{remote_ts}, pool_name=>$pool_name, pool=>$pool };
+    }
+    return @clients;
+}
+
+sub find_pool_for_ip {
+    my ($ip)=@_;
+    for my $name (sort keys %VPN_CLIENT_POOLS) {
+        my $pool=$VPN_CLIENT_POOLS{$name};
+        return ($name,$pool) if ip_in_cidr($ip,$pool->{client_net});
+    }
+    return (undef,undef);
+}
+
+sub check_or_fix_routed_site_lan {
+    my ($name,$lan,$fix)=@_;
+    my $lan_net   = $lan->{lan_net};
+    my $via       = $lan->{via};
+    my $peer_name = $lan->{peer_name} // '';
+    my $test_host = $lan->{test_host} // '';
+
+    print "\n[$name]\n";
+    print "  lan_net   : $lan_net\n";
+    print "  via       : $via\n";
+    print "  peer_name : $peer_name\n" if $peer_name ne '';
+    print "  test_host : $test_host\n" if $test_host ne '';
+
+    my $peer_active = ($peer_name ne '' && exists $active{$peer_name}) ? 1 : 0;
+    print "  peer_sa   : " . ($peer_name eq '' ? 'not specified' : ($peer_active ? 'ACTIVE' : 'INACTIVE/WARN')) . "\n";
+
+    print "\n-- Return route check --\n";
+    my $route_probe = route_probe_ip($lan->{test_host} || $lan_net);
+    my $route = `ip route get $route_probe 2>&1`;
+    print "\$ ip route get $route_probe\n$route";
+
+    my $has_route = route_uses_gateway($route, $via);
+    if ($has_route) {
+        print "  [OK] VPS has a return route for $lan_net via $via\n";
+        finding("OK", "Return route exists for $lan_net via $via", undef);
+    } else {
+        print "  [MISSING] VPS may not know how to return traffic to $lan_net via $via\n";
+        print "            This matches the symptom: LAN request exits routervm/ipsec0, but no reply returns.\n";
+        finding("MISSING", "VPS return route missing/wrong for $lan_net via $via", "Run on VPS: sudo ip route replace $lan_net via $via. This preserves real LAN client IPs.");
+        my $fixcmd = "sudo ip route replace $lan_net via $via";
+        if ($fix) {
+            print "  [FIX] Adding/replacing return route: $fixcmd\n";
+            my $fixed = run($fixcmd);
+            finding($fixed ? "FIX" : "ERROR", ($fixed ? "Installed return route $lan_net via $via" : "Failed to install return route $lan_net via $via"), $fixed ? undef : "Run manually and check gateway reachability: sudo ip route replace $lan_net via $via");
+        } else {
+            print "            would run: $fixcmd\n";
+        }
+    }
+
+    print "\n-- Optional live packet test --\n";
+    print "  On routervm, run:\n";
+    print "    sudo tcpdump -ni any 'host $OVERLAY_LOCAL or net $lan_net'\n";
+    print "  From LAN client, run:\n";
+    print "    ping $OVERLAY_LOCAL\n";
+    print "  Healthy pattern includes reply: $OVERLAY_LOCAL > LAN_CLIENT on ipsec0 In.\n";
+    print "  Broken return-route pattern: LAN_CLIENT > $OVERLAY_LOCAL appears ipsec0 Out on routervm, but no reply appears.\n";
+}
+
+sub route_probe_ip {
+    my ($target)=@_;
+    return '' if !defined($target) || $target eq '';
+    return $1 if $target =~ /^(\d+\.\d+\.\d+\.\d+)\/\d+$/;
+    return $target;
+}
+
+sub route_uses_gateway {
+    my ($route,$via)=@_;
+    return 0 unless defined $route && defined $via;
+    return ($route =~ /\bvia\s+\Q$via\E\b/ || $route =~ /\bdev\s+ipsec0\b.*\bsrc\s+\Q$via\E\b/) ? 1 : 0;
+}
+
+sub check_or_fix_client_pool {
+    my ($pool,$fix)=@_;
+    my $client_net=$pool->{client_net}; my $dst=$pool->{allowed_dst}; my $nat_to=$pool->{nat_to}; my $svc=$pool->{local_service_ip}; my $ports=$pool->{service_ports} || [];
+    print "\n-- VPN client policy checks --\n";
+    print "  client_net  : $client_net\n  allowed_dst : $dst\n  nat_to      : $nat_to\n  service_ip  : $svc\n";
+
+    # These INPUT permits must be before broad DROP rules for the local overlay IP.
+    # ensure_rule() inserts ACCEPT rules at the top when --fix-iptables is used.
+    for my $port (@$ports) {
+        ensure_rule('INPUT', undef, ['-s',$client_net,'-d',$svc,'-p','tcp','--dport',$port,'-j','ACCEPT'], $fix, "Allow VPN clients to reach local VPS tcp/$port");
+    }
+    ensure_rule('INPUT', undef, ['-s',$client_net,'-d',$svc,'-p','icmp','-j','ACCEPT'], $fix, "Allow VPN clients to ping local VPS overlay IP");
+
+    ensure_rule('FORWARD', undef, ['-s',$client_net,'-d',$dst,'-j','ACCEPT'], $fix, "Allow VPN clients to reach internal overlay only");
+    ensure_rule('FORWARD', undef, ['-s',$dst,'-d',$client_net,'-m','conntrack','--ctstate','RELATED,ESTABLISHED','-j','ACCEPT'], $fix, "Allow established replies to VPN clients");
+    ensure_rule('FORWARD', undef, ['-s',$client_net,'!','-d',$dst,'-j','DROP'], $fix, "Block VPN clients from using VPS as internet gateway");
+    ensure_rule('POSTROUTING', 'nat', ['-s',$client_net,'-d',$dst,'-j','SNAT','--to-source',$nat_to], $fix, "SNAT VPN clients to provider-edge overlay IP");
+}
+
+sub ensure_rule {
+    my ($chain,$table,$args,$fix,$desc)=@_;
+    my $table_part = defined($table) ? "-t $table " : "";
+    my $cmd_base = "sudo iptables ${table_part}";
+    my $argstr = join(' ', map { sh_quote($_) } @$args);
+    my $check = "$cmd_base-C $chain $argstr";
+
+    my $target = iptables_target($args);
+    my $is_filter_table = !defined($table) || $table eq 'filter';
+
+    # Important: ACCEPT rules must be inserted before broad DROP rules.
+    # DROP/SNAT rules are appended so they do not accidentally override earlier allows.
+    my $op = ($is_filter_table && defined($target) && $target eq 'ACCEPT') ? "-I $chain 1" : "-A $chain";
+    my $add = "$cmd_base$op $argstr";
+
+    system("$check >/dev/null 2>&1");
+    if ($? == 0) {
+        print "  [OK] $desc\n";
+        finding("OK", $desc, undef);
+        warn_if_allow_shadowed_by_earlier_drop($chain, $table, $args, $desc) if $is_filter_table && defined($target) && $target eq 'ACCEPT';
+        return 1;
+    }
+    if (!$fix) {
+        print "  [MISSING] $desc\n            would add: $add\n";
+        finding("MISSING", $desc, "Run with --fix-iptables or add manually: $add");
+        return 0;
+    }
+    print "  [FIX] $desc\n";
+    my $ok = run($add);
+    finding($ok ? "FIX" : "ERROR", ($ok ? "Added rule: $desc" : "Failed adding rule: $desc"), $ok ? undef : "Try manually: $add");
+    warn_if_allow_shadowed_by_earlier_drop($chain, $table, $args, $desc) if $ok && $is_filter_table && defined($target) && $target eq 'ACCEPT';
+    return $ok;
+}
+
+sub iptables_target {
+    my ($args)=@_;
+    for (my $i=0; $i < @$args - 1; $i++) {
+        return $args->[$i+1] if $args->[$i] eq '-j';
+    }
+    return undef;
+}
+
+sub arg_value {
+    my ($args,$key)=@_;
+    for (my $i=0; $i < @$args - 1; $i++) {
+        return $args->[$i+1] if $args->[$i] eq $key;
+    }
+    return undef;
+}
+
+sub warn_if_allow_shadowed_by_earlier_drop {
+    my ($chain,$table,$args,$desc)=@_;
+    return if defined($table) && $table ne 'filter';
+
+    my $dst   = arg_value($args, '-d');
+    my $src   = arg_value($args, '-s');
+    my $proto = arg_value($args, '-p');
+    my $dport = arg_value($args, '--dport');
+
+    my $rules = `sudo iptables -S $chain 2>/dev/null`;
+    return if $rules eq '';
+
+    my @lines = split /\n/, $rules;
+    my $saw_shadowing_drop = 0;
+    my $shadow_line = '';
+
+    for my $line (@lines) {
+        next unless $line =~ /^-A\s+\Q$chain\E\b/;
+
+        if (line_matches_allow_rule($line, $src, $dst, $proto, $dport)) {
+            if ($saw_shadowing_drop) {
+                print "  [WARN] $desc exists, but an earlier DROP may shadow it:\n";
+                print "         $shadow_line\n";
+                finding("WARN", "$desc may be shadowed by an earlier DROP rule", "Move the ACCEPT above the DROP, for example: sudo iptables -I $chain 1 ...; or run this script with --fix-iptables after removing the shadowed appended rule.");
+            }
+            return;
+        }
+
+        if (line_is_shadowing_drop($line, $src, $dst)) {
+            $saw_shadowing_drop = 1;
+            $shadow_line = $line;
+        }
+    }
+}
+
+sub line_matches_allow_rule {
+    my ($line,$src,$dst,$proto,$dport)=@_;
+    return 0 unless $line =~ /\s-j\s+ACCEPT\b/;
+    return 0 if defined($src)   && !iptables_line_has_addr($line, '-s', $src);
+    return 0 if defined($dst)   && !iptables_line_has_addr($line, '-d', $dst);
+    return 0 if defined($proto) && $line !~ /\s-p\s+\Q$proto\E\b/;
+    return 0 if defined($dport) && $line !~ /\s--dport\s+\Q$dport\E\b/;
+    return 1;
+}
+
+sub line_is_shadowing_drop {
+    my ($line,$src,$dst)=@_;
+    return 0 unless $line =~ /\s-j\s+DROP\b/;
+
+    # Main bug this catches: a broad DROP to the same local overlay IP before
+    # later ACCEPT rules for VPN clients. A DROP without -d is also broad enough
+    # to be suspicious.
+    if (defined($dst)) {
+        return 1 if iptables_line_has_addr($line, '-d', $dst);
+        return 1 if $line !~ /\s-d\s+/;
+        return 0;
+    }
+    return 1;
+}
+
+sub iptables_line_has_addr {
+    my ($line,$flag,$addr)=@_;
+    return 0 unless defined $addr && $addr ne '';
+    my $q = quotemeta($addr);
+    my $without_32 = $addr;
+    $without_32 =~ s{/32$}{};
+    my $q2 = quotemeta($without_32);
+    return 1 if $line =~ /\s\Q$flag\E\s+$q(?:\s|$)/;
+    return 1 if $line =~ /\s\Q$flag\E\s+$q2\/32(?:\s|$)/;
+    return 0;
+}
+
+sub ip_to_int { my ($ip)=@_; return undef unless $ip =~ /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/; for ($1,$2,$3,$4) { return undef if $_<0 || $_>255; } return (($1<<24)|($2<<16)|($3<<8)|$4); }
+sub ip_in_cidr { my ($ip,$cidr)=@_; return 0 unless defined $ip && defined $cidr; return $ip eq $cidr if $cidr !~ m{/}; my ($net,$bits)=split m{/},$cidr,2; return 0 unless defined $bits && $bits =~ /^\d+$/ && $bits>=0 && $bits<=32; my $ii=ip_to_int($ip); my $ni=ip_to_int($net); return 0 unless defined $ii && defined $ni; my $mask=$bits==0 ? 0 : (0xffffffff << (32-$bits)) & 0xffffffff; return (($ii & $mask) == ($ni & $mask)); }
+
+sub print_suggested_swanctl_conf {
+    print "Example swanctl snippet for NATed clients:\n\n";
+    print "pools {\n  vpnClients {\n    addrs = 192.168.250.0/24\n  }\n}\n\n";
+    print "connections {\n  vpnClients {\n    version = 2\n    local_addrs = 81.88.19.252\n    encap = yes\n    pools = vpnClients\n\n";
+    print "    local {\n      auth = psk\n      id = 81.88.19.252\n    }\n\n";
+    print "    remote {\n      auth = psk\n      id = %any\n    }\n\n";
+    print "    children {\n      net {\n        local_ts = 10.0.0.0/8\n        remote_ts = dynamic\n        start_action = trap\n      }\n    }\n  }\n}\n\n";
+    print "secrets {\n  ike-vpnClients {\n    id = %any\n    secret = \"CHANGE_THIS_LONG_RANDOM_PSK\"\n  }\n}\n";
+}
+
+sub trim { my ($s)=@_; $s =~ s/^\s+// if defined $s; $s =~ s/\s+$// if defined $s; return $s; }
