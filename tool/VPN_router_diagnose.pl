@@ -6,8 +6,9 @@ use Getopt::Long qw(GetOptions);
 # VPN_router_diagnose.pl
 # Split: TEST_TARGETS are routed site peers to test outward.
 #        VPN_CLIENT_POOLS are NATed access clients hidden behind VPS SNAT.
-# Default is diagnose-only. Use --fix-iptables to add missing iptables rules.
-# Use --fix-routes on the VPS to add/replace missing return routes to LANs behind routed site peers.
+# Default asks for mode. Use -diagnose to report only, or -fix to apply safe fixes.
+# Fix mode enforces firewall/NAT/routes/XFRM/overlay /32 sanity in one pass.
+# v17 adds local host-firewall checks for routed site peers (ICMP + outbound TCP tests).
 
 our $NODE_NAME     = "UNCONFIGURED";
 our $OVERLAY_LOCAL = "";
@@ -40,20 +41,36 @@ our %ROUTED_SITE_LANS = ();
 
 our %VPN_CLIENT_POOLS = ();
 
-my ($FIX_IPTABLES, $FIX_ROUTES, $FIX_XFRM, $SHOW_CONF, $PRINT_LOCAL_TEMPLATE, $HELP) = (0, 0, 0, 0, 0, 0);
+my ($SHOW_CONF, $PRINT_LOCAL_TEMPLATE, $HELP) = (0, 0, 0);
+my $MODE = q{};       # diagnose | fix
+my $FIX  = 0;
 my @FINDINGS;
 my %COUNTS = ( OK => 0, WARN => 0, ERROR => 0, FIX => 0, MISSING => 0 );
 GetOptions(
-    'fix-iptables' => \$FIX_IPTABLES,
-    'fix-routes'   => \$FIX_ROUTES,
-    'fix-xfrm'     => \$FIX_XFRM,
-    'show-conf'    => \$SHOW_CONF,
-    'print-local-template' => \$PRINT_LOCAL_TEMPLATE,
-    'help'         => \$HELP,
+    q{fix|f}      => sub { die "Choose only one mode: -fix or -diagnose\n" if $MODE && $MODE ne q{fix}; $MODE = q{fix}; },
+    q{diagnose|d} => sub { die "Choose only one mode: -fix or -diagnose\n" if $MODE && $MODE ne q{diagnose}; $MODE = q{diagnose}; },
+    q{show-conf}  => \$SHOW_CONF,
+    q{print-local-template} => \$PRINT_LOCAL_TEMPLATE,
+    q{help|h}     => \$HELP,
 ) or die "Invalid option. Use --help\n";
 
 if ($HELP) { print_usage(); exit 0; }
 if ($PRINT_LOCAL_TEMPLATE) { print_local_template(); exit 0; }
+
+if (!$MODE) {
+    print "\nSelect mode:\n";
+    print "1) Diagnose only\n";
+    print "2) Diagnose + fix\n";
+    while (!$MODE) {
+        print "Choice [1/2]: ";
+        chomp(my $choice = <STDIN>);
+        if ($choice eq q{1}) { $MODE = q{diagnose}; }
+        elsif ($choice eq q{2}) { $MODE = q{fix}; }
+        else { print "Invalid choice. Please enter 1 or 2.\n"; }
+    }
+}
+$FIX = ($MODE eq q{fix}) ? 1 : 0;
+if ($FIX && $> != 0) { die "ERROR: -fix requires root (sudo)\n"; }
 
 print_banner();
 ($LOCAL_CONFIG, $LOCAL_CONFIG_KIND) = load_config_with_template($HOME_LOCAL, $CWD_LOCAL, $REPO_TEMPLATE);
@@ -64,7 +81,7 @@ section("Node");
 print "Node name       : $NODE_NAME\n";
 print "Overlay local   : $OVERLAY_LOCAL\n";
 print "Config glob     : $CONF_GLOB\n";
-print "Mode            : diagnose" . ($FIX_IPTABLES ? " + FIX iptables" : "") . ($FIX_ROUTES ? " + FIX routes" : "") . ($FIX_XFRM ? " + FIX xfrm" : "") . (!$FIX_IPTABLES && !$FIX_ROUTES && !$FIX_XFRM ? " only" : "") . "\n";
+print "Mode            : " . uc($MODE) . ($FIX ? " (apply safe fixes)" : " (dry-run/no changes)") . "\n";
 if (defined $LOCAL_CONFIG) {
     print "Local config    : $LOCAL_CONFIG ($LOCAL_CONFIG_KIND loaded)\n";
 } else {
@@ -82,9 +99,11 @@ section("Interfaces"); run("ip -br a");
 section("Routes"); run("ip route"); run("ip rule"); run("ip route show table 220 2>/dev/null || true");
 
 section("XFRM interface and local route checks");
-check_or_fix_xfrm_interface($FIX_XFRM);
-check_or_fix_xfrm_routes($FIX_ROUTES);
-check_or_fix_local_lan_routes($FIX_ROUTES);
+check_or_fix_xfrm_interface($FIX);
+check_or_fix_loopback_sanity($FIX);
+check_or_fix_overlay_local_address($FIX);
+check_or_fix_xfrm_routes($FIX);
+check_or_fix_local_lan_routes($FIX);
 
 section("strongSwan active SAs"); print $sas_text || "(no output)\n";
 if (!$sas_text || $sas_text !~ /ESTABLISHED/) {
@@ -133,6 +152,7 @@ for my $name (sort keys %TEST_TARGETS) {
     print "test_ip    : " . ($testip // 'UNKNOWN') . "\n";
     print_sa_interpretation($sa) if $sa;
     if ($testip) {
+        check_or_fix_site_peer_host_firewall($name, $testip, $TEST_TARGETS{$name}{ports} || [], $FIX);
         print "\n-- Route checks --\n";
         run("ip route get $testip");
         run("ip route get $testip from $OVERLAY_LOCAL");
@@ -153,7 +173,7 @@ for my $name (sort keys %TEST_TARGETS) {
 
 section("Routed site LAN return-route checks");
 for my $name (sort keys %ROUTED_SITE_LANS) {
-    check_or_fix_routed_site_lan($name, $ROUTED_SITE_LANS{$name}, $FIX_ROUTES);
+    check_or_fix_routed_site_lan($name, $ROUTED_SITE_LANS{$name}, $FIX);
 }
 
 section("VPN client pool checks");
@@ -169,7 +189,7 @@ if (!@clients) {
         print "  local_ts   : " . ($c->{local_ts} // '') . "\n";
         print "  remote_ts  : " . ($c->{remote_ts} // '') . "\n";
         if ($c->{pool}) {
-            check_or_fix_client_pool($c->{pool}, $FIX_IPTABLES);
+            check_or_fix_client_pool($c->{pool}, $FIX);
         } else {
             print "  [WARN] Client virtual IP does not match any VPN_CLIENT_POOLS client_net.\n";
             finding("WARN", "Client virtual IP $c->{vip} does not match configured VPN_CLIENT_POOLS", "Add/adjust a pool entry or move clients to the expected pool.");
@@ -307,7 +327,7 @@ $CONF_GLOB = "/etc/swanctl/conf.d/*.conf";
 # );
 #
 # @XFRM_ROUTES = (
-#     { dst => "10.0.0.0/8", dev => "ipsec0" },
+#     { dst => "10.47.1.0/24", dev => "ipsec0", src => $OVERLAY_LOCAL },
 # );
 #
 # @LOCAL_LAN_ROUTES = ();
@@ -400,39 +420,127 @@ sub check_or_fix_xfrm_interface {
     return 1;
 }
 
-sub route_destination_uses_dev {
-    my ($dst, $dev) = @_;
-    return 0 unless defined($dst) && $dst ne '' && defined($dev) && $dev ne '';
 
-    my ($cmd, $out);
+sub addr_exists_exact {
+    my ($ip, $prefix, $dev) = @_;
+    return 0 unless $ip && defined $prefix;
+    my $scope = defined($dev) && $dev ne '' ? "dev $dev" : "";
+    my $out = `ip -o addr show $scope 2>/dev/null`;
+    return ($out =~ /\binet\s+\Q$ip\E\/$prefix\b/) ? 1 : 0;
+}
 
-    if ($dst =~ m{/}) {
-        # CIDR route table entry check. `ip route get 10.0.0.0/8` is not valid
-        # for validating a route entry and causes false MISSING diagnostics.
-        $cmd = "ip route show exact $dst";
-        $out = `$cmd 2>&1`;
-        print "\$ $cmd\n" . ($out ne '' ? $out : "(no matching route)\n");
-        return ($out =~ /^\Q$dst\E\s+.*\bdev\s+\Q$dev\E\b/m) ? 1 : 0;
+sub check_or_fix_loopback_sanity {
+    my ($fix) = @_;
+    my $out = `ip -o -4 addr show dev lo 2>&1`;
+    print "\$ ip -o -4 addr show dev lo\n" . ($out || "(no IPv4 output)\n");
+    my $ok_all = 1;
+    while ($out =~ /\binet\s+(\d+\.\d+\.\d+\.\d+)\/(\d+)\b/g) {
+        my ($ip, $prefix) = ($1, $2);
+        next if $ip eq '127.0.0.1';
+        next if $prefix == 32;
+        $ok_all = 0;
+        my $target_dev = ($XFRM_IF ne '') ? $XFRM_IF : 'lo';
+        my $cmd = "sudo ip addr del $ip/$prefix dev lo && sudo ip addr add $ip/32 dev $target_dev";
+        finding("ERROR", "Loopback has $ip/$prefix; this makes a whole overlay range local and breaks IPsec replies", "Run: $cmd");
+        print "[ERROR] loopback $ip/$prefix is too broad; would fix to $ip/32 on $target_dev\n" unless $fix;
+        if ($fix) {
+            my $ok = run($cmd);
+            finding($ok ? "FIX" : "ERROR", ($ok ? "Changed loopback $ip/$prefix to $ip/32 on $target_dev" : "Failed fixing broad loopback $ip/$prefix"), $ok ? undef : "Run manually: $cmd");
+        }
+    }
+    finding("OK", "Loopback overlay addresses are /32 only", undef) if $ok_all;
+    return $ok_all;
+}
+
+sub check_or_fix_overlay_local_address {
+    my ($fix) = @_;
+    return 1 unless defined($OVERLAY_LOCAL) && $OVERLAY_LOCAL ne '';
+    my $dev = ($XFRM_IF ne '') ? $XFRM_IF : 'lo';
+    my $out = `ip -o -4 addr show 2>/dev/null`;
+    print "\$ ip -o -4 addr show | grep $OVERLAY_LOCAL\n";
+    my @matches = grep { /\binet\s+\Q$OVERLAY_LOCAL\E\// } split /\n/, $out;
+    print(@matches ? join("\n", @matches) . "\n" : "(not assigned)\n");
+
+    if (addr_exists_exact($OVERLAY_LOCAL, 32, undef)) {
+        finding("OK", "Overlay local $OVERLAY_LOCAL/32 is assigned", undef);
+        return 1;
     }
 
-    # Single host/IP routing decision check.
-    $cmd = "ip route get $dst";
-    $out = `$cmd 2>&1`;
-    print "\$ $cmd\n$out";
-    return ($out =~ /\bdev\s+\Q$dev\E\b/) ? 1 : 0;
+    my @del_cmds;
+    for my $line (@matches) {
+        if ($line =~ /\b(\S+)\s+inet\s+\Q$OVERLAY_LOCAL\E\/(\d+)\b/) {
+            my ($found_dev, $prefix) = ($1, $2);
+            push @del_cmds, "sudo ip addr del $OVERLAY_LOCAL/$prefix dev $found_dev" if $prefix != 32;
+        }
+    }
+    my $cmd = join(" && ", @del_cmds, "sudo ip addr add $OVERLAY_LOCAL/32 dev $dev");
+    finding("MISSING", "Overlay local $OVERLAY_LOCAL/32 is not assigned", "Run: $cmd. This prevents kernel choosing a public source for IPsec replies.");
+    print "[MISSING] would run: $cmd\n" unless $fix;
+    if ($fix) {
+        my $ok = run($cmd);
+        finding($ok ? "FIX" : "ERROR", ($ok ? "Installed overlay local $OVERLAY_LOCAL/32 on $dev" : "Failed installing overlay local $OVERLAY_LOCAL/32"), $ok ? undef : "Run manually: $cmd");
+        return $ok;
+    }
+    return 0;
+}
+
+sub table_220_is_active {
+    my $rules = `ip rule 2>/dev/null`;
+    return ($rules =~ /\blookup\s+220\b/) ? 1 : 0;
+}
+
+sub route_destination_uses_dev {
+    my ($dst, $dev, $table, $src) = @_;
+    return 0 unless defined($dst) && $dst ne '' && defined($dev) && $dev ne '';
+
+    my $table_part = defined($table) && $table ne '' ? " table $table" : "";
+    my $cmd = "ip route show$table_part exact $dst";
+    my $out = `$cmd 2>&1`;
+    print "\$ $cmd\n" . ($out ne '' ? $out : "(no matching route)\n");
+    my $has_dev = ($out =~ /^\Q$dst\E\s+.*\bdev\s+\Q$dev\E\b/m) ? 1 : 0;
+    my $has_src = (!defined($src) || $src eq '' || $out =~ /^\Q$dst\E\s+.*\bsrc\s+\Q$src\E\b/m) ? 1 : 0;
+    return $has_dev && $has_src;
+}
+
+sub install_route_cmd {
+    my ($dst, $dev, $table, $src) = @_;
+    my $cmd = "sudo ip route replace $dst dev $dev";
+    $cmd .= " src $src" if defined($src) && $src ne '';
+    $cmd .= " table $table" if defined($table) && $table ne '';
+    return $cmd;
+}
+
+sub check_one_xfrm_route {
+    my ($dst, $dev, $table, $src, $fix) = @_;
+    return 1 unless $dst && $dev;
+    my $label = "Route to $dst uses $dev" . (defined($src) && $src ne '' ? " src $src" : "") . (defined($table) && $table ne '' ? " table $table" : "");
+    if (route_destination_uses_dev($dst, $dev, $table, $src)) {
+        finding("OK", $label, undef);
+        return 1;
+    }
+    my $cmd = install_route_cmd($dst, $dev, $table, $src);
+    finding("MISSING", $label, "Run: $cmd. This prevents overlay traffic from escaping via the underlay NIC or using a public source IP.");
+    print "[MISSING] would run: $cmd\n" unless $fix;
+    if ($fix) {
+        my $ok = run($cmd);
+        finding($ok ? "FIX" : "ERROR", ($ok ? "Installed $label" : "Failed installing $label"), $ok ? undef : "Run manually: $cmd");
+        return $ok;
+    }
+    return 0;
 }
 
 sub check_or_fix_xfrm_routes {
     my ($fix) = @_;
     if (!@XFRM_ROUTES) { print "No XFRM routes configured in local config.\n"; return; }
+    my $use_table_220 = table_220_is_active();
     for my $r (@XFRM_ROUTES) {
-        my $dst = $r->{dst}; my $dev = $r->{dev} || $XFRM_IF;
+        my $dst = $r->{dst};
+        my $dev = $r->{dev} || $XFRM_IF;
+        my $src = $r->{src};
+        $src = $OVERLAY_LOCAL if (!defined($src) || $src eq '') && defined($OVERLAY_LOCAL) && $OVERLAY_LOCAL ne '';
         next unless $dst;
-        if (route_destination_uses_dev($dst, $dev)) { finding("OK", "Route to $dst uses $dev", undef); next; }
-        my $cmd = "sudo ip route replace $dst dev $dev";
-        finding("MISSING", "Route to $dst does not use $dev", "Run: $cmd. Persist with your systemd route service or run this script with --fix-routes.");
-        print "[MISSING] would run: $cmd\n" unless $fix;
-        if ($fix) { my $ok = run($cmd); finding($ok ? "FIX" : "ERROR", ($ok ? "Installed route $dst dev $dev" : "Failed installing route $dst dev $dev"), $ok ? undef : "Run manually: $cmd"); }
+        check_one_xfrm_route($dst, $dev, undef, $src, $fix);
+        check_one_xfrm_route($dst, $dev, 220,  $src, $fix) if $use_table_220;
     }
 }
 
@@ -511,29 +619,23 @@ sub print_final_diagnosis {
     print "- ROUTED_SITE_LANS are real LANs behind site peers. They need a VPS return route if you do not NAT them.\n";
     print "- If routervm sees LAN_CLIENT > 10.47.0.1 go Out on ipsec0 but no reply comes In, fix route on VPS: ip route replace LAN_NET via ROUTERVM_OVERLAY_IP.\n";
     print "- strongSwan IN/OUT counters are from the VPS/IPsec perspective.\n";
+    print "- Site-peer host firewall matters too: even with IPsec up, INPUT DROP on the peer overlay IP can break ping/curl.\n";
 }
 
 sub print_usage {
     print "Usage:\n";
-    print "  sudo perl VPN_router_diagnose.pl\n";
-    print "  sudo perl VPN_router_diagnose.pl --fix-iptables\n";
-    print "  sudo perl VPN_router_diagnose.pl --fix-routes\n";
-    print "  sudo perl VPN_router_diagnose.pl --fix-xfrm\n";
-    print "  sudo perl VPN_router_diagnose.pl --show-conf\n";
-    print "  perl VPN_router_diagnose.pl --print-local-template > vpn_router_diagnose.local.template.pl\n";
-    print "\nConfig load order:\n";
-    print "  1. ~/vpn_router_diagnose.local.pl             user-owned config, preferred\n";
-    print "  2. ./vpn_router_diagnose.local.template.pl   repo template fallback\n";
-    print "  3. internal defaults                         last resort\n";
-    print "\nOptions:\n";
-    print "  --fix-iptables          Add missing firewall/NAT rules without flushing tables.\n";
-    print "  --fix-routes            Add/replace missing routes configured in local config.\n";
-    print "  --fix-xfrm              Create missing XFRM interface if XFRM_IF_ID is configured.\n";
+    print "  sudo perl VPN_router_diagnose.pl -diagnose   # detect only / dry-run\n";
+    print "  sudo perl VPN_router_diagnose.pl -fix        # apply safe fixes\n";
+    print "  sudo perl VPN_router_diagnose.pl             # ask mode interactively\n\n";
+    print "Options:\n";
+    print "  -diagnose, -d           Report problems and show what -fix would change.\n";
+    print "  -fix, -f                Apply safe fixes for firewall/NAT/routes/XFRM/overlay /32 sanity.\n";
     print "  --show-conf             Print suggested swanctl config for NATed clients.\n";
     print "  --print-local-template  Print a repo/local config template.\n";
-    print "  --help                  Show help.\n";
+    print "  --help, -h              Show help.\n";
 }
-sub print_banner { print "\n=========================================\n VPN Router Diagnose v13 canonical\n=========================================\n"; }
+
+sub print_banner { print "\n=========================================\n VPN Router Diagnose v17 peer-firewall\n=========================================\n"; }
 sub section { my ($t)=@_; print "\n-----------------------------------------\n $t\n-----------------------------------------\n"; }
 sub run { my ($cmd)=@_; print "\n\$ $cmd\n"; system($cmd); return ($? == 0); }
 sub sh_quote { my ($s)=@_; $s =~ s/'/'\"'\"'/g; return "'$s'"; }
@@ -701,6 +803,40 @@ sub route_uses_gateway {
     return ($route =~ /\bvia\s+\Q$via\E\b/ || $route =~ /\bdev\s+ipsec0\b.*\bsrc\s+\Q$via\E\b/) ? 1 : 0;
 }
 
+sub check_or_fix_site_peer_host_firewall {
+    my ($name, $peer_ip, $ports, $fix) = @_;
+    return unless defined($OVERLAY_LOCAL) && $OVERLAY_LOCAL ne '' && defined($peer_ip) && $peer_ip ne '';
+
+    my $local32 = cidr32($OVERLAY_LOCAL);
+    my $peer32  = cidr32($peer_ip);
+
+    print "\n-- Local host firewall checks for site peer $name --\n";
+    print "  local_overlay : $local32\n";
+    print "  peer_overlay  : $peer32\n";
+
+    # Catches the common failure: IPsec and routes are OK, but INPUT DROP on the
+    # local overlay IP prevents echo requests from being accepted. OUTPUT is also
+    # checked for nodes with OUTPUT policy DROP.
+    ensure_rule('INPUT',  undef, ['-s',$peer32,'-d',$local32,'-p','icmp','-j','ACCEPT'], $fix, "Allow ICMP from site peer $name ($peer32) to local overlay $local32");
+    ensure_rule('OUTPUT', undef, ['-s',$local32,'-d',$peer32,'-p','icmp','-j','ACCEPT'], $fix, "Allow ICMP replies/requests from local overlay $local32 to site peer $name ($peer32)");
+
+    # If this node initiates TCP tests to peer services, OUTPUT must allow those
+    # SYNs when OUTPUT policy is DROP. The peer still needs its own INPUT rules;
+    # run this script on that peer too to enforce its local firewall.
+    for my $port (@$ports) {
+        next unless defined($port) && $port =~ /^\d+$/;
+        ensure_rule('OUTPUT', undef, ['-s',$local32,'-d',$peer32,'-p','tcp','--dport',$port,'-j','ACCEPT'], $fix, "Allow outbound TCP test to $name ($peer32) port $port from $local32");
+        ensure_rule('INPUT',  undef, ['-s',$peer32,'-d',$local32,'-p','tcp','-m','conntrack','--ctstate','RELATED,ESTABLISHED','-j','ACCEPT'], $fix, "Allow established TCP replies from $name ($peer32) to $local32");
+    }
+}
+
+sub cidr32 {
+    my ($ip) = @_;
+    return '' unless defined $ip;
+    return $ip if $ip =~ m{/};
+    return "$ip/32";
+}
+
 sub check_or_fix_client_pool {
     my ($pool,$fix)=@_;
     my $client_net=$pool->{client_net}; my $dst=$pool->{allowed_dst}; my $nat_to=$pool->{nat_to}; my $svc=$pool->{local_service_ip}; my $ports=$pool->{service_ports} || [];
@@ -708,7 +844,7 @@ sub check_or_fix_client_pool {
     print "  client_net  : $client_net\n  allowed_dst : $dst\n  nat_to      : $nat_to\n  service_ip  : $svc\n";
 
     # These INPUT permits must be before broad DROP rules for the local overlay IP.
-    # ensure_rule() inserts ACCEPT rules at the top when --fix-iptables is used.
+    # ensure_rule() inserts ACCEPT rules at the top when -fix is used.
     for my $port (@$ports) {
         ensure_rule('INPUT', undef, ['-s',$client_net,'-d',$svc,'-p','tcp','--dport',$port,'-j','ACCEPT'], $fix, "Allow VPN clients to reach local VPS tcp/$port");
     }
@@ -744,7 +880,7 @@ sub ensure_rule {
     }
     if (!$fix) {
         print "  [MISSING] $desc\n            would add: $add\n";
-        finding("MISSING", $desc, "Run with --fix-iptables or add manually: $add");
+        finding("MISSING", $desc, "Run with -fix or add manually: $add");
         return 0;
     }
     print "  [FIX] $desc\n";
@@ -793,7 +929,7 @@ sub warn_if_allow_shadowed_by_earlier_drop {
             if ($saw_shadowing_drop) {
                 print "  [WARN] $desc exists, but an earlier DROP may shadow it:\n";
                 print "         $shadow_line\n";
-                finding("WARN", "$desc may be shadowed by an earlier DROP rule", "Move the ACCEPT above the DROP, for example: sudo iptables -I $chain 1 ...; or run this script with --fix-iptables after removing the shadowed appended rule.");
+                finding("WARN", "$desc may be shadowed by an earlier DROP rule", "Move the ACCEPT above the DROP, for example: sudo iptables -I $chain 1 ...; or run this script with -fix after removing the shadowed appended rule.");
             }
             return;
         }

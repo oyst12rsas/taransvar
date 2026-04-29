@@ -261,8 +261,8 @@ int isPartner(volatile uint32_t ipAddress)
 
 	for (n=0;n<pSetup->nElementsInArray[BLOCK_DESCRIPTIOR_PARTNERS];n++)
 	{
-		pr_info("tarakernel: Checking if partner: %pI4 : %pI4 -> %pI4\n", &pPartnerArray[n].ipAddress, &pPartnerArray[n].ipNettmask, &ipAddress);
-		if (pPartnerArray[n].ipAddress & pPartnerArray[n].ipNettmask == ipAddress & pPartnerArray[n].ipNettmask)
+		//pr_info("tarakernel: Checking if partner: %pI4 : %pI4 -> %pI4\n", &pPartnerArray[n].ipAddress, &pPartnerArray[n].ipNettmask, &ipAddress);
+		if ((pPartnerArray[n].ipAddress & pPartnerArray[n].ipNettmask) == (ipAddress & pPartnerArray[n].ipNettmask))
 		//if (pPartnerArray[n].ipAddress == ipAddress)
 		{
 			/*unsigned char* ipAddressBytes = (unsigned char*)&ipAddress;//pPartnerArray[n].ipAddress;
