@@ -393,7 +393,8 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 
 		if (nRetval == NF_DROP)
 		{
-		    pr_info("tarakernel: ***** Dropping traffic from blacklisted sender.\n");
+			if (!dropFromLogging(pPacket))
+			    pr_info("tarakernel: ***** Dropping traffic from blacklisted sender.\n");
 			checkFree(pPacket, true /*bLeavingPostRouting*/);
 		}
 		else
@@ -410,7 +411,8 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
     if (isSubNet(pPacket->ip_header->saddr) && isSubNet(pPacket->ip_header->daddr))
 	{
 		if (pSetup->cShowInstructions.bits.showOther)
-			pr_info("tarakernel: PR: Traffic with subnet %s:%d -> %s:%d\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort);
+			if (!dropFromLogging(pPacket))
+				pr_info("tarakernel: PR: Traffic with subnet %s:%d -> %s:%d\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort);
 			
 		checkFree(pPacket, false /*bLeavingPostRouting*/);
 		return NF_ACCEPT;
@@ -445,9 +447,11 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 						cUnion.cTag.presumed_infected, pSetup->nBlockIncomingTaggedTrafficLevel, pPacket->cSourceIp, pPacket->cDestIp, pInfection->nSeverity, pInfection->nBotnetId, pInfection->dOwners_id, pInfection->lpInfo, pInfection->nByteCount, pInfection->nPacketCount);
 
 				if (strlen(pSetup->c100) == sizeof(pSetup->c100)-1)	//NOTE c100 is now 200 chars
-					pr_warn("tarakernel: ***** ERROR **** pSetup->c100 buffer is to short. %zu bytes required (currently %zu)\n", strlen(cBuf)+1, sizeof(pSetup->c100));
+					if (!dropFromLogging(pPacket))
+						pr_warn("tarakernel: ***** ERROR **** pSetup->c100 buffer is to short. %zu bytes required (currently %zu)\n", strlen(cBuf)+1, sizeof(pSetup->c100));
 
-				pr_info("tarakernel: PR infected: %s", pSetup->c100);
+				if (!dropFromLogging(pPacket))
+					pr_info("tarakernel: PR infected: %s", pSetup->c100);
 
 			    if (bDropping)
 			    {
@@ -482,8 +486,9 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 			{
 				bool bBlock = dscp > pSetup->nBlockIncomingTaggedTrafficLevel;
 
-				printk ("tarakernel: Packet was tagged using the DSCP part of ToS.. Value: %d. System is set to block packets above %d, so %s\n", 
-						dscp, pSetup->nBlockIncomingTaggedTrafficLevel, (bBlock?"BLOCKING" : "NOT blocking"));
+				if (!dropFromLogging(pPacket))
+					printk ("tarakernel: Packet was tagged using the DSCP part of ToS.. Value: %d. System is set to block packets above %d, so %s\n", 
+									dscp, pSetup->nBlockIncomingTaggedTrafficLevel, (bBlock?"BLOCKING" : "NOT blocking"));
 
 				setDscp(ip_hdr(pPacket->skb), 0);	
 			    checkThatTcp(pPacket,"after setting DSCP");	//260320 - asdf... got problem with this....
@@ -497,10 +502,11 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 			}
 			
 			
-	        if (pSetup->cShowInstructions.bits.showPreRoutePartner)
+	        if (pSetup->cShowInstructions.bits.showPreRoutePartner) {
 				//pr_info("tarakernel: PRE ROUTING: Inbound from partner: %s (%s -> %s)\n",pSetup->c100, pPacket->cSourceIp, pPacket->cDestIp);
-				pr_info("tarakernel: PRE ROUTING Inbound from partner: %s (%s:%d -> %s:%d)\n", pSetup->c100, pPacket->cSourceIp, ntohs(pPacket->tcp_header->source), pPacket->cDestIp, ntohs(pPacket->tcp_header->dest)); 
-		        
+				if (!dropFromLogging(pPacket))
+					pr_info("tarakernel: PRE ROUTING Inbound from partner: %s (%s:%d -> %s:%d)\n", pSetup->c100, pPacket->cSourceIp, ntohs(pPacket->tcp_header->source), pPacket->cDestIp, ntohs(pPacket->tcp_header->dest)); 
+			}
 			if (cUnion.cTag.version_no)
 			  pSetup->cGlobalStatistics.nFromPartnerTagged++;
 			else
@@ -515,18 +521,17 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 	//Can we check here if outbound traffic from this computer or subnet?
 	if (isMeOrMine(pPacket->ip_header->saddr))
 	{
-                bToOrFromMe = 1;
+		bToOrFromMe = 1;
 
-                if (isPartner(pPacket->ip_header->daddr)) 	
+        if (isPartner(pPacket->ip_header->daddr)) 	
 		{
-		        /*
-	        	Is this where to tag outbound traffic? It may also be tagged in module_forwardning.c...
-	        	*/
+		    /*
+	        Is this where to tag outbound traffic? It may also be tagged in module_forwardning.c...
+	        */
 
-
-                        /* Don't do the tagging here.... Handled in forwarding handled (module_forwarding.c)
-        	        if (pSetup->cShowInstructions.bits.doTagging)
-        	        {
+            /* Don't do the tagging here.... Handled in forwarding handled (module_forwarding.c)
+        	if (pSetup->cShowInstructions.bits.doTagging)
+        	{
 
 				union _TagUnion cUnion;
 		
@@ -542,15 +547,15 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 		        	if (pSetup->cShowInstructions.bits.showPreRoutePartner)
 					pr_info("tarakernel: PR: Outbound for partner - BUT TAGGING IS DISABLED (%s -> %s)\n", pPacket->cSourceIp, pPacket->cDestIp);
 			*/		
-	        	if (pSetup->cShowInstructions.bits.showPreRoutePartner)
-					if (!dropFromLogging(pPacket))
-						pr_info("tarakernel: PR: Outbound for partner - not handling tagging in PRE_ROUTING (%s -> %s)\n", pPacket->cSourceIp, pPacket->cDestIp);
+			if (pSetup->cShowInstructions.bits.showPreRoutePartner)
+				if (!dropFromLogging(pPacket))
+					pr_info("tarakernel: PR: Outbound for partner - not handling tagging in PRE_ROUTING (%s -> %s)\n", pPacket->cSourceIp, pPacket->cDestIp);
 					
 		}
 		else
-	        	if (pSetup->cShowInstructions.bits.showPreRouteNonPartner)
-					if (!dropFromLogging(pPacket))
-    					pr_info("tarakernel: PR: Outbound for non-partner %s:%d -> %s:%d\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort); 
+	    	if (pSetup->cShowInstructions.bits.showPreRouteNonPartner)
+				if (!dropFromLogging(pPacket))
+					pr_info("tarakernel: PR: Outbound for non-partner %s:%d -> %s:%d\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort); 
 	}
 	
 	if (!bToOrFromMe)
@@ -577,20 +582,20 @@ void getMeAndMine(char *lpBuf, int nBufSize)
 {
 //
       //Put my external and internal
-      u32 nLittleEndian = swappedEndian(pSetup->nMyIp);
-      sprintf(lpBuf, "Me: %u.%u.%u.%u", IPADDRESS(nLittleEndian));
-      nLittleEndian = swappedEndian(pSetup->nInternalIp);
-      if (nBufSize > strlen(lpBuf) + 30)
-            sprintf(lpBuf+strlen(lpBuf), ", internal: %u.%u.%u.%u", IPADDRESS(nLittleEndian));
-      else
-            strcpy(lpBuf, "BUFFER TOO SMALL!");
+    u32 nLittleEndian = swappedEndian(pSetup->nMyIp);
+    sprintf(lpBuf, "Me: %u.%u.%u.%u", IPADDRESS(nLittleEndian));
+    nLittleEndian = swappedEndian(pSetup->nInternalIp);
+    if (nBufSize > strlen(lpBuf) + 30)
+        sprintf(lpBuf+strlen(lpBuf), ", internal: %u.%u.%u.%u", IPADDRESS(nLittleEndian));
+    else
+        strcpy(lpBuf, "BUFFER TOO SMALL!");
 
-      nLittleEndian = swappedEndian(pSetup->nNettmask);
+    nLittleEndian = swappedEndian(pSetup->nNettmask);
 
-      if (nBufSize > strlen(lpBuf) + 30)
-            sprintf(lpBuf+strlen(lpBuf), ", nett: %u.%u.%u.%u", IPADDRESS(nLittleEndian));
-      else
-            strcpy(lpBuf, "BUFFER TOO SMALL!");
+    if (nBufSize > strlen(lpBuf) + 30)
+        sprintf(lpBuf+strlen(lpBuf), ", nett: %u.%u.%u.%u", IPADDRESS(nLittleEndian));
+    else
+        strcpy(lpBuf, "BUFFER TOO SMALL!");
 }
 
 
@@ -599,7 +604,6 @@ static unsigned int module_ip4_post_routing_handler(void *priv, struct sk_buff *
 {
 //pr_info("Abs: POST ROUTING ACCEPTING ALL\n"); 
 //return NF_ACCEPT;
-
 
 	int bToOrFromMe = 0;
 
@@ -622,7 +626,7 @@ static unsigned int module_ip4_post_routing_handler(void *priv, struct sk_buff *
         
 	if (!bReceivedConfiguration)
 	{
-	        //Only warn in pre routing...
+	    //Only warn in pre routing...
 		//pr_info("tarakernel: Start abmonitor to send configuration! %s -> %s\n", pPacket->cSourceIp, pPacket->cDestIp); 
 		checkFree(pPacket, true);	//Now leaving POST_ROUTING - so kfree the memory
 		return NF_ACCEPT;
@@ -667,14 +671,14 @@ static unsigned int module_ip4_post_routing_handler(void *priv, struct sk_buff *
 
         if (isPartner(pPacket->ip_header->daddr)) //If outbound traffic for partner.	
 		{
-		        //***** Do tagging in case it's a server and not only a router (routers are tagging while forwarding. See T001)
+	        //***** Do tagging in case it's a server and not only a router (routers are tagging while forwarding. See T001)
 		    bool bForwarding = false;   //This is PRE ROUTING, not forwarding
 			int nRetval = checkFixTagging(pPacket, bForwarding, state);  //Defined in module_forwarding.c
 			checkFree(pPacket, true);	//Now leaving POST_ROUTING - so kfree the memory
 			return nRetval;
 		
-        	        /* Code below is now fixed by checkFixTagging()
-        	        if (pSetup->cShowInstructions.bits.doTagging)
+        	/* Code below is now fixed by checkFixTagging()
+        	if (pSetup->cShowInstructions.bits.doTagging)
 			{
 				union _TagUnion cUnion;
 

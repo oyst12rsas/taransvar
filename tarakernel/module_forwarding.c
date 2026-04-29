@@ -28,7 +28,8 @@ int checkFixTagging(struct _PacketInspection *pPacket, bool bForwarding, const s
 		//Check if requested data that is less likely to be infected than this (drop the traffic)
 		if (nRequestedAssistance && nRequestedAssistance < nSenderIsInfected)   
 		{
-			pr_info("tarakernel: %s: TARGET HAS REQUESTED ASSISTANCE! DROPPING PACKAGE FROM INFECTED: %s->%s, request: %d, this IP: %d\n", lpPrOrFw, pPacket->cSourceIp, pPacket->cDestIp, nRequestedAssistance, nSenderIsInfected);
+			if (!dropFromLogging(pPacket))
+				pr_info("tarakernel: %s: TARGET HAS REQUESTED ASSISTANCE! DROPPING PACKAGE FROM INFECTED: %s->%s, request: %d, this IP: %d\n", lpPrOrFw, pPacket->cSourceIp, pPacket->cDestIp, nRequestedAssistance, nSenderIsInfected);
 
 			//kfree(pPacket); Being done by caller...
 			//checkFree(pPacket..)		Being done by caller...
@@ -39,7 +40,8 @@ int checkFixTagging(struct _PacketInspection *pPacket, bool bForwarding, const s
 			if (nRequestedAssistance) //This unit is under attack or chose to turn of receiving tagged traffic
 			{       
 				char *lpThisComputer = (!nSenderIsInfected?"not infected": "less severely tagged");       //nRequestedAssistance < nSenderIsInfected
-				pr_info("tarakernel: %s Target has requested assistance, but this unit is %s (so sending)..: %s->%s, request: %d, this IP: %d\n", lpPrOrFw, lpThisComputer, pPacket->cSourceIp, pPacket->cDestIp, nRequestedAssistance, nSenderIsInfected);
+				if (!dropFromLogging(pPacket))
+					pr_info("tarakernel: %s Target has requested assistance, but this unit is %s (so sending)..: %s->%s, request: %d, this IP: %d\n", lpPrOrFw, lpThisComputer, pPacket->cSourceIp, pPacket->cDestIp, nRequestedAssistance, nSenderIsInfected);
 			}
                               
 			if (nSenderIsInfected)
@@ -48,16 +50,19 @@ int checkFixTagging(struct _PacketInspection *pPacket, bool bForwarding, const s
 		}
 
 		if (pSetup->cShowInstructions.bits.showForwardPartner)
-			pr_info("tarakernel: %s to partner: %s->%s: Tag: (%04X)\n", lpPrOrFw, pPacket->cSourceIp, pPacket->cDestIp, pPacket->tcp_header->urg_ptr);
+			if (!dropFromLogging(pPacket))
+				pr_info("tarakernel: %s to partner: %s->%s: Tag: (%04X)\n", lpPrOrFw, pPacket->cSourceIp, pPacket->cDestIp, pPacket->tcp_header->urg_ptr);
 	}
 	else
   		if (!bCommentPrinted) //Already printed on this package... no need for more.	
        		if (pSetup->cShowInstructions.bits.showForwardPartner)
-				pr_info("tarakernel: %s: to partner - %s - TAGGING DISABLED\n", lpPrOrFw, cInfectionStatus);
+				if (!dropFromLogging(pPacket))
+					pr_info("tarakernel: %s: to partner - %s - TAGGING DISABLED\n", lpPrOrFw, cInfectionStatus);
 
 	if (!bCommentPrinted)		
 		if (nSenderIsInfected || nRequestedAssistance)
-			pr_info("tarakernel: %s: ****** %s (sending package)\n", lpPrOrFw, cInfectionStatus);
+			if (!dropFromLogging(pPacket))
+				pr_info("tarakernel: %s: ****** %s (sending package)\n", lpPrOrFw, cInfectionStatus);
 
 	return NF_ACCEPT;
 }
@@ -128,12 +133,17 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 		if (tcp_read_timestamp_option(skb, &tsval_be, &tsecr_be)) 
 		{
 			if (tcp_set_timestamp_option(skb, set_tsval, new_tsval_be, set_tsecr, new_tsecr_be))
-				pr_info("tarakernel: ******* TSval tagging successful!\n");
+			{
+				if (!dropFromLogging(pPacket))
+					pr_info("tarakernel: ******* TSval tagging successful!\n");
+			}
 			else
-				pr_info("tarakernel: ******* Failed to tag using TSval field\n");
+				if (!dropFromLogging(pPacket))
+					pr_info("tarakernel: ******* Failed to tag using TSval field\n");
 		}
 		else
-			pr_info("tarakernel: **** Unable to read TSval\n");
+			if (!dropFromLogging(pPacket))
+				pr_info("tarakernel: **** Unable to read TSval\n");
 
 		#endif
 
@@ -151,7 +161,8 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 		//cTag = 	(struct _Tag)tcp_header->urg_ptr;
 		cUnion.nTag = pPacket->tcp_header->urg_ptr;
 		if (pSetup->cShowInstructions.bits.showForwardPartner)
-  			pr_info("tarakernel: FW from partner: %s->%s: Tag: (%04X)\n", pPacket->cSourceIp, pPacket->cDestIp, pPacket->tcp_header->urg_ptr);
+			if (!dropFromLogging(pPacket))
+	  			pr_info("tarakernel: FW from partner: %s->%s: Tag: (%04X)\n", pPacket->cSourceIp, pPacket->cDestIp, pPacket->tcp_header->urg_ptr);
   			
 		if (pPacket->tcp_header->urg_ptr)
   			pSetup->cGlobalStatistics.nFromPartnerTagged++;
@@ -183,7 +194,8 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 			{
 				bPortForwarded = 1;
 				if (pSetup->cShowInstructions.bits.showOther)
-					pr_info("tarakernel: Traffic with forwarded port: %s:%d->%s:%d\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort);///%s\n", ipFrom, ipTo);
+					if (!dropFromLogging(pPacket))
+						pr_info("tarakernel: Traffic with forwarded port: %s:%d->%s:%d\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort);///%s\n", ipFrom, ipTo);
 			      
 			}
 		
@@ -191,7 +203,8 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 		
 		pSetup->cGlobalStatistics.nForwarded++;
 		if (!bPortForwarded && pSetup->cShowInstructions.bits.showForwardNonPartner)
-			pr_info("tarakernel: FW Forward (to or from non-partner) %s:%d->%s:%d\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort);///%s\n", ipFrom, ipTo);
+			if (!dropFromLogging(pPacket))
+				pr_info("tarakernel: FW Forward (to or from non-partner) %s:%d->%s:%d\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort);///%s\n", ipFrom, ipTo);
 		return NF_ACCEPT;
 	}
 
@@ -206,12 +219,14 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 	if (isMeOrMine(pPacket->ip_header->daddr)||isMeOrMine(pPacket->ip_header->saddr))
 	{
 		if (pSetup->cShowInstructions.bits.showForwardNonPartner)
-			pr_info("tarakernel: FW Traffic between subnet and non-partner: (%s -> %s - I'm %s)\n", pPacket->cSourceIp, pPacket->cDestIp, pSetup->c100);
+			if (!dropFromLogging(pPacket))
+				pr_info("tarakernel: FW Traffic between subnet and non-partner: (%s -> %s - I'm %s)\n", pPacket->cSourceIp, pPacket->cDestIp, pSetup->c100);
 	}
 	else
 	{
-		pr_info("tarakernel: ********* Shouldn't get here (forwarding between two unknown addresses?) - most likely wrong IP or partner setup) - (%s -> %s while I'm %s)\n", pPacket->cSourceIp, pPacket->cDestIp, pSetup->c100);
-        }
+		if (!dropFromLogging(pPacket))
+			pr_info("tarakernel: ********* Shouldn't get here (forwarding between two unknown addresses?) - most likely wrong IP or partner setup) - (%s -> %s while I'm %s)\n", pPacket->cSourceIp, pPacket->cDestIp, pSetup->c100);
+    }
         
 	return NF_ACCEPT;
 }
