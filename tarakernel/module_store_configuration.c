@@ -272,21 +272,57 @@ char *interpretSetup(char *lpBlockDescriptor, char *lpIpList)
 		//Get list of IP addresses not to log to dmesg (setup->dontDmesgIPs)
         lpIpList = lpSep+1; 
         lpSep = strchr(lpIpList, '^');
+
         if (!lpSep) {
-			pr_info("tarakernel: ***** ERROR in setup (List of IPs not to log to dmsg is lacking)\n");
+		//Get list of IP addresses not to log to dmesg (setup->dontDmesgIPs)
+			pr_info("tarakernel: ***** (dontDmesgIPs) ERROR in setup (List of IPs not to log to dmsg is lacking)\n");
 			pSetup->dontDmesgIPs[0] = 0;
 			return lpFound + 1;
         }
 
+		int nNdx = 0;
         *lpSep = 0; 
 
-		pr_info("tarakernel: Received IPs not to log to dmesg: %s (WARNING - for now can only handle one)\n", lpIpList);
-		if ((nError = kstrtoul(lpIpList, 16, &nMyIp)))
+		while (lpIpList)
 		{
-			pr_info("tarakernel: kstrtoul returned %d for IP not to send to dmesg (ERANGE=%d, EINVAL=%d) for %s\n", nError, ERANGE, EINVAL, lpIpList);
-			return lpFound + 1;
+			char *lpComma = strchr(lpIpList, ',');
+			if (lpComma)
+				*lpComma = 0;
+
+			pr_info("tarakernel: (dontDmesgIPs) Received IPs not to log to dmesg: %s\n", lpIpList);
+			
+			/*Use if hexadecimal: 
+			if ((nError = kstrtoul(lpIpList, 16, &nMyIp)))
+			{
+				pr_info("tarakernel: kstrtoul returned %d for IP not to send to dmesg (dontDmesgIPs) (ERANGE=%d, EINVAL=%d) for %s\n", nError, ERANGE, EINVAL, lpIpList);
+				return lpFound + 1;
+			}*/
+
+			__be32 ip_be;   // network byte order
+			u32 ip_u32;     // host byte order
+
+			#include <linux/inet.h>
+			#include <linux/types.h>			
+			
+			if (!in4_pton(lpIpList, -1, (u8 *)&ip_be, '\0', NULL)) {
+    			pr_info("tarakernel: Invalid IPv4 string when interpreting IP not to log to dmesg (dontDmesgIPs) NOTE! No space, just comma separated IPs!\n");
+    			return lpFound + 1;//-EINVAL;
+			}
+			//ip_u32 = ntohl(ip_be);
+
+			pSetup->dontDmesgIPs[nNdx] = ip_be;//swappedEndian((u32) nMyIp);
+			pr_info("tarakernel: **************** Set IP to skip messages for: %pI4 (dontDmesgIPs)\n", &pSetup->dontDmesgIPs[nNdx]);
+			if (nNdx++ >= N_MAX_IPs_NOT_TO_LOG_TO_DMESG)
+			{
+				pr_info("tarakernel: ****** WARNING! ***** Too many IPs not to log. Max number is %d. Remove from setup or increase max (dontDmesgIPs)\n", N_MAX_IPs_NOT_TO_LOG_TO_DMESG);
+				break;
+			}
+
+			if (lpComma)
+				lpIpList = lpComma + 1;
+			else
+				lpIpList = NULL; 	//Quit the loop
 		}
-		pSetup->dontDmesgIPs[0] = nMyIp;//swappedEndian((u32) nMyIp);
     }    
     else
     {

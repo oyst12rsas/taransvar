@@ -41,9 +41,14 @@ our %ROUTED_SITE_LANS = ();
 
 our %VPN_CLIENT_POOLS = ();
 
+our @MTU_TUNE_IFACES = ();
+our $SAFE_MTU = 1400;
+our $MTU_PING_SIZE = 1360;
+
 my ($SHOW_CONF, $PRINT_LOCAL_TEMPLATE, $HELP) = (0, 0, 0);
 my $MODE = q{};       # diagnose | fix
 my $FIX  = 0;
+my $INTERACTIVE_MODE = 0;
 my @FINDINGS;
 my %COUNTS = ( OK => 0, WARN => 0, ERROR => 0, FIX => 0, MISSING => 0 );
 GetOptions(
@@ -58,6 +63,7 @@ if ($HELP) { print_usage(); exit 0; }
 if ($PRINT_LOCAL_TEMPLATE) { print_local_template(); exit 0; }
 
 if (!$MODE) {
+    $INTERACTIVE_MODE = 1;
     print "\nSelect mode:\n";
     print "1) Diagnose only\n";
     print "2) Diagnose + fix\n";
@@ -76,6 +82,8 @@ print_banner();
 ($LOCAL_CONFIG, $LOCAL_CONFIG_KIND) = load_config_with_template($HOME_LOCAL, $CWD_LOCAL, $REPO_TEMPLATE);
 my %configured = parse_swanctl_conf($CONF_GLOB);
 my ($sas_text, %active) = get_active_sas();
+
+maybe_prompt_for_ports($INTERACTIVE_MODE || ($FIX && -t STDIN));
 
 section("Node");
 print "Node name       : $NODE_NAME\n";
@@ -104,6 +112,9 @@ check_or_fix_loopback_sanity($FIX);
 check_or_fix_overlay_local_address($FIX);
 check_or_fix_xfrm_routes($FIX);
 check_or_fix_local_lan_routes($FIX);
+
+section("MTU and offload checks");
+check_or_fix_mtu_offload($FIX);
 
 section("strongSwan active SAs"); print $sas_text || "(no output)\n";
 if (!$sas_text || $sas_text !~ /ESTABLISHED/) {
@@ -152,7 +163,7 @@ for my $name (sort keys %TEST_TARGETS) {
     print "test_ip    : " . ($testip // 'UNKNOWN') . "\n";
     print_sa_interpretation($sa) if $sa;
     if ($testip) {
-        check_or_fix_site_peer_host_firewall($name, $testip, $TEST_TARGETS{$name}{ports} || [], $FIX);
+        check_or_fix_site_peer_host_firewall($name, $testip, $TEST_TARGETS{$name}{ports} || [], $TEST_TARGETS{$name}{local_service_ports} || [], $FIX);
         print "\n-- Route checks --\n";
         run("ip route get $testip");
         run("ip route get $testip from $OVERLAY_LOCAL");
@@ -312,6 +323,9 @@ $CONF_GLOB = "/etc/swanctl/conf.d/*.conf";
 # %ROUTED_SITE_LANS = ();
 #
 # %VPN_CLIENT_POOLS = ();
+# @MTU_TUNE_IFACES = (q{enp1s0});
+# $SAFE_MTU = 1400;
+# $MTU_PING_SIZE = 1360;
 
 # -----------------------------
 # VPS example: uncomment and adapt on VPS only
@@ -344,6 +358,10 @@ $CONF_GLOB = "/etc/swanctl/conf.d/*.conf";
 # #       test_host => '192.168.50.101',
 # #   },
 # # );
+#
+# @MTU_TUNE_IFACES = (q{ens3});
+# $SAFE_MTU = 1400;
+# $MTU_PING_SIZE = 1360;
 #
 # %VPN_CLIENT_POOLS = (
 #     'vpnClients' => {
@@ -559,6 +577,70 @@ sub check_or_fix_local_lan_routes {
 }
 
 
+sub check_or_fix_mtu_offload {
+    my ($fix) = @_;
+    my @ifaces = grep { defined($_) && $_ ne '' } @MTU_TUNE_IFACES;
+    my %seen; @ifaces = grep { !$seen{$_}++ } @ifaces;
+
+    if (!@ifaces) {
+        print "No MTU/offload tuning interfaces configured.\n";
+        print "Configure \\@MTU_TUNE_IFACES in ~/vpn_router_diagnose.local.pl, e.g. ('enp1s0') or ('ens3').\n";
+    }
+    for my $dev (@ifaces) {
+        print "\n-- Interface MTU/offload: $dev --\n";
+        my $link = `ip -br link show dev $dev 2>&1`;
+        print "\$ ip -br link show dev $dev\n$link";
+        if ($? != 0) {
+            finding("WARN", "MTU/offload interface $dev is missing", "Check interface name in ~/vpn_router_diagnose.local.pl.");
+            next;
+        }
+        my $mtu_out = `ip -o link show dev $dev 2>/dev/null`;
+        my ($mtu) = $mtu_out =~ /\bmtu\s+(\d+)/;
+        if (defined $mtu) {
+            print "Current MTU : $mtu\n";
+            if ($mtu > $SAFE_MTU) {
+                my $cmd = "sudo ip link set dev $dev mtu $SAFE_MTU";
+                finding("WARN", "$dev MTU is $mtu; safe VPN/VM MTU is $SAFE_MTU", "If SSH/HTTP hangs on large packets, run: $cmd");
+                if ($fix) {
+                    my $ok = run($cmd);
+                    finding($ok ? "FIX" : "ERROR", ($ok ? "Set $dev MTU to $SAFE_MTU" : "Failed setting $dev MTU"), $ok ? undef : "Run manually: $cmd");
+                } else { print "[DRY-RUN] would run: $cmd\n"; }
+            } else { finding("OK", "$dev MTU is $mtu (<= $SAFE_MTU)", undef); }
+        }
+        my $ethtool = `command -v ethtool 2>/dev/null`; chomp $ethtool;
+        if (!$ethtool) {
+            finding("WARN", "ethtool not installed; cannot check offload on $dev", "Install with: sudo apt install ethtool");
+            next;
+        }
+        my $features = `sudo ethtool -k $dev 2>&1`;
+        print "\$ sudo ethtool -k $dev | egrep 'tcp-segmentation-offload|generic-segmentation-offload|generic-receive-offload'\n";
+        for my $line (split /\n/, $features) { print "$line\n" if $line =~ /tcp-segmentation-offload|generic-segmentation-offload|generic-receive-offload/; }
+        my @on;
+        push @on, 'tso' if $features =~ /tcp-segmentation-offload:\s+on\b/;
+        push @on, 'gso' if $features =~ /generic-segmentation-offload:\s+on\b/;
+        push @on, 'gro' if $features =~ /generic-receive-offload:\s+on\b/;
+        if (@on) {
+            my $cmd = "sudo ethtool -K $dev tso off gso off gro off";
+            finding("WARN", "$dev has offload features enabled: " . join(',', @on), "These can cause VM/bridge/IPsec SSH hangs. Run: $cmd");
+            if ($fix) {
+                my $ok = run($cmd);
+                finding($ok ? "FIX" : "ERROR", ($ok ? "Disabled TSO/GSO/GRO on $dev" : "Failed disabling offload on $dev"), $ok ? undef : "Run manually: $cmd");
+            } else { print "[DRY-RUN] would run: $cmd\n"; }
+        } else { finding("OK", "$dev TSO/GSO/GRO offloads are already off", undef); }
+    }
+
+    if (defined($OVERLAY_LOCAL) && $OVERLAY_LOCAL ne '' && %TEST_TARGETS) {
+        print "\n-- Path MTU smoke tests to TEST_TARGETS --\n";
+        for my $name (sort keys %TEST_TARGETS) {
+            my $ip = $TEST_TARGETS{$name}{test_ip}; next unless defined($ip) && $ip ne '';
+            my $size = $MTU_PING_SIZE || 1360;
+            my $cmd = "ping -I $OVERLAY_LOCAL -M do -s $size -c 1 -W 2 $ip";
+            my $ok = run($cmd);
+            finding($ok ? "OK" : "WARN", "Path MTU smoke test to $name ($ip) " . ($ok ? "works" : "failed") . " with payload $size", $ok ? undef : "This can cause SSH/HTTP hangs. Configure \\@MTU_TUNE_IFACES and run -fix, or lower MTU manually.");
+        }
+    }
+}
+
 sub no_sa_advice {
     my ($configured_ref) = @_;
     my @cmds;
@@ -619,6 +701,7 @@ sub print_final_diagnosis {
     print "- ROUTED_SITE_LANS are real LANs behind site peers. They need a VPS return route if you do not NAT them.\n";
     print "- If routervm sees LAN_CLIENT > 10.47.0.1 go Out on ipsec0 but no reply comes In, fix route on VPS: ip route replace LAN_NET via ROUTERVM_OVERLAY_IP.\n";
     print "- strongSwan IN/OUT counters are from the VPS/IPsec perspective.\n";
+    print "- SSH hanging after connection/KEX often indicates MTU/offload problems; configure \ and run -fix.\n";
     print "- Site-peer host firewall matters too: even with IPsec up, INPUT DROP on the peer overlay IP can break ping/curl.\n";
 }
 
@@ -635,7 +718,7 @@ sub print_usage {
     print "  --help, -h              Show help.\n";
 }
 
-sub print_banner { print "\n=========================================\n VPN Router Diagnose v17 peer-firewall\n=========================================\n"; }
+sub print_banner { print "\n=========================================\n VPN Router Diagnose v19 port-prompt\n=========================================\n"; }
 sub section { my ($t)=@_; print "\n-----------------------------------------\n $t\n-----------------------------------------\n"; }
 sub run { my ($cmd)=@_; print "\n\$ $cmd\n"; system($cmd); return ($? == 0); }
 sub sh_quote { my ($s)=@_; $s =~ s/'/'\"'\"'/g; return "'$s'"; }
@@ -803,8 +886,59 @@ sub route_uses_gateway {
     return ($route =~ /\bvia\s+\Q$via\E\b/ || $route =~ /\bdev\s+ipsec0\b.*\bsrc\s+\Q$via\E\b/) ? 1 : 0;
 }
 
+sub maybe_prompt_for_ports {
+    my ($should_ask) = @_;
+    return unless $should_ask;
+    return unless -t STDIN;
+    return unless %TEST_TARGETS;
+
+    print "\nOptional TCP port opening for TEST_TARGETS\n";
+    print "- peer test ports: services to test on the remote peer\n";
+    print "- local service ports: services on THIS node to open for that peer\n";
+    print "Press Enter to keep configured values. Use comma-separated ports, e.g. 80,443,2222.\n";
+
+    for my $name (sort keys %TEST_TARGETS) {
+        my $peer_ip = $TEST_TARGETS{$name}{test_ip} // 'UNKNOWN';
+        my $cur_peer  = join(',', @{ $TEST_TARGETS{$name}{ports} || [] });
+        my $cur_local = join(',', @{ $TEST_TARGETS{$name}{local_service_ports} || [] });
+
+        print "\n[$name] peer IP: $peer_ip\n";
+        print "Current peer test ports        : " . ($cur_peer  ne '' ? $cur_peer  : '(none)') . "\n";
+        print "Current local service ports    : " . ($cur_local ne '' ? $cur_local : '(none)') . "\n";
+
+        print "Peer test ports to use [$cur_peer]: ";
+        chomp(my $peer_ans = <STDIN>);
+        if (defined($peer_ans) && $peer_ans =~ /\S/) {
+            my @ports = parse_port_list($peer_ans);
+            if (@ports) { $TEST_TARGETS{$name}{ports} = \@ports; }
+            else { print "  No valid peer test ports entered; keeping existing.\n"; }
+        }
+
+        print "Local service ports to OPEN for this peer [$cur_local]: ";
+        chomp(my $local_ans = <STDIN>);
+        if (defined($local_ans) && $local_ans =~ /\S/) {
+            my @ports = parse_port_list($local_ans);
+            if (@ports) { $TEST_TARGETS{$name}{local_service_ports} = \@ports; }
+            else { print "  No valid local service ports entered; keeping existing.\n"; }
+        }
+    }
+}
+
+sub parse_port_list {
+    my ($s) = @_;
+    my @ports;
+    for my $p (split /[\s,]+/, $s // '') {
+        next if $p eq '';
+        if ($p =~ /^\d+$/ && $p >= 1 && $p <= 65535) { push @ports, int($p); }
+        else { print "  Ignoring invalid port: $p\n"; }
+    }
+    my %seen;
+    return grep { !$seen{$_}++ } @ports;
+}
+
+
 sub check_or_fix_site_peer_host_firewall {
-    my ($name, $peer_ip, $ports, $fix) = @_;
+    my ($name, $peer_ip, $ports, $local_ports, $fix) = @_;
     return unless defined($OVERLAY_LOCAL) && $OVERLAY_LOCAL ne '' && defined($peer_ip) && $peer_ip ne '';
 
     my $local32 = cidr32($OVERLAY_LOCAL);
@@ -819,6 +953,14 @@ sub check_or_fix_site_peer_host_firewall {
     # checked for nodes with OUTPUT policy DROP.
     ensure_rule('INPUT',  undef, ['-s',$peer32,'-d',$local32,'-p','icmp','-j','ACCEPT'], $fix, "Allow ICMP from site peer $name ($peer32) to local overlay $local32");
     ensure_rule('OUTPUT', undef, ['-s',$local32,'-d',$peer32,'-p','icmp','-j','ACCEPT'], $fix, "Allow ICMP replies/requests from local overlay $local32 to site peer $name ($peer32)");
+
+    # Local services on THIS node that should be reachable from the peer.
+    # This catches cases like: routervm:80 works locally, but not from VPS/vpnClients.
+    for my $port (@$local_ports) {
+        next unless defined($port) && $port =~ /^\d+$/;
+        ensure_rule('INPUT',  undef, ['-s',$peer32,'-d',$local32,'-p','tcp','--dport',$port,'-j','ACCEPT'], $fix, "Allow site peer $name ($peer32) to reach local TCP port $port on $local32");
+        ensure_rule('OUTPUT', undef, ['-s',$local32,'-d',$peer32,'-p','tcp','-m','conntrack','--ctstate','RELATED,ESTABLISHED','-j','ACCEPT'], $fix, "Allow established TCP replies from local port $port on $local32 to $name ($peer32)");
+    }
 
     # If this node initiates TCP tests to peer services, OUTPUT must allow those
     # SYNs when OUTPUT policy is DROP. The peer still needs its own INPUT rules;

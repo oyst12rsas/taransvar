@@ -146,23 +146,33 @@ bool getSetupStringNewOk(MYSQL *conn, MYSQL *updateConn, char *cSetupString, int
 			int nDontMsgFldNo = nField++;	
 			char szDontDmesgIPs[N_MAX_DONT_DMSG_IPs];
 			szDontDmesgIPs[0] = 0;
-			uint32_t ip_numeric = 0;
+//			uint32_t ip_numeric = 0;
 
 			//if (row[nDontMsgFldNo] && *row[nDontMsgFldNo])	//260406 asdf
 			if (row[nDontMsgFldNo] != NULL && *row[nDontMsgFldNo])
 			{
 				//printf("DontSendTo: %s\n", row[nDontMsgFldNo]);
 				//strcpy(szDontDmesgIPs, row[nDontMsgFldNo]);
+
 				snprintf(szDontDmesgIPs, sizeof(szDontDmesgIPs), "%s", row[nDontMsgFldNo]);					
 				if (strlen(szDontDmesgIPs) > N_MAX_DONT_DMSG_IPs - 50)
 					printf("************ WARNING **** Consider increasing buffer for IPs not to log to dmesg from %u (currently in use: %zu)\n", N_MAX_DONT_DMSG_IPs, strlen(szDontDmesgIPs));
 
 				//NOTE! For now only handles one IP address
-				if (strlen(szDontDmesgIPs))
-					ip_numeric = inet_addr(szDontDmesgIPs);
+//				if (strlen(szDontDmesgIPs))
+//					ip_numeric = inet_addr(szDontDmesgIPs);
+
+				if (strchr(szDontDmesgIPs, '^') || strchr(szDontDmesgIPs, '\\') || strchr(szDontDmesgIPs, '\''))
+				{
+					printf("********* ERROR ********** List of IP addresses not to log to dmsg can only contain IP addresses separated by comma\n");
+					strcpy(szDontDmesgIPs, "0");
+				}
 			}
 			else
+			{
 				printf("No IP not to send dmesg set (fld no: %d)..\n", nDontMsgFldNo);
+				strcpy(szDontDmesgIPs, "0");
+			}
 
 			//printf("Converting ips\n");				
 			uint32_t adminIP = (uint32_t)strtoul(row[0]?row[0]:"0", NULL, 10);
@@ -171,7 +181,7 @@ bool getSetupStringNewOk(MYSQL *conn, MYSQL *updateConn, char *cSetupString, int
 
 			unsigned int  nBlockingThreshold = atoi(row[4]);
 
-			snprintf(cSetupString, nBuffSize, "SETUP|%08X^%08X^%08X^%01X^%02X^%02X^|", adminIP, internalIP, nettmask, nBlockingThreshold, cShowStatusBits.nValues, ip_numeric);
+			snprintf(cSetupString, nBuffSize, "SETUP|%08X^%08X^%08X^%01X^%02X^%s^|", adminIP, internalIP, nettmask, nBlockingThreshold, cShowStatusBits.nValues, szDontDmesgIPs);
 				//strcpy(cReply+strlen(cReply), "SETUP|");
 				//strcpy(cReply+strlen(cReply), row[0]);
 				//strcpy(cReply+strlen(cReply), "|");

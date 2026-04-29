@@ -197,6 +197,7 @@ struct _Remote_infection {
 #define N_MAX_STOLEN_PACKETS 10
 #define N_MAX_SYN_SEEN 50
 #define N_MAX_REMOTE_INFECTION_INFOS 100
+#define N_MAX_IPs_NOT_TO_LOG_TO_DMESG 10
 
 struct _Setup {
 	bool bTrafficReportsBeingHandled;
@@ -206,7 +207,7 @@ struct _Setup {
 	u32 nMyIp;
 	u32 nInternalIp;  //OT1111
 	u32 nNettmask;
-	u32 dontDmesgIPs[2];	//NOTE! Increase to handle more than one..
+	u32 dontDmesgIPs[N_MAX_IPs_NOT_TO_LOG_TO_DMESG];	//NOTE! Increase to handle more than one..
 //	u16 nShowInstructions;
 	union _showStatusBitsUnion cShowInstructions;   
 	struct _statistics cGlobalStatistics;

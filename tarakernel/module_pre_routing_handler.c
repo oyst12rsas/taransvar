@@ -117,8 +117,15 @@ char *inspectIsItMe(unsigned int nIp, char *cBuf)
 int dropFromLogging(struct _PacketInspection *pPacket);
 int dropFromLogging(struct _PacketInspection *pPacket)
 {
-	//pr_info("tarakernel: Drop %d - checking %d and %d", pSetup->dontDmesgIPs[0], pPacket->ip_header->saddr, pPacket->ip_header->daddr);
-	return  pPacket->ip_header->saddr == pSetup->dontDmesgIPs[0] || pPacket->ip_header->daddr == pSetup->dontDmesgIPs[0];
+	for (int n = 0; n < N_MAX_IPs_NOT_TO_LOG_TO_DMESG && pSetup->dontDmesgIPs[n]; n++)
+	{
+		bool bDrop = pPacket->ip_header->saddr == pSetup->dontDmesgIPs[n] || pPacket->ip_header->daddr == pSetup->dontDmesgIPs[n];
+		//pr_info("tarakernel: %s: %pI4 - checking %pI4 and %pI4", (bDrop?"Drop":"Don't drop"), &pSetup->dontDmesgIPs[0], &pPacket->ip_header->saddr, &pPacket->ip_header->daddr);
+
+		if (bDrop)
+			return 1;
+	}
+	return 0;
 }
 
 
