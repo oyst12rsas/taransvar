@@ -78,4 +78,18 @@ $CONF_GLOB = "/etc/swanctl/conf.d/*.conf";
 #     },
 # );
 
+
+# Ports on this router that VPS overlay may access
+our @ALLOW_FROM_VPS_TCP = (
+    22,   # ssh
+    80,   # apache / router web UI
+    # 443, # enable if HTTPS is actually listening
+);
+
+our @ALLOW_FROM_VPS_UDP = (
+    514,  # syslog, if wanted
+    5551, # taralink events, if wanted
+);
+
+
 1;

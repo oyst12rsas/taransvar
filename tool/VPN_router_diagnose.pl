@@ -163,7 +163,12 @@ for my $name (sort keys %TEST_TARGETS) {
     print "test_ip    : " . ($testip // 'UNKNOWN') . "\n";
     print_sa_interpretation($sa) if $sa;
     if ($testip) {
-        check_or_fix_site_peer_host_firewall($name, $testip, $TEST_TARGETS{$name}{ports} || [], $TEST_TARGETS{$name}{local_service_ports} || [], $FIX);
+        check_or_fix_site_peer_host_firewall(
+                $name, 
+                $testip, 
+                $TEST_TARGETS{$name}{ports} || [], 
+                \@ALLOW_FROM_VPS_TCP,
+                $FIX);
         print "\n-- Route checks --\n";
         run("ip route get $testip");
         run("ip route get $testip from $OVERLAY_LOCAL");
@@ -886,43 +891,6 @@ sub route_uses_gateway {
     return ($route =~ /\bvia\s+\Q$via\E\b/ || $route =~ /\bdev\s+ipsec0\b.*\bsrc\s+\Q$via\E\b/) ? 1 : 0;
 }
 
-sub maybe_prompt_for_ports {
-    my ($should_ask) = @_;
-    return unless $should_ask;
-    return unless -t STDIN;
-    return unless %TEST_TARGETS;
-
-    print "\nOptional TCP port opening for TEST_TARGETS\n";
-    print "- peer test ports: services to test on the remote peer\n";
-    print "- local service ports: services on THIS node to open for that peer\n";
-    print "Press Enter to keep configured values. Use comma-separated ports, e.g. 80,443,2222.\n";
-
-    for my $name (sort keys %TEST_TARGETS) {
-        my $peer_ip = $TEST_TARGETS{$name}{test_ip} // 'UNKNOWN';
-        my $cur_peer  = join(',', @{ $TEST_TARGETS{$name}{ports} || [] });
-        my $cur_local = join(',', @{ $TEST_TARGETS{$name}{local_service_ports} || [] });
-
-        print "\n[$name] peer IP: $peer_ip\n";
-        print "Current peer test ports        : " . ($cur_peer  ne '' ? $cur_peer  : '(none)') . "\n";
-        print "Current local service ports    : " . ($cur_local ne '' ? $cur_local : '(none)') . "\n";
-
-        print "Peer test ports to use [$cur_peer]: ";
-        chomp(my $peer_ans = <STDIN>);
-        if (defined($peer_ans) && $peer_ans =~ /\S/) {
-            my @ports = parse_port_list($peer_ans);
-            if (@ports) { $TEST_TARGETS{$name}{ports} = \@ports; }
-            else { print "  No valid peer test ports entered; keeping existing.\n"; }
-        }
-
-        print "Local service ports to OPEN for this peer [$cur_local]: ";
-        chomp(my $local_ans = <STDIN>);
-        if (defined($local_ans) && $local_ans =~ /\S/) {
-            my @ports = parse_port_list($local_ans);
-            if (@ports) { $TEST_TARGETS{$name}{local_service_ports} = \@ports; }
-            else { print "  No valid local service ports entered; keeping existing.\n"; }
-        }
-    }
-}
 
 sub parse_port_list {
     my ($s) = @_;
