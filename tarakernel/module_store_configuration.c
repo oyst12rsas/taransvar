@@ -299,7 +299,7 @@ char *interpretSetup(char *lpBlockDescriptor, char *lpIpList)
 			}*/
 
 			__be32 ip_be;   // network byte order
-			u32 ip_u32;     // host byte order
+			//u32 ip_u32;     // host byte order
 
 			#include <linux/inet.h>
 			#include <linux/types.h>			

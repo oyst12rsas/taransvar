@@ -457,8 +457,10 @@ checkRequests();	#See lib_cron.pm 	check setup.requestReboot  (Set from hotspot 
 createDirectories();
 #fixDevicesOldWay(); - 260311 - Don't do this... it messed up good setup when there's multiple NICs
 updateGlobalDemo(); #NOTE! Not reflecting the new code where each user may have individual demo setup (not yet working properly)
+print "Starting workshopSetup()\n");
 workshopSetup();	#If workshopId is set in dashboard setup, it will register other computers with same workshopId as partners.
 start_iptables_monitor();	#Check if iptables_log_monitor.pl is already running. If not, starts it
+print "Starting start_process_dhcpdump()\n");
 start_process_dhcpdump($pSetup->{"internalNic"});	#NOTE! Just making sure dhcp_capture.pl is running..
 
 #handleRequestsForDmsg();

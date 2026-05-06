@@ -807,7 +807,7 @@ int main(void)
     pSockData = getSockData();  //This is no longer in use....
 
     #ifdef DO_TIMER
-	    init_timer();
+	    init_timer();   //See module_timer.c
     #endif
 
     int nl_fd = create_netlink_socket();

@@ -18,6 +18,11 @@ use warnings;
 #
 # strongSwan stack:
 #   charon-systemd + swanctl
+#
+# MTU/offload tuning:
+#   SAFE_MTU=1375                # default if omitted
+#   MTU_INTERFACES=enp1s0,ipsec0 # optional, comma/space separated
+#   DISABLE_OFFLOAD=yes          # default yes
 # ============================================================
 
 my $CONF = $ARGV[0] || "/root/taransvar/vpn.conf";
@@ -253,9 +258,13 @@ sub run_peer_mode {
     my $enable_fwd    = yes_value($cfg->{ENABLE_FORWARDING} // "no");
     my $apply_fw      = yes_value($cfg->{APPLY_FIREWALL} // "no");
     my $initiate      = yes_value($cfg->{INITIATE_TUNNEL} // "yes");
+    my $safe_mtu      = valid_mtu($cfg->{SAFE_MTU} // 1375);
+    my @mtu_ifaces    = mtu_interfaces($cfg->{MTU_INTERFACES} // $wan_if);
+    my $offload       = yes_value($cfg->{DISABLE_OFFLOAD} // "yes");
 
     install_packages();
     write_sysctl($enable_fwd);
+    write_mtu_service($safe_mtu, \@mtu_ifaces, $offload);
 
     if ($peer_vpn_ip ne '') {
         assign_loopback_ip($peer_vpn_ip, "PEER_VPN_IP");
@@ -358,6 +367,7 @@ iptables -C INPUT -p udp --dport 4500 -j ACCEPT 2>/dev/null || iptables -A INPUT
 iptables -C INPUT -p esp -j ACCEPT 2>/dev/null || iptables -A INPUT -p esp -j ACCEPT
 iptables -C FORWARD -s '$local_subnet' -d '$remote_subnet' -j ACCEPT 2>/dev/null || iptables -A FORWARD -s '$local_subnet' -d '$remote_subnet' -j ACCEPT
 iptables -C FORWARD -s '$remote_subnet' -d '$local_subnet' -j ACCEPT 2>/dev/null || iptables -A FORWARD -s '$remote_subnet' -d '$local_subnet' -j ACCEPT
+iptables -t mangle -C FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || iptables -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
 
 echo "Peer firewall applied."
 EOF
@@ -398,7 +408,7 @@ sub required {
 sub install_packages {
     print "Installing strongSwan swanctl/charon-systemd stack...\n";
     system("apt-get update") == 0 or die "apt-get update failed\n";
-    system("DEBIAN_FRONTEND=noninteractive apt-get install -y charon-systemd strongswan-swanctl libcharon-extra-plugins iptables") == 0
+    system("DEBIAN_FRONTEND=noninteractive apt-get install -y charon-systemd strongswan-swanctl libcharon-extra-plugins iptables ethtool") == 0
         or die "Package install failed\n";
     system("DEBIAN_FRONTEND=noninteractive apt-get remove -y strongswan-starter strongswan strongswan-charon >/dev/null 2>&1");
 }
@@ -462,6 +472,90 @@ EOF
     system("systemctl daemon-reload") == 0 or die "systemctl daemon-reload failed\n";
     system("systemctl enable --now taransvar-loopback-ips.service") == 0
         or die "Failed to enable/start taransvar-loopback-ips.service\n";
+}
+
+
+sub write_mtu_service {
+    my ($mtu, $ifaces, $disable_offload) = @_;
+    return unless @$ifaces;
+
+    ensure_dir("/usr/local/sbin");
+    my $script = "/usr/local/sbin/taransvar-mtu-tune.sh";
+    open(my $sh, ">", $script) or die "Cannot write $script: $!\n";
+
+    print $sh "#!/bin/bash\nset -e\n\n";
+    print $sh "SAFE_MTU='$mtu'\n";
+    print $sh "DISABLE_OFFLOAD='" . ($disable_offload ? "yes" : "no") . "'\n\n";
+    print $sh "echo \"Applying Taransvar MTU/offload tuning, MTU=\$SAFE_MTU\"\n";
+
+    for my $iface (@$ifaces) {
+        next unless defined $iface && $iface ne '';
+        my $q = shell_quote($iface);
+        print $sh "\nIFACE=$q\n";
+        print $sh "if ip link show dev \"\$IFACE\" >/dev/null 2>&1; then\n";
+        print $sh "  echo \" - setting \$IFACE mtu \$SAFE_MTU\"\n";
+        print $sh "  ip link set dev \"\$IFACE\" mtu \"\$SAFE_MTU\" || true\n";
+        print $sh "  if [ \"\$DISABLE_OFFLOAD\" = \"yes\" ] && command -v ethtool >/dev/null 2>&1; then\n";
+        print $sh "    echo \" - disabling tso/gso/gro on \$IFACE\"\n";
+        print $sh "    ethtool -K \"\$IFACE\" tso off gso off gro off 2>/dev/null || true\n";
+        print $sh "  fi\n";
+        print $sh "else\n";
+        print $sh "  echo \" - skipping missing interface \$IFACE\"\n";
+        print $sh "fi\n";
+    }
+    close($sh);
+    chmod 0755, $script;
+
+    my $svc = "/etc/systemd/system/taransvar-mtu-tune.service";
+    open(my $fh, ">", $svc) or die "Cannot write $svc: $!\n";
+    print $fh <<"EOF";
+[Unit]
+Description=Taransvar MTU and NIC offload tuning
+After=network-online.target
+Wants=network-online.target
+Before=strongswan.service
+
+[Service]
+Type=oneshot
+ExecStart=$script
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    close($fh);
+
+    system("systemctl daemon-reload") == 0 or die "systemctl daemon-reload failed\n";
+    system("systemctl enable --now taransvar-mtu-tune.service") == 0
+        or die "Failed to enable/start taransvar-mtu-tune.service\n";
+}
+
+sub mtu_interfaces {
+    my ($raw) = @_;
+    $raw //= '';
+    my @out;
+    my %seen;
+    for my $iface (split(/[\s,]+/, $raw)) {
+        next if !defined $iface || $iface eq '';
+        $iface =~ s/^\s+|\s+$//g;
+        next if $iface eq '' || $seen{$iface}++;
+        push @out, $iface;
+    }
+    return @out;
+}
+
+sub valid_mtu {
+    my ($mtu) = @_;
+    $mtu //= 1375;
+    die "SAFE_MTU must be numeric\n" unless $mtu =~ /^\d+$/;
+    die "SAFE_MTU too low/high; use 576..1500\n" unless $mtu >= 576 && $mtu <= 1500;
+    return $mtu;
+}
+
+sub shell_quote {
+    my ($s) = @_;
+    $s =~ s/'/'"'"'/g;
+    return "'$s'";
 }
 
 sub enable_and_restart_services {

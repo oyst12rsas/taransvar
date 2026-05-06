@@ -679,7 +679,8 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 
 		if (bReadChangesOnly)
 		{
-			char *lpSQL = "select dmesgUpdated from setup where handled is null limit 1";
+			//Thought there was problem reading lots of fields (but the problem was memory leak elsewhere).. so implemented this check to see if handled is true or false
+			char *lpSQL = "select dmesgUpdated from setup where coalesce(handled, b'0') = b'1' limit 1";
 
 			if (mysql_query(conn, lpSQL)) {
 				fprintf(stderr, "taralink: %s\n", mysql_error(conn));
@@ -695,12 +696,12 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 			}		
 
 			if ((row = mysql_fetch_row(res)) == NULL)
+				printf("Setup is changed. Sending to tarakernel.\n");
+			else 
 			{
-				//printf("Setup not changed. Skipping reading.\n");
+				//printf("Setup unchanged. Skipping sending. Dmsg read: %s\n", row[0]?row[0]:"(NULL)");
 				bReadSetup = false;
 			}
-			else 
-				printf("Setup row found. Dmsg read: %s\n", row[0]?row[0]:"(NULL)");
 
 	    	mysql_free_result(res);
 			res = NULL;

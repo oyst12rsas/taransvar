@@ -48,6 +48,7 @@ my $cSetup = getSetup();
 
 if ($nInstallSqlVersion ne $cSetup->{"dbVersion"}) {
 	print "\n*********** ERROR - DB update required **********\n\nCurrent version: $nInstallSqlVersion, DB version: ".$cSetup->{"dbVersion"}."\n\nRun:\n\nsudo cp install.sql /root/taransvar/perl\nsudo perl diagnose.pl\n\n";
+	print "\nYou should proably also:\nsudo cp -r ~/taransvar/html /var/www\nsudo cp ~/taransvar/misc/*.* /root/taransvar/perl\n(NOTE! Not yet tested)";
 	return;
 }
 
