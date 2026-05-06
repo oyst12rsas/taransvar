@@ -25,7 +25,8 @@ my $szLogFile = $szSysRoot."log/sleeping.txt";
 my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
 
 open(my $fLogH, '>', $szLogFile) or die "Could not open log file '$szLogFile' $!";
-print $fLogH "sleepingbeauty started $hour:$min:$sec\n";
+print $fLogH "sleepingbeauty started $hour:$min:$sec and stopped immediately because there's no hotspot - changing iptables causes trouble for cyber system\n";
+exit;
 
 #my @pids = `pgrep -f 'perl .*sleepingbeauty\\.pl'`;
 #chomp @pids;

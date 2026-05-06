@@ -220,12 +220,46 @@ alter table demo add botStatus varchar[255] null;
 	print "</td></tr></table>"; //End of main table (with list of units and infections on left side)
 }
 
+function vpn_demo()
+{
+	print "Simple demo: ";
+
+	$conn=getConnection();
+	$szSQL = "select name, inet_ntoa(ip) as ip, partnerStatusReceived from partnerRouter R join partner P on P.partnerId = R.partnerId";
+	//print "<br>$szSQL<br>";
+	$conn->query($szSQL) or die(mysql_error());
+	$result = $conn->query($szSQL);
+
+        if ($result->num_rows > 0) 
+        {
+        	// output data of each row  
+        	print "<h2>Involved sites:</h2><table>";
+	        $nCount=0;
+	        while($row = $result->fetch_assoc()) 
+	        {
+	        	if (!$nCount)
+	        		print "<tr><td>Site</td><td>IP</td><td>Status received</td><td>Gatekeeper</td><td>Sample bank</td><td>Honey</td></tr>";
+
+				$szGatekeeper = "http://".$row["ip"]."/gatekeeper/index.php";
+				$szSamplebank = "http://".$row["ip"]."/samplebank/index.php";
+				$szHoneypot =  "http://".$row["ip"]."/honeypot/index.html";
+	            print "<tr><td>".$row["name"]."</td><td>".$row["ip"]."</td><td>".$row["partnerStatusReceived"]."</td><td><a href=\"".$szGatekeeper."\">[go to]</h></td><td><a href=\"".$szSamplebank."\">[go to]</h></td><td><a href=\"".$szHoneypot."\">[go to]</h></td></tr>";
+	            $nCount++;
+	        }
+	        print "</table>";
+        }
+
+}
+
+
 
 function demo()
 {
 	global $demoRow;
 	//First check status
 
+	vpn_demo();
+	return;
 /*ipTargetHost int unsigned not null,
 ipBotHost int unsigned not null,
 ipBot int unsigned null, 
@@ -289,7 +323,7 @@ statusRequestAssistanceOk bit(1) not null default b'0'
 	} 
 	else 
 	{
-	  	echo "There's currenly no registered ongoing demo setup..<br><br><a href=\"index.php?f=addDemo\">Set up one</a>";
+	  	echo "There's currently no registered ongoing demo setup..<br><br><a href=\"index.php?f=addDemo\">Set up one</a>";
 	}
 
 }
