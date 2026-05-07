@@ -1,3 +1,52 @@
+<script>
+async function honeypotPressed() {
+    try {
+        //alert("Pressed....");
+        const response = await fetch('honey.php');
+
+        if (!response.ok) {
+            throw new Error('Network error');
+        }
+
+        const data = await response.json();
+
+        console.log(data);
+
+        // show your modal instead
+        //document.getElementById('customAlert').classList.add('show');
+        alert(data.message);
+
+    } catch (err) {
+        console.error('Error:', err);
+        alert("PHP call failed");
+    }
+}
+
+async function clearTagging() {
+    try {
+        //alert("Pressed....");
+        const response = await fetch('clearTagging.php');
+
+        if (!response.ok) {
+            throw new Error('Network error');
+        }
+
+        const data = await response.json();
+
+        console.log(data);
+
+        // show your modal instead
+        //document.getElementById('customAlert').classList.add('show');
+        alert(data.message);
+
+    } catch (err) {
+        console.error('Error:', err);
+        alert("PHP call failed");
+    }
+}
+
+</script>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -29,10 +78,10 @@
             </div>
 
             <div class="actions">
-                <button id="probeBtn" class="btn btn-danger">
-                    <span class="btn-icon">🔘</span> Simulate Malicious Probe
-                </button>
-                <button id="clearBtn" class="btn btn-secondary">
+                <button id="probeBtn" class="btn btn-danger" onclick="honeypotPressed()">
+                    🔘 Simulate Malicious Probe
+                </button>                
+                <button id="clearBtn" class="btn btn-secondary" onclick="clearTagging()">
                     Clear Tagging
                 </button>
             </div>
@@ -43,6 +92,6 @@
         </div>
     </div>
     
-    <script src="script.js"></script>
+    <!-------------------script src="script.js"></script------------->
 <div id="customAlert" class="sweet-modal"><div class="sweet-modal-content"><h3>?? Threat Tagged</h3><p>Your device has been successfully tagged by the Gatekeeper Network.<br><br>Return to Aequitas Global Bank to see the result. You will now be <strong>blocked</strong> from accessing their services.</p><button id="closeModalBtn" class="close-modal-btn">Got it</button></div></div></body>
 </html>

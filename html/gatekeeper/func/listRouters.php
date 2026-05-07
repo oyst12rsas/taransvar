@@ -3,7 +3,7 @@
 function listrouters()
 {
 	$conn=getConnection();
-	$szSQL = "select name, inet_ntoa(ip) as ip, partnerStatusReceived from partnerRouter R join partner P on P.partnerId = R.partnerId";
+	$szSQL = "select name, inet_ntoa(ip) as ip, inet_ntoa(nettmask) as nettmask, partnerStatusReceived from partnerRouter R join partner P on P.partnerId = R.partnerId";
 	//print "<br>$szSQL<br>";
 	$conn->query($szSQL) or die(mysql_error());
 	$result = $conn->query($szSQL);
@@ -16,9 +16,9 @@ function listrouters()
 	        while($row = $result->fetch_assoc()) 
 	        {
 	        	if (!$nCount)
-	        		print "<tr><td>Partner</td><td>IP</td><td>Status received</td></tr>";
+	        		print "<tr><td>Partner</td><td>IP</td><td>Nettmask</td><td>Status received</td></tr>";
 
-	            print "<tr><td>".$row["name"]."</td><td>".$row["ip"]."</td><td>".$row["partnerStatusReceived"]."</td></tr>";
+	            print "<tr><td>".$row["name"]."</td><td>".$row["ip"]."</td><td>".$row["nettmask"]."</td><td>".$row["partnerStatusReceived"]."</td></tr>";
 	            $nCount++;
 	        }
 	        print "</table>";

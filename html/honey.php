@@ -41,9 +41,10 @@ $cPartnerRouters = array();//array("81.88.18.98");
 //If running locally, also treat this host as a partner (router) for notification of infections 
 //(later, such messages should only be sent to central DB + the owner of the IP) 
 
-
+//Send notification to the owner of sender IP address (assuming it's a Taransvar router - which should be checked)
 if (!in_array($_SERVER['SERVER_ADDR'], $cPartnerRouters))    
         array_push($cPartnerRouters, $_SERVER['SERVER_ADDR']);
+
 $nCount = 1;
 foreach($cPartnerRouters as $szPartner)
 {

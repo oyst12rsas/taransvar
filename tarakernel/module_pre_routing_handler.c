@@ -434,8 +434,9 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
                     Meaning the matching will be in module_forwarding.c
         */
         bToOrFromMe = 1;
+		u32 nPartnerIp = isPartner(pPacket->ip_header->saddr);
               
-		if (isPartner(pPacket->ip_header->saddr)) 	
+		if (nPartnerIp) 	
 		{
 			/*
 		    This is probably traffic both to this node and to nodes inside this network (NAT will translate to local IP address). Meaning the same
@@ -512,7 +513,7 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 	        if (pSetup->cShowInstructions.bits.showPreRoutePartner) {
 				//pr_info("tarakernel: PRE ROUTING: Inbound from partner: %s (%s -> %s)\n",pSetup->c100, pPacket->cSourceIp, pPacket->cDestIp);
 				if (!dropFromLogging(pPacket))
-					pr_info("tarakernel: PRE ROUTING Inbound from partner: %s (%s:%d -> %s:%d)\n", pSetup->c100, pPacket->cSourceIp, ntohs(pPacket->tcp_header->source), pPacket->cDestIp, ntohs(pPacket->tcp_header->dest)); 
+					pr_info("tarakernel: PRE ROUTING Inbound from partner(%pI4): %s (%s:%d -> %s:%d)\n", &nPartnerIp, pSetup->c100, pPacket->cSourceIp, ntohs(pPacket->tcp_header->source), pPacket->cDestIp, ntohs(pPacket->tcp_header->dest)); 
 			}
 			if (cUnion.cTag.version_no)
 			  pSetup->cGlobalStatistics.nFromPartnerTagged++;

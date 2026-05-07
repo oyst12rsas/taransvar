@@ -7,7 +7,7 @@ void listHoneyports(void);
 void listInfections(void);
 void listColored(int nBlockDescriptor);
 int isListedForInspection(volatile uint32_t ipAddress);
-int isPartner(volatile uint32_t ipAddress);
+u32 isPartner(volatile uint32_t ipAddress);
 void listPartners(void);
 void storeColoredIp(int nBlockDescriptor, struct _ColoredIpSpecification *pElementsArray, volatile uint32_t ipAddress);
 void storeColoredListElement(int nBlockDescriptor, volatile uint32_t ipAddress);
