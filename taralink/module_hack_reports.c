@@ -4,30 +4,51 @@ typedef struct  {
   char ip[3][30];
 } _GlobalServers;
 
-void sendToGlogalDbServers(_GlobalServers *cGlobalDb, char *szParams);
-void sendToGlogalDbServers(_GlobalServers *cGlobalDb, char *szParams)
-{
-  for (int n = 0; n < 3; n++)
-  {
-    //char *lpGlobalDbIp; //No idea why this isn't working: szGlobalDb[n];
-    char *lpGlobalDbIp = cGlobalDb->ip[n];
+#include <arpa/inet.h>
 
-    if (lpGlobalDbIp && strlen(lpGlobalDbIp) > 7)
-    {
-		printf("About to send to global DB server: %s\n", lpGlobalDbIp);
-    	char szUrl[255];
-		char szWgetBuff[2000];
-    	sprintf(szUrl, "http://%s/script/%s", lpGlobalDbIp, szParams);
-    	*szWgetBuff = 0;
-		printf("Sending request: %s\n", szUrl);
-    	wget(szUrl, szWgetBuff, sizeof(szWgetBuff));  //Using global static buffers because reply doesn't come immediately.
-    } else {
-    	char szBuf[256];
-    	if (lpGlobalDbIp && *lpGlobalDbIp)
-    		printf("****** Skipping wrong IP address for global DB server: %s\n", lpGlobalDbIp);
-      	//addWarningRecord(conn, szBuf);
-    }
-  }
+void sendToGlogalDbServers(_GlobalServers *cGlobalDb, char *szParams, uint32_t nMyIp, char *cMyIp);
+void sendToGlogalDbServers(_GlobalServers *cGlobalDb, char *szParams, uint32_t nMyIp, char *cMyIp)
+{
+	for (int n = 0; n < 3; n++)
+	{
+    	//char *lpGlobalDbIp; //No idea why this isn't working: szGlobalDb[n];
+    	char *lpGlobalDbIp = cGlobalDb->ip[n];
+
+		struct in_addr addr;
+		uint32_t nGlobalDbIp;
+
+		if (inet_aton(lpGlobalDbIp, &addr)) {
+			nGlobalDbIp = addr.s_addr;
+    		// success
+		} else {
+    		// invalid IP
+			nGlobalDbIp = 0;
+			printf("************************* Invalid ip: %s (skipping)\n", lpGlobalDbIp);
+			continue;
+		}
+
+		//if (nGlobalDbIp != nMyIp)	- for some reason these are different... didn't debug, using strings instead...
+		if (strcmp(lpGlobalDbIp, cMyIp))
+		{
+	    	if (lpGlobalDbIp && strlen(lpGlobalDbIp) > 7)
+    		{
+				printf("About to send to global DB server: %s (me: %s)\n", lpGlobalDbIp, cMyIp);
+				char szUrl[255];
+				char szWgetBuff[2000];
+				sprintf(szUrl, "http://%s/script/%s", lpGlobalDbIp, szParams);
+				*szWgetBuff = 0;
+				printf("Sending request: %s\n", szUrl);
+				wget(szUrl, szWgetBuff, sizeof(szWgetBuff));  //Using global static buffers because reply doesn't come immediately.
+    		} else {
+    			char szBuf[256];
+    			if (lpGlobalDbIp && *lpGlobalDbIp)
+    				printf("****** Skipping wrong IP address for global DB server: %s\n", lpGlobalDbIp);
+      			//addWarningRecord(conn, szBuf);
+			}
+		}
+		else
+			printf("******** WARNING ******** Skipping sending to myself: %s\n", lpGlobalDbIp);
+	}
 }
 
 void setHackReportAsHandled(char *lpStatus, int nHackReportId);
@@ -54,6 +75,11 @@ void increaseSendAttemptCount(int nHackReportId)
   mysql_close(conn);
 }
 
+int isMeOrMine(uint32_t nIp, uint32_t nMyIp, uint32_t nNettmask)
+{
+	return ((nIp & nNettmask) == (nMyIp & nNettmask));
+}
+
 void checkHackReports()
 {
 	//Checks if there's reported attacks by units in our network  
@@ -68,15 +94,16 @@ void checkHackReports()
 	updateConn = 0;
 	lookupConn = 0;
 	localUpdate = 0;
-	volatile uint32_t nMyIp;
+	uint32_t nMyIp;
+	uint32_t nNettmask;
 	char cMyIp[20];
-	char szSQL[256]; 
+	char szSQL[400]; 
 	_GlobalServers cGlobalDb;
 	//char szGlobalDb1[30];
 	//char szGlobalDb2[30];
 	//char szGlobalDb3[30];
 
-	char *lpSql = "select adminIP, inet_ntoa(adminIP), inet_ntoa(globalDb1ip), inet_ntoa(globalDb2ip), inet_ntoa(globalDb3ip)  from setup"; 
+	char *lpSql = "select adminIP, inet_ntoa(adminIP), inet_ntoa(globalDb1ip), inet_ntoa(globalDb2ip), inet_ntoa(globalDb3ip), nettmask from setup"; 
 	if (mysql_query(conn, lpSql)) {
 		fprintf(stderr, "**** ERROR ******* While finding setup: %s\n", mysql_error(conn));
 		addWarningRecord("**** ERROR ******* While finding setup");
@@ -85,6 +112,7 @@ void checkHackReports()
 	res = mysql_use_result(conn);
 	row = mysql_fetch_row(res);
 	nMyIp = atoi(row[0]);
+	nNettmask = atoi(row[5]);
 	strcpy(cMyIp, row[1]);
 	for (int n=0; n < 3; n++)
 	{
@@ -124,7 +152,7 @@ void checkHackReports()
 		if (updateConn == NULL)
 			updateConn = getConnection();
                         
-		if (atoi(row[1]) == nMyIp)
+		if (isMeOrMine(atoi(row[1]), nMyIp, nNettmask))
 		{
 			//This is a hacking report regarding one of my units.. Find what unit it was based on 
 			//the port and put in internalInfections table
@@ -207,7 +235,7 @@ void checkHackReports()
 				//*************** Send message to global DB servers that one of our units reported infected 
 				char szParams[200];
 				sprintf(szParams, "script/config_update.php?f=confession&ip=%s&port=%s&ourid=%d", row[3], row[2], nUnitId);
-				sendToGlogalDbServers(&cGlobalDb, szParams);
+				sendToGlogalDbServers(&cGlobalDb, szParams, nMyIp, cMyIp);
 
 				sprintf(cSQL, "update hackReport set sentGlobalDB = now(), status = concat(status, '(confessed)') where reportId = %d", atoi(row[0]));
 				
@@ -283,7 +311,7 @@ void checkHackReports()
 			printf("\nSending status to global DB servers:\n");
 			char szParams[200];
 			sprintf(szParams, "config_update.php?f=report&ip=%s&port=%s", row[3], row[2]);
-			sendToGlogalDbServers(&cGlobalDb, szParams);
+			sendToGlogalDbServers(&cGlobalDb, szParams, nMyIp, cMyIp);
 		}
 	}
 
