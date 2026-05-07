@@ -17,10 +17,10 @@ void sendToGlogalDbServers(_GlobalServers *cGlobalDb, char *szParams)
 		printf("About to send to global DB server: %s\n", lpGlobalDbIp);
     	char szUrl[255];
 		char szWgetBuff[2000];
-    	sprintf(szUrl, "http://%s/%s", lpGlobalDbIp, szParams);
+    	sprintf(szUrl, "http://%s/script/%s", lpGlobalDbIp, szParams);
     	*szWgetBuff = 0;
+		printf("Sending request: %s\n", szUrl);
     	wget(szUrl, szWgetBuff, sizeof(szWgetBuff));  //Using global static buffers because reply doesn't come immediately.
-		printf("%s\n", szUrl);
     } else {
     	char szBuf[256];
     	if (lpGlobalDbIp && *lpGlobalDbIp)
@@ -243,8 +243,10 @@ void checkHackReports()
 			//This is hacking report regarding other IP. Check if it's a registered partner. If so, send it to that partner...
 			//NOTE! For now only handles routers with one IP.. Changes have to be made to support chunks of IP addresses..
 			char *lpStatus;
-		    sprintf(szSQL, "select routerId, partnerId, nettmask from partnerRouter where ip = %s", row[1]); 
-			printf ("SQL: %s\n", szSQL);
+		    //sprintf(szSQL, "select routerId, partnerId, nettmask from partnerRouter where ip = %s", row[1]); 
+			sprintf(szSQL, "SELECT name, ip, inet_ntoa(ip) as aIp, nettmask, inet_ntoa(nettmask) as aNettmask, partnerStatusReceived, BIT_COUNT(nettmask) AS mask_bits FROM partnerRouter R join partner P on P.partnerId = R.partnerId WHERE (%s & nettmask) = (ip & nettmask) ORDER BY mask_bits DESC LIMIT 1", row[1]); 
+
+			printf ("SQL to find partner: %s\n", szSQL);
 		        
 			if (mysql_query(updateConn, szSQL)) {
 				fprintf(stderr, "While checking if partner: %s\n", mysql_error(updateConn));
@@ -259,7 +261,8 @@ void checkHackReports()
 				//This is a partner.. Send it message... Using config_update.php, the same script that script/honey.php calls to report
 				char szBuff[1000];
 				char szUrl[250];
-				sprintf(szUrl, "http://%s/script/config_update.php?f=report&ip=%s&port=%s", row[3], row[3], row[2]);
+				//sprintf(szUrl, "http://%s/script/config_update.php?f=report&ip=%s&port=%s", row[3], row[3], row[2]);
+				sprintf(szUrl, "http://%s/script/config_update.php?f=report&ip=%s&port=%s", lookupRow[2], row[3], row[2]);
 				increaseSendAttemptCount(atoi(row[0])); //Increase before wget because will not get back if aborts (I think).. Otherwise would have been set to handled.
 				printf("About to send: %s\n", szUrl);
 				wget(szUrl, szBuff, sizeof(szBuff));

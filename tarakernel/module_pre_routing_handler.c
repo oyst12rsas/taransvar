@@ -90,14 +90,14 @@ void checkFree(struct _PacketInspection *pPacket, bool bLeavingPostRouting)
 
 int isMeOrMine(unsigned int nIp)
 {
-        //Is this one of my IP addresses or one in my subnet?
+    //Is this one of my IP addresses or one in my subnet?
 	if (nIp == pSetup->nMyIp || nIp == pSetup->nInternalIp)
 		return 1;
 	
 	if ((nIp & pSetup->nNettmask) == (pSetup->nInternalIp & pSetup->nNettmask))
 	        return 1;
 	
-        return 0;	
+    return 0;	
 }
 
 int isSubNet(unsigned int nIp)

@@ -256,7 +256,7 @@ int isListedForInspection(volatile uint32_t ipAddress)
 u32 isPartner(volatile uint32_t ipAddress)
 {
 	int n;
-	char cBuf[255];
+	//char cBuf[255];
 	struct _PartnerSpecification *pPartnerArray = (struct _PartnerSpecification *)pSetup->pConfiguration[BLOCK_DESCRIPTIOR_PARTNERS];
 
 	for (n=0;n<pSetup->nElementsInArray[BLOCK_DESCRIPTIOR_PARTNERS];n++)
@@ -265,13 +265,13 @@ u32 isPartner(volatile uint32_t ipAddress)
 		if ((pPartnerArray[n].ipAddress & pPartnerArray[n].ipNettmask) == (ipAddress & pPartnerArray[n].ipNettmask))
 		//if (pPartnerArray[n].ipAddress == ipAddress)
 		{
-			unsigned char* ipAddressBytes = (unsigned char*)&ipAddress;//pPartnerArray[n].ipAddress;
+			//unsigned char* ipAddressBytes = (unsigned char*)&ipAddress;//pPartnerArray[n].ipAddress;
 
-			if (pPartnerArray[n].ipAddress == ipAddress)
+	/*		if (pPartnerArray[n].ipAddress == ipAddress)
 				pr_warn("tarakernel: %d.%d.%d.%d(%08X) is identified as a partner.\n", (int)ipAddressBytes[0], (int)ipAddressBytes[1], (int)ipAddressBytes[2], (int)ipAddressBytes[3], pPartnerArray[n].ipAddress);
 			else
 				pr_warn("tarakernel: %pI4 is identified as a partner for %pI4.\n", &(pPartnerArray[n].ipAddress), &ipAddress);
-
+*/
 			return pPartnerArray[n].ipAddress;	//Return the IP address of the identified partner so sender can print/utilize it
 		}
 		
@@ -279,7 +279,7 @@ u32 isPartner(volatile uint32_t ipAddress)
 
 	unsigned char* ipAddressBytes;
     ipAddressBytes = (unsigned char*)&ipAddress;//&pPartnerArray[n].ipAddress;
-	pr_warn("tarakernel: %d.%d.%d.%d(%08X) is not a partner.. No tagging..\n", (int)ipAddressBytes[0], (int)ipAddressBytes[1], (int)ipAddressBytes[2], (int)ipAddressBytes[3], ipAddress);
+	//pr_warn("tarakernel: %d.%d.%d.%d(%08X) is not a partner.. No tagging..\n", (int)ipAddressBytes[0], (int)ipAddressBytes[1], (int)ipAddressBytes[2], (int)ipAddressBytes[3], ipAddress);
 	return 0;
 }
 
