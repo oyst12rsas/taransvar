@@ -237,6 +237,11 @@ void addWarningRecord(char *szWarning)
         /*
          * 2a. Existing warning found -> update lastWarned and increment count
          */
+
+        //Close the select statement, otherwise error when preparing the update.
+        mysql_stmt_close(stmt_select);
+        stmt_select = 0;
+
         stmt_update = mysql_stmt_init(conn);
         if (!stmt_update) {
             fprintf(stderr, "**** ERROR ******* mysql_stmt_init(update) failed\n");
@@ -320,7 +325,7 @@ void addWarningRecord(char *szWarning)
     }
     else {
         fprintf(stderr, "**** ERROR ******* While fetching warning: %s\n",
-                mysql_stmt_error(stmt_select));
+        mysql_stmt_error(stmt_select));
         goto cleanup;
     }
 

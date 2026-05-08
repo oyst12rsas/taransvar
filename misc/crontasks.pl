@@ -395,7 +395,7 @@ if (!runningAsCron() && !runningBootCheck())	#Run "sudo perl crontasks.pl whatev
 	#print (networkSetupOk()?"Network set up properly":"Failed to set up network!");
 	#checkRequests();
 	#startTaraLinkOk();
-    #handleConntrack($dbh);
+    handleConntrack($dbh);
 	#start_process_dhcpdump($pSetup->{"internalNic"});	#NOTE! Just making sure dhcp_capture.pl is running..
 	#checkDbVersion($dbh);
 	
