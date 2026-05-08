@@ -155,6 +155,7 @@ void checkHackReports()
 		if (isMeOrMine(atoi(row[1]), nMyIp, nNettmask))
 		{
 			//This is a hacking report regarding one of my units.. Find what unit it was based on 
+			printf("This is a hacking report regarding one of my units.. Find what unit it was based on\n"); 
 			//the port and put in internalInfections table
 		        
 			int bUpdateHandled = 1;   //By default update the handled field after handling...
@@ -287,14 +288,38 @@ void checkHackReports()
 			if (lookupRow)
 			{
 				//This is a partner.. Send it message... Using config_update.php, the same script that script/honey.php calls to report
+	
 				char szBuff[1000];
 				char szUrl[250];
-				//sprintf(szUrl, "http://%s/script/config_update.php?f=report&ip=%s&port=%s", row[3], row[3], row[2]);
-				sprintf(szUrl, "http://%s/script/config_update.php?f=report&ip=%s&port=%s", lookupRow[2], row[3], row[2]);
-				increaseSendAttemptCount(atoi(row[0])); //Increase before wget because will not get back if aborts (I think).. Otherwise would have been set to handled.
-				printf("About to send: %s\n", szUrl);
-				wget(szUrl, szBuff, sizeof(szBuff));
-				lpStatus = "Rpt sent partner";
+
+				//...but first check is same message sent very recently...
+				if (!lookupConn)
+					lookupConn = getConnection();
+                                
+				//Hacking report found on one of our connected units.
+				char cSQL[255];
+				sprintf(cSQL, "select reportId, inet_ntoa(ip), handledTime, TIMESTAMPDIFF(SECOND, handledTime, NOW()) AS seconds_since from hackReport where partnerIp = %s and port = %s and handledTime is not null order by reportId desc limit 10;", lookupRow[1], row[2]);
+				if (mysql_query(lookupConn, cSQL)) {
+					fprintf(stderr, "****** ERROR ******* While checking if recently sent the same report..: %s\n%s\n", mysql_error(lookupConn), cSQL);
+					return;
+				}
+                                
+				MYSQL_RES *recentlySentRes = mysql_use_result(lookupConn);
+				MYSQL_ROW recentlySentRow = mysql_fetch_row(recentlySentRes);
+				int nSecondsSinceSentSame;
+	
+				if (recentlySentRow && recentlySentRow[3] && (nSecondsSinceSentSame = atoi(recentlySentRow[3])) < 5)
+					printf("Already sent report to %s about %s:%s %s seconds ago. Skipping.\n", lookupRow[2], row[3], row[2], nSecondsSinceSentSame);
+				else
+				{
+					//sprintf(szUrl, "http://%s/script/config_update.php?f=report&ip=%s&port=%s", row[3], row[3], row[2]);
+					sprintf(szUrl, "http://%s/script/config_update.php?f=report&ip=%s&port=%s", lookupRow[2], row[3], row[2]);
+					increaseSendAttemptCount(atoi(row[0])); //Increase before wget because will not get back if aborts (I think).. Otherwise would have been set to handled.
+					printf("About to send: %s\n", szUrl);
+					wget(szUrl, szBuff, sizeof(szBuff));
+					lpStatus = "Rpt sent partner";
+				}
+				mysql_free_result(recentlySentRes);
 			}
 			else
 			{

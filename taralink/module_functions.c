@@ -251,7 +251,7 @@ void addWarningRecord(char *szWarning)
 
             rc = mysql_stmt_prepare(stmt_update, sql_update, strlen(sql_update));
             if (rc != 0) {
-                fprintf(stderr, "**** ERROR ******* While preparing update: %s\n", mysql_stmt_error(stmt_update));
+                fprintf(stderr, "**** ERROR ******* While preparing update: %s\n..while running: %s\n", mysql_stmt_error(stmt_update), sql_update);
                 goto cleanup;
             }
         }
