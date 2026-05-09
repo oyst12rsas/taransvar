@@ -33,7 +33,7 @@ void debugRoutine(void)
       //  doPointerTest();
       //  doInfectionsPointerListTest();
 
-      reportInfectionsList();
+      //reportInfectionsList();
 }
 
 char *bufferToHex(char *lpBuffer, int len, char* lpTarget, int nBufSize); //To avoid compiler warning...

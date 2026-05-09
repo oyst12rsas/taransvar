@@ -87,6 +87,12 @@ function setup()
 {
     if (isset($_GET["submit"]))
     {
+		if (!isAdmin())
+		{
+			print '<font color="red"><b>CHANGES WERE NOT SAVED! Only admin can save changes here.</b><font>';
+			return;
+		}
+
     	//NOTE! Should verify that especilly all IP addresses are legal:  if(!filter_var($_GET["ip"], FILTER_VALIDATE_IP)){ do some error handling  }
         	
         //saveSetupOld();
@@ -105,10 +111,12 @@ function setup()
     if($result->num_rows > 0 && $row = $result->fetch_assoc()) 
 	{
 	        $szPartnerName = $row["adminIpA"];
+			if (!isAdmin())
+				print "<h1>Only admin can save changes here</h1>";
         ?>
         
-                <form action="index.php">
-	        <table>
+    <form action="index.php">
+		<table>
 	        <tr><td>
                 <?php if (isset($_SESSION["userid"])) print '<a href="index.php?f=logout">Logout</a>'; else print "Not logged in"; ?>
 	        <table>
@@ -144,24 +152,24 @@ function setup()
 		</td><td>
 
 		<table>
-                <tr><td>Show status</td><td><input type="checkbox" name="showstatus" <?php if ($row["showStatus"]) print "checked"; ?>></td></tr>
-                <tr><td>Show pre route partner</td><td><input type="checkbox" name="preroutepartner" <?php if ($row["showPreRoutePartner"]) print "checked"; ?>></td></tr>
-                <tr><td>Show pre route non partner</td><td><input type="checkbox" name="preroutenonpartner" <?php if ($row["showPreRouteNonPartner"]) print "checked"; ?>></td></tr>
-                <tr><td>Show forward partner</td><td><input type="checkbox" name="forwardpartner" <?php if ($row["showForwardPartner"]) print "checked"; ?>></td></tr>
-                <tr><td>Show forward non partner</td><td><input type="checkbox" name="forwardnonpartner" <?php if ($row["showForwardNonPartner"]) print "checked"; ?>></td></tr>
+            <tr><td>Show status</td><td><input type="checkbox" name="showstatus" <?php if ($row["showStatus"]) print "checked"; ?>></td></tr>
+            <tr><td>Show pre route partner</td><td><input type="checkbox" name="preroutepartner" <?php if ($row["showPreRoutePartner"]) print "checked"; ?>></td></tr>
+        	<tr><td>Show pre route non partner</td><td><input type="checkbox" name="preroutenonpartner" <?php if ($row["showPreRouteNonPartner"]) print "checked"; ?>></td></tr>
+        	<tr><td>Show forward partner</td><td><input type="checkbox" name="forwardpartner" <?php if ($row["showForwardPartner"]) print "checked"; ?>></td></tr>
+    		<tr><td>Show forward non partner</td><td><input type="checkbox" name="forwardnonpartner" <?php if ($row["showForwardNonPartner"]) print "checked"; ?>></td></tr>
 
-        <tr><td>Show urgent prt usage</td><td><input type="checkbox" name="urgentptr" <?php if ($row["showUrgentPtrUsage"]) print "checked"; ?>></td></tr>
-        <tr><td>Show orphans</td><td><input type="checkbox" name="ownerless" <?php if ($row["showOwnerless"]) print "checked"; ?>></td></tr>
-        <tr><td>Show other</td><td><input type="checkbox" name="showother" <?php if ($row["showOther"]) print "checked"; ?>></td></tr>
-        <tr><td>Show new1</td><td><input type="checkbox" name="shownew1" <?php if ($row["showNew1"]) print "checked"; ?>></td></tr>
-        <tr><td>Show new2</td><td><input type="checkbox" name="shownew2" <?php if ($row["showNew2"]) print "checked"; ?>></td></tr>
+        	<tr><td>Show urgent prt usage</td><td><input type="checkbox" name="urgentptr" <?php if ($row["showUrgentPtrUsage"]) print "checked"; ?>></td></tr>
+        	<tr><td>Show orphans</td><td><input type="checkbox" name="ownerless" <?php if ($row["showOwnerless"]) print "checked"; ?>></td></tr>
+        	<tr><td>Show other</td><td><input type="checkbox" name="showother" <?php if ($row["showOther"]) print "checked"; ?>></td></tr>
+        	<tr><td>Show new1</td><td><input type="checkbox" name="shownew1" <?php if ($row["showNew1"]) print "checked"; ?>></td></tr>
+        	<tr><td>Show new2</td><td><input type="checkbox" name="shownew2" <?php if ($row["showNew2"]) print "checked"; ?>></td></tr>
 
-        <tr><td>Do tagging</td><td><input type="checkbox" name="dotag" <?php if ($row["doTagging"]) print "checked"; ?>></td></tr>
-        <tr><td>Report traffic</td><td><input type="checkbox" name="doReportTraffic" <?php if ($row["doReportTraffic"]) print "checked"; ?>></td></tr>
+        	<tr><td>Do tagging</td><td><input type="checkbox" name="dotag" <?php if ($row["doTagging"]) print "checked"; ?>></td></tr>
+        	<tr><td>Report traffic</td><td><input type="checkbox" name="doReportTraffic" <?php if ($row["doReportTraffic"]) print "checked"; ?>></td></tr>
 
-	<tr><td>Do inspection</td><td><input type="checkbox" name="doinspect" <?php if ($row["doInspection"]) print "checked"; ?>></td></tr>
-        <tr><td>Do blocking</td><td><input type="checkbox" name="doblock" <?php if ($row["doBlocking"]) print "checked"; ?>></td></tr>
-        <tr><td>Do other</td><td><input type="checkbox" name="doother" <?php if ($row["doOther"]) print "checked"; ?>></td></tr>
+			<tr><td>Do inspection</td><td><input type="checkbox" name="doinspect" <?php if ($row["doInspection"]) print "checked"; ?>></td></tr>
+        	<tr><td>Do blocking</td><td><input type="checkbox" name="doblock" <?php if ($row["doBlocking"]) print "checked"; ?>></td></tr>
+        	<tr><td>Do other</td><td><input type="checkbox" name="doother" <?php if ($row["doOther"]) print "checked"; ?>></td></tr>
 
 		</table>
         	</td></tr>

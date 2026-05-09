@@ -1,6 +1,6 @@
 <?php
 session_start();
-$nRequiredDbVersion=59;	//NOTE! Make sure this line is always number 3 because that's claimed below.
+$nRequiredDbVersion=60;	//NOTE! Make sure this line is always number 3 because that's claimed below.
 include "dbfunc.php";
 
 $szErrorMessage = "";	//Use it to print message...
@@ -11,6 +11,24 @@ $conn = getConnection();
 $sql = "SELECT *, coalesce(inet_ntoa(adminIP),'') as adminIPA from setup";
 $result = $conn->query($sql);
 $bOk = $result->num_rows > 0 && $setupRow = $result->fetch_assoc(); 
+
+function isAdmin()
+{
+	$szSQL = "select CAST(isAdmin AS UNSIGNED) as isAdmin from user where userId = ?";
+	$conn = getConnection();
+	$stmt = $conn->prepare($szSQL);
+	$nUserId = $_SESSION["userid"]+0;
+	$stmt->bind_param("i", $nUserId);
+	$stmt->execute();
+	$result = $stmt->get_result(); // get the mysqli result
+	if ($result)
+	{
+		$row = $result->fetch_assoc();
+		if ($row)
+			return ($row["isAdmin"] == "1");
+	}
+	return false;
+}
 
 function printTitle()
 {
@@ -540,11 +558,6 @@ function removeWarning()
 	print "<h3>The message is tagged as handled.. <h3><br><br><a href=\"index.php?f=demo\">Click here to go back to demo</a>";
 }
 
-function logout()
-{
-	unset($_SESSION["userid"]);
-	print "You are logged out. <a href=\"index.php\">Log back in again</a>..";
-}
 
 function getCloseWarningLink($nId)
 {
@@ -721,9 +734,9 @@ if (isset($_GET['f']))
 	//case "submitLogin":
 	//	submitLogin();
 	//	break;
-	case "logout":	//2 lines, no use moving
-		logout();
-		break;
+	//case "logout":	//2 lines, no use moving
+	//	logout();
+	//	break;
 		case "setupMenu":	//Being called all the time... Leave it here.
 			setupMenu();
 			break;

@@ -491,7 +491,7 @@ char *interpretNextBatch(int nBlockDescriptor, char *lpConfiguration)
 							}
 						}
 						else
-							removeInfection(ipAddress, ipNettmask, port);
+							removeInfection(ip_be, ipNettmask, port);
 					}
 					else
 						pr_info("tarakernel: *************** ERROR! (res: %d) Infection: %s Interpretation failed\n", nRes, lpPointer);

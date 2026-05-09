@@ -176,8 +176,12 @@ update setup set dbVersion = 58;
 alter table dhcpEvent add unitId int unsigned null;
 update setup set dbVersion = 59;
 
+#version 60 (260509)
+alter table user add isAdmin bit(1) not null default b'0' after verified; 
+update setup set dbVersion = 60;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 60;
+#update setup set dbVersion = 61;
 
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 

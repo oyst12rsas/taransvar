@@ -57,6 +57,14 @@ function dmesg()
 	else	
 		$szFilter = isset($_SESSION["filter"])?$_SESSION["filter"]:"";
 
+	if (isset($_GET["hold"]))
+		$szHold = $_SESSION["hold"] = $_GET["hold"];
+	else	
+		$szHold = isset($_SESSION["hold"])?$_SESSION["hold"]:"";
+
+	if ((int)$szHold)
+		return;
+
 	//$szDebug = "Search: $szSearch, filter: $szFilter";
 	//CXmlCommand::setInnerHTML("debug", "", $szDebug);
 

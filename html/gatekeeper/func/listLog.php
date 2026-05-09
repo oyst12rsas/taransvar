@@ -6,12 +6,14 @@ function logSrch()
 {
 	var szSrch = document.getElementById("crit");
 	var bFilter = document.getElementById("filter");
+	var bHold = document.getElementById("hold");
 
 	//alert("Filter/mark: "+szSrch.value);
 
-	request("dmesg","srch="+szSrch.value+"&filter="+(bFilter.checked?1:0));
+	request("dmesg","srch="+szSrch.value+"&filter="+(bFilter.checked?1:0)+"&hold="+(bHold.checked?1:0));
 	return false;
 }
+
 </script>
 <?php 
 
@@ -33,9 +35,10 @@ function listLog()
 
 			$szSearch = (isset($_SESSION["srch"]) && strlen($_SESSION["srch"]))?$_SESSION["srch"]:"10.0.0.16(green)^TAG:(red)";
 			$szChecked = isset($_SESSION["filter"])&&$_SESSION["filter"]?" checked":"";
+			$szHold = isset($_SESSION["hold"])&&$_SESSION["hold"]?" checked":"";
 
 			print '<form onsubmit="logSrch(); return false;">
-			<label for="crit">Mark/filter:</label><input id="crit" value="'.$szSearch.'" size="60"> <label for="filter">Filter:</label><input type="checkbox"'.$szChecked.' id="filter">
+			<label for="crit">Mark/filter:</label><input id="crit" value="'.$szSearch.'" size="60"> <label for="filter">Filter:</label><input type="checkbox"'.$szChecked.' id="filter"> <label for="hold">Hold:</label><input type="checkbox"'.$szChecked.' id="hold">
 			<input type="submit"></form>';
 		//</form><br><br><div id="debug">Debug info here</div>
 

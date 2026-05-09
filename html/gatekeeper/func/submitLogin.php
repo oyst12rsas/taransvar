@@ -3,7 +3,7 @@
 
 function submitLogin()
 {
-	print "Trying to login... User: ".$_GET["email"].", pass: ".$_GET["pass"]."<br>";
+	//print "Trying to login... User: ".$_GET["email"].", pass: ".$_GET["pass"]."<br>";
 	$szSQL = "select userId, password from user where username = ?";
 	$conn = getConnection();
 	$stmt = $conn->prepare($szSQL);
@@ -28,12 +28,28 @@ function submitLogin()
 		}
 	}
 	else {
-		$szSQL = "insert into user(username, password) values (?, ?)";
+		//First user should be set as admin..
+		$szSQL = "select count(*) as count from user";
+		$stmt = $conn->prepare($szSQL);
+		$stmt->execute();
+		$result = $stmt->get_result(); // get the mysqli result
+		$bIsAdmin = 0;
+		if ($result)
+		{
+			$row = $result->fetch_assoc();
+			if ($row && ($row["count"] == "0"))
+				$bIsAdmin = 1;
+		}
+
+		$szSQL = "insert into user(username, password, isAdmin) values (?, ?, b'".$bIsAdmin."')";
 		$stmt = $conn->prepare($szSQL);
 		$stmt->bind_param("ss", $_GET["email"], $_GET["pass"]);
 		$stmt->execute();
 		$_SESSION["userid"] = last_insert_id($conn);
-		print "New user registered.";
+		if ($bIsAdmin)
+			print "You are the first user here and will be set as admin. You might want to save the user name. Or you'll find it in the user table.";
+		else
+			print "New user registered.";
 	}
 	$conn->close();
 }

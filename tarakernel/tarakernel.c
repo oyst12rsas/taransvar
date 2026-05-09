@@ -247,7 +247,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb)
 	if (!pSetup->taralink_pid)
 		pSetup->taralink_pid = nlhead->nlmsg_pid;
 
-	//if (!bReceivedConfiguration || pSetup->cShowInstructions.bits.showOther)
+	if (!bReceivedConfiguration || pSetup->cShowInstructions.bits.showOther)
 		printk(KERN_INFO "tarakernel: Received: %s\n",lpPayload);
 
 	//Check if it's config info (starts with CONFIG 0..n)

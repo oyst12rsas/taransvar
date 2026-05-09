@@ -24,6 +24,9 @@ Network setup:<br>
 
 </p>
 
+<a href="index.php?f=logout">Log out</a>
+
+
 <?php
 }
 

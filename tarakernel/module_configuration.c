@@ -473,7 +473,7 @@ _Node *storeInfectionInPointerList(__be32 ipAddress, __be32 ipNettmask, char *lp
 		//Found an existing one... 
 		if (pInfection->cInfection.lpInfo)
 		{
-			kfree(pInfection->cInfection.lpInfo);
+			kfree(pInfection->cInfection.lpInfo);	//(probably) clearing because caller will reinstate...
 			pInfection->cInfection.lpInfo = NULL;
 		}
 	}
@@ -619,8 +619,8 @@ struct _InfectionSpecification *isInfected(volatile uint32_t ipAddress)
   */
 }//isInfected()
 
-void removeInfectionFromPointerList(volatile uint32_t ipAddress, volatile uint32_t ipNettmask, short port);
-void removeInfectionFromPointerList(volatile uint32_t ipAddress, volatile uint32_t ipNettmask, short port)
+void removeInfectionFromPointerList(uint32_t ipAddress, uint32_t ipNettmask, short port);
+void removeInfectionFromPointerList(uint32_t ipAddress, uint32_t ipNettmask, short port)
 {
 	//int n;
 	
@@ -633,13 +633,20 @@ void removeInfectionFromPointerList(volatile uint32_t ipAddress, volatile uint32
 		{
 			struct _Node *pDeleteThis = *pNodePointer;
 			*pNodePointer = pDeleteThis->pNext;
+			pr_info("tarakernel: Infection %pI4 removed from pointer list\n", &(pDeleteThis->cInfection.ipAddress));			
 			kfree(pDeleteThis);
-		        return;
-                }
-                pNodePointer = &(*pNodePointer)->pNext;
-        }
 
-	pr_info("tarakernel: ***** WARNING Disabled infection not found when trying to remove if from pointer list.....\n");
+			if (pSetup->pConfigurationPointerList[BLOCK_DESCRIPTIOR_INFECTIONS])
+				pr_info("First infection in list is now %pI4\n", &((struct _Node*)pSetup->pConfigurationPointerList[BLOCK_DESCRIPTIOR_INFECTIONS])->cInfection.ipAddress);
+			else
+				pr_info("Infection list is now empty.\n");
+
+		    return;
+        }
+        pNodePointer = &(*pNodePointer)->pNext;
+    }
+
+	pr_info("tarakernel: ***** WARNING Disabled infection (%pI4) not found when trying to remove if from pointer list.....\n", &ipAddress);
 	return;
 }
 
