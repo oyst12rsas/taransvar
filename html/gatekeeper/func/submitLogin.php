@@ -20,6 +20,7 @@ function submitLogin()
 		{
 			print "WELCOME! You are logged in.";
 			$_SESSION["userid"] = $row["userId"];
+			$_SESSION["hold"] = 0;	//Otherwise hold might be default on in Log window...
 		}
 		else
 		{

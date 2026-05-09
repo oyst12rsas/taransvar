@@ -179,8 +179,8 @@ void checkHackReports()
 
 				MYSQL_ROW lookupRow = mysql_fetch_row(lookupRes);
 				if (lookupRow){
-					nUnitId = atoi(lookupRow[0]);
-					nInfectionId = atoi(lookupRow[1]);
+					nUnitId = (lookupRow[0]?atoi(lookupRow[0]):0);
+					nInfectionId = (lookupRow[1]?atoi(lookupRow[1]):0);
 					printf("Found infection (%d) and unit(%d)\n", nInfectionId, nUnitId);
 				}
 				mysql_free_result(lookupRes);

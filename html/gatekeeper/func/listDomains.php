@@ -32,7 +32,9 @@ function listDomains()
 	  echo "No domain found<br>";
 	}
 	$conn->close();
-	print '<br><a href="index.php?f=adddomain">Add domain</a>';
+
+	if (isAdmin())
+		print '<br><a href="index.php?f=adddomain">Add domain</a>';
 }
 
 ?>

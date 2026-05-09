@@ -3,6 +3,9 @@
 
 function addColorListing()
 {
+	if (!isAdmin())
+		return;
+
 	if (isset($_GET["submit"]))
 	{
 
@@ -40,7 +43,14 @@ function addColorListing()
 <option value="white">White<option>
 <option value="black">Black<option>
 </select></td></tr>
-<tr><td>&nbsp;</td><td><input name="f" type="hidden" value="addColorListing"><input type="submit" name="submit" value="Submit"></td></tr>
+<?php
+if (isAdmin())
+{
+	!>	
+	<tr><td>&nbsp;</td><td><input name="f" type="hidden" value="addColorListing"><input type="submit" name="submit" value="Submit"></td></tr>
+	<?php
+}
+?>
 </table><form>
 <?php
 }

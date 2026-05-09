@@ -29,7 +29,8 @@ function colorListings()
 	  echo "0 results";
 	}
 	$conn->close();
-	print '<br><a href="index.php?f=addColorListing">Add IP white/blacklist</a>';
+	if (isPartner())
+		print '<br><a href="index.php?f=addColorListing">Add IP white/blacklist</a>';
 }
 
 ?>

@@ -4,6 +4,8 @@ include_once "dnsLookup.php"	//updateIPsForDomain() is defined there
 
 function addDomain()
 {
+	if (!isAdmin())
+		return;
 	if (isset($_GET["submit"]))
 	{
 

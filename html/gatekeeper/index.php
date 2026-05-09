@@ -335,7 +335,7 @@ function setupMenu()
 <td bgcolor="white"><a href="index.php?f=inspections">Inspections</a></td>
 <td bgcolor="white"><a href="index.php?f=assistance">Assistance</a></td>
 <td bgcolor="white"><a href="index.php?f=honey">Honey</a></td>
-<!********* <td bgcolor="white"><a href="index.php?f=workshops">Workshop</a></td> *********>
+<!----------------- <td bgcolor="white"><a href="index.php?f=workshops">Workshop</a></td> ------------->
 <td bgcolor="white"><a href="index.php?f=setup">Setup</a></td>
 </tr>
 </table>
@@ -411,7 +411,10 @@ function listPartners()
 	}
 	$conn->close();
 	//print 'Supposed to list servers';
-	print '<br><a href="index.php?f=addPartner">Add partner</a>';
+
+	if (isAdmin())
+		print '<br><a href="index.php?f=addPartner">Add partner</a>';
+
 	print '<br><br><a href="index.php?f=listRouters">List all routers</a>';
 	
 }
@@ -566,7 +569,7 @@ function getCloseWarningLink($nId)
 
 showMenu();
 
-if (isset($_SESSION["userid"]) && isset($_GET["f"]) &&  in_array($_GET["f"], array("setup", 'servers', "partners", "domains", "colorListings", "inspections", "workshop", "honey", "listrouters","addpartner","addserver","adddomain","addColorListing","addInspection","addHoney","partner","delRouter")))
+if (isset($_SESSION["userid"]) && isset($_GET["f"]) &&  in_array($_GET["f"], array("setup", 'servers', "partners", "domains", "colorListings", "inspections", "workshop", "honey", "listrouters","addpartner","addServer","adddomain","addColorListing","addInspection","addHoney","partner","delRouter")))
 {
 	setupMenu();
 }
@@ -604,151 +607,37 @@ if (isset($_GET['f']))
 			//case 'traffic':
 			//	traffic();
 			//	break;
-        		case 'partners':
-        		case 'delpartner':
-                		listPartners();
-                		break;
-	//case 'addpartner':
-	//	addPartner();
-	//	break;
-	//case 'partner':
-	 //       partner();
-	 //       break;
-	//case 'delPartner':
-	 //       delPartner();
-	 //       break;
-	//case 'addrouter':
-	//        addRouter();
-	//        break;
-	//case 'delRouter':
-	 //       delRouter();
-	 //       break;
-	//case 'listrouters':
-	//        listrouters();
-	//        break;
-	case 'delserver':
-	case 'servers':
-		include_once "func/listServers.php";
-		listServers();
-		break;
-	case 'infections':
-		include_once "func/listInfections.php";
-		listInfections();
-		break;
-	//case 'addinfection':
-	//	addInfection();
-	//	break;
-	//case 'delInfection':
-	//	delInfection();
-	//	break;
-	//case 'addserver':
-	//	addServer();
-	//	break;
-	case 'domains':
-		listDomains();
-		break;
-	//case 'adddomain':
-	//	addDomain();
-	//	break;
-	//case 'domainDel':
-	//	domainDelete();
-	//	break;
-	//case 'domainInfo':
-	//	domainInfo();
-	//	break;
-	//case 'addColorListing':
-	//	addColorListing();
-	//	break;
-	//case 'colorListings':
-	//	colorListings();
-	//	break;
-	//case 'inspections':
-	//        inspections();
-	//        break;
-	//case 'addInspection':
-	//        addInspection();
-	//        break;
-	//case 'dnsLookup':
-	//	dnsLookup();
-	//	break;
-	//case 'honey':
-	//        honey();
-	//        break;
-	//case 'addHoney':
-	//        addHoney();
-	//        break;
-	//case 'delHoney':
-	//        delHoney();
-	//        break;
-	//case 'setup':
-	//	setup();
-	//	break;
-	//case 'listLog':
-	//        listLog();
-	//        break;
-	//case 'units':
-	//        units();
-	//        break;
-	case 'edtDesc':
-	        editDescription();
-	        break;
-        //case 'showPorts':
-        //        showPorts();
-        //        break;
-	//case 'reportHack':
-	//        reportHack();
-	//        break;
-	//case 'attack':
-	//	attack();
-	//	break;
-	//case 'delAttack':
-	//	delAttack();
-	//	break;
-	case 'addassreq':	//Probably in one of the files as well
-		addAssistanceRequest();
-		break;
-	//case 'demo':
-	//	demo();
-	//	break;
-	//case 'addDemo':
-	//	addDemo();
-	//	break;
-	//case 'editDemo':
-	//	editDemo();
-	//	break;
-	//case 'activateDemo':
-	//	activateDemo();
-	//	break;
-	//case 'demoSetup':
-	//	demoSetup();
-	//	break;
-	//case 'about':
-	//	about();
-	//	break;
-	//case 'help':
-	//	help();
-	//	break;
-	case 'rmWarn':		//Don't know what file this is called from...
-		removeWarning();
-		break;
-	//case "submitLogin":
-	//	submitLogin();
-	//	break;
-	//case "logout":	//2 lines, no use moving
-	//	logout();
-	//	break;
+   		case 'partners':
+   		case 'delpartner':
+       		listPartners();
+       		break;
+		case 'delserver':
+		case 'servers':
+			include_once "func/listServers.php";
+			listServers();
+			break;
+		case 'infections':
+			include_once "func/listInfections.php";
+			listInfections();
+			break;
+		case 'domains':
+			listDomains();
+			break;
+		case 'edtDesc':
+	    	editDescription();
+	    	break;
+		case 'addassreq':	//Probably in one of the files as well
+			addAssistanceRequest();
+			break;
+		case 'rmWarn':		//Don't know what file this is called from...
+			removeWarning();
+			break;
 		case "setupMenu":	//Being called all the time... Leave it here.
 			setupMenu();
 			break;
-		//case "warnings":
-		//	warnings();
-		//	break;
-		//case "dhcpLease":
-		 //       dhcpLease();
-	  	//      break;
 		default:
 			print 'Unknown menu choice';
-	}
+		}
 }
 
 ?> 

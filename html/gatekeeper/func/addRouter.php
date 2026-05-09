@@ -2,6 +2,9 @@
 
 function addRouter()
 {
+	if (!isAdmin())
+		return;
+	
 	if (isset($_GET["submit"]))
 	{
 		if (filter_var(trim($_GET['ip']), FILTER_VALIDATE_IP) && filter_var(trim($_GET['nett']), FILTER_VALIDATE_IP)) 

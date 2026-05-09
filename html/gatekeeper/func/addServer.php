@@ -2,6 +2,9 @@
 
 function addServer()
 {
+	if (!isAdmin())
+		return;
+	
 	if (isset($_GET["submit"]))
 	{
 		$conn=getConnection();

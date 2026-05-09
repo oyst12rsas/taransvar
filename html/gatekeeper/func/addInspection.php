@@ -2,6 +2,9 @@
 
 function addInspection()
 {
+	if (isAdmin())
+		return;
+	
 	if (isset($_GET["submit"]))
 	{
 
