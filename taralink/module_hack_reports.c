@@ -152,7 +152,7 @@ void checkHackReports()
 		if (updateConn == NULL)
 			updateConn = getConnection();
             
-		u_int32_t nNumericIp = atoi(row[1]);
+		u_int32_t nNumericIp = (row[1]?atoi(row[1]):0);
 		u_int32_t nInfectionId = 0;
 		u_int32_t nUnitId = 0;
 		char cSQL[400];

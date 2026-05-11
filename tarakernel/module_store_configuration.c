@@ -349,9 +349,9 @@ char *interpretNextBatch(int nBlockDescriptor, char *lpConfiguration)
 		char quality[100];
 		int port;
 		
-		volatile uint32_t ipAddress=0;
+		//uint32_t ipAddress=0;
 //		unsigned char* ipAddressBytes = (unsigned char*)&ipAddress;
-		volatile uint32_t ipNettmask=0;
+		uint32_t ipNettmask=0;
 //		unsigned char* ipNettmaskBytes = (unsigned char*)&ipNettmask;
 
 		//__be32 nIpAddress = 0;

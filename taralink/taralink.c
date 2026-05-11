@@ -797,6 +797,10 @@ void checkMysql()
 
 int main(void)
 {
+    //Normally, buffers 4k before printing to log file when running in background
+    setbuf(stdout, NULL);
+    setbuf(stderr, NULL);
+
     //To ensure that can Ctrl-C to break
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
