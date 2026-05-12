@@ -233,8 +233,8 @@ int isNewConnection(struct sk_buff *skb)
     bool bNew = isNewConnectionBasedOnStoredIpPortCombo(skb);
     if (bNew)
 		pr_info("tarakernel: ************* NEW connection ********** Add spceial handling..\n");
-    else
-		pr_info("tarakernel: ************* related connection **********\n");
+//    else
+//		pr_info("tarakernel: ************* related connection **********\n");
 
     return bNew;
    
@@ -508,6 +508,7 @@ struct _Remote_infection *findRemoteInfectionInfoReceived(__be32 sIp, __be16 sPo
             if (pInfection->saddr == sIp && pInfection->sport == sPort)
             {
                 pInfection->timestamp = ktime_get_real_seconds();
+                pr_info("tarakernel: Infection found. Info: %s\n", pInfection->lpInfo);
 			    return pInfection;
             }
             //else
@@ -540,8 +541,11 @@ struct _Remote_infection *findRemoteInfectionInfoReceived(__be32 sIp, __be16 sPo
         kfree(pOldest); //Free at last in case being used;
 		nAvailable = nOldest;
     }
+    else
+        pr_info("No slots available for infection inf!\n");
 
     if (bRegister)
+    {
 		if (nAvailable >= 0)
 		{
 			pr_info("tarakernel SENDING: Available slot found: %d", nAvailable);	//Threat info from sender (via kernel) saved at slot 
@@ -557,7 +561,13 @@ struct _Remote_infection *findRemoteInfectionInfoReceived(__be32 sIp, __be16 sPo
 			pSetup->cRemoteInfectionInfoReceived[nAvailable] = pInfection;	//Init before putting in array because other processes may access it before finilized. 
             return pInfection;
         }
-
+        else
+            pr_info("tarakernel: No available slot found for requesting threat info. The system is unsafe!\n");
+    }
+    else {
+        pr_info("tarakernel: No slot found but instructed not to register new...\n");
+    }
+    
 	return NULL;	//Not found
 }
 
@@ -896,6 +906,7 @@ int isRequestForThreatElaboration(char *lpPayload,  struct iphdr *iph, struct ud
                 return 1;
             }
             
+            //Sending elaborated threat info because it's requested by receiver  (search for THREAT_INFO_EXCHANGE for find where else it's relevant)
             sendUdpThreatPackage(iph->saddr, nMyIp, ct_sport, pInfected);    //ØT 260323 - send this??
             return 1;
         }
@@ -997,6 +1008,7 @@ unsigned int tagThePacket(struct _PacketInspection *pPacket, const struct nf_hoo
 
         pr_info("tarakernel SENDING: About to send UDP to %pI4 (from me: %pI4)\n", &pPacket->ip_header->daddr, &pPacket->ip_header->saddr);
 
+        //Sending threat info for new connection (search for THREAT_INFO_EXCHANGE for find where else it's relevant)
         sendUdpThreatPackage(pPacket->ip_header->daddr, pPacket->ip_header->saddr, pPacket->tcp_header->source, pInfected);
 
         /*  Don't do this for now... Sending it directly for callback

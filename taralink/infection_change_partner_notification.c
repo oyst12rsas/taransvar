@@ -221,7 +221,23 @@ static int parse_conntrack_line(const char *line, struct conntrack_record *rec)
     return 0;
 }
 
+
 static int record_matches_client_nat(const struct conntrack_record *rec,
+                                     const char *client_ip,
+                                     const char *public_ip)
+{
+    if (!rec || !client_ip || !public_ip)
+        return 0;
+
+    //Traffic is from client and it's not to me (NOTE! Should check partner)
+    if ((strcmp(rec->orig.src, client_ip) == 0) && (strcmp(rec->orig.src, public_ip) != 0))
+        return 1;
+
+    return 0;
+}
+
+
+static int record_matches_client_nat_260511(const struct conntrack_record *rec,
                                      const char *client_ip,
                                      const char *public_ip)
 {
@@ -292,6 +308,21 @@ static int record_matches_client_nat(const struct conntrack_record *rec,
     return 1;
 }*/
 
+char *getIpStringToHex(char *lpBuff, char *lpIpString)
+{
+    struct in_addr addr;
+
+    if (inet_pton(AF_INET, lpIpString, &addr) != 1) {
+        fprintf(stderr, "Invalid IP: %s\n", lpIpString);
+        return 1;
+    }
+
+    unsigned char *b = (unsigned char *)&addr.s_addr;
+    sprintf(lpBuff, "%02X%02X%02X%02X", b[0], b[1], b[2], b[3]);
+	return lpBuff;
+}
+
+
 
 int send_UDP_message(int sock, char *lpIP, unsigned int nPort, char *lpMessage);
 int send_UDP_message(int sock, char *lpIP, unsigned int nPort, char *lpMessage)
@@ -348,7 +379,7 @@ void *worker(void *arg) {
         return NULL;
     }
 
-    printf("\n****************** Hello from thread. I'm supposed to inform about %s - (infId: %u, severity: %u, botnet: %u) %s\n\n", cInfectedIpAddr, pInfection->nInfectionId, pInfection->nSeverity, pInfection->nBotnetId, pInfection->lpInfo);
+    printf("\nThreat info changed (informing active connections) about %s - (infId: %u, severity: %u, botnet: %u) json: %s\n\n", cInfectedIpAddr, pInfection->nInfectionId, pInfection->nSeverity, pInfection->nBotnetId, pInfection->lpInfo);
 
 	//*** Read internal- and external IP Address from setup */
 	char *lpSQL = "select adminIp, internalIP, inet_ntoa(adminIp), inet_ntoa(internalIP) from setup";
@@ -403,6 +434,7 @@ void *worker(void *arg) {
 
 
     char line[512];
+    int nActiveConnectionsFound = 0;
 
     while (fgets(line, sizeof(line), fp)) {
 
@@ -450,10 +482,13 @@ void *worker(void *arg) {
 			{
 				if (!strcmp(rec.proto, "tcp"))
 				{
+                    nActiveConnectionsFound++;
 				    print_record(&rec);
 
 					char *lpSendToIp = rec.orig.dst;
-					char *lpFromIp = cExternalIp;//cInfectedIpAddr;
+					//char *lpFromIp = cExternalIp; //NOTE! This is connect if NAT
+					char *lpFromIp = cInfectedIpAddr;//NOTE! Correct if not NAT
+
 					unsigned int sport = rec.orig.sport;
 					printf("Send to (if partner and only once for ip/port match...) %s: %s:%d is infected... info: %s\n", lpSendToIp, lpFromIp, sport, pInfection->lpInfo);	
 				
@@ -471,18 +506,23 @@ void *worker(void *arg) {
 					else
 					{
 						struct _SeenPtNode	*pNew = malloc(sizeof(struct _SeenPtNode));
-						strcpy(pNew->szMyIp, lpFromIp);	
 						strcpy(pNew->szSendToIp, lpSendToIp);
+						strcpy(pNew->szMyIp, lpFromIp);	
 						pNew->nPort = sport;
 						pNew->pNext = pSeenPointerChain;
 						pSeenPointerChain = pNew;
-						printf("New element put in list: %s - %s:%d\n", lpSendToIp, lpFromIp, sport);
+						printf("New element put in list (NOTE! ASSUMING NOT NAT): %s - %s:%d\n", lpSendToIp, lpFromIp, sport);  //**** IF NAT: Check char *lpFromIp above....
 					}
 				}
 				else
 					printf("\nSkipping protocol: %s\n\n", rec.proto);
 			}
+            else
+                printf("Other unit: %s\n", line);
 	}
+
+    if (!nActiveConnectionsFound)
+        printf("No active connections found for this unit.\n");
 
     pclose(fp);
 
@@ -616,9 +656,24 @@ void *worker(void *arg) {
 
 		if (bFound) 
         {
+            //************************ WARNING **************************** */
+            //Exchanging threat info happens several places (here when threat info is changed - send info to open connections). Search for THREAT_INFO_EXCHANGE
+            //Here is about sending updated threat info to open connections when it's changed at source (e.g notified by DBserver)
+	        char cHexIp[20];
+			getIpStringToHex(cHexIp, pFound->szMyIp);
 			char cMessage[400];
 			//sprintf(cMessage, "%s %s:%u^%u^%u^%u asdfasdf is infected (message from owner): ?????", INFECTION_CHANGED_PREFIX, pFound->szMyIp, pFound->nPort);
-            sprintf(cMessage, "%s %s:%u^%u^%u^%u^%s", INFECTION_CHANGED_PREFIX, pFound->szMyIp, pFound->nPort, pInfection->nInfectionId, pInfection->nSeverity, pInfection->nBotnetId, pInfection->lpInfo);
+            sprintf(cMessage, "%s %s:%u^%u^%u^%u^%u^%u^%u^%s", 
+					INFECTION_CHANGED_PREFIX, 
+					cHexIp, 
+					pFound->nPort, 
+					1,  //version number
+					1, //presumed_infected
+					0,  //owners_id
+					pInfection->nInfectionId, //owners_id
+					pInfection->nSeverity, 
+					pInfection->nBotnetId, 
+					(pInfection->lpInfo?pInfection->lpInfo:"NULL"));
             printf("Trying to send to %s:%d - %s\n", pFound->szSendToIp, TARALINK_LISTENING_TO_PORT, cMessage);
        		
 			send_UDP_message(sock, pFound->szSendToIp, TARALINK_LISTENING_TO_PORT, cMessage);

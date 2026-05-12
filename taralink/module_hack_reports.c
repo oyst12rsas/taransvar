@@ -165,7 +165,7 @@ void checkHackReports()
 			{
 				//Child unit without NAT
 				sprintf(szSQL, "select U.unitId, infectionId from unit U left outer join internalInfections I on I.unitId = U.unitId where ipAddress = %d  order by infectionId desc, U.unitId desc", nNumericIp);
-				printf ("SQL: %s\n", szSQL);
+				printf ("SQL (system thinks is local unit with NAT?? Maybe report from partner that threat info changed?): %s\n", szSQL);
 				if (mysql_query(updateConn, szSQL)) {
 					fprintf(stderr, "****** ERROR ***** While finding port assignment: %s\n", mysql_error(updateConn));
 					return;

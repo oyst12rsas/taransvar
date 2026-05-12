@@ -451,8 +451,18 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 				bool bDropping = cUnion.cTag.presumed_infected > pSetup->nBlockIncomingTaggedTrafficLevel;
 				char cBuf[300];
 
-				snprintf(pSetup->c100, sizeof(pSetup->c100)-1, "%s Tag-severity %u/%u. %s->%s, severity: %d, botnet: %d, owner_id: %d, info: %s, unrep traff: %d/%d (check gatekeeper)\n", (bDropping?"**DROPPING packet**":"(tag removed)"), 
-						cUnion.cTag.presumed_infected, pSetup->nBlockIncomingTaggedTrafficLevel, pPacket->cSourceIp, pPacket->cDestIp, pInfection->nSeverity, pInfection->nBotnetId, pInfection->dOwners_id, pInfection->lpInfo, pInfection->nByteCount, pInfection->nPacketCount);
+				snprintf(pSetup->c100, sizeof(pSetup->c100)-1, "%s Tag-severity %u/%u. %s->%s, severity: %d, botnet: %d, owner_id: %d, info: %s, unrep traff: %d/%d (check gatekeeper)\n", 
+							(bDropping?"**DROPPING packet**":"(tag removed)"), 
+							cUnion.cTag.presumed_infected, 
+							pSetup->nBlockIncomingTaggedTrafficLevel, 
+							pPacket->cSourceIp, 
+							pPacket->cDestIp, 
+							pInfection->nSeverity, 
+							pInfection->nBotnetId, 
+							pInfection->dOwners_id, 
+							pInfection->lpInfo, 
+							pInfection->nByteCount, 
+							pInfection->nPacketCount);
 
 				if (strlen(pSetup->c100) == sizeof(pSetup->c100)-1)	//NOTE c100 is now 200 chars
 					if (!dropFromLogging(pPacket))
@@ -743,8 +753,9 @@ static unsigned int module_ip4_post_routing_handler(void *priv, struct sk_buff *
        	        	if (lpTemp)
        	            {
        	                getMeAndMine(lpTemp, 200);
-						if (!dropFromLogging(pPacket))
-        			    	pr_info("tarakernel: **** WARNING **** PR None of mine.. Probably partner malconfiguration? (%s:%d->%s:%d %s)\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort, lpTemp);
+						if (pSetup->cShowInstructions.bits.showOther)
+							if (!dropFromLogging(pPacket))
+    	    			    	pr_info("tarakernel: **** WARNING **** PR None of mine.. Probably partner malconfiguration? (%s:%d->%s:%d %s)\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort, lpTemp);
     				}
     				else
 					{

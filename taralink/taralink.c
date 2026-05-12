@@ -424,7 +424,7 @@ int create_netlink_socket(void)
     return fd;
 }
 
-void registerRemoteInfection(char *lpMessage)
+void registerRemoteInfection(u_int32_t nSenderIp, char *lpMessage)
 {
     printf("About to interprete: %s\n", lpMessage);
 
@@ -439,8 +439,12 @@ void registerRemoteInfection(char *lpMessage)
         return;
     }
 
-    printf("Able to decode: %s:%d-%d-%d-%d, info: %s\n", cSourceIp, sPort, nInfectionId, nSeverity, nBotnetId, cInfo);
+    char szSenderIp[INET_ADDRSTRLEN];
+    u_int32_t nReversed = ntohl(nSenderIp); //Just for print
 
+    inet_ntop(AF_INET, &nReversed, szSenderIp, sizeof(szSenderIp));
+
+    printf("Able to decode(from %s): %s:%d-%d-%d-%d, info: %s\n", szSenderIp, cSourceIp, sPort, nInfectionId, nSeverity, nBotnetId, cInfo);
 
     MYSQL *conn;
     conn = getConnection();
@@ -449,7 +453,7 @@ void registerRemoteInfection(char *lpMessage)
     MYSQL_BIND param[7];
     memset(param, 0, sizeof(param));
 
-    const char *sql = "insert into hackReport (ip, port, sentByIp, status, handledTime, infectionId, severity, botnetId) values (?, ?, ?, ?, now(), ?, ?, ?)";
+    const char *sql = "insert into hackReport (ip, port, sentByIp, status, handledTime, infectionId, severity, botnetId) values (?, ?, ?, ?, NULL, ?, ?, ?)";
 
     if (mysql_stmt_prepare(stmt, sql, strlen(sql)) != 0) {
         printf("prepare failed: %s\n", mysql_stmt_error(stmt));
@@ -522,21 +526,21 @@ void registerRemoteInfection(char *lpMessage)
 
 void handle_udp(int udp_fd)
 {
-    //Received messssage from owner of infected unit. Some infor is sent via utg_ptr field or other method, the resti is sent here. 
+    //Received messssage from owner of infected unit. Some info is sent via utg_ptr field or other method, the rest is sent here. 
     //Additional info in this messages. This message is also sent for ongoing sessions where threat information is updated. 
     //Message is being sent to tarakernel but DB (hackAttempt table) should also be updated with the extended information contained herein.  
 
-    char buf[2048 + strlen(UDP_MSG_PREFIX)];
+    char buf[2048];
     struct sockaddr_in src;
     socklen_t slen = sizeof(src);
     int n;
 
     memset(&src, 0, sizeof(src));
-    strcpy(buf, UDP_MSG_PREFIX);
+    //strcpy(buf, UDP_MSG_PREFIX);
 
     n = recvfrom(udp_fd,
-                 buf + strlen(UDP_MSG_PREFIX),
-                 sizeof(buf) - strlen(UDP_MSG_PREFIX) - 1,
+                 buf,
+                 sizeof(buf) - 1,
                  0,
                  (struct sockaddr *)&src,
                  &slen);
@@ -545,7 +549,7 @@ void handle_udp(int udp_fd)
         return;
     }
 
-    buf[n + strlen(UDP_MSG_PREFIX)] = '\0';
+    buf[n] = '\0';
 
     printf("\n************************ WARNING ***************************\n\n"
            "UDP from %s:%u -> %s\n\n",
@@ -553,8 +557,7 @@ void handle_udp(int udp_fd)
            ntohs(src.sin_port),
            buf);
 
-    registerRemoteInfection(buf + strlen(UDP_MSG_PREFIX));
-
+    registerRemoteInfection(ntohl(src.sin_addr.s_addr), buf);
     send_to_kernel(fd, buf, strlen(buf) + 1);
 }
 

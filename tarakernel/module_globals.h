@@ -9,7 +9,9 @@
 
 //Structs that are used both by absecurity kernel module and abmonitor user space program
 
-#define UDP_MSG_PREFIX                  "UDP_JSON:"
+//Defining prefixes used with THREAT_INFO_EXCHANGE (search this keyword for usage)
+#define UDP_MSG_PREFIX                  "UDP_JSON"                      //No longer in use?
+#define THREAT_INFO_SEPARATE_MSG        "THREAT_INFO_SEPARATE_MSG"
 #define INFECTION_CHANGED_PREFIX        "INFECTION_CHANGED"
 #define UDP_THREAT_INFO_REQUEST_PREFIX  "THREAT_INFO_REQUEST"
 #define C_TRAFFIC_REPORT_PREFIX "TRAFFIC|"

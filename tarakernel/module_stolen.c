@@ -175,8 +175,19 @@ static unsigned int sendUdpThreatPackage(__be32 destIp, __be32 sourceIp, __be16 
     // destIp is partner IP (where to send)
 
 //    sprintf(cUdpTagString, "%08X:%d^%d^%d^%d ", ntohl(sourceIp), ntohs(sourcePort), pInfection->cTag.version_no, pInfection->cTag.presumed_infected, pInfection->cTag.owners_id);
+    //************************ WARNING **************************** */
+    //Exchanging threat info happens several places. Search for THREAT_INFO_EXCHANGE
+    //Here is about sending extended threat info to new connections (altert is sent by tagging the packet header. The rest in UDP message)
 
-    sprintf(cUdpTagString, "%08X:%d^%d^%d^%d^%d^%d^%d^%s", ntohl(sourceIp), ntohs(sourcePort), pInfection->cTag.version_no, pInfection->cTag.presumed_infected, pInfection->cTag.owners_id, pInfection->nInfectionId, pInfection->nSeverity, pInfection->nBotnetId, pInfection->lpInfo);
+    sprintf(cUdpTagString, "%s %08X:%d^%d^%d^%d^%d^%d^%d^%s", 
+            "ELABORATED_THREAT_INFO",       //THREAT_INFO_SEPARATE_MSG
+            ntohl(sourceIp), ntohs(sourcePort), 
+            pInfection->cTag.version_no, 
+            pInfection->cTag.presumed_infected, 
+            pInfection->cTag.owners_id, 
+            pInfection->nInfectionId, 
+            pInfection->nSeverity, pInfection->nBotnetId, 
+            pInfection->lpInfo);
 
     /* send UDP immediately */
     pr_info("tarakernel SENDING: New session. Sending UDP with threat info to receiver (%pI4:%d): %s.\n", &destIp, TARALINK_LISTENING_TO_PORT, cUdpTagString);

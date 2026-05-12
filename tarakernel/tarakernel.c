@@ -1,3 +1,4 @@
+//tarakernel.c
 //Kernel 5.4.0 version originally taken from https://gist.github.com/arunk-s/c897bb9d75a6c98733d6
 
 //(Originally taken from) https://stackoverflow.com/questions/15215865/netlink-sockets-in-c-using-the-3-x-linux-kernel?lq=1
@@ -175,44 +176,69 @@ void sendTestMessage(int nProcessId)
 int udpMsgFromSender(char *lpPayload);
 int udpMsgFromSender(char *lpPayload)
 {
-	if (strstr(lpPayload, UDP_MSG_PREFIX)== lpPayload)
+    //************************ WARNING **************************** */
+    //Exchanging threat info happens several places. Search for THREAT_INFO_EXCHANGE
+    //Here is about sending extended threat info to new connections (altert is sent by tagging the packet header. The rest in UDP message)
+
+	/*NOTE! This function is used both when:
+		- Tarakernel at router forwards traffic from internal infected unit to new connections
+		- When threat information is changed on router - it sends update info to partners that have established connection
+		- MAYBE... also when target receives tagged traffic but doesn't have the extended threat info. E.g due to restart
+		SO: DON'T CHANGE THE FORMAT WITHOUT ENSURING THAT IT CAN STILL HANDLE ALL INSTANCES
+		CURRENTLY, the last one is not handled... it's only sending 5 fields, 9 are expected....
+	*/
+
+    /*260512 (reply to receivers request for info??):
+	 ***** RECEIVED UDP message from sender via taralink: UDP_JSON:0A640069:50652^0^7^4^13^0^0^MMMMM
+
+    What it looks like in taralink:
+    UDP from 10.100.0.1:38003 -> UDP_JSON:0A640069:37334^0^7^4^13^0^0^MMMMM
+
+    About to interprete: 0A640069:37334^0^7^4^13^0^0^MMMMM
+    Unable to decode.. 1 fields founs
+	Then it forwards to tarakernel (ends up here here)
+    */
+
+	if (!strcmp(lpPayload, "request_tarakernel_status"))
 	{
-		pr_info("tarakernel SENDING: ***** RECEIVED UDP message from sender via taralink: %s\n", lpPayload);
+//		pr_info("tarakernel: Request for info skipped: %s\n", lpPayload);
+		return 0;
+	}
 
-        //Search "Tagging UDP msg coding/decoding" for usage in source	(in module_tagging.c)
-        //Coded by: sprintf(cUdpTagString, "%d:%d^%d^%d^%d", pPacket->ip_header->saddr, pPacket->tcp_header->source , cUnion.cTag.version_no, cUnion.cTag.presumed_infected, cUnion.cTag.botnet_id);
-		unsigned int sIp, sPort, dVersion, dInfected, dOwners_id;
-		char cSourceIp[100];
-		unsigned int nInfectionId, nSeverity, nBotnetId;
-		char cInfo[256];
+	pr_info("tarakernel SENDING: ***** RECEIVED UDP message from sender: %s\n", lpPayload);
 
+	//Search "Tagging UDP msg coding/decoding" for usage in source	(in module_tagging.c)
+	//Coded by: sprintf(cUdpTagString, "%d:%d^%d^%d^%d", pPacket->ip_header->saddr, pPacket->tcp_header->source , cUnion.cTag.version_no, cUnion.cTag.presumed_infected, cUnion.cTag.botnet_id);
+	unsigned int sIp, sPort, dVersion, dInfected, dOwners_id;
+	char cSourceIp[100], cPrefix[100];
+	unsigned int nInfectionId, nSeverity, nBotnetId;
+	char cInfo[256];
 
-		//int nFlds = sscanf(lpPayload + strlen(UDP_MSG_PREFIX), "%99[^:]:%d^%d^%d^%d", cSourceIp, &sPort, &dVersion, &dInfected, &dOwners_id);
+	//Search for THREAT_INFO_EXCHANGE to find where it's generated
+	int nFlds = sscanf(lpPayload, "%99[^ ] %99[^:]:%d^%d^%d^%d^%d^%d^%d^%255[^\n]", cPrefix, cSourceIp, &sPort, &dVersion, &dInfected, &dOwners_id, &nInfectionId, &nSeverity, &nBotnetId, cInfo);
 
-		int nFlds = sscanf(lpPayload + strlen(UDP_MSG_PREFIX), "%99[^:]:%d^%d^%d^%d^%d^%d^%d^%255[^\n]", cSourceIp, &sPort, &dVersion, &dInfected, &dOwners_id, &nInfectionId, &nSeverity, &nBotnetId, cInfo);
+	#define N_FIELDS_EXPECTED 10
+		
+	if (nFlds == N_FIELDS_EXPECTED)
+	{
+		sIp = hexstr_to_ip(cSourceIp);
+		__be32 networkIp = sIp;	//asdfasdf was (htonl(sIp))
+		__be16 networkPort = htons(sPort);
+		bool bRegister = true;
+		bool bRegistered;
+		pr_info("tarakernel SENDING: ******* UDP threat info (via taralink) received: %pI4(%s):%d^%d^%d^%d, InfID: %d, sev: %d, botnet: %d, info: %s\n",
+				&networkIp, cSourceIp, sPort, dVersion, dInfected, dOwners_id, nInfectionId, nSeverity, nBotnetId, cInfo);
+		struct _Remote_infection *pRemoteInfection = findRemoteInfectionInfoReceived(networkIp, networkPort, bRegister = 1, &bRegistered);	
 
-
-//    sprintf(cUdpTagString, "%08X:%d^%d^%d^%d^%d^%d^%d^%s", ntohl(sourceIp), ntohs(sourcePort), pInfection->cTag.version_no, pInfection->cTag.presumed_infected, pInfection->cTag.owners_id, pInfection->nInfectionId, pInfection->nSeverity, pInfection->nBotnetId, pInfection->lpInfo);
-
-		if (nFlds == 9) 	//was 5 before..
+		if (!pRemoteInfection)
 		{
-			sIp = hexstr_to_ip(cSourceIp);
-			__be32 networkIp = htonl(sIp);
-			__be16 networkPort = htons(sPort);
-			bool bRegister = true;
-			bool bRegistered;
-			pr_info("tarakernel SENDING: ******* UDP threat info (via taralink) received: %pI4(%s):%d^%d^%d^%d, InfID: %d, sev: %d, botnet: %d, info: %s\n", &networkIp, cSourceIp, sPort, dVersion, dInfected, dOwners_id, nInfectionId, nSeverity, nBotnetId, cInfo);
-			struct _Remote_infection *pRemoteInfection = findRemoteInfectionInfoReceived(networkIp, networkPort, bRegister = 1, &bRegistered);	
+			pr_warn("tarakernel: ********* ERROR ********** Unable to allocate memory for remote infection info.\n");
+			return 0;
+		}
 
-			if (!pRemoteInfection)
-			{
-				pr_warn("tarakernel: ********* ERROR ********** Unable to allocate memory for remote infection info.\n");
-				return 0;
-			}
-
-			if (!bRegistered)
-			{
-				/*	bool bChanged = 0;
+		if (!bRegistered)
+		{
+			/*	bool bChanged = 0;
 
 				if (!pRemoteInfection->lpInfo || strcmp(pRemoteInfection->lpInfo, cInfo))
 				{
@@ -220,18 +246,15 @@ int udpMsgFromSender(char *lpPayload)
 					bChanged = 1;
 				}*/
 
-				pr_info("tarakernel SENDING: Already have info for %pI4:%d - updated\n", &networkIp, sPort);
-			}
-
-			setRemoteInfection(pRemoteInfection, NULL, dOwners_id, dInfected, dVersion, nInfectionId, nSeverity, nBotnetId, cInfo);
+			pr_info("tarakernel SENDING: Already have info for %pI4:%d - updated\n", &networkIp, sPort);
 		}
-		else
-			pr_info("tarakernel SENDING: ****** ERROR ***** UDP message decoding failed. Found %d fields. Should have been 5\n", nFlds);
 
+		setRemoteInfection(pRemoteInfection, NULL, dOwners_id, dInfected, dVersion, nInfectionId, nSeverity, nBotnetId, cInfo);
 		return 1;
 	}
 
-	//pr_info("tarakernel SENDING: Not UDP message: %s\n", lpPayload);
+	pr_info("tarakernel SENDING: ****** ERROR ***** UDP message decoding failed. Found %d fields. Should have been %d\n", nFlds, N_FIELDS_EXPECTED);
+
 	return 0;
 }
 
