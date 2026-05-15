@@ -67,6 +67,12 @@ int checkFixTagging(struct _PacketInspection *pPacket, bool bForwarding, const s
 	return NF_ACCEPT;
 }
 
+int clearIncomingTag(struct _PacketInspection *pPacket)
+{
+	//Should read from setting? Later based on the recipient??
+	return false;
+}
+
 static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, const struct nf_hook_state *state)
 {
 		
@@ -169,10 +175,16 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 		else
   			pSetup->cGlobalStatistics.nFromPartnerUntagged++;
 
-		pPacket->tcp_header->urg_ptr = 0;  //Remove the tag when forwarded to subnet.. This is confidential information..
-		pPacket->tcp_header->urg = 0;		//260318 This may have been forgotten elsewhere....
-	    //recalcChecksum(pPacket);	//ØT 260318 - Seems like lots of packets get lost with this enabled...
-		checkFree(pPacket, false /*bLeavingPostRouting*/);
+		if (clearIncomingTag(pPacket))
+		{
+			pPacket->tcp_header->urg_ptr = 0;  //Remove the tag when forwarded to subnet.. This is confidential information..
+			pPacket->tcp_header->urg = 0;		//260318 This may have been forgotten elsewhere....
+	    	//recalcChecksum(pPacket);	//ØT 260318 - Seems like lots of packets get lost with this enabled...
+			checkFree(pPacket, false /*bLeavingPostRouting*/);
+		}
+		else	
+			pr_info("tarakernel: Keeping tag!\n");
+
 		return NF_ACCEPT;
 	}	    
 

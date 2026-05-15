@@ -463,16 +463,17 @@ void registerRemoteInfection(u_int32_t nSenderIp, char *lpMessage)
     /* ---- VALUES ---- */
     printf("Trying to insert in hackReport with IP: %s, port: %u\n", cSourceIp, sPort);
 
-    struct in_addr addr;
+   /* struct in_addr addr;
     if (inet_aton(cSourceIp, &addr) == 0) {
         printf("Invalid IP: %s\n", cSourceIp);
         return;
-    }
+    }*/
 
-    unsigned int ip = ntohl(addr.s_addr);
+    uint32_t ip = strtoul(cSourceIp, NULL, 16);    
+    //unsigned int ip = ntohl(addr.s_addr);
     //unsigned int ip = inet_addr(cSourceIp);   // or your actual value
     unsigned short port = sPort;
-    unsigned int sentByIp = ip;
+    //unsigned int sentByIp = ip;
 
     unsigned long cInfoLen = strlen(cInfo);
 
@@ -486,7 +487,7 @@ void registerRemoteInfection(u_int32_t nSenderIp, char *lpMessage)
     param[1].is_unsigned = 1;
 
     param[2].buffer_type = MYSQL_TYPE_LONG;
-    param[2].buffer = &sentByIp;
+    param[2].buffer = &nSenderIp;       //260515 - Used to be: sentByIp;
     param[2].is_unsigned = 1;
 
     param[3].buffer_type   = MYSQL_TYPE_STRING;

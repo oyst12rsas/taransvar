@@ -198,16 +198,22 @@ function hackReport()
     //CXmlCommand::alert("ID seen: $nLastId");
 
     //Add new hackReport records to table.    
-	$sql = "SELECT reportId, inet_ntoa(ip) as ip, port, inet_ntoa(partnerIp) as partnerIp, partnerPort, status, h.created, hostname, description from hackReport h left outer join unit u on u.unitId = h.unitId where reportId > ? order by h.created asc limit 1";
+	$sql = "SELECT reportId, inet_ntoa(ip) as ip, port, inet_ntoa(partnerIp) as partnerIp, partnerPort, status, h.created, h.lastSeen, h.unitId, hostname, description from hackReport h left outer join unit u on u.unitId = h.unitId where reportId > ? order by h.created asc limit 1";
     $conn = getConnection();
     $stmt = $conn->prepare($sql);
     $stmt->bind_param("i", $nLastId); 
     $stmt->execute();
     $result = $stmt->get_result();
 
-    while ($row = $result->fetch_assoc()) {    
+    while ($row = $result->fetch_assoc()) {  
+
+		if ($row["unitId"])
+        	$szWhom = ($row["description"] && strlen($row["description"])?$row["description"]:$row["hostname"]);
+		else
+			$szWhom = "ISP: ".$row["partnerIp"];
+
         $szDesc = $row["status"];
-        $cArr = array($row["created"],$row["ip"].":".$row["port"],"&nbsp;", $row["partnerIp"].":".$row["partnerPort"],$szDesc); //
+        $cArr = array($row["lastSeen"],$row["ip"].":".$row["port"], $szWhom, $szDesc); //
         $szRowId = "hr".$row["reportId"];
         CXmlCommand::addTableRow("hackReportTbl", "top", "", $cArr, "", $szRowId);//$szHTML)
     }
@@ -252,7 +258,7 @@ function traffic()
 {
     $nLastId = $_GET["id"];
 	$conn = getConnection();
-	$sql = "SELECT trafficId, inet_ntoa(T.ipFrom) as ipFrom, inet_ntoa(T.ipTo) as ipTo, T.whoIsId, CAST(isLan AS UNSIGNED) as isLan, name, portFrom, portTo, created, count from traffic T left outer join whoIs W on W.whoIsId = T.whoIsId where trafficId > ? order by trafficId asc limit 50";
+	$sql = "SELECT trafficId, inet_ntoa(T.ipFrom) as ipFrom, inet_ntoa(T.ipTo) as ipTo, T.whoIsId, CAST(isLan AS UNSIGNED) as isLan, name, portFrom, portTo, created, lastSeen, count, tag from traffic T left outer join whoIs W on W.whoIsId = T.whoIsId where trafficId > ? order by trafficId asc limit 50";
 
     $stmt = $conn->prepare($sql);
     $stmt->bind_param("i", $nLastId); 
@@ -261,7 +267,8 @@ function traffic()
 
     while ($row = $result->fetch_assoc()) {    
         $szName = ($row["isLan"] ? '<font color="gray">LAN traffic</font>' : ($row["name"]?$row["name"]:""));
-        $cArr = array($row["ipFrom"],$szName, $row["portFrom"], $row["portTo"], $row["created"], $row["count"]); //
+        $cArr = array($row["ipFrom"].":".$row["portFrom"],$szName, $row["lastSeen"], $row["count"], $row["tag"]); //
+
         $szRowId = "tr".$row["trafficId"];
         CXmlCommand::addTableRow("trafficTbl", "top", "", $cArr, "", $szRowId);//$szHTML)
     }

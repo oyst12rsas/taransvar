@@ -21,6 +21,67 @@ use lib_net;
 
 use POSIX qw(setsid);
 
+sub urlencode
+{
+	#NOTE! should install liburi-perl and use URI::Escape;, then uri_escape() instead...
+
+    my ($s) = @_;
+
+    $s =~ s/([^A-Za-z0-9\-_.!~*'()])/sprintf("%%%02X", ord($1))/eg;
+
+    return $s;
+}
+
+sub reportStatus {
+	my ($dbh) = @_;
+	use JSON;
+
+	my %json;
+
+	my $sthSetup = $dbh->prepare("select adminIP, nettmask, secondsSinceBoot,  TIMESTAMPDIFF(SECOND, dmesgUpdated, NOW()) AS dmesg, inet_ntoa(globalDb1ip) as Db1, inet_ntoa(globalDb2ip) as Db2, inet_ntoa(globalDb3ip) as Db3 from setup") or die "prepare statement failed: $dbh->errstr()";
+	$sthSetup->execute() or die "execution failed: $sthSetup->errstr()";
+	my $cSetup = $sthSetup->fetchrow_hashref();
+	$sthSetup->finish();
+
+	$json{"ip"} = $cSetup->{"adminIP"}+0;
+	$json{"nett"} = $cSetup->{"nettmask"}+0;
+	$json{"boot"} = $cSetup->{"secondsSinceBoot"}+0;
+	$json{"dmesg"} = $cSetup->{"dmesg"};
+
+	$json{"link"} = (programRunning("taralink")?"1":0);	
+	$json{"kernel"} = (moduleRunning("tarakernel")?"1":0);
+	$json{"cron"} = (programRunning("crontasks.pl")?"1":0);
+
+
+	my $cJson = encode_json(\%json);
+
+	for my $i (1 .. 3)
+	{
+		my $fieldName = "Db$i";
+		if (defined $cSetup->{$fieldName}) {
+			my $ip = $cSetup->{$fieldName};
+			my $szUrl = "http://$ip/script/statusReport.php?json=".urlencode($cJson);
+    		print "$fieldName, $szUrl\n";
+			
+			my $szReply = `wget -q -O - "$szUrl 2>&1"`;			
+			#chomp $szReply;
+			$szReply =~ s/^\s+|\s+$//g;
+			print "Reply: $szReply\n";
+			if ($szReply eq "ok")
+			{
+				print "Able to send status to DB server $ip!\n";
+			} else {
+				print "***** ERROR ***** Unable to send status to DB server $ip. Reply is $szReply!\n";
+			}
+
+		} else
+		{
+			print "global".$fieldName."ip not set. Skipping.\n";
+		}
+	}
+
+}
+
 sub check_dhcpEvent {
 	my ($conn) = @_;
 	my $szSQL = "select dhcpEventId, seenAt, interfaceName, srcIp, inet_ntoa(srcIp) as src, dstIp, inet_ntoa(dstIp) as dst, clientMac, yourIp, inet_ntoa(yourIp) as aYourIp, coalesce(hostname,'') as hostname, vendorClass, dhcpMessageType from dhcpEvent where handled = 0 limit 10";
@@ -389,13 +450,14 @@ if (!runningAsCron() && !runningBootCheck())	#Run "sudo perl crontasks.pl whatev
 	#Displays a warning in dashboard so don't forget to disable this code...
 
 	print "handle_syslogThreat_table() not yet put in production...\n";
+	#reportStatus($dbh);
 	#handle_syslogThreat_table($dbh);
 	#check_dhcpEvent($dbh);	
 
 	#print (networkSetupOk()?"Network set up properly":"Failed to set up network!");
 	#checkRequests();
 	#startTaraLinkOk();
-    handleConntrack($dbh);
+    #handleConntrack($dbh);
 	#start_process_dhcpdump($pSetup->{"internalNic"});	#NOTE! Just making sure dhcp_capture.pl is running..
 	#checkDbVersion($dbh);
 	
@@ -462,6 +524,7 @@ workshopSetup();	#If workshopId is set in dashboard setup, it will register othe
 start_iptables_monitor();	#Check if iptables_log_monitor.pl is already running. If not, starts it
 print "Starting start_process_dhcpdump()\n";
 start_process_dhcpdump($pSetup->{"internalNic"});	#NOTE! Just making sure dhcp_capture.pl is running..
+reportStatus($dbh);
 
 #handleRequestsForDmsg();
 

@@ -4,7 +4,9 @@
 <head>
     <script>
         
-        if (localStorage.getItem('taransvar_tagged') === 'true') {
+        //if (localStorage.getItem('taransvar_tagged') === 'true') 
+        if (false)
+        {
             document.documentElement.innerHTML = `
                 <head>
                     <title>Access Blocked | Gatekeeper Network</title>

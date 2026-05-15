@@ -237,12 +237,15 @@ function vpn_demo()
 	        $nCount=0;
 	        while($row = $result->fetch_assoc()) 
 	        {
-	        	if (!$nCount)
+	        	if (!$nCount) 
+				{
 	        		print "<tr><td>Site</td><td>IP</td><td>Status received</td><td>Gatekeeper</td><td>Sample bank</td><td>Honey</td></tr>";
+	        		print "<tr><td>Me</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td><a href=\"../samplebank/index.php\">[go to]</a></td><td><a href=\"../honeypot/index.php\">[go to]</a></td></tr>";
+				}
 
 				$szGatekeeper = "http://".$row["ip"]."/gatekeeper/index.php";
 				$szSamplebank = "http://".$row["ip"]."/samplebank/index.php";
-				$szHoneypot =  "http://".$row["ip"]."/honeypot/index.html";
+				$szHoneypot =  "http://".$row["ip"]."/honeypot/index.php";
 	            print "<tr><td>".$row["name"]."</td><td>".$row["ip"]."</td><td>".$row["partnerStatusReceived"]."</td><td><a href=\"".$szGatekeeper."\">[go to]</h></td><td><a href=\"".$szSamplebank."\">[go to]</h></td><td><a href=\"".$szHoneypot."\">[go to]</h></td></tr>";
 	            $nCount++;
 	        }

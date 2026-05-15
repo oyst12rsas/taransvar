@@ -138,16 +138,12 @@ void reportInboundTraffic(struct _PacketInspection *pPacket)
           return;
     }
 
-	if (dropFromLogging(pPacket))
-		return;	
-
 	//Check if one of the IP addresses is among those put in setup->dontDmesgIPs not to be handled (for now only handles one..). 
 	if (dropFromLogging(pPacket))
 	{
 		//pr_info("tarakernel: ******* Dropping logging because one of IPs is listed as not to log to dmesg\n");
 		return;
 	}
-
 
     //Queue this packet for sending to ABMonitor for further handling. 
     int n = 0;
@@ -160,6 +156,9 @@ void reportInboundTraffic(struct _PacketInspection *pPacket)
           {
                 //Already have registered traffic on this ip/port. Increase the count.
                 pSetup->cPendingIncomingReportArr[n].nCount++;
+
+				//Update tagging info so that the once that hits the DB is the most recent. 
+				pSetup->cPendingIncomingReportArr[n].nTag = pPacket->tcp_header->urg_ptr;								
                 
          	//if (pSetup->cShowInstructions.bits.showOther)
                 //        pr_info("tarakernel: PR: Reporting incoming traffic %s:%d -> %s:%d (increased count at #%d)\n",pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort, n);
@@ -175,9 +174,8 @@ void reportInboundTraffic(struct _PacketInspection *pPacket)
                       pSetup->cPendingIncomingReportArr[n].dPort = pPacket->dPort;
                       pSetup->cPendingIncomingReportArr[n].nCount = 1;
 
-					  //
-					  //pSetup->cPendingIncomingReportArr[n].cTagUnion.nBe16 = pPacket->cTagUnion.nBe16;	//OT_Changed: 260225 - just testing if can get this through taralink to DB
-					  pSetup->cPendingIncomingReportArr[n].nTag = 316;//TESTING 260225 pPacket->tcp_header->urg_ptr;	//OT_Changed: 260225 - just testing if can get this through taralink to DB
+					  pSetup->cPendingIncomingReportArr[n].nTag = pPacket->tcp_header->urg_ptr;	//OT_Changed: 260225 - just testing if can get this through taralink to DB
+					  //pSetup->cPendingIncomingReportArr[n].nTag = 316;//TESTING 260225 pPacket->tcp_header->urg_ptr;	//OT_Changed: 260225 - just testing if can get this through taralink to DB
 
                   //    if (pSetup->cShowInstructions.bits.showOther)
               	//	      pr_info("tarakernel: PR: Reporting incoming traffic %s:%d -> %s:%d (put at #%d)\n",pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort, n);
@@ -451,7 +449,7 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 				bool bDropping = cUnion.cTag.presumed_infected > pSetup->nBlockIncomingTaggedTrafficLevel;
 				char cBuf[300];
 
-				snprintf(pSetup->c100, sizeof(pSetup->c100)-1, "%s Tag-severity %u/%u. %s->%s, severity: %d, botnet: %d, owner_id: %d, info: %s, unrep traff: %d/%d (check gatekeeper)\n", 
+				snprintf(pSetup->c100, sizeof(pSetup->c100)-1, "%s Tag-severity %u/%u. %s->%s, severity: %d, botnet: %d, owner_id: %d, info: %s, rx+tx: %d/%d\n", 
 							(bDropping?"**DROPPING packet**":"(tag removed)"), 
 							cUnion.cTag.presumed_infected, 
 							pSetup->nBlockIncomingTaggedTrafficLevel, 
@@ -483,10 +481,17 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 		        //Remove the tag by default. This is traffic to the server (forwarded traffic doesn't come here..??????)
 		        //Note! Sometimes (always?) even a Ubuntu computer droppes the package if tagged this way... (maybe because of checksum error?)
 		        //sprintf(pSetup->c100, "Tag was %04X (removed) Infected: %u, owners_id: %u, block threshold: %u",  pPacket->tcp_header->urg_ptr, cUnion.cTag.presumed_infected, cUnion.cTag.owners_id, pSetup->nBlockIncomingTaggedTrafficLevel);
-		              
-				pPacket->tcp_header->urg_ptr = 0; //Removing tag. 
-			    checkThatTcp(pPacket,"after clearing urg_ptr");	//260320 - asdf... got problem with this....
-			    recalcChecksum(pPacket);
+		            
+
+				if (clearIncomingTag(pPacket))
+				{
+					pPacket->tcp_header->urg_ptr = 0; //Removing tag. 
+	                pPacket->tcp_header->urg = 0;
+				    checkThatTcp(pPacket,"after clearing urg_ptr");	//260320 - asdf... got problem with this....
+				    recalcChecksum(pPacket);
+				}
+				else 
+					pr_warn("tarakernel: ********** KEEPING INCOMING TAG *************\n");
 
 				//When an incoming packet on a Linux system is tagged using the urg_ptr field, often, the package
 			    //still doesn't go through if the urg_ptr field is cleared at the receiver end. Is this because the URG flag is set somewhere?
@@ -518,17 +523,25 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 					return NF_DROP;
 				}
 			}
-			
-			
-	        if (pSetup->cShowInstructions.bits.showPreRoutePartner) {
-				//pr_info("tarakernel: PRE ROUTING: Inbound from partner: %s (%s -> %s)\n",pSetup->c100, pPacket->cSourceIp, pPacket->cDestIp);
-				if (!dropFromLogging(pPacket))
-					pr_info("tarakernel: PRE ROUTING Inbound from partner(%pI4): %s (%s:%d -> %s:%d)\n", &nPartnerIp, pSetup->c100, pPacket->cSourceIp, ntohs(pPacket->tcp_header->source), pPacket->cDestIp, ntohs(pPacket->tcp_header->dest)); 
+
+			if (isPartner(pPacket->ip_header->daddr))
+			{
+				//Never gets here... This happens in FORWARD, not PRE_ROUTING
+				//Routing between two partners?
+				pr_info("tarakernel: PR Routing between two partners? : %s:%d -> %s:%d - might drop these\n", pPacket->cSourceIp, ntohs(pPacket->tcp_header->source), pPacket->cDestIp, ntohs(pPacket->tcp_header->dest)); 
 			}
-			if (cUnion.cTag.version_no)
-			  pSetup->cGlobalStatistics.nFromPartnerTagged++;
 			else
-			  pSetup->cGlobalStatistics.nFromPartnerUntagged++; 
+			{
+		        if (pSetup->cShowInstructions.bits.showPreRoutePartner) {
+					//pr_info("tarakernel: PRE ROUTING: Inbound from partner: %s (%s -> %s)\n",pSetup->c100, pPacket->cSourceIp, pPacket->cDestIp);
+					if (!dropFromLogging(pPacket))
+						pr_info("tarakernel: PRE ROUTING Inbound from partner(%pI4): %s (%s:%d -> %s:%d)\n", &nPartnerIp, pSetup->c100, pPacket->cSourceIp, ntohs(pPacket->tcp_header->source), pPacket->cDestIp, ntohs(pPacket->tcp_header->dest)); 
+				}
+				if (cUnion.cTag.version_no)
+				  pSetup->cGlobalStatistics.nFromPartnerTagged++;
+				else
+				  pSetup->cGlobalStatistics.nFromPartnerUntagged++; 
+			}
 		}
 //		else
 //          	if (pSetup->cShowInstructions.bits.doReportTraffic)
@@ -748,20 +761,11 @@ static unsigned int module_ip4_post_routing_handler(void *priv, struct sk_buff *
 		    	}
     	    	else
     	       	{
-        	        //asdf
-    	    		char *lpTemp = kmalloc(200, GFP_KERNEL);
-       	        	if (lpTemp)
-       	            {
-       	                getMeAndMine(lpTemp, 200);
-						if (pSetup->cShowInstructions.bits.showOther)
-							if (!dropFromLogging(pPacket))
-    	    			    	pr_info("tarakernel: **** WARNING **** PR None of mine.. Probably partner malconfiguration? (%s:%d->%s:%d %s)\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort, lpTemp);
-    				}
-    				else
-					{
-						pr_info("tarakernel: **** ERROR allocating buffer in post routing handling\n");
-						kfree(lpTemp);
-        			}
+					char cTemp[200];
+   	                getMeAndMine(cTemp, sizeof(cTemp));
+					if (pSetup->cShowInstructions.bits.showOther)
+						if (!dropFromLogging(pPacket))
+   	    			    	pr_info("tarakernel: **** WARNING **** PR None of mine.. Probably partner malconfiguration? (%s:%d->%s:%d %s)\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort, cTemp);
 				}
   			}
 	}

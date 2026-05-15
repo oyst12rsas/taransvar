@@ -455,9 +455,9 @@ sub getDevices {
 
 sub isLanAddress {
 	my ($szLookupIp) = @_;
-	return index($szLookupIp,"192.168") == 0 ||
-			index($szLookupIp,"10.0.") == 0 ||
-			index($szLookupIp,"10.10.") == 0;
+	return index($szLookupIp,"192.168.") == 0 ||
+			index($szLookupIp,"10.") == 0 ||
+			index($szLookupIp,"172.31.") == 0;
 }
 
 sub getSetup {

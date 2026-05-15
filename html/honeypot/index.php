@@ -1,0 +1,108 @@
+<?php
+
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+
+include_once "../gatekeeper/dbfunc.php";
+include "../script/tagged.php";
+$szIp = getSenderIp();
+$szTag = getTheTag($szIp, 0);
+?>
+<script>
+async function honeypotPressed() {
+    try {
+        //alert("Pressed....");
+        const response = await fetch('honey.php');
+
+        if (!response.ok) {
+            throw new Error('Network error');
+        }
+
+        const data = await response.json();
+
+        console.log(data);
+
+        // show your modal instead
+        //document.getElementById('customAlert').classList.add('show');
+        alert(data.message);
+
+    } catch (err) {
+        console.error('Error:', err);
+        alert("PHP call failed");
+    }
+}
+
+async function clearTagging() {
+    try {
+        //alert("Pressed....");
+        const response = await fetch('clearTagging.php');
+
+        if (!response.ok) {
+            throw new Error('Network error');
+        }
+
+        const data = await response.json();
+
+        console.log(data);
+
+        // show your modal instead
+        //document.getElementById('customAlert').classList.add('show');
+        alert(data.message);
+
+    } catch (err) {
+        console.error('Error:', err);
+        alert("PHP call failed");
+    }
+}
+
+</script>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Security Monitoring Node | Gatekeeper Network</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>.sweet-modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); align-items: center; justify-content: center; opacity: 0; transition: opacity 0.3s; } .sweet-modal.show { display: flex; opacity: 1; } .sweet-modal-content { background-color: var(--panel-bg); border: 1px solid var(--danger-color); border-radius: 12px; padding: 2rem; max-width: 500px; text-align: center; box-shadow: 0 10px 30px rgba(218, 54, 51, 0.2); transform: scale(0.9); transition: transform 0.3s; } .sweet-modal.show .sweet-modal-content { transform: scale(1); } .sweet-modal h3 { color: var(--danger-color); font-size: 1.8rem; margin-bottom: 1rem; font-family: var(--font-heading); } .sweet-modal p { color: var(--text-color); margin-bottom: 1.5rem; font-size: 1.05rem; line-height: 1.6; } .close-modal-btn { background-color: var(--danger-color); color: white; border: none; padding: 0.8rem 2rem; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 1rem; transition: background-color 0.2s; } .close-modal-btn:hover { background-color: var(--danger-hover); } .step-guide { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 2rem; text-align: left; } .step-box { background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); padding: 1.5rem; border-radius: 8px; } .step-box h4 { color: #58a6ff; margin-bottom: 0.5rem; font-size: 1.1rem; } .step-box p { font-size: 0.9rem; color: var(--text-muted); }</style></head>
+<body>
+    <div class="honeypot-container">
+        <div class="header">
+            <div class="logo-icon"></div>
+            <h2>Taransvar Cyber Solution</h2>
+        </div>
+        
+        <div class="main-content">
+            <h1 class="node-title">Security Monitoring Node</h1>
+            <h3 class="node-subtitle">Gatekeeper Network</h3>
+            
+            <div class="step-guide"><div class="step-box"><h4>Step 1: Get Tagged</h4><p>Click "Simulate Malicious Probe" below. This represents a hacker attempting an attack and getting flagged by our system.</p></div><div class="step-box"><h4>Step 2: See The Result</h4><p>Return to the bank. Because you are now flagged on the Gatekeeper Network, the bank will instantly block you.</p></div></div><div class="info-card">
+                <p><strong>Warning:</strong> You have reached a honeypot monitoring node. This page is designed to detect, track, and tag malicious actors across the Taransvar Gatekeeper Network.</p>
+                <p>As part of the demonstration, you can simulate a malicious probe below. Once your device is tagged, you will be automatically blocked from accessing any integrated systems, such as the fictional Aequitas Global Bank.</p>
+            </div>
+
+            <div class="status-panel" id="statusPanel">
+                <div class="status-indicator"></div>
+                <span id="statusText">Tagging Status: <?php print "You are ".($szTag == 1?"TAGGED!": "NOT tagged"); ?></span>
+            </div>
+
+            <div class="actions">
+                <button id="probeBtn" class="btn btn-danger" onclick="honeypotPressed()">
+                    🔘 Simulate Malicious Probe
+                </button>                
+                <button id="clearBtn" class="btn btn-secondary" onclick="clearTagging()">
+                    Clear Tagging
+                </button>
+            </div>
+            
+            <div class="navigation-links">
+                <a href="../samplebank/index.html" class="link-back">Return to Aequitas Global Bank &rarr;</a>
+            </div>
+        </div>
+    </div>
+    
+    <!-------------------script src="script.js"></script------------->
+<div id="customAlert" class="sweet-modal"><div class="sweet-modal-content"><h3>?? Threat Tagged</h3><p>Your device has been successfully tagged by the Gatekeeper Network.<br><br>Return to Aequitas Global Bank to see the result. You will now be <strong>blocked</strong> from accessing their services.</p><button id="closeModalBtn" class="close-modal-btn">Got it</button></div></div></body>
+</html>

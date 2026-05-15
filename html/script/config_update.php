@@ -11,6 +11,7 @@ error_reporting(E_ALL);
 //Put this directly into database and process later... e.g in 10 minutes when dhsp leases and conntrack is loaded.... 
 //
 include "../dbfunc.php";
+include "../script/tagged.php";
 
 function getSenderIp()
 {

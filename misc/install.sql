@@ -180,8 +180,18 @@ update setup set dbVersion = 59;
 alter table user add isAdmin bit(1) not null default b'0' after verified; 
 update setup set dbVersion = 60;
 
+#version 61 (260512)
+alter table traffic add lastSeen timestamp null;
+update setup set dbVersion = 61;
+
+#version 62 (260515)
+alter table partnerRouter add statusOk bit(1) not null default b'0' after handled;
+alter table partnerRouter add status varchar(255) not null default "" after statusOk;
+ALTER TABLE traffic ADD COLUMN IF NOT EXISTS tag int unsigned null;
+update setup set dbVersion = 62;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 61;
+#update setup set dbVersion = 63;
 
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 

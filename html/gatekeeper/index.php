@@ -1,6 +1,6 @@
 <?php
 session_start();
-$nRequiredDbVersion=60;	//NOTE! Make sure this line is always number 3 because that's claimed below.
+$nRequiredDbVersion=61;	//NOTE! Make sure this line is always number 3 because that's claimed below.
 include "dbfunc.php";
 
 $szErrorMessage = "";	//Use it to print message...
@@ -293,13 +293,6 @@ var cJsonParam = new Object;
 
 <table class="center"><tr><td bgcolor="#AAB396">
 <?php
-
-ini_set('display_errors','1');
-ini_set('display_startup_errors','1');
-error_reporting(E_ALL);
-
-
-
 
 function showMenu()
 { 

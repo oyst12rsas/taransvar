@@ -33,8 +33,9 @@ void handleTrafficReportFromKernel(char *lpPayload, int nDataLength)
 	//For now just printing.... 
 	//Now sending both fromIP and toIP (not sure which the old version sent)
 
-	MYSQL *conn;
-	conn = getConnection();
+	MYSQL *conn = getConnection();
+	MYSQL *update = getConnection();
+
 	char *lpRec;
 	char *lpTokens = "^";
     
@@ -92,6 +93,9 @@ void handleTrafficReportFromKernel(char *lpPayload, int nDataLength)
 		}
 	}
 
+	int nInserts = 0;
+	int nUpdates = 0;
+
 	for (int j = 0; j < nRecordCount; j++)
 	{
 		//printf("Traffic found: %s\n", cRecord[j]);
@@ -118,23 +122,56 @@ void handleTrafficReportFromKernel(char *lpPayload, int nDataLength)
 		}
 		else
 		{
-			//printf("Record decoded: %s %s %s %s %s %s\n", cFields[0], cFields[1], cFields[2], cFields[3], cFields[4], cFields[5]);
            	char cSql[400];
-			//OT_Changed: 260225 - Now also saving the tag...
-			sprintf(cSql, "insert into traffic (ipFrom, portFrom, ipTo, portTo, count, tag) values (0x%s, 0x%s, 0x%s ,0x%s, 0x%s, 0x%s)", 
-					cFields[0], cFields[1], cFields[2], cFields[3], cFields[4], cFields[5]);
+			//First check if there's a recent traffic report we can update.
+			sprintf(cSql, "select trafficId, count from traffic where ipFrom = 0x%s and portFrom = 0x%s and ipTo = 0x%s and portTo = 0x%s and tag = 0x%s and (lastSeen is null or lastSeen > NOW() - INTERVAL 1 MINUTE) limit 1",
+					cFields[0], cFields[1], cFields[2], cFields[3], cFields[5]);
+			//printf ("%s\n", cSql);
+
+			int nUpdateTrafficId = 0;
+			if (mysql_query(conn, cSql) == 0)
+			{
+				MYSQL_RES *res;
+				MYSQL_ROW row;
+
+				res = mysql_store_result(conn);
+				if (res) {
+					if ((row = mysql_fetch_row(res)) != NULL)
+						nUpdateTrafficId = atoi(row[0]);
+
+					mysql_free_result(res);
+				}
+			}
+
+			if (nUpdateTrafficId)
+			{
+				sprintf(cSql, "update traffic set count = count + 0x%s, lastSeen = now() where trafficId = %d", 
+						cFields[4], nUpdateTrafficId);
+				nUpdates++;
+			}
+			else
+			{
+				//printf("Record decoded: %s %s %s %s %s %s\n", cFields[0], cFields[1], cFields[2], cFields[3], cFields[4], cFields[5]);
+				//OT_Changed: 260225 - Now also saving the tag...
+				sprintf(cSql, "insert into traffic (ipFrom, portFrom, ipTo, portTo, count, tag, lastSeen) values (0x%s, 0x%s, 0x%s ,0x%s, 0x%s, 0x%s, now())", 
+						cFields[0], cFields[1], cFields[2], cFields[3], cFields[4], cFields[5]);
+				nInserts++;
+			}
             
-			if (mysql_query(conn, cSql)){
-                //According to manual, mysql_query() is supposed to return true if ok... But apparently not on all computers 
-                //     printf("******************************** ABLE TO INSERT ***********\n");
+			//printf ("%s\n", cSql);
+			if (!mysql_query(update, cSql)){
+				//According to manual, mysql_query() is supposed to return true if ok... But apparently not on all computers 
+                //printf("******************************** ABLE TO INSERT ***********\n");
             }
-            //else
-                //     printf("******** ERROR inserting traffic record.\n");
+            else
+				fprintf(stderr, "MySQL error inserting/updating traffic record: %s\nSQL: %s\n", mysql_error(update), cSql);
+				//printf("******** ERROR inserting/updating traffic record.\n");
 		}
 	}
-	printf("%d records inserted in traffic table.\n", nRecordCount);
+	printf("%d records inserted, %d updated in traffic table.\n", nInserts, nUpdates);
 
 	mysql_close(conn);
+	mysql_close(update);
 }
 
 

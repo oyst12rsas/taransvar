@@ -314,7 +314,8 @@ char *getIpStringToHex(char *lpBuff, char *lpIpString)
 
     if (inet_pton(AF_INET, lpIpString, &addr) != 1) {
         fprintf(stderr, "Invalid IP: %s\n", lpIpString);
-        return 1;
+        strcpy(lpBuff, "ERROR");
+        return lpBuff;
     }
 
     unsigned char *b = (unsigned char *)&addr.s_addr;

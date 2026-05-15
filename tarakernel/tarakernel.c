@@ -89,6 +89,7 @@ void setDscp(struct iphdr *iph, uint8_t newDscp);
 void recalcChecksum(struct _PacketInspection *pPacket);
 void listInfectionsPointerList(void);
 void setRemoteInfection(struct _Remote_infection *pRemoteInfection, struct _PacketInspection *pPacket, unsigned int dOwners_id, unsigned int dInfected, unsigned int dVersion, unsigned int nInfectionId, unsigned int nSeverity, unsigned int nBotnetId, char *lpInfo);
+int clearIncomingTag(struct _PacketInspection *pPacket);
 
 //Old one: static unsigned int sendUdpPackageAndQueueRetransmit(struct sk_buff *skb, const struct nf_hook_state *state, char *lpString);
 static unsigned int sendUdpThreatPackage(__be32 destIp, __be32 sourceIp, __be16 sourcePort, struct _InfectionSpecification *pInfection);
