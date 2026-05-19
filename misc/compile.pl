@@ -280,7 +280,7 @@ if ($nFileSize <= 0) {
 	if ($ARGV[0] && ($ARGV[0] eq "bg")) {
 		system("nohup $szFilename > $szFilename.log 2>&1 &");
 		system("sudo ps aux | grep taralink");
-		print "***** taralink is running in backgroun - as shown above\n";
+		print "***** taralink is running in background - as shown above\n";
 	}
 	else {
 		system ($szFilename);	#Start taralink

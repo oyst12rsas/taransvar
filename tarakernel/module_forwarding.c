@@ -70,7 +70,7 @@ int checkFixTagging(struct _PacketInspection *pPacket, bool bForwarding, const s
 int clearIncomingTag(struct _PacketInspection *pPacket)
 {
 	//Should read from setting? Later based on the recipient??
-	return false;
+	return 1; //false;
 }
 
 static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, const struct nf_hook_state *state)

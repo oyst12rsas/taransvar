@@ -570,8 +570,6 @@ sub handleConntrack {
 	            	}
 	        	}
 
-				my $szUnitId = "NULL";
-
 		        if (!$nFound)
 		        {
 	    	    	#NOTE! This means that this port is not registered before or registered on other unit...

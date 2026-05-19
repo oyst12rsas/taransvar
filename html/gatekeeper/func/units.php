@@ -4,8 +4,57 @@ var szUpdateRoutine = "units";
 </script>
 <?php 
 
+function sjekk($field)
+{
+	return (isset($field) && $field == "1" ? '<font color="green">[Running]</font>':'<font color="red">[STOPPED]</font>');
+}
+
+function listServerStatus()
+{
+	$conn = getConnection();
+	$sql = "select routerId, partnerStatusReceived as time, inet_ntoa(ip) as ip, status from partnerRouter";
+		$result = $conn->query($sql);
+		if ($result->num_rows > 0) 
+		{
+			print "<table><tr><td>IP</td><td>Reported</td><td>Kernel</td><td>Link</td><td>Load<br>(1 5 15min)</td><td>Mem<br>(used tot)</td><td>Disk<br>(tot used free)</td><td>&nbsp;</td></tr>";
+			while ($row = $result->fetch_assoc()) 
+			{
+				$status = json_decode($row["status"], true);
+				print '<tr><td>'.$row["ip"].'</td><td>'.$row["time"].'</td>';
+				print '<td>'.sjekk($status["knl"]).'</td>';
+				print '<td>'.sjekk($status["lnk"]).'</td>';
+				$szLoad = $status["ld"];
+				print '<td>'.$szLoad.'</td>';
+				$szMem = $status["mem"];
+				print '<td>'.$szMem.'</td>';
+				$szDisk = $status["df"];
+				print '<td>'.$szDisk.'</td>';
+				print '<td><a href="index.php?f=unitsMore&id='.$row["routerId"].'">[More info]</a></td></tr>'; 
+			}
+			print "</table>";
+		}
+}
+
+
 function units()
 {
+	$conn = getConnection();
+	if (isAdmin())
+	{
+		//If logged in as admin and this is a DB server, list reported status.
+		print "<b>You're logged in as admin on DB server... So these units have reported status:</b>";
+		$sql = "select adminIP, globalDb1ip, globalDb1ip, globalDb1ip from setup";
+		$result = $conn->query($sql);
+		if ($result->num_rows > 0) 
+			if ($row = $result->fetch_assoc()) 
+			{
+				if ($row["adminIP"] && ($row["adminIP"] == ($row["globalDb1ip"]?$row["globalDb1ip"]:-1) 
+						or $row["adminIP"] == (isset($row["globalDb2ip"])?$row["globalDb2ip"]:-1) 
+						or $row["adminIP"] == (isset($row["globalDb3ip"])?$row["globalDb3ip"]:-1))) 
+					listServerStatus();
+			}
+	}
+
 	print '<h2>Active units (connected clients in sub network):</h2>
 	<table id="unitsTbl"><tr><th>Hostname</th><th>DHCP Client ID</th><th>Vendor</th><th>Nickname</th><th>Mac</th><th>Last seen</th><th>Last IP</th><th>Ports</th></tr>';
 	print "</table>";
@@ -16,7 +65,6 @@ function units()
 	$sql = "select portAssignmentId, UP.created, ifnull(U.unitId,-1) as unitId, inet_ntoa(UP.ipAddress) as ip, UP.port, description, hostname, hex(dhcpClientId) as dhcpClientId, hR.created as attacked from unitPort UP left outer join unit U on U.unitId = UP.unitId left outer join hackReport hR on hR.port = UP.port and hR.created >  DATE_SUB(NOW(), INTERVAL '1' HOUR)
 	order by portAssignmentId desc limit 100";
 	//print "$sql<br>";
-	$conn = getConnection();
 	$result = $conn->query($sql);
 
 	if ($result->num_rows > 0) 

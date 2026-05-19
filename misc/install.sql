@@ -190,8 +190,14 @@ alter table partnerRouter add status varchar(255) not null default "" after stat
 ALTER TABLE traffic ADD COLUMN IF NOT EXISTS tag int unsigned null;
 update setup set dbVersion = 62;
 
+#version 63 (260518)
+alter table setup add requireRegistration bit(1) not null default b'0' after hotspot;
+alter table setup add selfRegistration bit(1) not null default b'1' after requireRegistration;
+update setup set dbVersion = 63;
+
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 63;
+#update setup set dbVersion = 64;
 
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 

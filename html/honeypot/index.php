@@ -7,7 +7,10 @@ ini_set('display_startup_errors', 1);
 include_once "../gatekeeper/dbfunc.php";
 include "../script/tagged.php";
 $szIp = getSenderIp();
-$szTag = getTheTag($szIp, 0);
+//$szTag = getTheTag($szIp, 0);
+$bTagged = getUserTagged();
+$bTagged = 1;
+//print "The tag is: $szTag<br>";
 ?>
 <script>
 async function honeypotPressed() {
@@ -49,6 +52,9 @@ async function clearTagging() {
         // show your modal instead
         //document.getElementById('customAlert').classList.add('show');
         alert(data.message);
+	
+	const element = document.getElementById("nextActionHere");
+	element.innerHTML = '<p>Click the link below to go to the right router (the ISP you\'re connected to).</p><a href="'+data.routerURL+'">Go to router</a></p><p>'+data.routerURL+'</p>';
 
     } catch (err) {
         console.error('Error:', err);
@@ -73,7 +79,7 @@ async function clearTagging() {
             <div class="logo-icon"></div>
             <h2>Taransvar Cyber Solution</h2>
         </div>
-        
+       
         <div class="main-content">
             <h1 class="node-title">Security Monitoring Node</h1>
             <h3 class="node-subtitle">Gatekeeper Network</h3>
@@ -85,7 +91,7 @@ async function clearTagging() {
 
             <div class="status-panel" id="statusPanel">
                 <div class="status-indicator"></div>
-                <span id="statusText">Tagging Status: <?php print "You are ".($szTag == 1?"TAGGED!": "NOT tagged"); ?></span>
+                <span id="statusText">Tagging Status: <?php print "You are ".($bTagged?"TAGGED!": "NOT tagged (changed)"); ?></span>
             </div>
 
             <div class="actions">
@@ -95,6 +101,7 @@ async function clearTagging() {
                 <button id="clearBtn" class="btn btn-secondary" onclick="clearTagging()">
                     Clear Tagging
                 </button>
+		 <div id="nextActionHere"></div>
             </div>
             
             <div class="navigation-links">

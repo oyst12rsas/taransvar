@@ -1,6 +1,11 @@
 <?php
 session_start();
-$nRequiredDbVersion=62;	//NOTE! Make sure this line is always number 3 because that's claimed below.
+$nRequiredDbVersion=63;	//NOTE! Make sure this line is always number 3 because that's claimed below.
+
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
 include "dbfunc.php";
 
 $szErrorMessage = "";	//Use it to print message...
@@ -78,21 +83,6 @@ function loggedIn()
 		return 0;		
 	}
 	return 1;
-}
-
-function login()
-{
-	?>
-	<form action="index.php">
-	<table>
-		<tr><td>Email:</td><td><input name="email"></td></tr>
-		<tr><td>Password:</td><td><input type="password" name="pass"></td></tr>
-		<tr><td colspan="2"><input type="submit" name="Submit"><input type="hidden" name="f" value="submitLogin"></td></tr> 
-	<!---------------	<tr><td colspan="2"><a href="index.php?f=sendPass">Send password email</td></tr> 
-		<tr><td colspan="2"><a href="index.php?f=sendPass">Send password email</td></tr> ------->
-	</table>
-	</form>
-	<?php
 }
 
 function getDemo()
@@ -582,6 +572,7 @@ else
 
 if (!isset($_SESSION["userid"]) && (!isset($_GET["f"]) || $_GET["f"] <> "submitLogin"))
 {
+	include "func/login.php";
 	login();
 	return;
 } 

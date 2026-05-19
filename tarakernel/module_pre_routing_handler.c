@@ -491,7 +491,7 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 				    recalcChecksum(pPacket);
 				}
 				else 
-					pr_warn("tarakernel: ********** KEEPING INCOMING TAG *************\n");
+					pr_warn("tarakernel: KEEPING INCOMING TAG\n");
 
 				//When an incoming packet on a Linux system is tagged using the urg_ptr field, often, the package
 			    //still doesn't go through if the urg_ptr field is cleared at the receiver end. Is this because the URG flag is set somewhere?

@@ -38,7 +38,7 @@ sub reportStatus {
 
 	my %json;
 
-	my $sthSetup = $dbh->prepare("select adminIP, nettmask, secondsSinceBoot,  TIMESTAMPDIFF(SECOND, dmesgUpdated, NOW()) AS dmesg, inet_ntoa(globalDb1ip) as Db1, inet_ntoa(globalDb2ip) as Db2, inet_ntoa(globalDb3ip) as Db3 from setup") or die "prepare statement failed: $dbh->errstr()";
+	my $sthSetup = $dbh->prepare("select LPAD(HEX(adminIP), 8, '0') as adminIP, LPAD(HEX(nettmask), 8, '0') as nettmask, secondsSinceBoot, TIMESTAMPDIFF(SECOND, dmesgUpdated, NOW()) AS dmesg, inet_ntoa(globalDb1ip) as Db1, inet_ntoa(globalDb2ip) as Db2, inet_ntoa(globalDb3ip) as Db3 from setup") or die "prepare statement failed: $dbh->errstr()";
 	$sthSetup->execute() or die "execution failed: $sthSetup->errstr()";
 	my $cSetup = $sthSetup->fetchrow_hashref();
 	$sthSetup->finish();
@@ -46,12 +46,21 @@ sub reportStatus {
 	$json{"ip"} = $cSetup->{"adminIP"}+0;
 	$json{"nett"} = $cSetup->{"nettmask"}+0;
 	$json{"boot"} = $cSetup->{"secondsSinceBoot"}+0;
-	$json{"dmesg"} = $cSetup->{"dmesg"};
+	$json{"msg"} = $cSetup->{"dmesg"};
 
-	$json{"link"} = (programRunning("taralink")?"1":0);	
-	$json{"kernel"} = (moduleRunning("tarakernel")?"1":0);
+	$json{"lnk"} = (programRunning("taralink")?"1":0);	
+	$json{"knl"} = (moduleRunning("tarakernel")?"1":0);
 	$json{"cron"} = (programRunning("crontasks.pl")?"1":0);
 
+	chomp(my $line = `df -h / | tail -1`);
+	my @f = split(/\s+/, $line);
+	$json{"df"} = "$f[1] $f[2] $f[3]";
+
+	$json{"ld"} = `cut -d' ' -f1-3 /proc/loadavg`;
+	chomp($json{"ld"});
+
+	$json{"mem"} = `free -h | awk '/Mem:/ {print \$3 "/" \$2}'`;
+	chomp($json{"mem"});
 
 	my $cJson = encode_json(\%json);
 
@@ -63,7 +72,7 @@ sub reportStatus {
 			my $szUrl = "http://$ip/script/statusReport.php?json=".urlencode($cJson);
     		print "$fieldName, $szUrl\n";
 			
-			my $szReply = `wget -q -O - "$szUrl 2>&1"`;			
+			my $szReply = `wget -q -O - "$szUrl" 2>&1`;
 			#chomp $szReply;
 			$szReply =~ s/^\s+|\s+$//g;
 			print "Reply: $szReply\n";
@@ -143,7 +152,7 @@ sub check_dhcpEvent {
 
 		} else {
 			if (!$insert) {
-				$insert = $conn->prepare("insert into unit (mac, ipAddress, hostname, lastSeen) value (UNHEX(?), inet_aton(?), ?, now())");
+				$insert = $conn->prepare("insert into unit (mac, ipAddress, hostname, lastSeen, dhcpClientId) value (UNHEX(?), inet_aton(?), ?, now(), b'0000000')");
 			}
 			$insert->execute(uc($mac), $row->{'yourIp'}, $row->{'hostname'}) or die "execution failed: $sth->errstr()";
 		}
