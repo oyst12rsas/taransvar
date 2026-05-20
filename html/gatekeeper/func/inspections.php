@@ -1,12 +1,15 @@
 <?php
 
-
 function inspections()
 {
 	if (!isAdmin())
 		return;
 
-	$conn = getConnection();
+	inspectionsMenu();
+
+
+
+/*	$conn = getConnection();
 
 	$sql = "SELECT hex(ip) as ip, inet_ntoa(ip) as aip, hex(nettmask) as nettmask, inet_ntoa(nettmask) as anett, handling, active from inspection order by handling, ip";
 	$result = $conn->query($sql);
@@ -37,6 +40,7 @@ function inspections()
 	$conn->close();
 	if (!isAdmin())
 		print '<br><a href="index.php?f=addInspection">Add packet inspection</a>';
+*/
 }
 
 ?>

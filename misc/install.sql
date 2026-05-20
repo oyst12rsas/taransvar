@@ -195,9 +195,14 @@ alter table setup add requireRegistration bit(1) not null default b'0' after hot
 alter table setup add selfRegistration bit(1) not null default b'1' after requireRegistration;
 update setup set dbVersion = 63;
 
+#version 64 (260519)
+alter table syslog add lastSeen timestamp null;
+alter table syslogThreat add lastSeen timestamp null;
+update setup set dbVersion = 64;
+
 
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 64;
+#update setup set dbVersion = 65;
 
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 

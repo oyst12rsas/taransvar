@@ -1,6 +1,6 @@
 <?php
 session_start();
-$nRequiredDbVersion=63;	//NOTE! Make sure this line is always number 3 because that's claimed below.
+$nRequiredDbVersion=64;	//NOTE! Make sure this line is always number 3 because that's claimed below.
 
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
@@ -34,6 +34,13 @@ function isAdmin()
 	}
 	return false;
 }
+
+
+function inspectionsMenu()
+{
+	print '<table><tr><td><a href="index.php?f=syslogThreat">SyslogThreat</a></td><td><a href="index.php?f=hackReports">hackReports</a></td></tr></table>';
+}
+
 
 function printTitle()
 {

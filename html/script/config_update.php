@@ -10,20 +10,11 @@ error_reporting(E_ALL);
 
 //Put this directly into database and process later... e.g in 10 minutes when dhsp leases and conntrack is loaded.... 
 //
+
+require_once "getSenderIp.php";
+
 include "../dbfunc.php";
 include "../script/tagged.php";
-
-function getSenderIp()
-{
-if (!empty($_SERVER['HTTP_CLIENT_IP'])) {
-    $ip = $_SERVER['HTTP_CLIENT_IP'];
-} elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-    $ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
-} else {
-    $ip = $_SERVER['REMOTE_ADDR'];
- }
- return $ip;
-} 
 
 $szFromIp = getSenderIp();
 //if (strlen($szFromIp)<7)	#was <10... 10.0.0.16 is <10 yet normal address...
@@ -51,9 +42,10 @@ if (isset($_GET["f"]))
 			break;
                         
         case "report":
-            {
-                if (!isset($_GET["ip"]) || !isset($_GET["port"]) || (strlen($_GET["ip"]) < 7 && strcmp($_GET["ip"],"::1"))){
-                    echo "(missing params)";
+			//E.g: config_update.php?f=report&ip=10.47.20.1&port=0&wt=sinkhole
+    		{
+				if (!isset($_GET["ip"]) || !isset($_GET["port"]) || (strlen($_GET["ip"]) < 7 && strcmp($_GET["ip"],"::1"))){
+					echo "(missing params)";
                     exit;
                 }
     

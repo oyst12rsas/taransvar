@@ -21,6 +21,32 @@ use lib_net;
 
 use POSIX qw(setsid);
 
+sub getUrl
+{
+    my ($szUrl, %cParams) = @_;
+
+    use URI;
+    use LWP::UserAgent;
+
+    my $ua = LWP::UserAgent->new(
+        timeout => 5
+    );
+
+    my $url = URI->new($szUrl);
+    $url->query_form(%cParams);
+
+    print "URL: $url\n";
+
+    my $response = $ua->get($url);
+
+    if ($response->is_success) {
+        return $response->decoded_content;
+    }
+
+    print "HTTP error: " . $response->status_line . "\n";
+    return "ERROR";
+}
+
 sub urlencode
 {
 	#NOTE! should install liburi-perl and use URI::Escape;, then uri_escape() instead...
@@ -296,11 +322,65 @@ sub get_unit_from_conntrack {
 	return $nUnitId;
 }
 
+sub getRouterIpOf
+{
+	my ($cSourceIp) = @_;
+	my $conn = getConnection();
+	my $szSQL = "SELECT name, ip, inet_ntoa(ip) as aIp, nettmask, inet_ntoa(nettmask) as aNettmask, partnerStatusReceived, BIT_COUNT(nettmask) AS mask_bits FROM partnerRouter R join partner P on P.partnerId = R.partnerId WHERE (inet_aton(?) & nettmask) = (ip & nettmask) ORDER BY mask_bits DESC LIMIT 1";
+	my $sth = $conn->prepare($szSQL);
+	$sth->execute($cSourceIp) or die "execution failed: $sth->errstr()";
+	if (my $rec = $sth->fetchrow_hashref()) {
+			return $rec->{'aIp'};
+	}
+
+	return "";
+}
+
+sub trySendWarningToRouter
+{
+	#asdf
+	my ($row) = @_;
+	print "About to look for the router of $row->{'src'}\n";
+	my $szRouterIp = getRouterIpOf($row->{'src'});
+	if ($szRouterIp ne "") {
+		print "$row->{'src'} belongs to $szRouterIp. Send message.\n";
+		#asdfasdf
+#		my $url = "http://$szRouterIp/script/config_update.php?f=report&ip=".$row->{'src'}."&port=".(defined $row->{'src_port'}?$row->{'src_port'}:0)."&wt=".$row->{'description'};
+		my $url = "http://$szRouterIp/script/config_update.php";
+
+		my %params = (
+		    f    => "report",
+    		ip   => $row->{'src'},
+    		port => defined $row->{'src_port'} ? $row->{'src_port'} : 0,
+    		wt   => $row->{'description'},
+		);
+
+		#my $urlStr = $url."?f=".$params->{'f'}."&ip=".$params['ip']."&port=".$params['port']."&wt=".$params['wt'];
+		#print "$urlStr\n";
+
+		my $szReply = getUrl($url, %params);
+		$szReply = trim($szReply);
+
+		#my $urlStr = $url."?".join ", ", map { "$_=%params{$_}" } keys %params;
+		
+		if ($szReply eq "ok") {
+			print "SUCCESS sending message!\n";
+		} else {
+			print "ERROR SENDING MESSAGE: $szReply\n";
+		}
+
+		#asdfasdf
+	}
+	else {
+		print "Unable to find the router of $row->{'src'}\n";
+	}
+}
+
 sub handle_syslogThreat_record {
 	my ($conn, $row) = @_;
 
-	if (! defined $row->{'protocol'} || ($row->{'protocol'} ne "tcp" && $row->{'protocol'} ne 'udp')) {
-		print "Unknown or unspecified protocol (only tcp and udp allowed). Skipping...\n";
+	if (! defined $row->{'protocol'} || ($row->{'protocol'} ne "tcp" && $row->{'protocol'} ne 'udp' && $row->{'protocol'} ne 'ICMP')) {
+		print "Unknown or unspecified protocol (only tcp, udp and ICMP allowed). Skipping...\n";
 		return;
 	}
 
@@ -321,11 +401,14 @@ sub handle_syslogThreat_record {
 		my $sth = $conn->prepare($szSQL);
 		$sth->execute($nUnitId, $row->{syslogThreatId}) or die "execution failed: $sth->errstr()";
 		$sth->finish;
+		print "Unit found with id $nUnitId. Setting.\n";
 
 		#Mark the unit as seen...
 
 	} else {
 		#print "***** WARNING! $row{target_ip}:$args{target_port} not found by conntrack! Because it's external attacking honeypot I'm port forwarding to? (if so, report to global DB server)\n";
+		trySendWarningToRouter($row);
+
     	print "No conntrack match found.\n";
 		my $szSQL = "update syslogThreat set handled = b'1' where syslogThreatId = ?";
 		my $sth = $conn->prepare($szSQL);
@@ -340,55 +423,85 @@ sub handle_syslogThreat_table
 	#finding unitId for records in syslogThreat by calling conntrack... Should probably also put in 
 	my ($dbh) = @_;
 
-	my $szSQL = "select syslogId, syslogThreatId, src_ip, inet_ntoa(src_ip) as src, src_port, dst_ip, inet_ntoa(dst_ip) as dst, dst_port, protocol, service from syslogThreat where handled is null limit 1000";
+	my $szSQL = "select syslogId, syslogThreatId, src_ip, inet_ntoa(src_ip) as src, src_port, dst_ip, inet_ntoa(dst_ip) as dst, dst_port, protocol, service, description from syslogThreat where handled is null limit 1000";
 	my $sth = $dbh->prepare($szSQL);
 	print "\n\nFinding unhandled syslogThreat records.\n";
 	$sth->execute() or die "execution failed: $sth->errstr()";
 	my @cIDs;
 	my $nFound = 0;
-	
+	my $nSkipped = 0;
+
+	my @cSkipTraffic = (
+    	["10.0.0.255", "10.0.0.4"],
+    	["224.0.0.251", "10.0.0.138"],
+    	["224.0.0.251", "10.0.0.4"],
+		);
+
 	while (my $row = $sth->fetchrow_hashref()) {
 		$nFound++;
-	
-		print_hashref($row);
 
 		my $szLookupIp = $row->{'ipFromA'};
 
-		if (! defined $row->{'service'}) {
-			#print "Service field not set for $row->{'syslogId'} - setting to handled.\n";
-			push @cIDs, $row->{'syslogId'};
+		my $bSkip = 0;
+
+		foreach my $skip (@cSkipTraffic) {
+		    my ($a, $b) = @$skip;
+
+		    if (
+		        ($a eq $row->{'src'} && $b eq $row->{'dst'}) ||
+		        ($b eq $row->{'src'} && $a eq $row->{'dst'})
+    				) {
+        		$bSkip = 1;
+        		last;
+    		}
+		}
+
+		if (!$bSkip) {
+			print_hashref($row);
+		}
+
+		if ($bSkip) {
+			push @cIDs, $row->{'syslogThreatId'};
+			#print "Skipping $row->{'src'} -> $row->{'dst'}\n";
+			$nSkipped++;
 		} else {
-			if ($row->{'service'} eq 'cowrie') {
-				print ("$row->{'src'}:$row->{'src_port'} -> $row->{'dst'}:$row->{'dst_port'}\n");
-				handle_syslogThreat_record($dbh, $row);
+			if (! defined $row->{'service'}) {
+				#print "Service field not set for $row->{'syslogThreatId'} - setting to handled.\n";
+				push @cIDs, $row->{'syslogThreatId'};
 			} else {
-				if ($row->{'service'} eq 'iptable') {
-					print ("iptable found $row->{'src'}:$row->{'src_port'} -> $row->{'dst'}:$row->{'dst_port'} (set to handled)\n");
-					push @cIDs, $row->{'syslogId'};
+				if ($row->{'service'} eq 'cowrie') {
+					print ("$row->{'src'}:$row->{'src_port'} -> $row->{'dst'}:$row->{'dst_port'}\n");
+					handle_syslogThreat_record($dbh, $row);	#Used for both cowrie and iptables for now
 				} else {
-					print "Unknown record found: $row->{'service'}\n";
+					if ($row->{'service'} eq 'iptable' || $row->{'service'} eq 'iptables') {
+						print ("iptables found $row->{'src'}:$row->{'src_port'} -> $row->{'dst'}:$row->{'dst_port'} (set to handled)\n");
+						handle_syslogThreat_record($dbh, $row);	#Used for both cowrie and iptables for now
+						#asdfasdf
+						push @cIDs, $row->{'syslogThreatId'};
+					} else {
+						print "Unknown record found: $row->{'service'}. Setting to handled.\n";
+						push @cIDs, $row->{'syslogThreatId'};
+					}
 				}
 			}
 		}
 	}
 
 	$sth->finish();	
-	$sth = $dbh->prepare("update syslogThreat set handled = b'1' where syslogId = ?");
+	$sth = $dbh->prepare("update syslogThreat set handled = b'1' where syslogThreatId = ?");
 
 	foreach my $nId (@cIDs) {
 		#print "Handle id $nId\n";
 		$sth->execute($nId) or die "execution failed: $sth->errstr()";
 	}
 	$sth->finish();	
-	print "$nFound records handled.\n";
+	print "$nFound records handled. $nSkipped records skipped.\n";
 }
 
 
-sub start_iptables_monitor
+sub check_start_perl_bg_script
 {
-	my $script     = "/root/taransvar/perl/iptables_log_monitor.pl";
-	my $pidfile    = "/root/setup/log/iptables_monitor.pid";
-	my $logfile    = "/root/setup/log/iptables_monitor.log";
+	my ($script, $pidfile, $logfile) = @_;
 
     # Check if already running
     if (-f $pidfile)
@@ -400,7 +513,7 @@ sub start_iptables_monitor
 
         if ($oldpid && kill(0, $oldpid))
         {
-            print "iptables monitor already running (PID $oldpid)\n";
+            print "script already running (PID $oldpid)\n";
             return;
         }
         else
@@ -409,6 +522,10 @@ sub start_iptables_monitor
             unlink $pidfile;
         }
     }
+	else
+	{
+		print "pidfile not found.\n";
+	}
 
     my $pid = fork();
     die "fork failed: $!" unless defined $pid;
@@ -433,6 +550,25 @@ sub start_iptables_monitor
 
     print "Started iptables monitor (PID $pid)\n";
 }
+
+sub start_iptables_monitor
+{
+	my $script     = "/root/taransvar/perl/iptables_log_monitor.pl";
+	my $pidfile    = "/root/setup/log/iptables_monitor.pid";
+	my $logfile    = "/root/setup/log/iptables_monitor.log";
+
+	check_start_perl_bg_script($script, $pidfile, $logfile);
+}
+
+sub start_local_iptables_monitor
+{
+	my $script     = "/root/taransvar/perl/log_iptables_drops.pl";
+	my $pidfile    = "/root/setup/log/local_iptables_monitor.pid";
+	my $logfile    = "/root/setup/log/local_iptables_monitor.log";
+
+	check_start_perl_bg_script($script, $pidfile, $logfile);
+}
+
 
 
 my $nSecondsToSleepBetweenIterations = 5;
@@ -459,8 +595,9 @@ if (!runningAsCron() && !runningBootCheck())	#Run "sudo perl crontasks.pl whatev
 	#Displays a warning in dashboard so don't forget to disable this code...
 
 	print "handle_syslogThreat_table() not yet put in production...\n";
+	start_local_iptables_monitor();
 	#reportStatus($dbh);
-	#handle_syslogThreat_table($dbh);
+	handle_syslogThreat_table($dbh);
 	#check_dhcpEvent($dbh);	
 
 	#print (networkSetupOk()?"Network set up properly":"Failed to set up network!");
@@ -531,6 +668,7 @@ updateGlobalDemo(); #NOTE! Not reflecting the new code where each user may have 
 print "Starting workshopSetup()\n";
 workshopSetup();	#If workshopId is set in dashboard setup, it will register other computers with same workshopId as partners.
 start_iptables_monitor();	#Check if iptables_log_monitor.pl is already running. If not, starts it
+start_local_iptables_monitor();
 print "Starting start_process_dhcpdump()\n";
 start_process_dhcpdump($pSetup->{"internalNic"});	#NOTE! Just making sure dhcp_capture.pl is running..
 reportStatus($dbh);

@@ -11,28 +11,32 @@ function sjekk($field)
 
 function listServerStatus()
 {
+	print "About to list server status.<br>";
 	$conn = getConnection();
 	$sql = "select routerId, partnerStatusReceived as time, inet_ntoa(ip) as ip, status from partnerRouter";
-		$result = $conn->query($sql);
-		if ($result->num_rows > 0) 
+	$result = $conn->query($sql);
+	if ($result->num_rows > 0) 
+	{
+		print "<table><tr><td>IP</td><td>Reported</td><td>Kernel</td><td>Link</td><td>Crontask</td><td>Load<br>(1 5 15min)</td><td>Mem<br>(used tot)</td><td>Disk<br>(tot used free)</td><td>&nbsp;</td></tr>";
+		while ($row = $result->fetch_assoc()) 
 		{
-			print "<table><tr><td>IP</td><td>Reported</td><td>Kernel</td><td>Link</td><td>Load<br>(1 5 15min)</td><td>Mem<br>(used tot)</td><td>Disk<br>(tot used free)</td><td>&nbsp;</td></tr>";
-			while ($row = $result->fetch_assoc()) 
-			{
-				$status = json_decode($row["status"], true);
-				print '<tr><td>'.$row["ip"].'</td><td>'.$row["time"].'</td>';
-				print '<td>'.sjekk($status["knl"]).'</td>';
-				print '<td>'.sjekk($status["lnk"]).'</td>';
-				$szLoad = $status["ld"];
-				print '<td>'.$szLoad.'</td>';
-				$szMem = $status["mem"];
-				print '<td>'.$szMem.'</td>';
-				$szDisk = $status["df"];
-				print '<td>'.$szDisk.'</td>';
-				print '<td><a href="index.php?f=unitsMore&id='.$row["routerId"].'">[More info]</a></td></tr>'; 
-			}
-			print "</table>";
+			$status = json_decode($row["status"], true);
+			print '<tr><td>'.$row["ip"].'</td><td>'.$row["time"].'</td>';
+			print '<td>'.sjekk($status["knl"]).'</td>';
+			print '<td>'.sjekk($status["lnk"]).'</td>';
+			print '<td>'.sjekk($status["cron"]).'</td>';
+			$szLoad = $status["ld"];
+			print '<td>'.$szLoad.'</td>';
+			$szMem = $status["mem"];
+			print '<td>'.$szMem.'</td>';
+			$szDisk = $status["df"];
+			print '<td>'.$szDisk.'</td>';
+			print '<td><a href="index.php?f=unitsMore&id='.$row["routerId"].'">[More info]</a></td></tr>'; 
 		}
+		print "</table>";
+	}
+	else	
+		print "No partner routers found!<br>";
 }
 
 
@@ -42,16 +46,25 @@ function units()
 	if (isAdmin())
 	{
 		//If logged in as admin and this is a DB server, list reported status.
-		print "<b>You're logged in as admin on DB server... So these units have reported status:</b>";
-		$sql = "select adminIP, globalDb1ip, globalDb1ip, globalDb1ip from setup";
+		$sql = "select adminIP, nettmask, globalDb1ip, globalDb1ip, globalDb1ip from setup";
 		$result = $conn->query($sql);
 		if ($result->num_rows > 0) 
 			if ($row = $result->fetch_assoc()) 
 			{
-				if ($row["adminIP"] && ($row["adminIP"] == ($row["globalDb1ip"]?$row["globalDb1ip"]:-1) 
-						or $row["adminIP"] == (isset($row["globalDb2ip"])?$row["globalDb2ip"]:-1) 
-						or $row["adminIP"] == (isset($row["globalDb3ip"])?$row["globalDb3ip"]:-1))) 
+				$adminNett = $row["adminIP"] & $row["nettmask"];
+				/*if ($adminNett == ((isset($row["globalDb1ip"])?$row["globalDb1ip"]:-1) & $row["nettmask"]) 
+						or $adminNett == ((isset($row["globalDb2ip"])?$row["globalDb2ip"]:-1) & $row["nettmask"])
+						or $adminNett == ((isset($row["globalDb3ip"])?$row["globalDb3ip"]:-1) & $row["nettmask"])) */
+				if (($row["adminIP"] == isset($row["globalDb1ip"])?$row["globalDb1ip"]:-1)
+					or ($row["adminIP"] == isset($row["globalDb2ip"])?$row["globalDb2ip"]:-1)
+					or ($row["adminIP"] == isset($row["globalDb3ip"])?$row["globalDb3ip"]:-1)
+					)
+				{
+					print "<b>You're logged in as admin on DB server... So these units have reported status:</b>";
 					listServerStatus();
+				}
+				else
+					print "Admin but not on DB server<br>";
 			}
 	}
 

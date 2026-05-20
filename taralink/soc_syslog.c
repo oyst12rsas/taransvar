@@ -132,6 +132,7 @@ static int extract_kv_string(const char *msg, const char *key, char *out, size_t
 {
     const char *p;
     size_t key_len;
+    printf("Looking for %s\n", key);
 
     if (!msg || !key || !out || out_sz == 0)
         return 0;
@@ -148,6 +149,7 @@ static int extract_kv_string(const char *msg, const char *key, char *out, size_t
 
     memcpy(out, p, key_len);
     out[key_len] = '\0';
+    printf("Found: %s\n", out);
     return 1;
 }
 
@@ -240,10 +242,16 @@ static void copy_trunc(char *dst, size_t dst_sz, const char *src)
 int parse_iptables(const char *msg, struct _AttackEvent *pEv)
 {
     if (!msg || !pEv)
+    {
+        printf ("No msg or pEv\n");
         return 0;
+    }
 
     if (!strstr(msg, "SRC=") || !strstr(msg, "DST="))
+    {
+        printf ("No SRC or DST in %s\n", msg);
         return 0;
+    }
 
     pEv->src_port = -1;
     pEv->dst_port = -1;
@@ -251,6 +259,13 @@ int parse_iptables(const char *msg, struct _AttackEvent *pEv)
     extract_kv_string(msg, "SRC=", pEv->src_ip, sizeof(pEv->src_ip));
     extract_kv_string(msg, "DST=", pEv->dst_ip, sizeof(pEv->dst_ip));
     extract_kv_string(msg, "PROTO=", pEv->protocol, sizeof(pEv->protocol));
+
+    char cFrom[150];
+    char cDesc[150];
+    extract_kv_string(msg, "FROM=", cFrom, sizeof(cFrom));
+    extract_kv_string(msg, "DESC=", cDesc, sizeof(cDesc));
+    snprintf(pEv->cDescription, sizeof(pEv->cDescription), "FROM=%s, DESC=%s", cFrom, cDesc);
+
     extract_kv_int(msg, "SPT=", &pEv->src_port);
     extract_kv_int(msg, "DPT=", &pEv->dst_port);
 
@@ -523,21 +538,64 @@ static void decodeSocSyslog(const char *lpRaw, SOC_SYSLOG_MSG *pOut)
 
 static void printSocSyslogMsg(const SOC_SYSLOG_MSG *pMsg)
 {
+}
+
+
+/* --------------------------------------------------------- */
+/* Main handler                                              */
+/* --------------------------------------------------------- */
+
+void handle_soc_syslogmsg(int soc_fd)
+{
+    char szBuf[MAX_SOC_MSG];
+    struct sockaddr_in srcAddr;
+    socklen_t nSrcLen = sizeof(srcAddr);
+
+    ssize_t nRead = recvfrom(soc_fd,
+                             szBuf,
+                             sizeof(szBuf) - 1,
+                             0,
+                             (struct sockaddr *)&srcAddr,
+                             &nSrcLen);
+
+    if (nRead < 0)
+    {
+        if (errno != EINTR)
+            perror("recvfrom(syslog)");
+        return;
+    }
+
+    szBuf[nRead] = '\0';
+    trimCrlf(szBuf);
+	//printf("Received: %s\n", szBuf);
+
+    SOC_SYSLOG_MSG msg;
+    initSocSyslogMsg(&msg);
+
+    inet_ntop(AF_INET, &srcAddr.sin_addr, msg.szSenderIp, sizeof(msg.szSenderIp));
+    msg.nSenderPort = ntohs(srcAddr.sin_port);
+
+    snprintf(msg.szRaw, sizeof(msg.szRaw), "%s", szBuf);
+
+    decodeSocSyslog(szBuf, &msg);
+
+    printSocSyslogMsg(&msg);
+
 
     struct _AttackEvent ev;
     memset(&ev, 0, sizeof(ev));
 	char *lpIdentifiedAs = NULL;
 
-    if (parse_cisco(pMsg->szMessage, &ev))
+    if (parse_cisco(szBuf, &ev))
 		lpIdentifiedAs = "cisco";
     else 
-        if (parse_fortinet(pMsg->szMessage, &ev))
+        if (parse_fortinet(szBuf, &ev))
 			lpIdentifiedAs = "fortinet";
 		else
-			if (parse_iptables(pMsg->szMessage, &ev))
+			if (parse_iptables(szBuf, &ev))
 				lpIdentifiedAs = "iptables";
             else
-                if (parse_cowrie_JSON(pMsg->szMessage, &ev))
+                if (parse_cowrie_JSON(szBuf, &ev))
     				lpIdentifiedAs = "cowrie";
                 else
     				lpIdentifiedAs = "other";
@@ -564,11 +622,11 @@ static void printSocSyslogMsg(const SOC_SYSLOG_MSG *pMsg)
        	return;
    	}
 
-   	unsigned int ip = inet_addr(pMsg->szSenderIp);   // or your actual value
-	unsigned short port = pMsg->nSenderPort;
+   	unsigned int ip = inet_addr(ev.src_ip);//szSenderIp);   // or your actual value
+	unsigned short port = ev.src_port;//nSenderPort;
    	//unsigned short port = sPort;
    	unsigned int sentByIp = ip;
-   	unsigned long cMsgLen = strlen(pMsg->szRaw);
+   	unsigned long cMsgLen = strlen(szBuf);//ev.szRaw);
 
    	/* ---- BIND ---- */
    	param[0].buffer_type = MYSQL_TYPE_LONG;
@@ -580,8 +638,8 @@ static void printSocSyslogMsg(const SOC_SYSLOG_MSG *pMsg)
    	param[1].is_unsigned = 1;
 
    	param[2].buffer_type   = MYSQL_TYPE_STRING;
-   	param[2].buffer        = (void *)pMsg->szRaw;
-   	param[2].buffer_length = sizeof(pMsg->szRaw);
+   	param[2].buffer        = (void *)szBuf;//ev.szRaw;
+   	param[2].buffer_length = sizeof(szBuf);//ev.szRaw);
    	param[2].length        = &cMsgLen;
 
     /* ---- BIND PARAMS ---- */
@@ -625,7 +683,7 @@ static void printSocSyslogMsg(const SOC_SYSLOG_MSG *pMsg)
 		unsigned int syslogId = mysql_insert_id(conn);
    		//unsigned short port = sPort;
    		unsigned int sentByIp = ip;
-   		unsigned long cMsgLen = strlen(pMsg->szRaw);
+   		unsigned long cMsgLen = strlen(szBuf);//pMsg->szRaw);
 
    		/* ---- BIND ---- */
 		//syslogId
@@ -659,6 +717,8 @@ static void printSocSyslogMsg(const SOC_SYSLOG_MSG *pMsg)
    		param[4].buffer_type = MYSQL_TYPE_LONG;
    		param[4].buffer = &dstIp;
    		param[4].is_unsigned = 1;
+
+        printf("Converted IPs: %s (%u) -> %s (%u)\n", ev.src_ip, srcIp, ev.dst_ip, dstIp);
     
 		//dst_port int unsigned not null,
 		param[5].buffer_type = MYSQL_TYPE_SHORT;
@@ -702,57 +762,17 @@ static void printSocSyslogMsg(const SOC_SYSLOG_MSG *pMsg)
 
    	mysql_close(conn);
 
-    printf("[SOC SYSLOG] From      : %s:%u\n", pMsg->szSenderIp, pMsg->nSenderPort);
-    printf("[SOC SYSLOG] IsSyslog  : %s\n", pMsg->bIsSyslog ? "yes" : "no");
-    printf("[SOC SYSLOG] PRI       : %d\n", pMsg->nPri);
-    printf("[SOC SYSLOG] Facility  : %d\n", pMsg->nFacility);
-    printf("[SOC SYSLOG] Severity  : %d\n", pMsg->nSeverity);
-    printf("[SOC SYSLOG] Hostname  : %s\n", pMsg->szHostname[0] ? pMsg->szHostname : "(none)");
-    printf("[SOC SYSLOG] Tag       : %s\n", pMsg->szTag[0] ? pMsg->szTag : "(none)");
-    printf("[SOC SYSLOG] Message   : %s\n", pMsg->szMessage[0] ? pMsg->szMessage : "(none)");
-    printf("[SOC SYSLOG] Raw       : %s\n", pMsg->szRaw);
-}
+    printf("[SOC SYSLOG] From      : %s:%u\n", ev.src_ip, ev.src_port);//pMsg->szSenderIp, pMsg->nSenderPort);
+    printf("[SOC SYSLOG] IsSyslog  : %s\n", msg.bIsSyslog ? "yes" : "no");
+    printf("[SOC SYSLOG] PRI       : %d\n", msg.nPri);
+    printf("[SOC SYSLOG] Facility  : %d\n", msg.nFacility);
+    printf("[SOC SYSLOG] Severity  : %d\n", msg.nSeverity);
+    printf("[SOC SYSLOG] Hostname  : %s\n", msg.szHostname[0] ? msg.szHostname : "(none)");
+    printf("[SOC SYSLOG] Tag       : %s\n", msg.szTag[0] ? msg.szTag : "(none)");
+    printf("[SOC SYSLOG] Message   : %s\n", msg.szMessage[0] ? msg.szMessage : "(none)");
+    printf("[SOC SYSLOG] Raw       : %s\n", msg.szRaw);
 
 
-/* --------------------------------------------------------- */
-/* Main handler                                              */
-/* --------------------------------------------------------- */
-
-void handle_soc_syslogmsg(int soc_fd)
-{
-    char szBuf[MAX_SOC_MSG];
-    struct sockaddr_in srcAddr;
-    socklen_t nSrcLen = sizeof(srcAddr);
-
-    ssize_t nRead = recvfrom(soc_fd,
-                             szBuf,
-                             sizeof(szBuf) - 1,
-                             0,
-                             (struct sockaddr *)&srcAddr,
-                             &nSrcLen);
-
-    if (nRead < 0)
-    {
-        if (errno != EINTR)
-            perror("recvfrom(syslog)");
-        return;
-    }
-
-    szBuf[nRead] = '\0';
-    trimCrlf(szBuf);
-	//printf("Received: %s\n", szBuf);
-
-    SOC_SYSLOG_MSG msg;
-    initSocSyslogMsg(&msg);
-
-    inet_ntop(AF_INET, &srcAddr.sin_addr, msg.szSenderIp, sizeof(msg.szSenderIp));
-    msg.nSenderPort = ntohs(srcAddr.sin_port);
-
-    snprintf(msg.szRaw, sizeof(msg.szRaw), "%s", szBuf);
-
-    decodeSocSyslog(szBuf, &msg);
-
-    printSocSyslogMsg(&msg);
 
     /*
      * Hook 1: Save to DB

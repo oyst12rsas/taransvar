@@ -829,13 +829,15 @@ int main(void)
     //Later add
     //int syslog_tcp_fd = create_tcp_listener(SYSLOG_TCP_PORT);
     //int syslog_tls_fd = create_tcp_listener(SYSLOG_TLS_PORT);   /* later wrap with TLS */
-
-    if (nl_fd < 0 || udp_fd < 0) {
+    
+    if (nl_fd < 0 || udp_fd < 0 || soc_fd < 0) {
         if (nl_fd >= 0) close(nl_fd);
         if (udp_fd >= 0) close(udp_fd);
+        if (soc_fd >= 0) close(soc_fd);
+        printf("Unable to open sockets.. Did you forget sudo? Aborting..\n");
         return 1;
     }
-    
+
     const char *text = "hello kernel";
 
     int rc = send_to_kernel(nl_fd, text, strlen(text) + 1);

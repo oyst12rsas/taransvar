@@ -1,5 +1,5 @@
-
-
+#!/usr/bin/perl
+#Receives iptables log messages to UDP port 5551
 use strict;
 use warnings;
 use IO::Socket::INET;

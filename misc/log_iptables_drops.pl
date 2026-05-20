@@ -2,6 +2,8 @@
 use strict;
 use warnings;
 use DBI;
+use lib ('/root/taransvar/perl');
+use func;	#NOTE! See comment above regarding lib..
 
 #log_iptables_drops.pl (started by crontab)
 
