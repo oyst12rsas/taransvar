@@ -2511,13 +2511,8 @@ function getLocationInfo($szIP)
 	//sample US IP: 12.215.42.19
 	$url = "http://api.hostip.info/get_html.php?ip=$szIP"; 
 	//print "$url<br><br>";
-	$ch = curl_init($url);
-	curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-	curl_setopt($ch, CURLOPT_BINARYTRANSFER, true);
-	curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, FALSE);
-	curl_setopt($ch, CURLOPT_HTTPHEADER, array('Host: api.hostip.info'));
-	$output = curl_exec($ch);
-	curl_close($ch); 	
+    require_once "../script/getUrl.php";
+    $output = getUrl($url);
 	return $output;
 }	
 

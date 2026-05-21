@@ -11,16 +11,19 @@ error_reporting(E_ALL);
 //Put this directly into database and process later... e.g in 10 minutes when dhsp leases and conntrack is loaded.... 
 //
 
-require_once "getSenderIp.php";
+//require_once "getSenderIp.php";
 
 include "../dbfunc.php";
+include "../taraLib.php";
 include "../script/tagged.php";
 
 $szFromIp = getSenderIp();
 //if (strlen($szFromIp)<7)	#was <10... 10.0.0.16 is <10 yet normal address...
 	//$szFromIp = "127.0.0.1";
 //	$szFromIp = "192.168.39.160";
-	
+
+print "F = ".$_GET["f"]."<br>";
+
 $nFromPort = $_SERVER['REMOTE_PORT'];
 $szOurId = "";
 
@@ -69,8 +72,29 @@ if (isset($_GET["f"]))
 	        	$szSQL = "insert into hackReport (ip, port, partnerIp, partnerPort, status, sentByIp, ipOwnerId) values (inet_aton(?), ?, inet_aton(?), ?, ?, inet_aton(?), ?)";
 
     	        $stmt = $conn->prepare($szSQL);
-        	    $stmt->bind_param("sisisis", $_GET["ip"], $_GET["port"], $szFromIp, $nFromPort, $_GET["wt"], $szFromIp, $_GET["ourid"]); 
-            	$stmt->execute();
+
+                $ip       = $_GET["ip"];
+                $port     = (int)$_GET["port"];
+                $what     = isset($_GET["wt"]) ? $_GET["wt"] : "hack";
+                $ourid    = isset($_GET["ourid"]) ? (int)$_GET["ourid"] : 0;
+                $fromPort = (int)$nFromPort;
+
+                $szSQL = "insert into hackReport
+                    (ip, port, partnerIp, partnerPort, status, sentByIp, ipOwnerId)
+                    values (inet_aton(?), ?, inet_aton(?), ?, ?, inet_aton(?), ?)";
+
+                $stmt = $conn->prepare($szSQL);
+                $stmt->bind_param(
+                    "sisissi",
+                    $ip,
+                    $port,
+                    $szFromIp,
+                    $fromPort,
+                    $what,
+                    $szFromIp,
+                    $ourid
+                );
+                $stmt->execute();
 
 				//$result = $conn->query($sql) or die("(error storing)");
                 print "ok";
@@ -152,18 +176,19 @@ if (isset($_GET["f"]))
 	        	$conn = getConnection();
 	            //print "$sql";
 	            $stmt = $conn->prepare($sql);
-                        	$stmt->bind_param("s", $_GET["ip"]); 
-                        	$stmt->execute();
-                        	print "ok";
-                        	exit;
-                        }
-                        else
-                        {
-                        	print "ip parameter not set..";
-                        	print "ok";
-                        	exit;
-                        }
-                }
+                $szGetIp = $_GET["ip"];
+                $stmt->bind_param("s", $szGetIp); 
+                $stmt->execute();
+                print "ok";
+                exit;
+            }
+            else
+            {
+                print "ip parameter not set..";
+                print "ok";
+                exit;
+            }
+        }
                 
         case "partner":
         {

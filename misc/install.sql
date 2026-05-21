@@ -200,9 +200,16 @@ alter table syslog add lastSeen timestamp null;
 alter table syslogThreat add lastSeen timestamp null;
 update setup set dbVersion = 64;
 
+#version 65 (260521)
+alter table partnerRouter add showToAdminsOnly bit(1) not null default b'0' after statusOk;
+alter table user add lastLogin timestamp null;
+alter table user add loginFailsSinceSuccess int unsigned not null default 0;
+alter table user add lastLoginIp int unsigned null;
+alter table user add loginFailReportedTime timestamp null;
+update setup set dbVersion = 65;
 
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 65;
+#update setup set dbVersion = 66;
 
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 

@@ -17,6 +17,9 @@ function login()
 		if ($row["last1Minute"]+0 > 5 || $row["last5Minutes"]+0 > 10)
 		{
 			print "Too many failing login attempts lately. Please try again in few minutes";
+			$result->free();
+
+			checkIfTooManyLoginAttemptFromIp(0);
 			return;
 		}
 	}

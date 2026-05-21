@@ -22,14 +22,14 @@ function listServerStatus()
 		{
 			$status = json_decode($row["status"], true);
 			print '<tr><td>'.$row["ip"].'</td><td>'.$row["time"].'</td>';
-			print '<td>'.sjekk($status["knl"]).'</td>';
-			print '<td>'.sjekk($status["lnk"]).'</td>';
-			print '<td>'.sjekk($status["cron"]).'</td>';
-			$szLoad = $status["ld"];
+			print '<td>'.(isset($status)?sjekk($status["knl"]):"??").'</td>';
+			print '<td>'.(isset($status)?sjekk($status["lnk"]):"??").'</td>';
+			print '<td>'.(isset($status)?sjekk($status["cron"]):"??").'</td>';
+ 			$szLoad = isset($status)?$status["ld"]:"??";
 			print '<td>'.$szLoad.'</td>';
-			$szMem = $status["mem"];
+ 			$szMem = isset($status)?$status["mem"]:"??";
 			print '<td>'.$szMem.'</td>';
-			$szDisk = $status["df"];
+ 			$szDisk = isset($status)?$status["df"]:"??";
 			print '<td>'.$szDisk.'</td>';
 			print '<td><a href="index.php?f=unitsMore&id='.$row["routerId"].'">[More info]</a></td></tr>'; 
 		}

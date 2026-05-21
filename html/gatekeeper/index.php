@@ -1,12 +1,14 @@
 <?php
 session_start();
-$nRequiredDbVersion=64;	//NOTE! Make sure this line is always number 3 because that's claimed below.
+$nRequiredDbVersion=65;	//NOTE! Make sure this line is always number 3 because that's claimed below.
 
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
 include "dbfunc.php";
+//require_once "../script/getSenderIp.php";
+include "../taraLib.php";
 
 $szErrorMessage = "";	//Use it to print message...
 
@@ -114,19 +116,6 @@ function getDemo()
 	else
 		return 0;
 }
-
-function getSenderIp() 
-{
-	if (!empty($_SERVER['HTTP_CLIENT_IP'])) {
-		$ip = $_SERVER['HTTP_CLIENT_IP'];
-	} elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) 
-	{
-    		$ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
-	} else {
-    		$ip = $_SERVER['REMOTE_ADDR'];
- 	}
- 	return $ip;
-} 
 
 $demoRow = getDemo();
 

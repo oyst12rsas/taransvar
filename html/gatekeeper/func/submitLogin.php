@@ -2,14 +2,15 @@
 
 function loginAttempt($username, $password)
 {
-	print "About to log..<br>";
+	//print "About to log..<br>";
 	//include "../script/tagged.php";
 	$szSQL = "insert into loginAttempt(ip, username, password) values(inet_aton(?), ?, ?)";
-	print "$szSQL<br>";
+	//print "$szSQL<br>";
 	$conn = getConnection();
 	$stmt = $conn->prepare($szSQL);
-	print "Prepared...<br>";
+	require_once "../script/getSenderIp.php";
 	$szIp = getSenderIp();
+	//print "Prepared...($szIp)<br>";
 	//NOTE! Should check if just registered first to exclude resubmitting by error
 	$stmt->bind_param("sss", $szIp, $username, $password);
 	$stmt->execute();
@@ -17,11 +18,12 @@ function loginAttempt($username, $password)
 
 function submitLogin()
 {
-	//print "Trying to login... User: ".$_GET["email"].", pass: ".$_GET["pass"]."<br>";
-	$szSQL = "select userId, password from user where username = ?";
+	$szUserName = $_GET["email"];
+	//print "Trying to login... User: ".$szUserName.", pass: ".$_GET["pass"]."<br>";
+	$szSQL = "select userId, password, loginFailsSinceSuccess, loginFailReportedTime from user where username = ?";
 	$conn = getConnection();
 	$stmt = $conn->prepare($szSQL);
-	$stmt->bind_param("s", $_GET["email"]);
+	$stmt->bind_param("s", $szUserName);
 	$stmt->execute();
 	$result = $stmt->get_result(); // get the mysqli result
 	if ($result)
@@ -30,16 +32,43 @@ function submitLogin()
 		$row = 0;
 	if ($row)
 	{
+		$nLoginFailsSinceSuccess = $row["loginFailsSinceSuccess"]+0;
+		$szLoginFailReportedTime = $row["loginFailReportedTime"];
+
 		if ($row["password"] == $_GET["pass"])
 		{
 			print "WELCOME! You are logged in.";
 			$_SESSION["userid"] = $row["userId"];
 			$_SESSION["hold"] = 0;	//Otherwise hold might be default on in Log window...
+			//require_once "../script/getSenderIp.php";
+			$szSenderIp = getSenderIp();
+			$szSQL = "update user set lastLogin = now(), lastLoginIp = inet_aton(?), loginFailsSinceSuccess = 0 where username = ?";
+			$stmt = $conn->prepare($szSQL);
+			$stmt->bind_param("ss", $szSenderIp, $szUserName);
+			$stmt->execute();
 		}
 		else
 		{
-			print "Error in user name or password. ";
-			loginAttempt($_GET["email"], $_GET["pass"]);
+			print "Error in user name or password.<br>";
+			loginAttempt($szUserName, $_GET["pass"]);
+
+			$szSQL = "update user set loginFailsSinceSuccess = loginFailsSinceSuccess + 1 where username = ?";
+			$stmt = $conn->prepare($szSQL);
+			$stmt->bind_param("s", $szUserName);
+			$stmt->execute();
+
+			if ($nLoginFailsSinceSuccess > 10 && !isset($szLoginFailReportedTime))
+			{
+				//Report this user to partnering router...
+				//require_once "../script/reportHacking.php";
+				reportHacking("$nLoginFailsSinceSuccess failing attempts to log into web server");
+				$szSQL = "update user set loginFailReportedTime = now() where username = ?";
+				$stmt = $conn->prepare($szSQL);
+				$stmt->bind_param("s", $szUserName);
+				$stmt->execute();
+			}
+
+			include "login.php";
 			login();
 		}
 	}
@@ -48,7 +77,7 @@ function submitLogin()
 		$szSQL = "select CAST(requireRegistration AS UNSIGNED) as requireRegistration, CAST(selfRegistration AS UNSIGNED) as selfRegistration from setup limit 1";
 		$conn = getConnection();
 		$stmt = $conn->prepare($szSQL);
-		//$stmt->bind_param("s", $_GET["email"]);
+		//$stmt->bind_param("s", $szUserName);
 		$stmt->execute();
 		$result = $stmt->get_result(); // get the mysqli result
 		if ($result)
@@ -81,7 +110,7 @@ function submitLogin()
 
 			$szSQL = "insert into user(username, password, isAdmin) values (?, ?, b'".$bIsAdmin."')";
 			$stmt = $conn->prepare($szSQL);
-			$stmt->bind_param("ss", $_GET["email"], $_GET["pass"]);
+			$stmt->bind_param("ss", $szUserName, $_GET["pass"]);
 			$stmt->execute();
 			$_SESSION["userid"] = last_insert_id($conn);
 			if ($bIsAdmin)
@@ -92,10 +121,12 @@ function submitLogin()
 		else
 			{
 				print "Wrong password or user does not exist (about to log..)!<br>";
-				loginAttempt($_GET["email"], $_GET["pass"]);
+				loginAttempt($szUserName, $_GET["pass"]);
+				checkIfTooManyLoginAttemptFromIp(0);
 			}
 	}
 	$conn->close();
 }
+
 
 ?>

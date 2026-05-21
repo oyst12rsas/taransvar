@@ -100,6 +100,46 @@ sub miscDir {
 	return "./";	#Do this better than assume current dir...
 }
 
+sub checkLibInstalled {
+    my ($cmd, $expectedText, $install, $restartCmd) = @_;
+
+    my $output = `$cmd 2>&1`;
+    my $exit   = $? >> 8;
+
+    #print "\nCMD: $cmd\n";
+    #print "Exit: $exit\n";
+    #print "Output:\n$output\n";
+
+    if ($output =~ /\Q$expectedText\E/) {
+     #   print "[OK] Found $expectedText\n";
+        return 1;
+    }
+
+    print "[MISSING] $expectedText not found\n";
+    print "Install with:\n";
+	print "sudo apt update\n";
+    print "sudo apt install $install\n";
+
+    if ($restartCmd) {
+        print "Then run:\n";
+        print "sudo $restartCmd\n";
+    }
+
+    return 0;
+}
+
+if (!checkLibInstalled("php -m | grep curl", "curl", "php-curl", "systemctl restart apache2")
+) {
+    print "Do you want to quit to install? (y/n): ";
+    
+    my $answer = <STDIN>;
+    chomp $answer;
+
+    if ($answer =~ /^y/i) {
+		exit;
+	}
+}
+
 print "Assuming you compiled from taransvar/misc, you might want to:\nsudo cp -r ../html/ /var/www\nsudo cp *.* /root/taransvar/perl\n\nTo run in taralink in background: sudo perl compile.pl bg\n\n";
 
 my $proc = "taralink";
