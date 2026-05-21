@@ -22,7 +22,7 @@ $szFromIp = getSenderIp();
 	//$szFromIp = "127.0.0.1";
 //	$szFromIp = "192.168.39.160";
 
-print "F = ".$_GET["f"]."<br>";
+//print "F = ".$_GET["f"]."<br>";
 
 $nFromPort = $_SERVER['REMOTE_PORT'];
 $szOurId = "";
@@ -53,7 +53,7 @@ if (isset($_GET["f"]))
                 }
     
 				if(!filter_var($_GET["ip"], FILTER_VALIDATE_IP)){
-				    echo '(invalid ip: '.$ip.')';
+                    echo '(invalid ip: '.$_GET["ip"].')';                    
 					exit;
                 }
 
