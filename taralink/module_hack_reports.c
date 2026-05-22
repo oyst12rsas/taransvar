@@ -14,40 +14,45 @@ void sendToGlogalDbServers(_GlobalServers *cGlobalDb, char *szParams, uint32_t n
     	//char *lpGlobalDbIp; //No idea why this isn't working: szGlobalDb[n];
     	char *lpGlobalDbIp = cGlobalDb->ip[n];
 
-		struct in_addr addr;
-		uint32_t nGlobalDbIp;
-
-		if (inet_aton(lpGlobalDbIp, &addr)) {
-			nGlobalDbIp = addr.s_addr;
-    		// success
-		} else {
-    		// invalid IP
-			nGlobalDbIp = 0;
-			printf("************************* Invalid ip: %s (skipping)\n", lpGlobalDbIp);
-			continue;
-		}
-
-		//if (nGlobalDbIp != nMyIp)	- for some reason these are different... didn't debug, using strings instead...
-		if (strcmp(lpGlobalDbIp, cMyIp))
+		if (strlen(lpGlobalDbIp))
 		{
-	    	if (lpGlobalDbIp && strlen(lpGlobalDbIp) > 7)
-    		{
-				printf("About to send to global DB server: %s (me: %s)\n", lpGlobalDbIp, cMyIp);
-				char szUrl[255];
-				char szWgetBuff[2000];
-				sprintf(szUrl, "http://%s/script/%s", lpGlobalDbIp, szParams);
-				*szWgetBuff = 0;
-				printf("Sending request: %s\n", szUrl);
-				wget(szUrl, szWgetBuff, sizeof(szWgetBuff));  //Using global static buffers because reply doesn't come immediately.
-    		} else {
-    			char szBuf[256];
-    			if (lpGlobalDbIp && *lpGlobalDbIp)
-    				printf("****** Skipping wrong IP address for global DB server: %s\n", lpGlobalDbIp);
-      			//addWarningRecord(conn, szBuf);
+			struct in_addr addr;
+			uint32_t nGlobalDbIp;
+
+			if (inet_aton(lpGlobalDbIp, &addr)) {
+				nGlobalDbIp = addr.s_addr;
+	    		// success
+			} else {
+    			// invalid IP
+				nGlobalDbIp = 0;
+				printf("************************* Invalid ip: %s (skipping)\n", lpGlobalDbIp);
+			}
+
+			if (nGlobalDbIp)
+			{
+				//if (nGlobalDbIp != nMyIp)	- for some reason these are different... didn't debug, using strings instead...
+				if (strcmp(lpGlobalDbIp, cMyIp))
+				{
+	    			if (lpGlobalDbIp && strlen(lpGlobalDbIp) > 7)
+	    			{
+						printf("About to send to global DB server: %s (me: %s)\n", lpGlobalDbIp, cMyIp);
+						char szUrl[255];
+						char szWgetBuff[2000];
+						sprintf(szUrl, "http://%s/script/%s", lpGlobalDbIp, szParams);
+						*szWgetBuff = 0;
+						printf("Sending request: %s\n", szUrl);
+						wget(szUrl, szWgetBuff, sizeof(szWgetBuff));  //Using global static buffers because reply doesn't come immediately.
+	    			} else {
+    					char szBuf[256];
+	    				if (lpGlobalDbIp && *lpGlobalDbIp)
+    						printf("****** Skipping wrong IP address for global DB server: %s\n", lpGlobalDbIp);
+      					//addWarningRecord(conn, szBuf);
+					}
+				}
+				else
+					printf("******** WARNING ******** Skipping sending to myself: %s\n", lpGlobalDbIp);
 			}
 		}
-		else
-			printf("******** WARNING ******** Skipping sending to myself: %s\n", lpGlobalDbIp);
 	}
 }
 
@@ -86,6 +91,8 @@ void checkHackReports()
 	MYSQL *conn, *updateConn, *lookupConn, *localUpdate;
 	MYSQL_RES *res;
 	MYSQL_ROW row;
+
+	char *lpHackReportStatus = "updated";
 
 	//printf("About to check hack reports\n");
 
@@ -147,7 +154,7 @@ void checkHackReports()
             continue;
 	    }
 	        
-		printf("Hack report %s, %s %s:%s, sent by: %s, count: %s\n", row[0], row[4], row[3], row[2], row[6], row[7]);
+		printf("Hack report %s, %s %s:%s, sent by: %s, count: %s\n", row[0], row[4], row[3], row[2], row[7], row[6]);
 
 		if (updateConn == NULL)
 			updateConn = getConnection();
@@ -165,7 +172,7 @@ void checkHackReports()
 			{
 				//Child unit without NAT
 				sprintf(szSQL, "select U.unitId, infectionId from unit U left outer join internalInfections I on I.unitId = U.unitId where ipAddress = %d  order by infectionId desc, U.unitId desc", nNumericIp);
-				printf ("SQL (system thinks is local unit with NAT?? Maybe report from partner that threat info changed?): %s\n", szSQL);
+				printf ("System thinks it's local unit without NAT. Maybe report from partner that threat info changed?):\n%s\n", szSQL);
 				if (mysql_query(updateConn, szSQL)) {
 					fprintf(stderr, "****** ERROR ***** While finding port assignment: %s\n", mysql_error(updateConn));
 					return;
@@ -236,6 +243,7 @@ void checkHackReports()
 				//addresses that will be sent to tarakernel and be subject to tagging and blocking). 
 				//sprintf(cSQL, "update internalInfections set unitId = %s, lastSeen = now(), active = 1, handled = null where infectionId = %s", lookupRow[2], lookupRow2[0]);
 				sprintf(cSQL, "update internalInfections set unitId = %d, lastSeen = now() where infectionId = %d", nUnitId, nInfectionId);
+				lpHackReportStatus = "infection->lastSeen updated";
 				printf("Already in internalInfections, update it (NOTE! Was setting to active - which may be a problem...).\n");                                          
 						
 				if (mysql_query(localUpdate, cSQL)) {
@@ -248,6 +256,7 @@ void checkHackReports()
 				//This IP is not yet registered in internalInfections. Put it there.
 				//(those are the IP addresses that will be sent to tarakernel and be subject to tagging and blocking).
 				sprintf(cSQL, "insert into internalInfections (ip, nettmask, status, unitId) values (%d, inet_aton('255.255.255.255'), 'firsttime', %d)", nNumericIp, nUnitId);
+				lpHackReportStatus = "Infection registered";
 				printf("New unit not yet registered as infected. Inserted now.\n");                                          
 				if (mysql_query(localUpdate, cSQL)) {
 					fprintf(stderr, "**** ERROR **** While inserting internalInfections: %s\n", mysql_error(localUpdate));
@@ -269,7 +278,7 @@ void checkHackReports()
 				
 			//*************** Send message to global DB servers that one of our units reported infected 
 			char szParams[200];
-			sprintf(szParams, "script/config_update.php?f=confession&ip=%s&port=%s&ourid=%d", row[3], row[2], nUnitId);
+			sprintf(szParams, "config_update.php?f=confession&ip=%s&port=%s&ourid=%d", row[3], row[2], nUnitId);
 			sendToGlogalDbServers(&cGlobalDb, szParams, nMyIp, cMyIp);
 
 			sprintf(cSQL, "update hackReport set sentGlobalDB = now(), status = concat(status, '(confessed)') where reportId = %d", atoi(row[0]));

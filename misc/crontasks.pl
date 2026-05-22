@@ -594,10 +594,7 @@ if (!runningAsCron() && !runningBootCheck())	#Run "sudo perl crontasks.pl whatev
 	#  That way you can check any debug code without the cron job distrubing the process.
 	#Displays a warning in dashboard so don't forget to disable this code...
 
-	print "handle_syslogThreat_table() not yet put in production...\n";
-	start_local_iptables_monitor();
 	#reportStatus($dbh);
-	handle_syslogThreat_table($dbh);
 	#check_dhcpEvent($dbh);	
 
 	#print (networkSetupOk()?"Network set up properly":"Failed to set up network!");
@@ -672,6 +669,7 @@ start_local_iptables_monitor();
 print "Starting start_process_dhcpdump()\n";
 start_process_dhcpdump($pSetup->{"internalNic"});	#NOTE! Just making sure dhcp_capture.pl is running..
 reportStatus($dbh);
+handle_syslogThreat_table($dbh);
 
 #handleRequestsForDmsg();
 

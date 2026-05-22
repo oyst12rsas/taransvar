@@ -26,17 +26,33 @@ function getPartnerRouterOf($szIp)
     }
 }
 
-function getUrl($url)
+function getUrl($baseUrl, $params = [])
 {
-	//*************************** Try function getUrl() instead of curl or wget??
-	$ch = curl_init($url);
-	curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-	curl_setopt($ch, CURLOPT_BINARYTRANSFER, true);
-	curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, FALSE);
-	curl_setopt($ch, CURLOPT_HTTPHEADER, array('Host: api.hostip.info'));
-	$output = curl_exec($ch);
-	curl_close($ch); 	
-	return $output;
+    if (!empty($params)) {
+        $baseUrl .= '?' . http_build_query($params);
+    }
+
+    $ch = curl_init($baseUrl);
+
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_CONNECTTIMEOUT => 3,
+        CURLOPT_TIMEOUT        => 10,
+    ]);
+
+    $output = curl_exec($ch);
+
+    if ($output === false) {
+        $err = curl_error($ch);
+        curl_close($ch);
+        return "CURL ERROR: $err";
+    }
+
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    return "HTTP $httpCode\n$output";
 }
 
 function reportHacking($szMsg)
@@ -44,12 +60,21 @@ function reportHacking($szMsg)
 	require_once "../script/getUrl.php";
 	require_once "../script/getSenderIp.php";
 	$szSenderIp = getSenderIp();
+	$nFromPort = $_SERVER['REMOTE_PORT'];
+
+	$cParamArray = 	[
+					    "f"    => "report",
+    					"ip"   => $szSenderIp,
+    					"port" => $nFromPort,
+    					"wt"   => $szMsg,
+					];
+
 	$conn = getConnection();
 
 	if (strcmp($szSenderIp, "127.0.0.1"))
 	{
-		$nFromPort = $_SERVER['REMOTE_PORT'];
-		$urlTemplate = "http://[URL_HERE]/script/config_update.php?f=report&ip=".$szSenderIp."&port=".$nFromPort."&wt=".$szMsg;
+		print "<br>**** WARNING *** Trying to log in too many times may cause problems logging in elsewhere as well!";
+		//$urlTemplate = "http://[URL_HERE]/script/config_update.php?f=report&ip=".$szSenderIp."&port=".$nFromPort."&wt=".$szMsg;
 
 		$szSQL = "select inet_ntoa(globalDb1ip) as db1, inet_ntoa(globalDb2ip) as db2, inet_ntoa(globalDb3ip) as db3 from setup";
 		$stmt = $conn->prepare($szSQL);
@@ -66,10 +91,13 @@ function reportHacking($szMsg)
 
 					if ($szDbIp !== 0)
 					{
-						$szUrl = str_replace("[URL_HERE]", $szDbIp, $urlTemplate);
-						print "About to send: $szUrl<br>";
-						$szReply = getUrl($szUrl);
-						print "Reply from DB server: $szDbIp: $szReply<br>";
+						$url = "http:$szDbIp/script/config_update.php";
+						//print "About to send: $url<br>";
+
+						$szReply = getUrl($url, $cParamArray);
+
+						//$szReply = getUrl($szUrl);
+						//print "Reply from DB server: $szDbIp: $szReply<br>";
 					}
 				}	
 			}
@@ -78,10 +106,11 @@ function reportHacking($szMsg)
 		$szRouterIp = getPartnerRouterOf($szSenderIp);
 		if (isset($szRouterIp) && strcmp($szRouterIp, "0"))
 		{
-			$szUrl = str_replace("[URL_HERE]", $szRouterIp, $urlTemplate);
-			print "About to send: $szUrl<br>";
-			$szReply = getUrl($szUrl);
-			print "Reply from router: $szRouterIp: $szReply<br>";
+			//$szUrl = str_replace("[URL_HERE]", $szRouterIp, $urlTemplate);
+			$url = "http://$szRouterIp/script/config_update.php";
+			//print "About to send: $url<br>";
+			$szReply = getUrl($url, $cParamArray);
+			//print "Reply from router: $szRouterIp: $szReply<br>";
 		}
 	}
 	else
@@ -118,7 +147,7 @@ function checkIfTooManyLoginAttemptFromIp($szIp)
 		$rec = $result->fetch_assoc();
 		if ($rec)
 		{
-			print "Lately from this IP: 1 min: ".$rec["last1Minute"].", 5min: ".$rec["last5Minutes"]."<br>";
+			//print "Lately from this IP: 1 min: ".$rec["last1Minute"].", 5min: ".$rec["last5Minutes"]."<br>";
 
 			if ($rec["last1Minute"]+0 > 5 || $rec["last5Minutes"]+0 > 10)
 			{

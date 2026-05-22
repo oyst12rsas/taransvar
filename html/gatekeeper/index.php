@@ -1,6 +1,6 @@
 <?php
 session_start();
-$nRequiredDbVersion=65;	//NOTE! Make sure this line is always number 3 because that's claimed below.
+$nRequiredDbVersion=66;	//NOTE! Make sure this line is always number 3 because that's claimed below.
 
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
@@ -195,7 +195,9 @@ else
         else
 	        $szBackgroundImage = "server.jpeg";
 ?>
-<html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
 <style>
 
 .center {
@@ -254,29 +256,27 @@ td {
     } 
 
 </style>
-<head>
+<script>
+	function pageLoader()
+	{
+		//if (typeof szUpdateRoutine !== 'undefined') {
+		//now always init..
+			initUpdater();
+		//}
+	}
+</script>
+<script type="text/javascript" src="lib.js"></script>
+<script type="text/javascript" src="lib2.js"></script>
+<script type="text/javascript" src="std.js"></script>
+<script type="text/javascript" src="gatekeeper.js"></script>
+<script>
+var cJsonParam = new Object;
+</script>
 <title><?php 
 	printTitle();
 ?></title>
 </head>
-<script>
-	function pageLoader()
-	{
-		if (typeof szUpdateRoutine !== 'undefined') {
-			initUpdater();
-		}
-	}
-</script>
 <body onload="pageLoader()">
-<script type="text/javascript" src="lib.js" /></script>
-<script type="text/javascript" src="lib2.js" /></script>
-<script type="text/javascript" src="std.js" /></script>
-<script type="text/javascript" src="gatekeeper.js" /></script>
-<script>
-var cJsonParam = new Object;
-</script>
-
-
 <table class="center"><tr><td bgcolor="#AAB396">
 <?php
 
@@ -284,9 +284,8 @@ function showMenu()
 { 
 global $setupRow;
 ?>
-<h1><?php 
-	printTitle();
-?></h1>
+<h1 style="position:relative;"><?php printTitle(); ?>
+	 <div id="tagStatus" style="position:absolute; right:0; top:0; font-size:12px;">&nbsp;</div></h1>
 <table>
 <tr>
 <td bgcolor="white"><a href="index.php?f=infections">Infection</a></td>
@@ -415,30 +414,30 @@ function updateDnsInfo()
 
 function editDescription()
 {
-        if (isset($_GET["submit"]))
-        {
-                print "Supposed to save....<br><br>";
-                $szSQL = "update unit set description = ? where unitId = ?";     
-               	$conn = getConnection();
+    if (isset($_GET["submit"]))
+    {
+        print "Supposed to save....<br><br>";
+        $szSQL = "update unit set description = ? where unitId = ?";     
+        $conn = getConnection();
 		$stmt = $conn->prepare($szSQL);
 		$stmt->bind_param("si", $_GET["desc"], $_GET["id"]); 
-	        $stmt->execute();
+	    $stmt->execute();
                	
-               	//print "$szSQL<br>";
-        	//$result = $conn->query($szSQL);
-        	print "<a href=\"index.php?f=units\">Go back to units</a>";
-        	return;
-        }
-        ?>
-        <h2>Register new description</h2>
-        <form action="index.php">
-        <table>
+       	//print "$szSQL<br>";
+        //$result = $conn->query($szSQL);
+    	print "<a href=\"index.php?f=units\">Go back to units</a>";
+    	return;
+	}
+    ?>
+    <h2>Register new description</h2>
+    <form action="index.php">
+    <table>
         <tr><td>New description</td><td><input name="desc"></td></tr>
         <tr><td>&nbsp;</td><td><input type="submit" name="submit"><input type="hidden" name="f" value="edtDesc"><input type="hidden" name="id" value="<?php print $_GET["id"]; ?>"></td></tr>
-        </table>
-        </form>
+    </table>
+	</form>
         
-        <?php
+    <?php
 }
 
 
@@ -570,7 +569,8 @@ if (!isset($_SESSION["userid"]) && (!isset($_GET["f"]) || $_GET["f"] <> "submitL
 {
 	include "func/login.php";
 	login();
-	return;
+	unset($_GET["f"]);
+	//return;
 } 
 
 if (isset($_GET['f']))
@@ -624,4 +624,4 @@ if (isset($_GET['f']))
 </td></tr></table>
 
 </body>
-<html>
+</html>

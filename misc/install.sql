@@ -208,8 +208,14 @@ alter table user add lastLoginIp int unsigned null;
 alter table user add loginFailReportedTime timestamp null;
 update setup set dbVersion = 65;
 
+#version 66 (260522)
+alter table hackReport add count int unsigned not null default 0;
+alter table hackReport add why varchar(255);
+alter table syslog add count int unsigned not null default 0;
+update setup set dbVersion = 66;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 66;
+#update setup set dbVersion = 67;
 
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 

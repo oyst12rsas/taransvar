@@ -351,7 +351,21 @@ sub checkWhoIs {
 
 sub getNewUnknownUnitId {
 	my ($dbh, $szInternalIp) = @_;
-	my $szSQL = "insert into unit (ipAddress, description, dhcpClientId) values(inet_aton('$szInternalIp'), 'Unknown not via HDCP?', '')";
+	my $sthSetup = $dbh->prepare("select adminIP, nettmask from setup") or die "prepare statement failed: $dbh->errstr()";
+	$sthSetup->execute() or die "execution failed: $sthSetup->errstr()";
+	#my $bNicsUpdated = 0; #No need to update network devices (and IP address) for all demo records because all records are being updated first time.. (no "where demoId = n in where clause)
+	my $cSetup = $sthSetup->fetchrow_hashref();
+	my $nNettmask = $cSetup->{"nettmask"};
+	my $uintNewIp = unpack("L", inet_aton($szInternalIp));
+	my $description = "";
+	if (($uintNewIp & $nNettmask) == ($cSetup->{"adminIP"} & $nNettmask)) {
+		$description = "WG client?";
+	} else {
+		$description = 'Unknown not via HDCP?';
+	}
+	$sthSetup->finish;
+
+	my $szSQL = "insert into unit (ipAddress, description, dhcpClientId) values(inet_aton('$szInternalIp'), $description, '')";
 	#print "$szSQL\n";
 	doExecute($dbh, $szSQL);
 	my $nUnitId = getLastInsertId($dbh); 	

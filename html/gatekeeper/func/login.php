@@ -1,4 +1,19 @@
+<script>
+var szUpdateRoutine = "tagStatus";	
+</script>
+
 <?php
+
+error_reporting( E_ALL );
+ini_set('display_errors', '1');
+ini_set('display_startup_errors', 1); 
+
+$szLib = "XmlCommand.class.php";
+if (file_exists($szLib))
+	require_once $szLib;	//So that can test call the php file directly for debugging
+else
+	require_once("../".$szLib);	
+
 function login()
 {
 	//$szSQL = "select count(*) theCount from loginAttempt where theTime > now() - interval 1 miunute";

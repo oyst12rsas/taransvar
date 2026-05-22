@@ -260,8 +260,8 @@ int parse_iptables(const char *msg, struct _AttackEvent *pEv)
     extract_kv_string(msg, "DST=", pEv->dst_ip, sizeof(pEv->dst_ip));
     extract_kv_string(msg, "PROTO=", pEv->protocol, sizeof(pEv->protocol));
 
-    char cFrom[150];
-    char cDesc[150];
+    char cFrom[100];
+    char cDesc[100];
     extract_kv_string(msg, "FROM=", cFrom, sizeof(cFrom));
     extract_kv_string(msg, "DESC=", cDesc, sizeof(cDesc));
     snprintf(pEv->cDescription, sizeof(pEv->cDescription), "FROM=%s, DESC=%s", cFrom, cDesc);

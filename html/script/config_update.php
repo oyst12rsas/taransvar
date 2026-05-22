@@ -25,7 +25,6 @@ $szFromIp = getSenderIp();
 //print "F = ".$_GET["f"]."<br>";
 
 $nFromPort = $_SERVER['REMOTE_PORT'];
-$szOurId = "";
 
 if (isset($_GET["f"]))
 {
@@ -39,10 +38,30 @@ if (isset($_GET["f"]))
 				echo "(missing params)";
 				exit;
             }
-			$szOurId = $_GET["ourid"];
-			//NOTE! No break here... continue to "report'
-			//ØT 260318 - Didn't break... resulting in new record that lead to another round of records in hackReport... I think the point is just to tag the record with the owners ID.
-			break;
+			$nOurId = (int)$_GET["ourid"];
+            //Set hackReport -> remoteUnitId
+            $szSQL = "select reportId from hackReport where inet_aton(ip) = ? and port = ? order by reportId desc limit 1";
+            $conn = getConnection();
+			//print "$szSQL<br>";
+            $stmt = $conn->prepare($szSQL);
+            $nPort = (int)$_GET["port"];
+            $stmt->bind_param("si", $szFromIp, $nPort); 
+            $stmt->execute();
+			$result = $stmt->get_result(); // get the mysqli result
+			if ($result && $row = $result->fetch_assoc())
+			{
+                print "Confession received regarding hack report %s (%s:%u). Setting remoteUnitId = $nOurId%s\n";
+				//print "Updating status received for ".$szFromIp.". Routerid: ".$row["routerId"]."<br>"; 
+				$szSQL = "update hackReport set remoteUnitId = ? where reportId = ?";
+	            $stmt = $conn->prepare($szSQL);
+                $nReportId = (int)$row["reportId"];
+	            $stmt->bind_param("ii", $nOurId, $nReportId); 
+	            $stmt->execute();
+            }
+            else
+                print "Unable to find hackReport regarding $szFromIp:$nPort\n";
+            
+			exit;
                         
         case "report":
 			//E.g: config_update.php?f=report&ip=10.47.20.1&port=0&wt=sinkhole
@@ -63,15 +82,9 @@ if (isset($_GET["f"]))
 
 				$szWhat = (isset($_GET["wt"])?$_GET["wt"]: "hack");
 				$conn = getConnection();
-                #$sql = "select * from hackReport";
-#               $sql = "insert into hackReport (ip, port, partnerIp, partnerPort, status, sentByIp".$szExtraFields.") values (inet_aton('".$_GET["ip"].
-#                "'), ".$_GET["port"].",inet_aton('".$szFromIp."'), ".$nFromPort.", 'hack', inet_aton('".$szFromIp."')".$szExtraVals.")";
 
-                #print "$sql";
-
-	        	$szSQL = "insert into hackReport (ip, port, partnerIp, partnerPort, status, sentByIp, ipOwnerId) values (inet_aton(?), ?, inet_aton(?), ?, ?, inet_aton(?), ?)";
-
-    	        $stmt = $conn->prepare($szSQL);
+                //print "$sql";
+                //print "Port: -".$_GET["port"]."-";
 
                 $ip       = $_GET["ip"];
                 $port     = (int)$_GET["port"];
@@ -80,7 +93,7 @@ if (isset($_GET["f"]))
                 $fromPort = (int)$nFromPort;
 
                 $szSQL = "insert into hackReport
-                    (ip, port, partnerIp, partnerPort, status, sentByIp, ipOwnerId)
+                    (ip, port, partnerIp, partnerPort, why, sentByIp, ipOwnerId)
                     values (inet_aton(?), ?, inet_aton(?), ?, ?, inet_aton(?), ?)";
 
                 $stmt = $conn->prepare($szSQL);
