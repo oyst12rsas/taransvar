@@ -129,7 +129,9 @@ sub checkLibInstalled {
 }
 
 if (!checkLibInstalled("php -m | grep curl", "curl", "php-curl", "systemctl restart apache2")
-) {
+	|| !checkLibInstalled("perl -MJSON -e 'print \"OK\n\"'", "OK", "libjson-perl", "ls .")
+) 
+{
     print "Do you want to quit to install? (y/n): ";
     
     my $answer = <STDIN>;
