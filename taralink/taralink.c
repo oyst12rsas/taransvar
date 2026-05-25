@@ -430,15 +430,29 @@ void registerRemoteInfection(u_int32_t nSenderIp, char *lpMessage)
 
     char cPrefix[100], cSourceIp[100], cInfo[255];
     unsigned int sPort, dVersion, dInfected, dOwners_id, nInfectionId, nSeverity, nBotnetId; 
+    unsigned int nVersion, nPreseumeInfected, nOnersId;
 
-    int nFlds = sscanf(lpMessage, "%99[^ ] %99[^:]:%u^%u^%u^%u^%255[^\n]", cPrefix, cSourceIp, &sPort, &nInfectionId, &nSeverity, &nBotnetId, cInfo);
+    int nFlds = sscanf(lpMessage, "%99[^ ] %99[^:]:%u^%u^%u^%u^%u^%u^%u^%255[^\n]", 
+        cPrefix, cSourceIp, &sPort, &nVersion, &nPreseumeInfected, &nOnersId, &nInfectionId, &nSeverity, &nBotnetId, cInfo);
 
-    if (nFlds != 7)
+    if (nFlds == 10)
     {
-        printf("Unable to decode.. %d fields founs\n", nFlds);
-        return;
+        printf("Able to decode full record. Severity: %u\n", nSeverity);
     }
+    else
+    {
+        nFlds = sscanf(lpMessage, "%99[^ ] %99[^:]:%u^%u^%u^%u^%255[^\n]", 
+        cPrefix, cSourceIp, &sPort, &nInfectionId, &nSeverity, &nBotnetId, cInfo);
 
+        if (nFlds != 7)
+        {
+            printf("Unable to decode.. %d fields founs\n", nFlds);
+            return;
+        }
+        else
+            printf("******** WARNING *** Decoded the shorter version... Check if ok.. Severity: %u\n", nSeverity);
+    }
+    
     char szSenderIp[INET_ADDRSTRLEN];
     u_int32_t nReversed = ntohl(nSenderIp); //Just for print
 
@@ -453,7 +467,7 @@ void registerRemoteInfection(u_int32_t nSenderIp, char *lpMessage)
     MYSQL_BIND param[7];
     memset(param, 0, sizeof(param));
 
-    const char *sql = "insert into hackReport (ip, port, sentByIp, status, handledTime, infectionId, severity, botnetId) values (?, ?, ?, ?, NULL, ?, ?, ?)";
+    const char *sql = "insert into hackReport (ip, port, sentByIp, why, handledTime, infectionId, severity, botnetId) values (?, ?, ?, ?, NULL, ?, ?, ?)";
 
     if (mysql_stmt_prepare(stmt, sql, strlen(sql)) != 0) {
         printf("prepare failed: %s\n", mysql_stmt_error(stmt));
@@ -461,7 +475,7 @@ void registerRemoteInfection(u_int32_t nSenderIp, char *lpMessage)
     }
 
     /* ---- VALUES ---- */
-    printf("Trying to insert in hackReport with IP: %s, port: %u\n", cSourceIp, sPort);
+    printf("Insert hackReport: %s, port: %u, info: %s, severity: %u, inf.id: %u\n", cSourceIp, sPort, cInfo, nSeverity, nInfectionId);
 
    /* struct in_addr addr;
     if (inet_aton(cSourceIp, &addr) == 0) {

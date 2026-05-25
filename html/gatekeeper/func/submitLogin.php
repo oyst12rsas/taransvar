@@ -40,7 +40,6 @@ function submitLogin()
 			print "WELCOME! You are logged in.";
 			$_SESSION["userid"] = $row["userId"];
 			$_SESSION["hold"] = 0;	//Otherwise hold might be default on in Log window...
-			//require_once "../script/getSenderIp.php";
 			$szSenderIp = getSenderIp();
 			$szSQL = "update user set lastLogin = now(), lastLoginIp = inet_aton(?), loginFailsSinceSuccess = 0 where username = ?";
 			$stmt = $conn->prepare($szSQL);
@@ -74,23 +73,30 @@ function submitLogin()
 	}
 	else {
 
-		$szSQL = "select CAST(requireRegistration AS UNSIGNED) as requireRegistration, CAST(selfRegistration AS UNSIGNED) as selfRegistration from setup limit 1";
-		$conn = getConnection();
-		$stmt = $conn->prepare($szSQL);
-		//$stmt->bind_param("s", $szUserName);
-		$stmt->execute();
-		$result = $stmt->get_result(); // get the mysqli result
-		if ($result)
-		{
-			$row = $result->fetch_assoc();
-			$reqReg = $row['requireRegistration']+0;			
-			$selfReg = $row['selfRegistration']+0;	
-			//print "Self registration? ".$selfReg."<br>";
-		}
+		$szSenderIp = getSenderIp();
+
+		if (!strcmp($szUserName, $szSenderIp))
+			$selfReg = true;
 		else
 		{
-			print "Unable to read the setup.<br>Please try again later.";
-			return;
+			$szSQL = "select CAST(requireRegistration AS UNSIGNED) as requireRegistration, CAST(selfRegistration AS UNSIGNED) as selfRegistration from setup limit 1";
+			$conn = getConnection();
+			$stmt = $conn->prepare($szSQL);
+			//$stmt->bind_param("s", $szUserName);
+			$stmt->execute();
+			$result = $stmt->get_result(); // get the mysqli result
+			if ($result)
+			{
+				$row = $result->fetch_assoc();
+				$reqReg = $row['requireRegistration']+0;			
+				$selfReg = $row['selfRegistration']+0;	
+				//print "Self registration? ".$selfReg."<br>";
+			}
+			else
+			{
+				print "Unable to read the setup.<br>Please try again later.";
+				return;
+			}
 		}
 
 		if ($selfReg)

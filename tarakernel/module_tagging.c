@@ -136,6 +136,8 @@ int seen_recently(struct sk_buff *skb)
     if (!tcph)
         return 0;
 
+    char bNat = (iph->saddr == pSetup->nMyIp);
+
     for (n = 0; n < N_MAX_SYN_SEEN; n++)
     {
         struct syn_seen_key *pCheck = pSetup->pSynSeen[n];
@@ -155,13 +157,21 @@ int seen_recently(struct sk_buff *skb)
             continue;
         }
 
-        //NOTE! No need to save from- to combination... we're only interested in infections on source.. no matter who they're communicating with
-//        if (iph->saddr == pCheck->saddr && iph->daddr == pCheck->daddr && tcph->source == pCheck->sport && tcph->dest == pCheck->dport)
-        if (iph->saddr == pCheck->saddr && tcph->source == pCheck->sport)
+        if (!bNat)
         {
-            pr_info("tarakernel: Record found at slot %d\n",n);
-            return 1;
+            //If there's no NAT, don't care about the various ports... then receiving IP is important (compbination ip+port is unique for one recipient)... 
+            //but for now trying better let the recipient ask than remembering all IP addresses we're communicating with...
+            if (iph->saddr == pCheck->saddr)
+                return 1;
         }
+        else
+            //NOTE! No need to save from- to combination... we're only interested in infections on source.. no matter who they're communicating with
+            //if (iph->saddr == pCheck->saddr && iph->daddr == pCheck->daddr && tcph->source == pCheck->sport && tcph->dest == pCheck->dport)
+            if (iph->saddr == pCheck->saddr && tcph->source == pCheck->sport)
+            {
+                pr_info("tarakernel: Record found at slot %d\n",n);
+                return 1;
+            }
     }
 
     if (nAvailable > -1)
@@ -176,7 +186,11 @@ int seen_recently(struct sk_buff *skb)
 
         pNew->saddr = iph->saddr;
         //pNew->daddr = iph->daddr;
-        pNew->sport = tcph->source;
+        if (bNat)
+            pNew->sport = 0;
+        else
+            pNew->sport = tcph->source;
+
         //pNew->dport = tcph->dest;
         pNew->expires = now + SYN_SEEN_TIMEOUT;
 

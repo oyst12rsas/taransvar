@@ -32,42 +32,42 @@ struct _InfectionSpecification {
 
 
 struct conntrack_tuple {
-    char src[CT_STRSZ];
-    char dst[CT_STRSZ];
-    int  sport;
-    int  dport;
+	char src[CT_STRSZ];
+	char dst[CT_STRSZ];
+	int  sport;
+	int  dport;
 };
 
 struct conntrack_record {
-    char proto[16];
-    char state[32];
-    struct conntrack_tuple orig;
-    struct conntrack_tuple reply;
+	char proto[16];
+	char state[32];
+	struct conntrack_tuple orig;
+	struct conntrack_tuple reply;
 };
 
 
 
 static int extract_conntrack_tuple(const char *line,
-                                   char *src, size_t src_sz,
-                                   char *dst, size_t dst_sz,
-                                   char *sport, size_t sport_sz,
-                                   char *dport, size_t dport_sz)
+				char *src, size_t src_sz,
+				char *dst, size_t dst_sz,
+				char *sport, size_t sport_sz,
+				char *dport, size_t dport_sz)
 {
-    regex_t regex;
-    regmatch_t matches[5];
+	regex_t regex;
+	regmatch_t matches[5];
 
-    const char *pattern =
-        "src=([^ ]+) dst=([^ ]+) sport=([^ ]+) dport=([^ ]+)";
+	const char *pattern =
+		"src=([^ ]+) dst=([^ ]+) sport=([^ ]+) dport=([^ ]+)";
 
-    if (regcomp(&regex, pattern, REG_EXTENDED) != 0) {
-        fprintf(stderr, "regcomp failed\n");
-        return -1;
-    }
+	if (regcomp(&regex, pattern, REG_EXTENDED) != 0) {
+		fprintf(stderr, "regcomp failed\n");
+		return -1;
+	}
 
-    if (regexec(&regex, line, 5, matches, 0) != 0) {
-        regfree(&regex);
-        return 1;   /* no match */
-    }
+	if (regexec(&regex, line, 5, matches, 0) != 0) {
+		regfree(&regex);
+		return 1;   /* no match */
+	}
 
     #define COPY_MATCH(dstbuf, dstbufsz, idx) do { \
         int len = matches[idx].rm_eo - matches[idx].rm_so; \
@@ -336,6 +336,14 @@ int send_UDP_message(int sock, char *lpIP, unsigned int nPort, char *lpMessage)
     addr.sin_port = htons(5551);  // destination port
     inet_pton(AF_INET, lpIP, &addr.sin_addr);
 
+    /*  Implement this if getting problem sending...
+    printf("before sendto: sock=%d\n", sock);
+
+    if (fcntl(sock, F_GETFD) == -1) {
+        perror("fcntl F_GETFD");
+        return 1;
+    }*/
+
     // 3. Send message
     if (sendto(sock, lpMessage, strlen(lpMessage), 0,
                (struct sockaddr *)&addr, sizeof(addr)) < 0) {
@@ -345,8 +353,6 @@ int send_UDP_message(int sock, char *lpIP, unsigned int nPort, char *lpMessage)
     }
 
     printf("UDP message sent\n");
-
-    close(sock);
     return 0;
 }
 
@@ -383,7 +389,7 @@ void *worker(void *arg) {
     printf("\nThreat info changed (informing active connections) about %s - (infId: %u, severity: %u, botnet: %u) json: %s\n\n", cInfectedIpAddr, pInfection->nInfectionId, pInfection->nSeverity, pInfection->nBotnetId, pInfection->lpInfo);
 
 	//*** Read internal- and external IP Address from setup */
-	char *lpSQL = "select adminIp, internalIP, inet_ntoa(adminIp), inet_ntoa(internalIP) from setup";
+	char *lpSQL = "select adminIp, internalIP, inet_ntoa(adminIp), inet_ntoa(internalIP), nettmask from setup";
 	printf("About to read setup\n");
 	conn = getConnection();
 	printf("Connection opened\n");
@@ -410,18 +416,16 @@ void *worker(void *arg) {
 	char cExternalIp[100];
 	strcpy(cInternalIp, row[3]);
 	strcpy(cExternalIp, row[2]);
+    u_int32_t nNettmask = (row[4]?atoi(row[4]):0);
+    u_int32_t nAdminIp = (row[0]?atoi(row[0]):0);
+    u_int32_t nInternalIp = (row[1]?atoi(row[1]):0);
+
+
+    char bMeOrMine = (nAdminIp & nNettmask) == (addr.s_addr & nNettmask);
+
 	printf("InternalIP: %s, external IP: %s\n", cInternalIp, cExternalIp);
 
 	mysql_free_result(res);
-
-
-	//conntrack -L | grep 'src=192.168.50.104 '
-	FILE *fp = popen("conntrack -L", "r");
-
-	if (!fp) {
-        perror("popen");
-        return NULL;
-    }
 
     int sock;
 
@@ -432,12 +436,19 @@ void *worker(void *arg) {
         return NULL;
     }
 
+	//conntrack -L | grep 'src=192.168.50.104 '
+	FILE *fp = popen("conntrack -L", "r");
 
+	if (!fp) {
+		perror("popen");
+		return NULL;
+    }
 
     char line[512];
     int nActiveConnectionsFound = 0;
 
     while (fgets(line, sizeof(line), fp)) {
+		printf("Handling: %s\n", line);
 
 /*  	const char *line =
         	"tcp 6 431999 ESTABLISHED "
@@ -473,59 +484,81 @@ void *worker(void *arg) {
 	    struct conntrack_record rec;
     	int rc;
 
+        printf("Calling parse_conntrack_line()\n");
 	    rc = parse_conntrack_line(line, &rec);
     	if (rc != 0) {
         	printf("******** parse failed ** rc=%d: %s\n", rc, line);
 	        //printf("Line read: %s", line);
 		}
 		else
+        {
+            printf("Calling record_matches_client_nat()\n");
 		    if (record_matches_client_nat(&rec, cInfectedIpAddr, cExternalIp))	//cInternalIp - is the gateway...
 			{
 				if (!strcmp(rec.proto, "tcp"))
 				{
                     nActiveConnectionsFound++;
-				    print_record(&rec);
+				    //print_record(&rec);
 
 					char *lpSendToIp = rec.orig.dst;
 					//char *lpFromIp = cExternalIp; //NOTE! This is connect if NAT
 					char *lpFromIp = cInfectedIpAddr;//NOTE! Correct if not NAT
 
-					unsigned int sport = rec.orig.sport;
-					printf("Send to (if partner and only once for ip/port match...) %s: %s:%d is infected... info: %s\n", lpSendToIp, lpFromIp, sport, pInfection->lpInfo);	
-				
-					struct _SeenPtNode	*pFound;
-					for (pFound = pSeenPointerChain; pFound; pFound = pFound->pNext)
-					{
-						bool bFoundNow = (!strcmp(pFound->szSendToIp, lpSendToIp) && pFound->nPort == sport);
-						printf("%s Comparing %s & %s --and -- %d & %d\n", (!bFoundNow?"not match":"**MATCHING**"), pFound->szSendToIp, lpSendToIp, pFound->nPort, sport);
-						if (bFoundNow)
-							break;
-					}
+                    if (!strcmp(lpSendToIp, cInternalIp) || !strcmp(lpSendToIp, cExternalIp))
+                    {
+                        printf("****** Preventing sending to myself: %s (external: %s, internal: %s)\n", lpSendToIp, cInternalIp, cExternalIp);
+                    }
+                    else
+                    {
+                        printf("Checking if port should be set to 0\n");
+    					unsigned int sport = rec.orig.sport;        //How sure are we that this is the right port number? (probably doesn't matter until NAT)
 
-					if (pFound)
-						printf("Already in the list: %s - %s:%d\n", lpSendToIp, lpFromIp, sport);
-					else
-					{
-						struct _SeenPtNode	*pNew = malloc(sizeof(struct _SeenPtNode));
-						strcpy(pNew->szSendToIp, lpSendToIp);
-						strcpy(pNew->szMyIp, lpFromIp);	
-						pNew->nPort = sport;
-						pNew->pNext = pSeenPointerChain;
-						pSeenPointerChain = pNew;
-						printf("New element put in list (NOTE! ASSUMING NOT NAT): %s - %s:%d\n", lpSendToIp, lpFromIp, sport);  //**** IF NAT: Check char *lpFromIp above....
-					}
-				}
+                        if (bMeOrMine && (nAdminIp != nInternalIp))
+                        {
+                            printf("No NAT for %u. Setting port to 0 - indicating that is applies to all ports on this IP\n", addr.s_addr);
+                            sport = 0;
+                        }
+
+	    				printf("Send to (if partner and only once for ip/port match...) %s: %s:%d is infected... info: %s\n", lpSendToIp, lpFromIp, sport, pInfection->lpInfo);	
+				
+		    			struct _SeenPtNode	*pFound;
+			    		for (pFound = pSeenPointerChain; pFound; pFound = pFound->pNext)
+				    	{
+					    	bool bFoundNow = (!strcmp(pFound->szSendToIp, lpSendToIp) && pFound->nPort == sport);
+						    printf("%s Comparing %s & %s --and -- %d & %d\n", (!bFoundNow?"not match":"**MATCHING**"), pFound->szSendToIp, lpSendToIp, pFound->nPort, sport);
+    						if (bFoundNow)
+	    						break;
+		    			}
+
+			    		if (pFound)
+				    		printf("Already in the list: %s - %s:%d\n", lpSendToIp, lpFromIp, sport);
+					    else
+    					{
+                            printf("Making new node\n");
+	    					struct _SeenPtNode	*pNew = malloc(sizeof(struct _SeenPtNode));
+		    				strcpy(pNew->szSendToIp, lpSendToIp);
+			    			strcpy(pNew->szMyIp, lpFromIp);	
+				    		pNew->nPort = sport;
+					    	pNew->pNext = pSeenPointerChain;
+						    pSeenPointerChain = pNew;
+    						printf("New element put in list (NOTE! ASSUMING NOT NAT): %s - %s:%d\n", lpSendToIp, lpFromIp, sport);  //**** IF NAT: Check char *lpFromIp above....
+	    				}
+		    		}
+                }
 				else
 					printf("\nSkipping protocol: %s\n\n", rec.proto);
 			}
-            else
-                printf("Other unit: %s\n", line);
+           // else
+           //     printf("Other unit: %s\n", line);
+        }
 	}
 
     if (!nActiveConnectionsFound)
         printf("No active connections found for this unit.\n");
 
     pclose(fp);
+
+    printf("Finished scanning conntrack\n");
 
 	MYSQL_STMT *stmt = NULL;
 	MYSQL_BIND param[1];
@@ -565,6 +598,9 @@ void *worker(void *arg) {
    		mysql_stmt_close(stmt);
    		return NULL;
 	}
+
+    printf("About to send\n");
+
 
 	//Send the messages...
 	struct _SeenPtNode	*pFound;
@@ -675,7 +711,7 @@ void *worker(void *arg) {
 					pInfection->nSeverity, 
 					pInfection->nBotnetId, 
 					(pInfection->lpInfo?pInfection->lpInfo:"NULL"));
-            printf("Trying to send to %s:%d - %s\n", pFound->szSendToIp, TARALINK_LISTENING_TO_PORT, cMessage);
+            printf("Trying to send to %s:%d - %s\n (severiry: %u)", pFound->szSendToIp, TARALINK_LISTENING_TO_PORT, cMessage, pInfection->nSeverity);
        		
 			send_UDP_message(sock, pFound->szSendToIp, TARALINK_LISTENING_TO_PORT, cMessage);
 		}
@@ -684,12 +720,17 @@ void *worker(void *arg) {
 		free(pFound);
 	}
 
+    printf("Cleaning up\n");
+
+
 	//Clean up
 	free(pInfection->lpInfo);
 	free(pInfection);
 	
 	mysql_stmt_close(stmt);
 	mysql_close(conn);
+    close(sock);
+
 
     return NULL;
 }

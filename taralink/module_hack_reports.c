@@ -133,7 +133,7 @@ void checkHackReports()
     mysql_free_result(res);
 	
 	//NOTE! Not checking hackReports regarding units in our network until 10 seconds later to give the system the chance to import recent port assignments
-	sprintf(szSQL, "select reportId, ip, port, inet_ntoa(ip), created, TIMESTAMPDIFF(MINUTE, created, NOW()) as MinutesSince, sendAttemptCount, inet_ntoa(sentByIp) from hackReport where handledTime is null and (ip <> %u or created < DATE_SUB(NOW(), INTERVAL 10 SECOND))", nMyIp);
+	sprintf(szSQL, "select reportId, ip, port, inet_ntoa(ip), created, TIMESTAMPDIFF(SECOND, created, NOW()) as SecondsSince, sendAttemptCount, inet_ntoa(sentByIp) from hackReport where handledTime is null and (ip <> %u or created < DATE_SUB(NOW(), INTERVAL 10 SECOND))", nMyIp);
 
 	if (mysql_query(conn, szSQL)) {
 		fprintf(stderr, "**** ERROR *** While fetching hackReports: %s\n", mysql_error(conn));
@@ -291,16 +291,19 @@ void checkHackReports()
 		}//me or mine
 		else
 		{
+			if (!nNettmask)
+				printf("This is not a router.\n");
+			int nSecondeAgo = atoi(row[5]);
 			//Not mine.... 
 			char szBuffer[1000];
-			sprintf(szBuffer, "** WARNING ** : Hackreport %s port %s: No matching port assignment found\n", row[4], row[2]);
-			if (atoi(row[5]) < 5)
+			sprintf(szBuffer, "** WARNING ** : Hackreport %s port %s: No matching port assignment found. None of mine: (IP: %d, %d, nett:%d)\n", row[4], row[2], nNumericIp, nMyIp, nNettmask);
+			if (nSecondeAgo < 5)
 			{
-				strcpy(szBuffer+strlen(szBuffer), ", but just received.. So waiting before setting to handled...\n");
+				sprintf(szBuffer+strlen(szBuffer), ", but just received (%d seconds ago).. So waiting before setting to handled...\n", nSecondeAgo);
 				bUpdateHandled = 0;   //Don't set at handled yet.. Waiting for port assignments to be imported by misc/conntrack.pl and/or process_dhcpdump.pl (hopefully running as cron job)
 			}
 			else
-				sprintf(szBuffer+strlen(szBuffer), "****** ERROR ******* And %s minutes since received.. So setting to handled...\n", row[5]);
+				sprintf(szBuffer+strlen(szBuffer), "****** ERROR ******* And %d seconds since received.. So setting to handled...\n", nSecondeAgo);
                  	                
 			printf("%s",szBuffer);
 			addWarningRecord(szBuffer);

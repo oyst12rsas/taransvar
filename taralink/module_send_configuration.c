@@ -399,7 +399,9 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 	    else
 	        lpHandledWhere = "active = b'1'";
 
-		sprintf(szSQL, "select inet_ntoa(ip) as ip, inet_ntoa(nettmask) as nettmask, coalesce(status,'NULL'), infectionId, handled, coalesce(CAST(active AS UNSIGNED),0) as active, coalesce(infoSharePartners,'NULL'), coalesce(unitId,0), coalesce(severity,0), coalesce(botnetId,0), ip, nettmask from internalInfections where %s", lpHandledWhere);
+		sprintf(szSQL, "select inet_ntoa(ip) as ip, inet_ntoa(nettmask) as nettmask, coalesce(status,'NULL'), \
+			infectionId, handled, coalesce(CAST(active AS UNSIGNED),0) as active, coalesce(infoSharePartners,'NULL'), \
+			coalesce(unitId,0), coalesce(severity,0), coalesce(botnetId,0), ip, nettmask from internalInfections where %s", lpHandledWhere);
 		//printf("SQL: %s\n", szSQL);
 
 		if (mysql_query(conn, szSQL)) {
@@ -418,11 +420,24 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 			if (!nFound)
 				sprintf(cReply+strlen(cReply), "INFECTION|");
 
+			char *lpSendInfectionInfo = row[6];
+			char *lpSendSeverity = row[8];
+
+			int nActive = atoi(row[5]);
+			if (!nActive)
+			{
+				lpSendInfectionInfo = "N/A";
+				lpSendSeverity = "0";
+			}
+
+			printf("****** Active: %d (%s), info: %s, severity: %s. After: %s/%s\n", nActive, row[5], row[6], row[8], lpSendInfectionInfo, lpSendSeverity);
+
 			//printf("taralink: Infection found : %s-%s-%s-%s\n", row[0], row[1], row[5], row[2]);
 			//															ip		nett	active status  infID   severity botnetId info
 			int nPosLeft = sizeof(cReply)-strlen(cReply)-1;
 			if (nPosLeft > 0)
-				snprintf(cReply+strlen(cReply), nPosLeft, "%s:%s-%s-%s-%s-%s-%s-%s^", row[0], row[1], row[5], row[2], row[3], row[8], row[9], row[6]);
+				snprintf(cReply+strlen(cReply), nPosLeft, "%s:%s-%s-%s-%s-%s-%s-%s^", 
+							row[0], row[1], row[5], row[2], row[3], lpSendSeverity, row[9], lpSendInfectionInfo);
 			else
 				nCharsTruncated += 70;
 
@@ -431,12 +446,11 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 			100.100.100.100:255.255.255.255-1-(null)--1503633950--1503633942-0-(null)^
 			100.100.100.100:255.255.255.255-1-(null)--1503633950--1503633942-0-(null)^
 */
-
 			if (!row[4] || !atoi(row[4])) 
 				updateHandled(updateConn, "internalInfections", "infectionId", row[3]);
-      			     
+
 			if (bReadChangesOnly)
-				init_background_infecton_change_partner_notification(atol(row[10]), atol(row[11]), row[5], atol(row[2]), atol(row[3]), atol(row[8]), atol(row[9]), row[6]);	//ip		nett	active status  infID   severity botnetId info
+				init_background_infecton_change_partner_notification(atol(row[10]), atol(row[11]), row[5], atol(row[2]), atol(row[3]), atol(lpSendSeverity), atol(row[9]), lpSendInfectionInfo);	//ip		nett	active status  infID   severity botnetId info
 
 			nFound++;
 		}

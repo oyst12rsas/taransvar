@@ -37,7 +37,7 @@ function tagStatus()
 	if (meOrMine(0, $szSenderIp))
 	{
 		//One of my units... Read status from internalInfections table
-		$szSQL = "select lastSeen, infoSharePartners, severity from internalInfections where ip = inet_aton(?) order by infectionId desc limit 1";
+		$szSQL = "select infectionId, lastSeen, infoSharePartners, severity from internalInfections where ip = inet_aton(?) order by infectionId desc limit 1";
 		$conn = getConnection();
 		$stmt = $conn->prepare($szSQL);
 		$stmt->bind_param("s", $szSenderIp); 
@@ -51,8 +51,13 @@ function tagStatus()
 				if ((int)$row["severity"] > 0)
 					$tagStatus = '<br><font color="red">YOU ARE TAGGED</font></b><br>Severity: '.$row["severity"];
 				else
-					$tagStatus = '<font color="green">You are clean</font>';
+					$tagStatus = '<font color="green">You are clean<br>Last seen: '.$row["severity"].' id:'.$row["infectionId"].'</font>';
 			}
+		}
+		else
+		{
+			$tagStatus = '<font color="green">You are clean<br>(not listed)</font>';
+
 		}
 
 	}
@@ -69,7 +74,7 @@ function tagStatus()
 		{
 			if($row = $result->fetch_assoc()) 
 			{
-				if ((int)$row["severity"] > 0)
+				if ((int)$row["severity"] > 1)
 					$tagStatus = '<br><font color="red">YOU ARE TAGGED</font></b><br>Severity: '.$row["severity"]."<br>Contact provider";
 				else
 					$tagStatus = '<font color="green">You are clean</font>';

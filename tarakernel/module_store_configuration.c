@@ -501,7 +501,7 @@ char *interpretNextBatch(int nBlockDescriptor, char *lpConfiguration)
 				//listInfectionsPointerList();
 				break;
   
-                case BLOCK_DESCRIPTIOR_PARTNERS:
+            case BLOCK_DESCRIPTIOR_PARTNERS:
 				{
 				pr_info("About to read partners: %s\n", lpPointer); 
 					char *lpColon = strchr(lpPointer, ':');

@@ -1,6 +1,3 @@
-<script>
-var szUpdateRoutine = "tagStatus";	
-</script>
 
 <?php
 
