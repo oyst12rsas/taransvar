@@ -26,9 +26,9 @@ char *bufferToHex(char *lpBuffer, int len, char* lpTarget, int nBufSize)
       return lpTarget;
 }
 
-void checkUpdateTag(char *lpIpHex, char *lpPortHex, char *lpTagHex)
+void checkUpdateTag(MYSQL *conn, char *lpIpHex, char *lpPortHex, char *lpTagHex)
 {
-	MYSQL *conn = getConnection();
+	//MYSQL *conn = getConnection();
 
 	char *lpRec;
 	char *lpTokens = "^";
@@ -47,11 +47,12 @@ void checkUpdateTag(char *lpIpHex, char *lpPortHex, char *lpTagHex)
         exit(1);
     }
 
-	char *lpSql = "select reportId, severity from hackReport where ip = unhex(?) and port = unhex(?) order by coalesce(lastSeen, created)";
+	char *lpSql = "select reportId, severity from hackReport where ip = CONV(?,16,10) and port = CONV(?,16,10) order by coalesce(lastSeen, created)";
 
 	status = mysql_stmt_prepare(stmt, lpSql, strlen(lpSql));
 	test_stmt_error(stmt, status); //line which gives me the syntax error 
 
+	//printf("\nRunning: %s\nWith: %s and %s\n", lpSql, lpIpHex, lpPortHex);
 
 	memset(quaryParams, 0, sizeof(quaryParams));
 	unsigned long nIpLen = strlen(lpIpHex);
@@ -82,7 +83,10 @@ void checkUpdateTag(char *lpIpHex, char *lpPortHex, char *lpTagHex)
 	test_stmt_error(stmt, status);
 
 	MYSQL_BIND rec[2];
-	unsigned int nReportId, severity;
+	memset(rec, 0, sizeof(rec));
+
+	unsigned int nReportId;
+	int severity;
 	
 	rec[0].buffer_type = MYSQL_TYPE_LONG;//MYSQL_TYPE_VAR_STRING;
     rec[0].buffer = (char*) &nReportId;   
@@ -104,21 +108,49 @@ void checkUpdateTag(char *lpIpHex, char *lpPortHex, char *lpTagHex)
 	test_stmt_error(stmt, status);	
 
 	status = mysql_stmt_fetch(stmt);
+	unsigned int nTag = strtoul(lpTagHex, NULL, 16);		
+	bool bInsertHackReport = false;
 
 	if (status == MYSQL_NO_DATA) {
-    	printf("No hackReport found for 0x%s:0x%s. Tag: 0x%s\n", lpIpHex, lpPortHex, lpTagHex);
+
+    	//printf("No hackReport found for 0x%s:0x%s. Tag: 0x%s (dec: %u\n", lpIpHex, lpPortHex, lpTagHex, nTag);
+
+		if (nTag)
+			bInsertHackReport = true;
 	} 
 	else 
 		if (status == 0) 
 		{
-	    	printf("\n************ HackReport for 0x%s:0x%s. Tag: 0x%s - ID: %u, severity: %d\n\n", nReportId, severity);
+			//HackReport found... Check if they agree...
+			bool bHackReportSaysInfected = (severity > 0);
+			bool bTrafficSaysInfected = (nTag > 0);
+			if (bHackReportSaysInfected != bTrafficSaysInfected)
+			{
+				bInsertHackReport = true;
+				printf("\n************ HackReport found but it disagrees with traffic.. Insert new hack report: Traffic tag: %s, hack report severity: %d\n", lpTagHex, severity);
+	    		//printf("\n************ HackReport for 0x%s:0x%s. Tag: 0x%s - ID: %u, severity: %d\n\n", lpIpHex, lpPortHex, lpTagHex, nReportId, severity);
+			}
+
 		} else 
 		{
     		test_stmt_error(stmt, status);
 		}
 
-	mysql_stmt_close(stmt);
-	mysql_close(conn);
+	if (stmt)
+		mysql_stmt_close(stmt);
+
+	if (bInsertHackReport)
+	{
+		unsigned int nIp = strtoul(lpIpHex, NULL, 16);		
+		unsigned short nPort = (unsigned short)strtoul(lpPortHex, NULL, 16);		
+		char *lpInfo = "From traffic report.";
+		unsigned int nSeverity = (nTag > 10? 7 : 0);
+
+		insertHackReport(conn, nIp, nPort, 0 /*nSenderIp*/, lpInfo, 0 /*nInfectionId*/, nSeverity, 0 /*nBotnetId*/);
+	}
+
+
+//	mysql_close(conn);
 }
 
 /*
@@ -134,7 +166,7 @@ void handleTrafficReportFromKernel(char *lpPayload, int nDataLength)
 	//Now sending both fromIP and toIP (not sure which the old version sent)
 
 	MYSQL *conn = getConnection();
-	MYSQL *update = getConnection();
+	//MYSQL *update = getConnection();
 
 	char *lpRec;
 	char *lpTokens = "^";
@@ -276,21 +308,21 @@ void handleTrafficReportFromKernel(char *lpPayload, int nDataLength)
 			}
             
 			//printf ("%s\n", cSql);
-			if (!mysql_query(update, cSql)){
+			if (!mysql_query(conn, cSql)){
 				//According to manual, mysql_query() is supposed to return true if ok... But apparently not on all computers 
                 //printf("******************************** ABLE TO INSERT ***********\n");
             }
             else
-				fprintf(stderr, "MySQL error inserting/updating traffic record: %s\nSQL: %s\n", mysql_error(update), cSql);
+				fprintf(stderr, "MySQL error inserting/updating traffic record: %s\nSQL: %s\n", mysql_error(conn), cSql);
 				//printf("******** ERROR inserting/updating traffic record.\n");
 
-			checkUpdateTag(cFields[0], cFields[1], cFields[5]);
+			checkUpdateTag(conn, cFields[0], cFields[1], cFields[5]);
 		}
 	}
 	printf("%d records inserted, %d updated in traffic table.\n", nInserts, nUpdates);
 
 	mysql_close(conn);
-	mysql_close(update);
+	//mysql_close(update);
 }
 
 

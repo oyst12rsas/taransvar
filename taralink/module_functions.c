@@ -433,3 +433,102 @@ int addPendingWgetOk(et_wgetCategories eCategory, char *lpUrl, int nRegardingId)
 }
 
 
+void insertHackReport(MYSQL *conn, uint32_t ip, unsigned short port, uint32_t nSenderIp, char *cInfo, unsigned int nInfectionId, unsigned int nSeverity, unsigned int nBotnetId)
+{
+    //MYSQL *conn;
+    bool bPrivateConnection;
+    if (!conn)
+    {
+        bPrivateConnection = true;
+        conn = getConnection();
+    }
+
+    MYSQL_STMT *stmt = mysql_stmt_init(conn);
+    MYSQL_BIND param[7];
+    memset(param, 0, sizeof(param));
+
+    const char *sql = "insert into hackReport (ip, port, sentByIp, why, handledTime, infectionId, severity, botnetId) values (?, ?, ?, ?, NULL, ?, ?, ?)";
+
+    if (mysql_stmt_prepare(stmt, sql, strlen(sql)) != 0) {
+        printf("prepare failed: %s\n", mysql_stmt_error(stmt));
+        if (bPrivateConnection)
+            mysql_close(conn);
+        return;
+    }
+
+    /* ---- VALUES ---- */
+    printf("Insert hackReport: %u:%u, info: %s, severity: %u, inf.id: %u\n", ip, port, cInfo, nSeverity, nInfectionId);
+
+   /* struct in_addr addr;
+    if (inet_aton(cSourceIp, &addr) == 0) {
+        printf("Invalid IP: %s\n", cSourceIp);
+        return;
+    }*/
+
+    if (!cInfo)
+        cInfo = "";
+
+    char szInfo[200];
+    strncpy(szInfo, cInfo, sizeof(szInfo));
+
+    unsigned long cInfoLen = strlen(szInfo);
+
+    printf("Setting up parasm\n");
+
+    /* ---- BIND ---- */
+    param[0].buffer_type = MYSQL_TYPE_LONG;
+    param[0].buffer = &ip;
+    param[0].is_unsigned = 1;
+
+    param[1].buffer_type = MYSQL_TYPE_SHORT;
+    param[1].buffer = &port;
+    param[1].is_unsigned = 1;
+
+    param[2].buffer_type = MYSQL_TYPE_LONG;
+    param[2].buffer = &nSenderIp;       //260515 - Used to be: sentByIp;
+    param[2].is_unsigned = 1;
+
+    param[3].buffer_type   = MYSQL_TYPE_STRING;
+    param[3].buffer        = szInfo;
+    param[3].buffer_length = cInfoLen;
+    param[3].length        = &cInfoLen;
+
+    param[4].buffer_type = MYSQL_TYPE_LONG;
+    param[4].buffer = &nInfectionId;
+    param[4].is_unsigned = 1;
+
+    param[5].buffer_type = MYSQL_TYPE_LONG;
+    param[5].buffer = &nSeverity;
+    param[5].is_unsigned = 1;
+
+    param[6].buffer_type = MYSQL_TYPE_LONG;
+    param[6].buffer = &nBotnetId;
+    param[6].is_unsigned = 1;
+
+    printf("Binding params\n");
+
+    /* ---- BIND PARAMS ---- */
+    if (mysql_stmt_bind_param(stmt, param) != 0) {
+        printf("bind failed: %s\n", mysql_stmt_error(stmt));
+        if (bPrivateConnection)
+            mysql_close(conn);        
+        return;
+    }
+    printf("Executing\n");
+
+    /* ---- EXECUTE ---- */
+    if (mysql_stmt_execute(stmt) != 0) {
+        printf("execute failed: %s\n", mysql_stmt_error(stmt));
+        if (bPrivateConnection)
+            mysql_close(conn);
+        return;
+    }   
+
+    printf("Closing\n");
+
+
+    mysql_stmt_close(stmt);
+    if (bPrivateConnection)
+        mysql_close(conn);
+}
+

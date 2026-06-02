@@ -18,12 +18,10 @@
 #define SETUP_HONEYPOTS     1
 #define SETUP_SETUP         1
 
-
 //#define TARALINK_LISTENING_TO_PORT 5551   defined in ../tarakernel/module_global.h
 #define SYSLOG_UDP_PORT 514
 #define SYSLOG_TCP_PORT 514     //Add this later
 #define SYSLOG_TLS_PORT 6514    //Add this later
-
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -65,11 +63,11 @@ int configFileExists(void);
 MYSQL *getConnection();
 
 struct _SocketData {
-  int sock_fd;
-  struct msghdr msg;
-  struct sockaddr_nl src_addr, dest_addr;
-  struct nlmsghdr *nlh;
-  struct iovec iov;
+    int sock_fd;
+    struct msghdr msg;
+    struct sockaddr_nl src_addr, dest_addr;
+    struct nlmsghdr *nlh;
+    struct iovec iov;
 };
 
 static char szWgetBuff[2000]; //Used by wget because result doesn't come immediately so can't use cach 
@@ -79,7 +77,7 @@ struct _SocketData *pSockData = NULL;   //Get rid of this....
 enum et_wgetCategories {e_wget_assistanceRequest, e_wget_other};
 typedef enum et_wgetCategories et_wgetCategories;
 #define IPADDRESS(addr) \
-	((unsigned char *)&addr)[3], \
+    ((unsigned char *)&addr)[3], \
 	((unsigned char *)&addr)[2], \
 	((unsigned char *)&addr)[1], \
 	((unsigned char *)&addr)[0]
@@ -100,12 +98,11 @@ void handleTrafficReportFromKernel(char *lpPayload, int nDataLength);
 void init_background_infecton_change_partner_notification(unsigned int ip, unsigned int nett, char *lpActive, unsigned int nStatus, unsigned int nInfectionId, unsigned int nSeverity, unsigned int nBotnetId, char *lpInfo);
 unsigned int inet__aton(char *lpIp);
 int send_to_kernel(int fd, const void *data, size_t len);
+void insertHackReport(MYSQL *conn, uint32_t ip, unsigned short port, uint32_t nSenderIp, char *cInfo, unsigned int nInfectionId, unsigned int nSeverity, unsigned int nBotnetId);
 
 int fd = 0;
 
 #include "module_send_configuration.c"
-
-
 #include "../tarakernel/module_globals.h" 
 
 //*now compiling one by one..
@@ -139,29 +136,29 @@ void sendMessage(struct _SocketData *pSockData, char *lpMsg)
 
 struct _SocketData *getSockData()
 {
-  struct _SocketData *pSockData = malloc(sizeof(struct _SocketData));
-  //NOTE! Check if can have structure in _SocketData and not just the pointer...
-  pSockData->nlh = (struct nlmsghdr *)malloc(NLMSG_SPACE(MAX_PAYLOAD));
-  return pSockData;
+    struct _SocketData *pSockData = malloc(sizeof(struct _SocketData));
+    //NOTE! Check if can have structure in _SocketData and not just the pointer...
+    pSockData->nlh = (struct nlmsghdr *)malloc(NLMSG_SPACE(MAX_PAYLOAD));
+    return pSockData;
 }
 
 int getKernelSocket(struct _SocketData *pSockData)
 {
-  //ot:struct sockaddr_nl src_addr;
-  int count=0;
-  //int socket_fd;
-  while ((pSockData->sock_fd=socket(PF_NETLINK, SOCK_RAW, NETLINK_USER)) < 0)
-  {
-    printf("Unable to open socket... You should confirm that Taransvar kernel module (\"tarakernel\") is running (\"sudo lsmod | grep tarakernel\").\nWaiting (%d)....\n", ++count);
-    sleep(10);
-  }
+    //ot:struct sockaddr_nl src_addr;
+    int count=0;
+    //int socket_fd;
+    while ((pSockData->sock_fd=socket(PF_NETLINK, SOCK_RAW, NETLINK_USER)) < 0)
+    {
+        printf("Unable to open socket... You should confirm that Taransvar kernel module (\"tarakernel\") is running (\"sudo lsmod | grep tarakernel\").\nWaiting (%d)....\n", ++count);
+        sleep(10);
+    }
 
-  memset(&pSockData->src_addr, 0, sizeof(pSockData->src_addr));
-  pSockData->src_addr.nl_family = AF_NETLINK;
-  pSockData->src_addr.nl_pid = getpid(); /* self pid */
+    memset(&pSockData->src_addr, 0, sizeof(pSockData->src_addr));
+    pSockData->src_addr.nl_family = AF_NETLINK;
+    pSockData->src_addr.nl_pid = getpid(); /* self pid */
 
-  bind(pSockData->sock_fd, (struct sockaddr*)&pSockData->src_addr, sizeof(pSockData->src_addr));
-  return pSockData->sock_fd;
+    bind(pSockData->sock_fd, (struct sockaddr*)&pSockData->src_addr, sizeof(pSockData->src_addr));
+    return pSockData->sock_fd;
 }
 
 MYSQL *getConnection()
@@ -462,83 +459,13 @@ void registerRemoteInfection(u_int32_t nSenderIp, char *lpMessage)
 
     printf("Able to decode(from %s): %s:%d-%d-%d-%d, info: %s\n", szSenderIp, cSourceIp, sPort, nInfectionId, nSeverity, nBotnetId, cInfo);
 
-    MYSQL *conn;
-    conn = getConnection();
-
-    MYSQL_STMT *stmt = mysql_stmt_init(conn);
-    MYSQL_BIND param[7];
-    memset(param, 0, sizeof(param));
-
-    const char *sql = "insert into hackReport (ip, port, sentByIp, why, handledTime, infectionId, severity, botnetId) values (?, ?, ?, ?, NULL, ?, ?, ?)";
-
-    if (mysql_stmt_prepare(stmt, sql, strlen(sql)) != 0) {
-        printf("prepare failed: %s\n", mysql_stmt_error(stmt));
-        return;
-    }
-
-    /* ---- VALUES ---- */
-    printf("Insert hackReport: %s, port: %u, info: %s, severity: %u, inf.id: %u\n", cSourceIp, sPort, cInfo, nSeverity, nInfectionId);
-
-   /* struct in_addr addr;
-    if (inet_aton(cSourceIp, &addr) == 0) {
-        printf("Invalid IP: %s\n", cSourceIp);
-        return;
-    }*/
-
     uint32_t ip = strtoul(cSourceIp, NULL, 16);    
     //unsigned int ip = ntohl(addr.s_addr);
     //unsigned int ip = inet_addr(cSourceIp);   // or your actual value
     unsigned short port = sPort;
     //unsigned int sentByIp = ip;
 
-    unsigned long cInfoLen = strlen(cInfo);
 
-    /* ---- BIND ---- */
-    param[0].buffer_type = MYSQL_TYPE_LONG;
-    param[0].buffer = &ip;
-    param[0].is_unsigned = 1;
-
-    param[1].buffer_type = MYSQL_TYPE_SHORT;
-    param[1].buffer = &port;
-    param[1].is_unsigned = 1;
-
-    param[2].buffer_type = MYSQL_TYPE_LONG;
-    param[2].buffer = &nSenderIp;       //260515 - Used to be: sentByIp;
-    param[2].is_unsigned = 1;
-
-    param[3].buffer_type   = MYSQL_TYPE_STRING;
-    param[3].buffer        = cInfo;
-    param[3].buffer_length = sizeof(cInfo);
-    param[3].length        = &cInfoLen;
-
-    param[4].buffer_type = MYSQL_TYPE_LONG;
-    param[4].buffer = &nInfectionId;
-    param[4].is_unsigned = 1;
-
-    param[5].buffer_type = MYSQL_TYPE_LONG;
-    param[5].buffer = &nSeverity;
-    param[5].is_unsigned = 1;
-
-    param[6].buffer_type = MYSQL_TYPE_LONG;
-    param[6].buffer = &nBotnetId;
-    param[6].is_unsigned = 1;
-
- 
-
-    /* ---- BIND PARAMS ---- */
-    if (mysql_stmt_bind_param(stmt, param) != 0) {
-        printf("bind failed: %s\n", mysql_stmt_error(stmt));
-        return;
-    }
-
-    /* ---- EXECUTE ---- */
-    if (mysql_stmt_execute(stmt) != 0) {
-        printf("execute failed: %s\n", mysql_stmt_error(stmt));
-        return;
-    }   
-
-    mysql_stmt_close(stmt);
-    mysql_close(conn);
 }
 
 void handle_udp(int udp_fd)
