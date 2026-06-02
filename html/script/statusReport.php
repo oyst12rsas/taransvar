@@ -11,9 +11,26 @@ $json = json_decode($_GET["json"]);
 //print "<br>IP: $json->ip<br>";
 $szSQL = "update partnerRouter set status = ?, partnerStatusReceived = now() where ip = inet_aton(?)";
 //print "$szSQL\n<br>";
+
 $conn = getConnection();
+
 $stmt = $conn->prepare($szSQL);
-$stmt->bind_param("ss", $_GET["json"], $sender); 
-$stmt->execute();
+if (!$stmt) {
+    die("Prepare failed: ".$conn->error."\nSQL: ".$szSQL);
+}
+
+$status = $_GET["json"];
+
+if (!$stmt->bind_param("ss", $status, $sender)) {
+    die("bind_param failed: ".$stmt->error);
+}
+
+if (!$stmt->execute()) {
+    die("Execute failed: ".$stmt->error.
+        "\nSQL: ".$szSQL.
+        "\nstatus=".$status.
+        "\nsender=".$sender);
+}
+
 print "ok";
 ?>

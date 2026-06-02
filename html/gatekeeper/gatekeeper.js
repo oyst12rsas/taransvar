@@ -93,3 +93,12 @@ function initUpdater()
 
 }
 
+function tagStatusClicked()
+{
+	//alert("Hey, you clicked..");
+	var cDiv = document.getElementById("tagStatusExtra");
+	cDiv.innerHTML = '<br><a href="index.php?f=tagStatus">See tag status</a>';
+    cDiv.style.display = "block";    
+}
+
+

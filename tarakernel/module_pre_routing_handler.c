@@ -447,9 +447,19 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 			{
 				struct _Remote_infection *pInfection = initElaboratedThreatInfo(pPacket);	//module_tagging.c
 				bool bDropping = cUnion.cTag.presumed_infected > pSetup->nBlockIncomingTaggedTrafficLevel;
-				char cBuf[300];
+				char cBuf[1000];
 
-				snprintf(pSetup->c100, sizeof(pSetup->c100)-1, "%s Tag-severity %u/%u. %s->%s, severity: %d, botnet: %d, owner_id: %d, info: %s, rx+tx: %d/%d\n", 
+				//ØT asdf 260526
+
+				if (!pInfection || cUnion.cTag.presumed_infected != pInfection->nSeverity)
+				{
+					pr_warn("tarakernel: *** WARNING *** PR incoming tagged message (from %pI4:%u) and remote infection severity differs: Stored: %u, incoming msg: %u", &pPacket->ip_header->saddr, pPacket->tcp_header->source, cUnion.cTag.presumed_infected, pInfection->nSeverity);
+					pSetup->bSendTrafficReport = 1;	//Initiate sending of traffic data on next timer (in module_timed_operations.c -> checkTimedOperation() )
+					//asdfasdf ... should mark pInfection so don't keep sending....
+				}
+				else
+				{
+					snprintf(pSetup->c100, sizeof(pSetup->c100)-1, "%s Tag-severity %u/%u. %s->%s, severity: %d, botnet: %d, owner_id: %d, info: %s, rx+tx: %d/%d\n", 
 							(bDropping?"**DROPPING packet**":"(tag removed)"), 
 							cUnion.cTag.presumed_infected, 
 							pSetup->nBlockIncomingTaggedTrafficLevel, 
@@ -462,12 +472,13 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 							pInfection->nByteCount, 
 							pInfection->nPacketCount);
 
-				if (strlen(pSetup->c100) == sizeof(pSetup->c100)-1)	//NOTE c100 is now 200 chars
-					if (!dropFromLogging(pPacket))
-						pr_warn("tarakernel: ***** ERROR **** pSetup->c100 buffer is to short. %zu bytes required (currently %zu)\n", strlen(cBuf)+1, sizeof(pSetup->c100));
+					if (strlen(pSetup->c100) == sizeof(pSetup->c100)-1)	//NOTE c100 is now 200 chars
+						if (!dropFromLogging(pPacket))
+							pr_warn("tarakernel: ***** ERROR **** pSetup->c100 buffer is to short. %zu bytes required (currently %zu)\n", strlen(cBuf)+1, sizeof(pSetup->c100));
 
-				if (!dropFromLogging(pPacket))
-					pr_info("tarakernel: PR infected: %s", pSetup->c100);
+					if (!dropFromLogging(pPacket))
+						pr_info("tarakernel: PR infected: %s", pSetup->c100);
+				}
 
 			    if (bDropping)
 			    {

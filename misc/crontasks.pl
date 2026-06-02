@@ -21,6 +21,16 @@ use lib_net;
 
 use POSIX qw(setsid);
 
+use Fcntl qw(:flock);
+
+#Prevent that multiple instances are running by using lock file
+my $szCrontasksLockFileName = '/tmp/crontasks.lock';
+
+open(my $fh, '>', $szCrontasksLockFileName) or die "Cannot open lock file: $!";
+flock($fh, LOCK_EX | LOCK_NB) or die "Already running. Aborting.\n";
+# keep $fh open for whole script lifetime
+print "Able to lock lock file.\n";
+
 sub getUrl
 {
     my ($szUrl, %cParams) = @_;
@@ -58,6 +68,24 @@ sub urlencode
     return $s;
 }
 
+sub programRunningLockFileHeld {
+	#Move this to func.pm (for other scripts to use..)
+    my ($szLockfileName) = @_;
+
+    open(my $fh, '>>', $szLockfileName)
+        or die "Cannot open $szLockfileName: $!";
+
+    # Try to acquire lock non-blocking
+    if (flock($fh, LOCK_EX | LOCK_NB))
+    {
+        # Nobody had it -> release immediately
+        close($fh);
+        return 0;
+    }
+
+    return 1;
+}
+
 sub reportStatus {
 	my ($dbh) = @_;
 	use JSON;
@@ -76,7 +104,8 @@ sub reportStatus {
 
 	$json{"lnk"} = (programRunning("taralink")?"1":0);	
 	$json{"knl"} = (moduleRunning("tarakernel")?"1":0);
-	$json{"cron"} = (programRunning("crontasks.pl")?"1":0);
+#	$json{"cron"} = (programRunning("crontasks.pl")?"1":0);
+	$json{"cron"} = (programRunningLockFileHeld($szCrontasksLockFileName)?1:0);	#Doesn't make sense... Not getting here unless the script is running. Put it in separate checking script
 
 	chomp(my $line = `df -h / | tail -1`);
 	my @f = split(/\s+/, $line);
@@ -548,7 +577,7 @@ sub check_start_perl_bg_script
         exec("/usr/bin/perl", $script) or die "exec failed: $!";
     }
 
-    print "Started iptables monitor (PID $pid)\n";
+    print "Script started (PID $pid)\n";
 }
 
 sub start_iptables_monitor
@@ -667,7 +696,13 @@ workshopSetup();	#If workshopId is set in dashboard setup, it will register othe
 start_iptables_monitor();	#Check if iptables_log_monitor.pl is already running. If not, starts it
 start_local_iptables_monitor();
 print "Starting start_process_dhcpdump()\n";
-start_process_dhcpdump($pSetup->{"internalNic"});	#NOTE! Just making sure dhcp_capture.pl is running..
+if (defined $pSetup->{"internalNic"})		#NOTE! This is not tested!!!
+{
+	start_process_dhcpdump($pSetup->{"internalNic"});	#NOTE! Just making sure dhcp_capture.pl is running..
+} else
+{
+	print "No internal nic. Dropping dhcp_dump.\n";
+}
 reportStatus($dbh);
 handle_syslogThreat_table($dbh);
 

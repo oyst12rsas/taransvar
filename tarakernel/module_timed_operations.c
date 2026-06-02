@@ -3,28 +3,28 @@
 void reportInfectionsList(void);
 void reportInfectionsList(void)
 {
-      //pr_info("tarakernel: Should report list of infections...\n");
+	//pr_info("tarakernel: Should report list of infections...\n");
 	struct _Node *pNode = (struct _Node *)(pSetup->pConfigurationPointerList[BLOCK_DESCRIPTIOR_INFECTIONS]);
-      pr_info("tarakernel: Registered infections: ");
-      int nFound = 0;
+	pr_info("tarakernel: Registered infections: ");
+	int nFound = 0;
 
 	while (pNode)
 	{
-            nFound++;
+		nFound++;
 		volatile uint32_t ipAddress = swappedEndian((u32) pNode->cInfection.ipAddress);
 		unsigned char* ipAddressBytes = (unsigned char*)&ipAddress;
             
-        	pr_info("tarakernel: %d.%d.%d.%d(%08X), ", (int)ipAddressBytes[3], (int)ipAddressBytes[2], (int)ipAddressBytes[1], (int)ipAddressBytes[0], ipAddress);
-            //*** NOTE Should convert all IP adresses to __be32 and just print like  */
-            //pr_info("tarakernel: %pI4(%08X), ",pNode->cInfection.ipAddress, pNode->cInfection.ipAddress);
+		pr_info("tarakernel: %d.%d.%d.%d(%08X), ", (int)ipAddressBytes[3], (int)ipAddressBytes[2], (int)ipAddressBytes[1], (int)ipAddressBytes[0], ipAddress);
+		//*** NOTE Should convert all IP adresses to __be32 and just print like  */
+		//pr_info("tarakernel: %pI4(%08X), ",pNode->cInfection.ipAddress, pNode->cInfection.ipAddress);
 
-            pNode = pNode->pNext;
-      }
+		pNode = pNode->pNext;
+	}
 
-      if (nFound)
-            pr_info("\n");
+	if (nFound)
+		pr_info("\n");
 
-      pr_info("tarakernel: %d infections found\n", nFound);
+	pr_info("tarakernel: %d infections found\n", nFound);
 }
 
 void debugRoutine(void)
@@ -54,29 +54,17 @@ char *bufferToHex(char *lpBuffer, int len, char* lpTarget, int nBufSize)
 
 void doPointerTest(void);
 
-bool trafficReportToTaralinkFound(int nProcessId)
+#define N_SENDBUF_SIZE 2000
+//#define N_SENDBUF_SIZE 200
+
+bool getTrafficReport(char *lpSendBuf, int bufSize);
+bool getTrafficReport(char *lpSendBuf, int bufSize)
 {
-
-    if (!pSetup->cShowInstructions.bits.doReportTraffic)  //No need to do anything further if not supposed to report traffic...
-    {
-        pSetup->cPendingIncomingReportArr[0].sIp = 0;   //To avoid that one with wrong time is being inserte in table if reporting is being turend on later. 
-        pSetup->cPendingIncomingReportArr[0].dIp = 0;
-        return false;
-    }
-
-    #define N_SENDBUF_SIZE 2000
-//    #define N_SENDBUF_SIZE 200
-    int n;
-    char *lpSendBuf = kmalloc(N_SENDBUF_SIZE, GFP_KERNEL);
-        
-    if (!lpSendBuf)
-    {
-        pr_info("tarakernel: **** ERROR ****** Couldn't allocate buffer in trafficReportTotaralinkFound()\n");
-        return 0;
-    }
-        
+    pSetup->bTrafficReportsBeingHandled = true;
 	//memset(lpSendBuf, 0, N_SENDBUF_SIZE);
 	strcpy(lpSendBuf, C_TRAFFIC_REPORT_PREFIX);
+
+    int n;
 
     for (n = 0; n < C_TRAFFIC_REPORT_ARRAY_SIZE; n++)
     {
@@ -108,22 +96,57 @@ bool trafficReportToTaralinkFound(int nProcessId)
         
     if (n == 0)
 	{
+
     	if (pSetup->cShowInstructions.bits.doReportTraffic) //NOTE Never gets her if this is set because checking first in the function (including here is the other deleted)
     	    if (pSetup->cShowInstructions.bits.showOther)
                 pr_info("tarakernel: No traffic to report to taralink...\n");
-        kfree(lpSendBuf);
-        return 0;
+        //kfree(lpSendBuf); - don't kfree here... freed by caller...
+        pSetup->bTrafficReportsBeingHandled = false;
+        return 0;   //Means didn't find traffic
     }
 
 	//Used to copy all to the buffer for sending before clearing... But now clearing just after the data put in buffer (see end of for loop above) 
 	//memset(pSetup->cPendingIncomingReportArr, 0, sizeof(pSetup->cPendingIncomingReportArr));
 
     strcpy(lpSendBuf+strlen(lpSendBuf), "EOF");
+    pSetup->bTrafficReportsBeingHandled = false;
+	return true;    //Means found traffic
+}
+
+bool trafficReportToTaralinkFound(int nProcessId)
+{
+    pr_info("tarakernel: ************* Dropping sending traffic report upon request by taralink. Implementing sending at own will..\n");
+    return false;
+
+/*    if (pSetup->bTrafficReportsBeingHandled)
+    {
+        pr_info("tarakernel: ************* Dropping sending traffic report (requested by taralink) because already being handled..\n");
+        return false;
+    }
+    pSetup->bTrafficReportsBeingHandled = true;
+    
+    if (!pSetup->cShowInstructions.bits.doReportTraffic)  //No need to do anything further if not supposed to report traffic...
+    {
+        pSetup->cPendingIncomingReportArr[0].sIp = 0;   //To avoid that one with wrong time is being inserte in table if reporting is being turend on later. 
+        pSetup->cPendingIncomingReportArr[0].dIp = 0;
+        return false;
+    }
+
+    char *lpSendBuf = kmalloc(N_SENDBUF_SIZE, GFP_KERNEL);
+        
+    if (!lpSendBuf)
+    {
+        pr_info("tarakernel: **** ERROR ****** Couldn't allocate buffer in trafficReportTotaralinkFound()\n");
+        return 0;
+    }
+
+    getTrafficReport(lpSendBuf, N_SENDBUF_SIZE);
 	
 	//Send traffic message to taralink. 
     sendMessage(nProcessId, lpSendBuf);
     kfree(lpSendBuf);
     return 1;
+*/    
 }
 
 void sendCheckRequests(int nProcessId)
@@ -161,8 +184,50 @@ void sendCheckRequests(int nProcessId)
     }
 }
 
+void sendTrafficReport(void);
+void sendTrafficReport()
+{
+    if (pSetup->bTrafficReportsBeingHandled)
+    {
+        pr_info("tarakernel: ************* Dropping sending traffic report (requested by taralink) because already being handled..\n");
+        return;
+    }
+    pSetup->bTrafficReportsBeingHandled = true;
+
+    char *lpSendBuf = kmalloc(N_SENDBUF_SIZE, GFP_KERNEL);
+
+    if (getTrafficReport(lpSendBuf, N_SENDBUF_SIZE))
+    {
+        pr_warn("tarakernel: About to send: %s\n", lpSendBuf);
+    	send_to_user(lpSendBuf);
+    }
+
+    //sendMessage(nProcessId, lpSendBuf);   this is for sending when being requested....
+	kfree(lpSendBuf);
+    pSetup->bSendTrafficReport = false;     
+}
+
 void checkTimedOperation(void)
 {
+    static int nTrafficReportLoops = 0;
+
+    if (pSetup->bSendTrafficReport)
+    {
+        pr_warn("tarakernel: Timed operations... And set to send traffic report...!\n");
+        sendTrafficReport();
+        nTrafficReportLoops = 0;
+        return;     //Don't do other timed operations... 
+    }
+
+    if (nTrafficReportLoops++ >= 5)
+    {
+        pr_warn("tarakernel: 5th timer so sending traffic report...!\n");
+        sendTrafficReport();
+        return;     //Don't do other timed operations... 
+    }
+
+    pr_warn("tarakernel: Timed operations... (none doing anything now)\n");
+
 /*
     241230 - probably not working.... checkRequestForStatus() is called with process id 0 below and such messages are never being sent... 
               checkRequestForStatus() is being called from hello_nl_recv_msg, so that's where it happens....

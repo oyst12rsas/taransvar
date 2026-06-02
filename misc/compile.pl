@@ -106,18 +106,15 @@ sub checkLibInstalled {
     my $output = `$cmd 2>&1`;
     my $exit   = $? >> 8;
 
-    #print "\nCMD: $cmd\n";
-    #print "Exit: $exit\n";
-    #print "Output:\n$output\n";
-
-    if ($output =~ /\Q$expectedText\E/) {
-     #   print "[OK] Found $expectedText\n";
+    if ($exit == 0 &&
+        (!$expectedText || $output =~ /\Q$expectedText\E/))
+    {
         return 1;
     }
 
-    print "[MISSING] $expectedText not found\n";
+    print "[MISSING] $install not found\n";
     print "Install with:\n";
-	print "sudo apt update\n";
+    print "sudo apt update\n";
     print "sudo apt install $install\n";
 
     if ($restartCmd) {
@@ -128,18 +125,33 @@ sub checkLibInstalled {
     return 0;
 }
 
-if (!checkLibInstalled("php -m | grep curl", "curl", "php-curl", "systemctl restart apache2")
-	|| !checkLibInstalled("perl -MJSON -e 'print \"OK\n\"'", "OK", "libjson-perl", "ls .")
-) 
+if (
+    !checkLibInstalled(
+        "php -m | grep curl",
+        "curl",
+        "php-curl",
+        "systemctl restart apache2"
+    )
+    || !checkLibInstalled(
+        "perl -MJSON -e 'print \"OK\n\"'",
+        "OK",
+        "libjson-perl",
+        ""
+    )
+	|| !checkLibInstalled(
+    	"dpkg-query -W -f='\${Status}' libcjson-dev 2>/dev/null",
+    	"install ok installed",
+    	"libcjson-dev",
+    	""
+	)
+)
 {
     print "Do you want to quit to install? (y/n): ";
-    
+
     my $answer = <STDIN>;
     chomp $answer;
 
-    if ($answer =~ /^y/i) {
-		exit;
-	}
+    exit if $answer =~ /^y/i;
 }
 
 print "Assuming you compiled from taransvar/misc, you might want to:\nsudo cp -r ../html/ /var/www\nsudo cp *.* /root/taransvar/perl\n\nTo run in taralink in background: sudo perl compile.pl bg\n\n";

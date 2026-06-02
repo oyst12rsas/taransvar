@@ -121,7 +121,7 @@ int fd = 0;
 
 
 //#define UDP_PORT 5555         now using TARALINK_LISTENING_TO_PORT (tarakernel/module_globals.h)
-#define NETLINK_USER 31   /* example only */
+//#define NETLINK_USER 31   /* example only */
 
 //New communication functions..
 int create_netlink_socket(void);
@@ -400,6 +400,8 @@ int create_netlink_socket(void)
 {
 //    int fd;   - global variable instead...
     struct sockaddr_nl addr;
+
+    printf("NETLINK_USER=%d\n", NETLINK_USER);
 
     //fd = socket(AF_NETLINK, SOCK_RAW, NL_PROTO);
     fd = socket(PF_NETLINK, SOCK_RAW, NETLINK_USER);

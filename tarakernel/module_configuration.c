@@ -135,7 +135,8 @@ void listHoneyports(void)
 void listInfectionsPointerList(void)
 {
 	int nCount = 0;
-	char *cBuf = memAlloc(C_SEGMENT_MAX_SIZE);
+	char cBuf[C_SEGMENT_MAX_SIZE];
+	*cBuf = 0;
 	//struct _InfectionSpecification *pInfectionArray = (struct _InfectionSpecification *)pSetup->pConfiguration[BLOCK_DESCRIPTIOR_INFECTIONS];
 	
 	struct _Node *pNode = pSetup->pConfigurationPointerList[BLOCK_DESCRIPTIOR_INFECTIONS];
@@ -149,19 +150,19 @@ void listInfectionsPointerList(void)
 	        break;
 	    }
 	
-		unsigned char* ipAddressBytes = (unsigned char*)&pNode->cInfection.ipAddress;
+		//unsigned char* ipAddressBytes = (unsigned char*)&pNode->cInfection.ipAddress;
 
 		if (*cBuf)
 			strcpy(cBuf+strlen(cBuf), ", ");
 
-		sprintf(cBuf+strlen(cBuf), "%d.%d.%d.%d(%08X)", (int)ipAddressBytes[0], (int)ipAddressBytes[1], (int)ipAddressBytes[2], (int)ipAddressBytes[3], pNode->cInfection.ipAddress);
+		//sprintf(cBuf+strlen(cBuf), "%d.%d.%d.%d(%08X)", (int)ipAddressBytes[0], (int)ipAddressBytes[1], (int)ipAddressBytes[2], (int)ipAddressBytes[3], pNode->cInfection.ipAddress);
+		sprintf(cBuf+strlen(cBuf), "%pI4", &pNode->cInfection.ipAddress);
 		pNode = pNode->pNext;
 	}
 
     int nBytesTaken = nCount * (sizeof(void*) + sizeof(struct _InfectionSpecification));
 	pr_info("tarakernel: Infections in pointer list (bytes taken by %d: %d): %s\n", nCount, nBytesTaken, cBuf);
 	
-	kfree(cBuf);
 }//listInfectionsPointerList()
 
 void listInfections(void)
@@ -169,7 +170,8 @@ void listInfections(void)
 	pr_info("tarakernel: listInfections() is no longer supposed to be called... Aborting");
 	return;
 	int n;
-	char *cBuf = memAlloc(C_SEGMENT_MAX_SIZE);
+	char cBuf[C_SEGMENT_MAX_SIZE];
+	*cBuf = 0;
 	struct _InfectionSpecification *pInfectionArray = (struct _InfectionSpecification *)pSetup->pConfiguration[BLOCK_DESCRIPTIOR_INFECTIONS];
 
 	for (n=0;n<pSetup->nElementsInArray[BLOCK_DESCRIPTIOR_INFECTIONS];n++)
@@ -195,7 +197,6 @@ void listInfections(void)
         else
           lpShow = "<too many to show>";
 	pr_info("tarakernel: Infections in array (bytes taken by %d: %d): %s\n", n, nBytesTaken, lpShow);
-	kfree(cBuf);
 }//listInfections()
 
 
@@ -576,6 +577,7 @@ struct _InfectionSpecification *isInfectedPointerList(volatile uint32_t ipAddres
 	//Commented out code is for listing internal infected units.
 //	char cInfectedUnits[1000];
 //	strcpy(cInfectedUnits, "");
+	int nSlot = 0;
 
 	for (struct _Node *pNode = pSetup->pConfigurationPointerList[BLOCK_DESCRIPTIOR_INFECTIONS]; pNode; pNode = pNode->pNext)
 	{
@@ -589,8 +591,8 @@ struct _InfectionSpecification *isInfectedPointerList(volatile uint32_t ipAddres
 		if (pNode && ipAddress == pNode->cInfection.ipAddress)
 		{
 		    //pr_info("tarakernel: **** Traffic from infected unit! Threat category: %d. Infected units: %s\n", pNode->cInfection.cTag.presumed_infected, cInfectedUnits); 
-			pr_info("tarakernel: **** Traffic from infected unit %pI4! Cat: %d, ID: %d, severity: %d, botnetId: %d, info: %s.\n", 
-				&pNode->cInfection.ipAddress, pNode->cInfection.cTag.presumed_infected, pNode->cInfection.nInfectionId, pNode->cInfection.nSeverity, pNode->cInfection.nBotnetId, pNode->cInfection.lpInfo); 
+			pr_info("tarakernel: **** Traffic from infected unit %pI4! (slot %d) Cat: %d, ID: %d, severity: %d, botnetId: %d, info: %s.\n", 
+				&pNode->cInfection.ipAddress, nSlot++, pNode->cInfection.cTag.presumed_infected, pNode->cInfection.nInfectionId, pNode->cInfection.nSeverity, pNode->cInfection.nBotnetId, pNode->cInfection.lpInfo); 
 		    return &pNode->cInfection;
 		}
 	}

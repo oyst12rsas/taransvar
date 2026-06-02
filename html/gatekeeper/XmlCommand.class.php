@@ -196,7 +196,9 @@ static public function setInnerHTML($szFldId, $szFldName, $szValue, $cMoreParams
     
     //$this->cCommands[] = 
     global $pSystem;
-    $pSystem->cCommands[] = CXmlCommand::getWrapped("what", "setInnerHTML").$szIdent.CXmlCommand::getWrapped("value", CXmlCommand::encoded($szValue)).CXmlCommand::getParamsFromArr($cMoreParamsArr);
+    
+    if ($pSystem)
+        $pSystem->cCommands[] = CXmlCommand::getWrapped("what", "setInnerHTML").$szIdent.CXmlCommand::getWrapped("value", CXmlCommand::encoded($szValue)).CXmlCommand::getParamsFromArr($cMoreParamsArr);
 }
 
 static function addToInnerHTML($szFldId, $szFldName, $szValue, $szWhere = "bottom", $szOnDuplicates = "add")

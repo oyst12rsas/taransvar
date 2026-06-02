@@ -38,11 +38,12 @@ void addWarningRecord_PREPARED_STATEMENT_NOT_WORKING(char *szWarning) //Now work
 	MYSQL *conn = getConnection();
 	
 	char *lpSQL = "select warningId from warning where handled is null and lastWarned >= DATE_SUB(NOW(), INTERVAL 1 DAY) and warning = ?";
-    	stmt = mysql_stmt_init(conn);
-	if (stmt == NULL) {
+    stmt = mysql_stmt_init(conn);
+	if (stmt == NULL) 
+    {
 		printf("************ ERROR ********** Could not initialize statement\n");
-              	exit(1);
-        }
+        exit(1);
+    }
 
 	//printf("************ Debug ********** About to prepare..\n");
 

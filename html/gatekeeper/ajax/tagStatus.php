@@ -2,6 +2,9 @@
 
 function meOrMine($nIp, $szIp)
 {
+	if (!strcmp($szIp, '127.0.0.1') || !strcmp($szIp, '::1'))
+		return 1;
+
 	$dbh = getConnection();
 	$stmt = $dbh->prepare("select adminIP, nettmask, inet_aton(?) as CheckIp from setup");
 	$stmt->bind_param("s", $szIp); 
@@ -29,15 +32,14 @@ function tagStatus()
 	//CXmlCommand::setInnerHTML("tagStatus", "", "TESTING");//, $cMoreParamsArr = array())
 	//return;
 
-
-	$szSenderIp = getSenderIp();
+	$szSenderIp = getSenderIp();	//If $szSenderIp is "::1" or "127.0.0.1", then should use setup->adminIP instead for the search (but this won't happen in real life..). Can test by putting those IPs in internalInfections....
 
 	$tagStatus = "Unknown tag status<br>IP: ".$szSenderIp;
 
 	if (meOrMine(0, $szSenderIp))
 	{
 		//One of my units... Read status from internalInfections table
-		$szSQL = "select infectionId, lastSeen, infoSharePartners, severity from internalInfections where ip = inet_aton(?) order by infectionId desc limit 1";
+		$szSQL = "select infectionId, lastSeen, infoSharePartners, severity, CAST(active AS UNSIGNED) as active from internalInfections where ip = inet_aton(?) order by infectionId desc limit 1";
 		$conn = getConnection();
 		$stmt = $conn->prepare($szSQL);
 		$stmt->bind_param("s", $szSenderIp); 
@@ -48,10 +50,10 @@ function tagStatus()
 		{
 			if($row = $result->fetch_assoc()) 
 			{
-				if ((int)$row["severity"] > 0)
+				if (((int)$row["active"] == 1) && ((int)$row["severity"] > 0))
 					$tagStatus = '<br><font color="red">YOU ARE TAGGED</font></b><br>Severity: '.$row["severity"];
 				else
-					$tagStatus = '<font color="green">You are clean<br>Last seen: '.$row["severity"].' id:'.$row["infectionId"].'</font>';
+					$tagStatus = '<font color="green">You are clean<br>Severity: '.$row["severity"].' id:'.$row["infectionId"].'</font>';
 			}
 		}
 		else
@@ -69,24 +71,70 @@ function tagStatus()
 		$stmt->bind_param("s", $szSenderIp); 
 	    $stmt->execute();
 		$result = $stmt->get_result(); // get the mysqli result
+		$nTagStatusBasedOnHackReport = 0;
+		$nSeverity = 0;
 
 		if ($result->num_rows > 0) 
 		{
 			if($row = $result->fetch_assoc()) 
 			{
-				if ((int)$row["severity"] > 1)
-					$tagStatus = '<br><font color="red">YOU ARE TAGGED</font></b><br>Severity: '.$row["severity"]."<br>Contact provider";
+				$nSeverity = (int)$row["severity"];
+				if ($nSeverity > 1)
+				{
+					$nTagStatusBasedOnHackReport = 1;
+					$tagStatus = '<br><font color="red">YOU ARE TAGGED</font></b><br>Severity: '.$nSeverity."<br>Contact provider";
+				}
 				else
 					$tagStatus = '<font color="green">You are clean</font>';
 				//$tagStatus = "Severity: ".$row["severity"]."<br>".$row["infoSharePartners"];
 		  	}
 		} 
+		//********************* traffic ********************** 
+
+		$nTagStatusBasedOnTraffic = 0;
+		$nTrafficSecondsSince = -1;
+
+		$sql = "SELECT trafficId, created, lastSeen, count, tag, TIMESTAMPDIFF(SECOND, coalesce(lastSeen, created), NOW()) AS seconds_since from traffic T where T.ipFrom = inet_aton(?) order by trafficId desc limit 1";
+		$stmt = $conn->prepare($sql);
+		$stmt->bind_param("s", $szSenderIp); 
+		$stmt->execute();
+		$result = $stmt->get_result(); // get the mysqli result
+
+		if ($result) 
+		{
+			if ($row = $result->fetch_assoc()) 
+			{
+				$nTrafficSecondsSince = $row["seconds_since"];
+				if ((int)$row["tag"] > 1)	//Note! tag contains more than just severity... but omit that for now...
+					$nTagStatusBasedOnTraffic = 1;
+		  	}
+			$result->close();
+		} 
+
+		if ($nTagStatusBasedOnTraffic != $nTagStatusBasedOnHackReport)
+		{
+			$tagStatus = '<font color="yellow">Traffic log contradicts hack reports!</font>';
+			
+			if ($nTrafficSecondsSince < 60)
+				$tagStatus .= "<br>Traffic data are recent. So most likely ".($nTagStatusBasedOnTraffic?'<font color="red">TAGGED</font>':'<font color="green">CLEAN</font>');
+			else
+				$tagStatus .= "<br>Traffic data are old. Should check out why.";
+		}
+		else
+		{
+			if ($nTagStatusBasedOnTraffic)
+				$tagStatus = '<br><font color="red">YOU ARE TAGGED</font></b><br>Severity: '.$nSeverity."<br>Contact provider";
+			else
+				$tagStatus = '<font color="green">You are clean</font>';
+
+			if ($nTrafficSecondsSince >= 0)
+				$tagStatus .= "<br>Traffic $nTrafficSecondsSince sec ago.";
+			else
+				$tagStatus .= "<br>No traffic registered.";
+		}
 	}
-	//$conn->close();
 
 	CXmlCommand::setInnerHTML("tagStatus", "", $tagStatus);//, $cMoreParamsArr = array())
-
-	
 }
 
 ?>

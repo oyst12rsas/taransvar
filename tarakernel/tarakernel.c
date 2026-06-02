@@ -319,8 +319,6 @@ static void hello_nl_recv_msg(struct sk_buff *skb)
 	sendMessage(nlhead->nlmsg_pid, cReply);
 }
 
-
-/*
 static void send_to_user(const char *msg)
 {
 	//Use this to send messages to user space initiated from kernel... 
@@ -359,7 +357,7 @@ static void send_to_user(const char *msg)
     res = nlmsg_unicast(nl_sk, skb_out, pid);
     if (res < 0)
         printk(KERN_INFO "Error while sending to user: %d\n", res);
-}*/
+}
 
 
 //Timer callback and includes
@@ -368,23 +366,25 @@ static void send_to_user(const char *msg)
 
 static struct timer_list my_timer;
 
-/*
+
 static void my_timer_cb(struct timer_list *t)
 {
 	pr_info("For now not getting here..... (unless you read this message)\n");
 
 	//printk("tarakernel: my_timer fired  ******************** DEBUGGING ONLY:::\n");
 		
-    //checkTimedOperation();  //module_timed_operations.h	- should be implemented as true timed operation - don't delay packets here....
+    checkTimedOperation();  //module_timed_operations.h	- should be implemented as true timed operation - don't delay packets here....
 
-    // rearm 1 second later (if wanted) - or much for debug
+    // rearm [TIMER_SECONDS] seconds later (if wanted) - or much for debug
+	if (1)
+		mod_timer(&my_timer, jiffies + msecs_to_jiffies(TIMER_SECONDS * 1000));
+	else
+		pr_info("tarakernel: **************Dropping rearming timer for debug! ******************");
 
-
-    mod_timer(&my_timer, jiffies + msecs_to_jiffies(TIMER_SECONDS * 1000));
 
 	//send_to_user("tarakernel here... I got a timer.. how are you?");
 }
-*/
+
 
 static int __init hello_init(void) 
 {
@@ -396,17 +396,17 @@ static int __init hello_init(void)
 	if (!configuration_init())		//defined in module_configuration.c;
 		pr_info("tarakernel: ****** ERROR ***** configuration_init() returned false\n");
 		//return -1;
-	/*
-	if (0) 	//Do testing here after pSetup is initialized
+	
+	if (1) 	//Do testing here after pSetup is initialized
 	{
 		pr_info("******** DEBUGGING (not initializing) **************");
 		//Set up a timer
 		timer_setup(&my_timer, my_timer_cb, 0);
     	mod_timer(&my_timer, jiffies + msecs_to_jiffies(5 * 1000));	// fire once after 1 second 
 
-    	printk("tarakernel: timer armed\n");
-		return 0;
-	}*/
+    	printk(KERN_INFO "tarakernel: timer armed\n");
+		//return 0;
+	}
 
 	if (SYSTEM_OPERATION_LEVEL > 1) //Without this there's nothing
 	{
@@ -414,7 +414,9 @@ static int __init hello_init(void)
     			.input = hello_nl_recv_msg,
 		};
 
-        	//Create socket and register call back funciton (hello_nl_recv_msg) for receiving messages from user space program (taralink)
+       	//Create socket and register call back funciton (hello_nl_recv_msg) for receiving messages from user space program (taralink)
+		printk(KERN_INFO "tarakernel: NETLINK_USER=%d\n", NETLINK_USER);		
+		printk(KERN_INFO "tarakernel: calling netlink_kernel_create()\n");
 		pSetup->nl_sk = netlink_kernel_create(&init_net, NETLINK_USER, &cfg);
 
 		if(!pSetup->nl_sk)
@@ -422,6 +424,7 @@ static int __init hello_init(void)
 			printk(KERN_ALERT "tarakernel: ************* Error creating socket.\n");
 			return -10;
 		}
+		printk(KERN_INFO "tarakernel: netlink_kernel_create() succeeded.\n");
 	}
 
 	//******* Register PRE ROUTING hook ****************
@@ -502,7 +505,7 @@ static void __exit hello_exit(void)
 
     // timer: safe teardown when unloading 
     timer_delete_sync(&my_timer);
-    pr_info("timer stopped\n");
+    pr_info("tarakernel: timer stopped\n");
 }
 
 module_init(hello_init); 

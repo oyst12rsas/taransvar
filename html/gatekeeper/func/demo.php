@@ -225,7 +225,8 @@ function vpn_demo()
 	print "Simple demo: ";
 
 	$conn=getConnection();
-	$szSQL = "select name, inet_ntoa(ip) as ip, partnerStatusReceived from partnerRouter R join partner P on P.partnerId = R.partnerId";
+	$szWhere = !isAdmin()?"where showToAdminsOnly = b'0'":"";
+	$szSQL = "select name, inet_ntoa(ip) as ip, partnerStatusReceived from partnerRouter R join partner P on P.partnerId = R.partnerId $szWhere";
 	//print "<br>$szSQL<br>";
 	$conn->query($szSQL) or die(mysql_error());
 	$result = $conn->query($szSQL);

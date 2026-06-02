@@ -32,7 +32,7 @@ function partner()
 	            while ($row = $result->fetch_assoc()) 
 			    {
         			print '<tr><td>'.$row["aip"].'</td><td>'.$row["ip"].'</td><td>'.$row["nettmask"].'</td><td>';
-					if (isPartner())
+					if (isAdmin())
 						print '<a href="index.php?f=delRouter&id='.$row["routerId"].'">[Delete]</a>';
 							else
 								print "&nbsp;";

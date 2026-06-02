@@ -26,6 +26,106 @@ char *bufferToHex(char *lpBuffer, int len, char* lpTarget, int nBufSize)
       return lpTarget;
 }
 
+void checkUpdateTag(char *lpIpHex, char *lpPortHex, char *lpTagHex)
+{
+	MYSQL *conn = getConnection();
+
+	char *lpRec;
+	char *lpTokens = "^";
+    
+	int status;
+	MYSQL_RES *result;
+	MYSQL_ROW row;
+	MYSQL_FIELD *field;
+	MYSQL_RES *rs_metadata;
+	MYSQL_BIND quaryParams[2];
+
+	MYSQL_STMT *stmt = mysql_stmt_init(conn);
+	if (stmt == NULL) 
+    {
+		printf("************ ERROR ********** Could not initialize statement\n");
+        exit(1);
+    }
+
+	char *lpSql = "select reportId, severity from hackReport where ip = unhex(?) and port = unhex(?) order by coalesce(lastSeen, created)";
+
+	status = mysql_stmt_prepare(stmt, lpSql, strlen(lpSql));
+	test_stmt_error(stmt, status); //line which gives me the syntax error 
+
+
+	memset(quaryParams, 0, sizeof(quaryParams));
+	unsigned long nIpLen = strlen(lpIpHex);
+	unsigned long nPortLen = strlen(lpPortHex);
+
+	//ipFrom
+	quaryParams[0].buffer_type = MYSQL_TYPE_VAR_STRING;
+	quaryParams[0].buffer_length = 100; //Irrelevant because we'll only do insert
+	quaryParams[0].is_unsigned = 1;
+	quaryParams[0].is_null = 0; 
+    quaryParams[0].buffer = lpIpHex;
+	quaryParams[0].length = &nIpLen;
+
+	//portFrom
+	quaryParams[1].buffer_type = MYSQL_TYPE_VAR_STRING;
+	quaryParams[1].buffer_length = 100; //Irrelevant because we'll only do insert
+	quaryParams[1].is_unsigned = 1;
+	quaryParams[1].is_null = 0;
+    quaryParams[1].buffer = lpPortHex;
+	quaryParams[1].length = &nPortLen;
+
+	// bind parameters
+	status = mysql_stmt_bind_param(stmt, quaryParams); //muore qui
+	test_stmt_error(stmt, status);
+
+	status = mysql_stmt_execute(stmt);
+//	printf("************ Debug ********** After execute..(status: %d)\n", status);
+	test_stmt_error(stmt, status);
+
+	MYSQL_BIND rec[2];
+	unsigned int nReportId, severity;
+	
+	rec[0].buffer_type = MYSQL_TYPE_LONG;//MYSQL_TYPE_VAR_STRING;
+    rec[0].buffer = (char*) &nReportId;   
+	rec[0].buffer_length = sizeof(unsigned int);
+	rec[0].length = 0; //int-field;
+	rec[0].is_unsigned = 1;
+	rec[0].is_null = 0;
+
+	rec[1].buffer_type = MYSQL_TYPE_LONG;//MYSQL_TYPE_VAR_STRING;
+    rec[1].buffer = (char*) &severity;   
+	rec[1].buffer_length = sizeof(unsigned int);
+	rec[1].length = 0; //int-field;
+	rec[1].is_unsigned = 0;
+	rec[1].is_null = 0;
+
+
+//	printf("************ Debug ********** About to bind result..(status: %d)\n", status);
+	status = mysql_stmt_bind_result(stmt, rec);
+	test_stmt_error(stmt, status);	
+
+	status = mysql_stmt_fetch(stmt);
+
+	if (status == MYSQL_NO_DATA) {
+    	printf("No hackReport found for 0x%s:0x%s. Tag: 0x%s\n", lpIpHex, lpPortHex, lpTagHex);
+	} 
+	else 
+		if (status == 0) 
+		{
+	    	printf("\n************ HackReport for 0x%s:0x%s. Tag: 0x%s - ID: %u, severity: %d\n\n", nReportId, severity);
+		} else 
+		{
+    		test_stmt_error(stmt, status);
+		}
+
+	mysql_stmt_close(stmt);
+	mysql_close(conn);
+}
+
+/*
+void tagChanged(char *lpFromIpHex, char *lpFromPortHex, char *lpToIpHex, char *lpToPortHex, int nFromTag, int nNewTag)
+{
+	printf("***** It's discovered that tag info for 0x%s:0x%s is %d, while it used to be: %d\n", lpFromIpHex, lpFromPortHex, nNewTag, nFromTag);
+}*/
 
 void handleTrafficReportFromKernel(char *lpPayload, int nDataLength)
 {
@@ -124,9 +224,13 @@ void handleTrafficReportFromKernel(char *lpPayload, int nDataLength)
 		{
            	char cSql[400];
 			//First check if there's a recent traffic report we can update.
-			sprintf(cSql, "select trafficId, count from traffic where ipFrom = 0x%s and portFrom = 0x%s and ipTo = 0x%s and portTo = 0x%s and tag = 0x%s and (lastSeen is null or lastSeen > NOW() - INTERVAL 1 MINUTE) limit 1",
-					cFields[0], cFields[1], cFields[2], cFields[3], cFields[5]);
-			//printf ("%s\n", cSql);
+
+			//Making new version checking if tag is changed from the most recent stored in the table.. If so check it and maybe change hackReport table...
+			//sprintf(cSql, "select trafficId, count from traffic where ipFrom = 0x%s and portFrom = 0x%s and ipTo = 0x%s and portTo = 0x%s and tag = 0x%s and (lastSeen is null or lastSeen > NOW() - INTERVAL 1 MINUTE) limit 1",
+			//		cFields[0], cFields[1], cFields[2], cFields[3], cFields[5]);
+
+			sprintf(cSql, "select trafficId, count, tag from traffic where ipFrom = 0x%s and portFrom = 0x%s and ipTo = 0x%s and portTo = 0x%s and (lastSeen is null or lastSeen > NOW() - INTERVAL 1 MINUTE) order by coalesce(lastSeen, created) limit 1",
+					cFields[0], cFields[1], cFields[2], cFields[3]);
 
 			int nUpdateTrafficId = 0;
 			if (mysql_query(conn, cSql) == 0)
@@ -137,7 +241,20 @@ void handleTrafficReportFromKernel(char *lpPayload, int nDataLength)
 				res = mysql_store_result(conn);
 				if (res) {
 					if ((row = mysql_fetch_row(res)) != NULL)
+					{
 						nUpdateTrafficId = atoi(row[0]);
+
+						//*** ERROR - tag is hex... and this test is not sufficient because there may not be any recent traffic registered.. Better check all traffic records.. 
+						//int nTag = atoi(row[2]);
+						//int nNewTag = atoi(cFields[5]);
+						/*
+						if (nTag != nNewTag)
+							tagChanged(cFields[0], cFields[1], cFields[2], cFields[3], nTag, nNewTag);
+						else
+						{
+							printf("Tag unchanged for 0x%s:0x%s - tag %d\n", cFields[0], cFields[1], nTag);
+						}*/
+					}
 
 					mysql_free_result(res);
 				}
@@ -166,6 +283,8 @@ void handleTrafficReportFromKernel(char *lpPayload, int nDataLength)
             else
 				fprintf(stderr, "MySQL error inserting/updating traffic record: %s\nSQL: %s\n", mysql_error(update), cSql);
 				//printf("******** ERROR inserting/updating traffic record.\n");
+
+			checkUpdateTag(cFields[0], cFields[1], cFields[5]);
 		}
 	}
 	printf("%d records inserted, %d updated in traffic table.\n", nInserts, nUpdates);

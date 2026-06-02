@@ -5,7 +5,8 @@
 
 #define USE_POINTER_LIST 1
 
-#define TIMER_SECONDS 10
+//Timer now being used when new incoming tagged traffic discovered. So keep it 1 second
+#define TIMER_SECONDS 1		
 
 #include "module_globals.h"
 
@@ -201,9 +202,10 @@ struct _Remote_infection {
 
 struct _Setup {
 	bool bTrafficReportsBeingHandled;
-        char cTrafficPrefix[8]; //supposed to contain "TRAFFIC|", see C_TRAFFIC_REPORT_PREFIX defined in module_globals.h
-        struct _ipPort2 cPendingIncomingReportArr[C_TRAFFIC_REPORT_ARRAY_SIZE]; //struct _ipPort2 is defined in module_globals.h because also used by AbMonitor
-        //struct _ipPort2 cPendingOutgoingReportArr[C_TRAFFIC_REPORT_ARRAY_SIZE];  
+	bool bSendTrafficReport; 		//Important if incoming tagged traffic that we don't know of...
+    char cTrafficPrefix[8]; //supposed to contain "TRAFFIC|", see C_TRAFFIC_REPORT_PREFIX defined in module_globals.h
+	struct _ipPort2 cPendingIncomingReportArr[C_TRAFFIC_REPORT_ARRAY_SIZE]; //struct _ipPort2 is defined in module_globals.h because also used by AbMonitor
+	//struct _ipPort2 cPendingOutgoingReportArr[C_TRAFFIC_REPORT_ARRAY_SIZE];  
 	u32 nMyIp;
 	u32 nInternalIp;  //OT1111
 	u32 nNettmask;
@@ -265,5 +267,6 @@ _Node *getNewAfter(_Node *pPointer, int nStructSize); //Defined in module_pointe
 _Node *getLast(_Node *pPointer);  //Defined in module_pointer_list.c
 void doInfectionsPointerListTest(void); //Remove this when tested..
 struct _Remote_infection *findRemoteInfectionInfoReceived(__be32 sIp, __be16 sPort, bool bRegister, bool *pbRegistered);
+static void send_to_user(const char *msg);
 
 #endif

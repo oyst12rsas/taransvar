@@ -497,8 +497,8 @@ char *interpretNextBatch(int nBlockDescriptor, char *lpConfiguration)
 						pr_info("tarakernel: *************** ERROR! (res: %d) Infection: %s Interpretation failed\n", nRes, lpPointer);
 				}
 
-				//pr_info("tarakernel: Checking list after insertion...\n");
-				//listInfectionsPointerList();
+				pr_info("tarakernel: Checking list after insertion...\n");
+				listInfectionsPointerList();
 				break;
   
             case BLOCK_DESCRIPTIOR_PARTNERS:

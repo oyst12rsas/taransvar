@@ -215,6 +215,7 @@ alter table syslog add count int unsigned not null default 0;
 update setup set dbVersion = 66;
 
 #******** NEXT TIME ALSO add *****
+alter table setup add systemMessage varchar 255;
 #update setup set dbVersion = 67;
 
 

@@ -28,7 +28,10 @@ function loaded(nJSVer)
 
 function ajax_request_func()
 {
-    return "ajax.php";
+    if (typeof cAjaxServer === 'undefined')
+        return "ajax.php";
+    else
+        return cAjaxServer;
 }
 
 /*RSS-feed*/

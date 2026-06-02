@@ -711,7 +711,7 @@ void *worker(void *arg) {
 					pInfection->nSeverity, 
 					pInfection->nBotnetId, 
 					(pInfection->lpInfo?pInfection->lpInfo:"NULL"));
-            printf("Trying to send to %s:%d - %s\n (severiry: %u)", pFound->szSendToIp, TARALINK_LISTENING_TO_PORT, cMessage, pInfection->nSeverity);
+            printf("Trying to send to %s:%d - %s (severiry: %u)\n", pFound->szSendToIp, TARALINK_LISTENING_TO_PORT, cMessage, pInfection->nSeverity);
        		
 			send_UDP_message(sock, pFound->szSendToIp, TARALINK_LISTENING_TO_PORT, cMessage);
 		}

@@ -1,7 +1,12 @@
 <?php 
 
-require_once("../script/getSenderIp.php");
-require_once "../script/reportHacking.php";
+if (file_exists("../script/getSenderIp.php"))
+	$szScriptFolder = "../script/";
+else
+	$szScriptFolder = "script/";
+
+	require_once($szScriptFolder."getSenderIp.php");
+	require_once($szScriptFolder."reportHacking.php");
 
 
 function getPartnerRouterOf($szIp)
@@ -53,6 +58,14 @@ function getUrl($baseUrl, $params = [])
     curl_close($ch);
 
     return "HTTP $httpCode\n$output";
+}
+
+function logMsg($szMsg)
+{
+	$conn = getConnection;
+	$stmt = $conn->prepare("insert into systemMessage (message) values (?)");
+	$stmt->bind_param("s", $szMsg);
+	$stmt->execute();
 }
 
 function reportHacking($szMsg)
@@ -118,8 +131,10 @@ function reportHacking($szMsg)
 		print "localhost user.. just logging locally<br>";
 	}
 
-	//Report it to our own hackReport table
-	$szSQL = "insert into hackReport (ip, port, sentByIp, status) values (inet_aton(?), ?, inet_aton('127.0.0.1'), ?)";
+	//Report it to our own hackReport table (if already registered, upgrade count field)
+
+	$szSQL = "insert into hackReport (ip, port, sentByIp, status, why) 
+		values (inet_aton(?), ?, inet_aton('127.0.0.1'), 'www', ?)";
 	$stmt = $conn->prepare($szSQL);
 	$stmt->bind_param("sis", $szSenderIp, $nFromPort, $szmsg);
 	$stmt->execute();
@@ -151,7 +166,8 @@ function checkIfTooManyLoginAttemptFromIp($szIp)
 
 			if ($rec["last1Minute"]+0 > 5 || $rec["last5Minutes"]+0 > 10)
 			{
-				reportHacking("This IP tried to log in ".$rec["last1Minute"]."/".$rec["last5Minutes"]." last 1/5 min");
+				$szMsg = "This IP tried to log in ".$rec["last1Minute"]."/".$rec["last5Minutes"]." last 1/5 min";
+				reportHacking($szMsg);
 			}
 		}
 	}

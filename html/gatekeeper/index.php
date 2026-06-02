@@ -24,7 +24,7 @@ function isAdmin()
 	$szSQL = "select CAST(isAdmin AS UNSIGNED) as isAdmin from user where userId = ?";
 	$conn = getConnection();
 	$stmt = $conn->prepare($szSQL);
-	$nUserId = $_SESSION["userid"]+0;
+	$nUserId = isset($_SESSION["userid"])?$_SESSION["userid"]+0:0;
 	$stmt->bind_param("i", $nUserId);
 	$stmt->execute();
 	$result = $stmt->get_result(); // get the mysqli result
@@ -265,9 +265,9 @@ td {
 		//}
 	}
 </script>
+<script type="text/javascript" src="std.js"></script>
 <script type="text/javascript" src="lib.js"></script>
 <script type="text/javascript" src="lib2.js"></script>
-<script type="text/javascript" src="std.js"></script>
 <script type="text/javascript" src="gatekeeper.js"></script>
 <script>
 var cJsonParam = new Object;
@@ -285,7 +285,9 @@ function showMenu()
 global $setupRow;
 ?>
 <h1 style="position:relative;"><?php printTitle(); ?>
-	 <div id="tagStatus" style="position:absolute; right:0; top:0; font-size:12px;">&nbsp;</div></h1>
+	 <div id="tagStatus" style="position:absolute; right:0; top:0; font-size:12px;" onclick="tagStatusClicked()">&nbsp;</div>
+	 <div id="tagStatusExtra" style="display:none;">&nbsp</div>
+</h1>
 <table>
 <tr>
 <td bgcolor="white"><a href="index.php?f=infections">Infection</a></td>
@@ -554,16 +556,20 @@ if (isset($_SESSION["userid"]) && isset($_GET["f"]) &&  in_array($_GET["f"], arr
 
 print "<h2>$szErrorMessage</h2>";
 
-//Check if there's unhandled warnings and error messages
-$conn = getConnection();
+if (isAdmin())
+{
+	//Check if there's unhandled warnings and error messages
+	$conn = getConnection();
 
-$sql = "select warningId, inserted, warning from warning where handled is null order by inserted desc limit 2";
-$result = $conn->query($sql);
-if ($result->num_rows == 1 && $row = $result->fetch_assoc())
-	print "<font color=\"red\">WARNING: ".$row["warning"]."</font>&nbsp;&nbsp;".getCloseWarningLink($row["warningId"])."<br><br>";	
-else
-	if ($result->num_rows > 1)
-		print "<a href=\"index.php?f=warnings\"><font color=\"red\">There are warnings. Click here to see.</font></a><br><br>";
+	$sql = "select warningId, inserted, warning from warning where handled is null order by inserted desc limit 2";
+	$result = $conn->query($sql);
+	if ($result->num_rows == 1 && $row = $result->fetch_assoc())
+		print "<font color=\"red\">WARNING: ".$row["warning"]."</font>&nbsp;&nbsp;".getCloseWarningLink($row["warningId"])."<br><br>";	
+	else
+		if ($result->num_rows > 1)
+			print "<a href=\"index.php?f=warnings\"><font color=\"red\">There are warnings. Click here to see.</font></a><br><br>";
+	$conn->close();
+}
 
 if (!isset($_SESSION["userid"]) && (!isset($_GET["f"]) || $_GET["f"] <> "submitLogin"))
 {

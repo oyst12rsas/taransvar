@@ -361,11 +361,11 @@ sub getNewUnknownUnitId {
 	if (($uintNewIp & $nNettmask) == ($cSetup->{"adminIP"} & $nNettmask)) {
 		$description = "WG client?";
 	} else {
-		$description = 'Unknown not via HDCP?';
+		$description = 'Unknown not via DHCP?';
 	}
 	$sthSetup->finish;
 
-	my $szSQL = "insert into unit (ipAddress, description, dhcpClientId) values(inet_aton('$szInternalIp'), $description, '')";
+	my $szSQL = "insert into unit (ipAddress, description, dhcpClientId) values(inet_aton('$szInternalIp'), '$description', '')";
 	#print "$szSQL\n";
 	doExecute($dbh, $szSQL);
 	my $nUnitId = getLastInsertId($dbh); 	

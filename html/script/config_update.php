@@ -28,8 +28,8 @@ $nFromPort = $_SERVER['REMOTE_PORT'];
 
 if (isset($_GET["f"]))
 {
-    switch ($_GET["f"])
-    {
+	switch ($_GET["f"])
+	{
 		case "confession":
 			//Routers send this to global DB servers when they're notified that one of their units attacked others...
 			//http://192.168.100.15/config_update.php?f=confession&ip=192.168.100.10&port=57612&ourid=2
@@ -37,13 +37,13 @@ if (isset($_GET["f"]))
 			if (!isset($_GET["ourid"])){
 				echo "(missing params)";
 				exit;
-            }
+			}
 			$nOurId = (int)$_GET["ourid"];
-            //Set hackReport -> remoteUnitId
-            $szSQL = "select reportId from hackReport where inet_aton(ip) = ? and port = ? order by reportId desc limit 1";
-            $conn = getConnection();
+			//Set hackReport -> remoteUnitId
+			$szSQL = "select reportId from hackReport where inet_aton(ip) = ? and port = ? order by reportId desc limit 1";
+			$conn = getConnection();
 			//print "$szSQL<br>";
-            $stmt = $conn->prepare($szSQL);
+			$stmt = $conn->prepare($szSQL);
             $nPort = (int)$_GET["port"];
             $stmt->bind_param("si", $szFromIp, $nPort); 
             $stmt->execute();
@@ -91,23 +91,57 @@ if (isset($_GET["f"]))
                 $what     = isset($_GET["wt"]) ? $_GET["wt"] : "hack";
                 $ourid    = isset($_GET["ourid"]) ? (int)$_GET["ourid"] : 0;
                 $fromPort = (int)$nFromPort;
+				logMsg("Hackreport: $ip:$port, $what");
 
-                $szSQL = "insert into hackReport
-                    (ip, port, partnerIp, partnerPort, why, sentByIp, ipOwnerId)
-                    values (inet_aton(?), ?, inet_aton(?), ?, ?, inet_aton(?), ?)";
+                $szSQL = "select reportId, TIMESTAMPDIFF(SECOND, coalesce(lastSeen, created), NOW()) AS seconds_since from hackReport where ip = inet_aton(?) and port = ? and why = ? order by coalesce(lastSeen, created) desc limit 1";
+            	$stmt = $conn->prepare($sql);
+	            $stmt->bind_param("sis", $ip, $port, $what);
+	            $stmt->execute();
+	            $result = $stmt->get_result(); // get the mysqli result
+                $nSeconds = 1000;
 
-                $stmt = $conn->prepare($szSQL);
-                $stmt->bind_param(
-                    "sisissi",
-                    $ip,
-                    $port,
-                    $szFromIp,
-                    $fromPort,
-                    $what,
-                    $szFromIp,
-                    $ourid
-                );
-                $stmt->execute();
+            	if ($result) 
+	            {
+		            if($row = $result->fetch_assoc()) 
+            		{
+                        $nSeconds = aton($row["seconds_since"]);
+						$nReportId = $row["reportId"];
+                    }
+                    $result->close();
+                }
+
+                if ($nSeconds < 30)
+                {
+					logMsg("Updateing hackReport. id: $nReportId");
+
+                    $szSQL = "update hackReport set count = count + 1 where reportId = ?";
+                    $stmt = $conn->prepare($szSQL);
+                    $stmt->bind_param("i", $nReportId);
+                    $stmt->execute();
+					logMsg("Updated..");
+                }
+				else
+				{
+					logMsg("Inserting..");
+
+	                $szSQL = "insert into hackReport
+    	                (ip, port, partnerIp, partnerPort, why, sentByIp, ipOwnerId)
+        	            values (inet_aton(?), ?, inet_aton(?), ?, ?, inet_aton(?), ?)";
+
+            	    $stmt = $conn->prepare($szSQL);
+                	$stmt->bind_param(
+	                    "sisissi",
+    	                $ip,
+        	            $port,
+            	        $szFromIp,
+                	    $fromPort,
+                    	$what,
+	                    $szFromIp,
+    	                $ourid
+        	        );
+            	    $stmt->execute();
+					logMsg("Inserted..");
+				}
 
 				//$result = $conn->query($sql) or die("(error storing)");
                 print "ok";
