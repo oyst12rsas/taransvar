@@ -243,9 +243,25 @@ function getServerStatus($seconds_since, $status)
 
 function vpn_demo()
 {
-	print "Simple demo: ";
-
 	$conn=getConnection();
+
+	$szSQL = "select networkStatus, TIMESTAMPDIFF(SECOND, networkStatusChecked, NOW()) AS seconds_since, nickname from setup";
+	$conn->query($szSQL) or die(mysql_error());
+	$result = $conn->query($szSQL);
+	$szMyServerStatus = "Error reading setup!";
+	$szMyNickname = "";
+
+	if ($result)
+	{
+		if ($result->num_rows > 0) 
+			if ($row = $result->fetch_assoc()) 
+			{
+				$szMyServerStatus = getServerStatus($row["seconds_since"], $row["networkStatus"]);
+				$szMyNickname = " (".$row["nickname"].")";
+			}
+		$result->free();
+	}
+
 	$szWhere = !isAdmin()?"where showToAdminsOnly = b'0'":"";
 	$szSQL = "select name, inet_ntoa(ip) as ip, partnerStatusReceived, status, TIMESTAMPDIFF(SECOND, partnerStatusReceived, NOW()) AS seconds_since from partnerRouter R join partner P on P.partnerId = R.partnerId $szWhere";
 	//print "<br>$szSQL<br>";
@@ -262,7 +278,7 @@ function vpn_demo()
 	        	if (!$nCount) 
 				{
 	        		print "<tr><td>Site</td><td>IP</td><td>Status</td><td>Gatekeeper</td><td>Sample bank</td><td>Honey</td></tr>";
-	        		print "<tr><td>Me</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td><a href=\"../samplebank/index.php\">[go to]</a></td><td><a href=\"../honeypot/index.php\">[go to]</a></td></tr>";
+	        		print "<tr><td>Me".$szMyNickname."</td><td>&nbsp;</td><td>".$szMyServerStatus."</td><td>&nbsp;</td><td><a href=\"../samplebank/index.php\">[go to]</a></td><td><a href=\"../honeypot/index.php\">[go to]</a></td></tr>";
 				}
 
 				$szServerStatus = getServerStatus($row["seconds_since"], $row["status"]);

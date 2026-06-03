@@ -23,11 +23,16 @@ use POSIX qw(setsid);
 
 use Fcntl qw(:flock);
 
+print "Usage:\nperl crontasks.pl\tRun only debugging tasks then quit.\nperl crontasks.pl cron\t\tTo run as by cron\nperl crontasks.pl force\t\tStart even if crontasks.pl already running\n";
+
 #Prevent that multiple instances are running by using lock file
 my $szCrontasksLockFileName = '/tmp/crontasks.lock';
 
-open(my $fh, '>', $szCrontasksLockFileName) or die "Cannot open lock file: $!";
-flock($fh, LOCK_EX | LOCK_NB) or die "Already running. Aborting.\n";
+if (!$ARGV[0] || $ARGV[0] ne "force") 
+{
+	open(my $fh, '>', $szCrontasksLockFileName) or die "Cannot open lock file: $!";
+	flock($fh, LOCK_EX | LOCK_NB) or die "Already running. Aborting.\n";
+}
 # keep $fh open for whole script lifetime
 print "Able to lock lock file.\n";
 
@@ -144,6 +149,11 @@ sub reportStatus {
 		}
 	}
 
+	print "\n\n********************** About to store status in setup table *****************\n";
+	my $szSQL = "update setup set networkStatus = ?, networkStatusChecked = now()";
+	my $sthSetup = $dbh->prepare($szSQL) or die "prepare statement failed: $dbh->errstr()";
+	$sthSetup->execute($cJson) or die "execution failed: $sthSetup->errstr()";
+	print "\n\nStatus stored in setup table\n";
 }
 
 sub check_dhcpEvent {
