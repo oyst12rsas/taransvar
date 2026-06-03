@@ -473,7 +473,7 @@ void insertHackReport(MYSQL *conn, uint32_t ip, unsigned short port, uint32_t nS
 
     unsigned long cInfoLen = strlen(szInfo);
 
-    printf("Setting up parasm\n");
+    //printf("Setting up params\n");
 
     /* ---- BIND ---- */
     param[0].buffer_type = MYSQL_TYPE_LONG;
@@ -505,7 +505,7 @@ void insertHackReport(MYSQL *conn, uint32_t ip, unsigned short port, uint32_t nS
     param[6].buffer = &nBotnetId;
     param[6].is_unsigned = 1;
 
-    printf("Binding params\n");
+    //printf("Binding params\n");
 
     /* ---- BIND PARAMS ---- */
     if (mysql_stmt_bind_param(stmt, param) != 0) {
@@ -514,7 +514,7 @@ void insertHackReport(MYSQL *conn, uint32_t ip, unsigned short port, uint32_t nS
             mysql_close(conn);        
         return;
     }
-    printf("Executing\n");
+    //printf("Executing\n");
 
     /* ---- EXECUTE ---- */
     if (mysql_stmt_execute(stmt) != 0) {
@@ -524,7 +524,7 @@ void insertHackReport(MYSQL *conn, uint32_t ip, unsigned short port, uint32_t nS
         return;
     }   
 
-    printf("Closing\n");
+    //printf("Closing\n");
 
 
     mysql_stmt_close(stmt);

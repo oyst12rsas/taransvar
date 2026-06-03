@@ -69,7 +69,7 @@ function initUpdater()
 {
 //	szUpdateRoutine = szRoutine;
 
-	const intervalId = setInterval(myUpdaterFunction, 3000);
+	const intervalId = setInterval(myUpdaterFunction, 1000);
 
 /*	document.addEventListener("DOMContentLoaded", function () {
 

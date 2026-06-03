@@ -220,13 +220,34 @@ alter table demo add botStatus varchar[255] null;
 	print "</td></tr></table>"; //End of main table (with list of units and infections on left side)
 }
 
+function check($field)
+{
+	return (isset($field) && $field == "1" ? '<img src="img/green_dot.png">':'<img src="img/red_dot.png">');
+}
+
+function getServerStatus($seconds_since, $status)
+{
+	if (!strlen($status))
+		return '<a href="http://10.100.0.1/index.php?f=demo">Check status on router</a>';
+
+	if ($seconds_since+0 > 65)
+		return '<font color="red">Server is troubled. Better use another.</font>';
+
+	$json = json_decode($status, true);
+	$szServerStatus = (isset($status)?check($json["knl"]):'<img src="img/green_dot.png">');
+	$szServerStatus .= (isset($status)?check($json["lnk"]):'<img src="img/green_dot.png">');
+	$szServerStatus .= (isset($status)?check($json["cron"]):'<img src="img/green_dot.png">');
+
+	return $szServerStatus;
+}
+
 function vpn_demo()
 {
 	print "Simple demo: ";
 
 	$conn=getConnection();
 	$szWhere = !isAdmin()?"where showToAdminsOnly = b'0'":"";
-	$szSQL = "select name, inet_ntoa(ip) as ip, partnerStatusReceived from partnerRouter R join partner P on P.partnerId = R.partnerId $szWhere";
+	$szSQL = "select name, inet_ntoa(ip) as ip, partnerStatusReceived, status, TIMESTAMPDIFF(SECOND, partnerStatusReceived, NOW()) AS seconds_since from partnerRouter R join partner P on P.partnerId = R.partnerId $szWhere";
 	//print "<br>$szSQL<br>";
 	$conn->query($szSQL) or die(mysql_error());
 	$result = $conn->query($szSQL);
@@ -240,14 +261,15 @@ function vpn_demo()
 	        {
 	        	if (!$nCount) 
 				{
-	        		print "<tr><td>Site</td><td>IP</td><td>Status received</td><td>Gatekeeper</td><td>Sample bank</td><td>Honey</td></tr>";
+	        		print "<tr><td>Site</td><td>IP</td><td>Status</td><td>Gatekeeper</td><td>Sample bank</td><td>Honey</td></tr>";
 	        		print "<tr><td>Me</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td><a href=\"../samplebank/index.php\">[go to]</a></td><td><a href=\"../honeypot/index.php\">[go to]</a></td></tr>";
 				}
 
+				$szServerStatus = getServerStatus($row["seconds_since"], $row["status"]);
 				$szGatekeeper = "http://".$row["ip"]."/gatekeeper/index.php";
 				$szSamplebank = "http://".$row["ip"]."/samplebank/index.php";
 				$szHoneypot =  "http://".$row["ip"]."/honeypot/index.php";
-	            print "<tr><td>".$row["name"]."</td><td>".$row["ip"]."</td><td>".$row["partnerStatusReceived"]."</td><td><a href=\"".$szGatekeeper."\">[go to]</h></td><td><a href=\"".$szSamplebank."\">[go to]</h></td><td><a href=\"".$szHoneypot."\">[go to]</h></td></tr>";
+	            print "<tr><td>".$row["name"]."</td><td>".$row["ip"]."</td><td>".$szServerStatus."</td><td><a href=\"".$szGatekeeper."\">[go to]</h></td><td><a href=\"".$szSamplebank."\">[go to]</h></td><td><a href=\"".$szHoneypot."\">[go to]</h></td></tr>";
 	            $nCount++;
 	        }
 	        print "</table>";

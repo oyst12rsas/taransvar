@@ -53,7 +53,7 @@ function tagStatus()
 				if (((int)$row["active"] == 1) && ((int)$row["severity"] > 0))
 					$tagStatus = '<br><font color="red">YOU ARE TAGGED</font></b><br>Severity: '.$row["severity"];
 				else
-					$tagStatus = '<font color="green">You are clean<br>Severity: '.$row["severity"].' id:'.$row["infectionId"].'</font>';
+					$tagStatus = '<font color="green">You are clean<br>'.(((int)$row["active"] == 1)? 'Severity: '.$row["severity"]:'(infection disabled)').'</font>';	//.' id:'.$row["infectionId"]
 			}
 		}
 		else
@@ -113,12 +113,13 @@ function tagStatus()
 
 		if ($nTagStatusBasedOnTraffic != $nTagStatusBasedOnHackReport)
 		{
-			$tagStatus = '<font color="yellow">Traffic log contradicts hack reports!</font>';
-			
-			if ($nTrafficSecondsSince < 60)
-				$tagStatus .= "<br>Traffic data are recent. So most likely ".($nTagStatusBasedOnTraffic?'<font color="red">TAGGED</font>':'<font color="green">CLEAN</font>');
+			if ($nTrafficSecondsSince < 30)
+				//$tagStatus .= "<br>Traffic data are recent. So most likely ".($nTagStatusBasedOnTraffic?'<font color="red">TAGGED</font>':'<font color="green">CLEAN</font>');
+				$tagStatus = '<font color="green">You are clean</font><br>(Some contradiction, though. Tap to see.)';
+				//Traffic data are recent. So most likely ".($nTagStatusBasedOnTraffic?'<font color="red">TAGGED</font>':'<font color="green">CLEAN</font>');
+				//$tagStatus = '<font color="yellow">Traffic log contradicts hack reports!</font>';
 			else
-				$tagStatus .= "<br>Traffic data are old. Should check out why.";
+				$tagStatus = "Contradicting info. Traffic data is not updated. Please try another server. (Tap for more info)";
 		}
 		else
 		{

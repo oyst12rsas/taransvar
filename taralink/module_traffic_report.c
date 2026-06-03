@@ -38,7 +38,7 @@ void checkUpdateTag(MYSQL *conn, char *lpIpHex, char *lpPortHex, char *lpTagHex)
 	MYSQL_ROW row;
 	MYSQL_FIELD *field;
 	MYSQL_RES *rs_metadata;
-	MYSQL_BIND quaryParams[2];
+	MYSQL_BIND queryParams[2];
 
 	MYSQL_STMT *stmt = mysql_stmt_init(conn);
 	if (stmt == NULL) 
@@ -47,35 +47,35 @@ void checkUpdateTag(MYSQL *conn, char *lpIpHex, char *lpPortHex, char *lpTagHex)
         exit(1);
     }
 
-	char *lpSql = "select reportId, severity from hackReport where ip = CONV(?,16,10) and port = CONV(?,16,10) order by coalesce(lastSeen, created)";
+	char *lpSql = "select reportId, severity from hackReport where ip = CONV(?,16,10) and port = CONV(?,16,10) order by coalesce(lastSeen, created) limit 1";
 
 	status = mysql_stmt_prepare(stmt, lpSql, strlen(lpSql));
 	test_stmt_error(stmt, status); //line which gives me the syntax error 
 
 	//printf("\nRunning: %s\nWith: %s and %s\n", lpSql, lpIpHex, lpPortHex);
 
-	memset(quaryParams, 0, sizeof(quaryParams));
+	memset(queryParams, 0, sizeof(queryParams));
 	unsigned long nIpLen = strlen(lpIpHex);
 	unsigned long nPortLen = strlen(lpPortHex);
 
 	//ipFrom
-	quaryParams[0].buffer_type = MYSQL_TYPE_VAR_STRING;
-	quaryParams[0].buffer_length = 100; //Irrelevant because we'll only do insert
-	quaryParams[0].is_unsigned = 1;
-	quaryParams[0].is_null = 0; 
-    quaryParams[0].buffer = lpIpHex;
-	quaryParams[0].length = &nIpLen;
+	queryParams[0].buffer_type = MYSQL_TYPE_VAR_STRING;
+	queryParams[0].buffer_length = 100; //Irrelevant because we'll only do insert
+	queryParams[0].is_unsigned = 1;
+	queryParams[0].is_null = 0; 
+    queryParams[0].buffer = lpIpHex;
+	queryParams[0].length = &nIpLen;
 
 	//portFrom
-	quaryParams[1].buffer_type = MYSQL_TYPE_VAR_STRING;
-	quaryParams[1].buffer_length = 100; //Irrelevant because we'll only do insert
-	quaryParams[1].is_unsigned = 1;
-	quaryParams[1].is_null = 0;
-    quaryParams[1].buffer = lpPortHex;
-	quaryParams[1].length = &nPortLen;
+	queryParams[1].buffer_type = MYSQL_TYPE_VAR_STRING;
+	queryParams[1].buffer_length = 100; //Irrelevant because we'll only do insert
+	queryParams[1].is_unsigned = 1;
+	queryParams[1].is_null = 0;
+    queryParams[1].buffer = lpPortHex;
+	queryParams[1].length = &nPortLen;
 
 	// bind parameters
-	status = mysql_stmt_bind_param(stmt, quaryParams); //muore qui
+	status = mysql_stmt_bind_param(stmt, queryParams); //muore qui
 	test_stmt_error(stmt, status);
 
 	status = mysql_stmt_execute(stmt);
@@ -132,9 +132,7 @@ void checkUpdateTag(MYSQL *conn, char *lpIpHex, char *lpPortHex, char *lpTagHex)
 			}
 
 		} else 
-		{
     		test_stmt_error(stmt, status);
-		}
 
 	if (stmt)
 		mysql_stmt_close(stmt);
@@ -274,14 +272,17 @@ void handleTrafficReportFromKernel(char *lpPayload, int nDataLength)
 				if (res) {
 					if ((row = mysql_fetch_row(res)) != NULL)
 					{
-						nUpdateTrafficId = atoi(row[0]);
-
 						//*** ERROR - tag is hex... and this test is not sufficient because there may not be any recent traffic registered.. Better check all traffic records.. 
-						//int nTag = atoi(row[2]);
+						int nTag = atoi(row[2]);
+						uint32_t nNewTag = (uint32_t)strtoul(cFields[5], NULL, 16);
 						//int nNewTag = atoi(cFields[5]);
-						/*
-						if (nTag != nNewTag)
-							tagChanged(cFields[0], cFields[1], cFields[2], cFields[3], nTag, nNewTag);
+						
+						if (nTag == (int)nNewTag)	//Create new record if tag is changed. 
+							nUpdateTrafficId = atoi(row[0]);
+						else
+							printf("\n**********Tag was changed, so creating new traffic record\n");						
+
+						/*	tagChanged(cFields[0], cFields[1], cFields[2], cFields[3], nTag, nNewTag);
 						else
 						{
 							printf("Tag unchanged for 0x%s:0x%s - tag %d\n", cFields[0], cFields[1], nTag);
