@@ -27,11 +27,12 @@ print "Usage:\nperl crontasks.pl\tRun only debugging tasks then quit.\nperl cron
 
 #Prevent that multiple instances are running by using lock file
 my $szCrontasksLockFileName = '/tmp/crontasks.lock';
+my $lock_fh;   # must stay alive
 
 if (!$ARGV[0] || $ARGV[0] ne "force") 
 {
-	open(my $fh, '>', $szCrontasksLockFileName) or die "Cannot open lock file: $!";
-	flock($fh, LOCK_EX | LOCK_NB) or die "Already running. Aborting.\n";
+	open($lock_fh, '>', $szCrontasksLockFileName) or die "Cannot open lock file: $!";
+	flock($lock_fh, LOCK_EX | LOCK_NB) or die "Already running. Aborting.\n";
 }
 # keep $fh open for whole script lifetime
 print "Able to lock lock file.\n";
@@ -77,6 +78,8 @@ sub programRunningLockFileHeld {
 	#Move this to func.pm (for other scripts to use..)
     my ($szLockfileName) = @_;
 
+	print "Lock file: $szLockfileName\n";
+
     open(my $fh, '>>', $szLockfileName)
         or die "Cannot open $szLockfileName: $!";
 
@@ -97,20 +100,26 @@ sub reportStatus {
 
 	my %json;
 
-	my $sthSetup = $dbh->prepare("select LPAD(HEX(adminIP), 8, '0') as adminIP, LPAD(HEX(nettmask), 8, '0') as nettmask, secondsSinceBoot, TIMESTAMPDIFF(SECOND, dmesgUpdated, NOW()) AS dmesg, inet_ntoa(globalDb1ip) as Db1, inet_ntoa(globalDb2ip) as Db2, inet_ntoa(globalDb3ip) as Db3 from setup") or die "prepare statement failed: $dbh->errstr()";
+	my $sthSetup = $dbh->prepare("select adminIP as nAdminIp, LPAD(HEX(adminIP), 8, '0') as adminIP, nettmask as aNettmask, LPAD(HEX(nettmask), 8, '0') as nettmask, secondsSinceBoot, TIMESTAMPDIFF(SECOND, dmesgUpdated, NOW()) AS dmesg, inet_ntoa(globalDb1ip) as Db1, inet_ntoa(globalDb2ip) as Db2, inet_ntoa(globalDb3ip) as Db3 from setup") or die "prepare statement failed: $dbh->errstr()";
 	$sthSetup->execute() or die "execution failed: $sthSetup->errstr()";
 	my $cSetup = $sthSetup->fetchrow_hashref();
 	$sthSetup->finish();
 
-	$json{"ip"} = $cSetup->{"adminIP"}+0;
-	$json{"nett"} = $cSetup->{"nettmask"}+0;
+	$json{"ip"} = (defined $cSetup->{"nAdminIP"}?$cSetup->{"nAdminIP"}+0:0);
+	$json{"nett"} = (defined $cSetup->{"nNettmask"}?$cSetup->{"nNettmask"}:0);
 	$json{"boot"} = $cSetup->{"secondsSinceBoot"}+0;
 	$json{"msg"} = $cSetup->{"dmesg"};
 
-	$json{"lnk"} = (programRunning("taralink")?"1":0);	
+	#$json{"lnk"} = (programRunning("taralink")?"1":0);	
+	$json{"lnk"} = (programRunningLockFileHeld("/tmp/taralink.lock")?1:0);
+
 	$json{"knl"} = (moduleRunning("tarakernel")?"1":0);
 #	$json{"cron"} = (programRunning("crontasks.pl")?"1":0);
-	$json{"cron"} = (programRunningLockFileHeld($szCrontasksLockFileName)?1:0);	#Doesn't make sense... Not getting here unless the script is running. Put it in separate checking script
+
+	my $bLockFileHeld = (programRunningLockFileHeld($szCrontasksLockFileName)?1:0);
+	print "Crontab lock file is ".($bLockFileHeld?"held (crontasks.pl is running)\n":"NOT HELD. (crontasks.pl is NOT running)")."\n";
+
+	$json{"cron"} = ($bLockFileHeld?1:0);	#Doesn't make sense... Not getting here unless the script is running. Put it in separate checking script
 
 	chomp(my $line = `df -h / | tail -1`);
 	my @f = split(/\s+/, $line);
@@ -151,7 +160,7 @@ sub reportStatus {
 
 	print "\n\n********************** About to store status in setup table *****************\n";
 	my $szSQL = "update setup set networkStatus = ?, networkStatusChecked = now()";
-	my $sthSetup = $dbh->prepare($szSQL) or die "prepare statement failed: $dbh->errstr()";
+	$sthSetup = $dbh->prepare($szSQL) or die "prepare statement failed: $dbh->errstr()";
 	$sthSetup->execute($cJson) or die "execution failed: $sthSetup->errstr()";
 	print "\n\nStatus stored in setup table\n";
 }
@@ -624,7 +633,7 @@ setCronLibDbh($dbh);
 #if (!$ARGV[0]) {
 if (!runningAsCron() && !runningBootCheck())	#Run "sudo perl crontasks.pl whatever_except_cron_and_boot" to run this section. 
 {
-        #To debug crontasks.pl, best way is to put your code here.... 
+	#To debug crontasks.pl, best way is to put your code here.... 
 	saveWarning("Debugging crontasks.pl or crontab is not set to run crontasks.pl with cron as parameter.");
 	#TO DEBUG crontasks.pl, do as follows:
 	#- Remove the "#" in front of the saveWarning() and the exit call below (this line + 5?)
@@ -632,8 +641,8 @@ if (!runningAsCron() && !runningBootCheck())	#Run "sudo perl crontasks.pl whatev
 	# - Run crontasks.pl manually with: sudo crontasks.pl sometext
 	#  That way you can check any debug code without the cron job distrubing the process.
 	#Displays a warning in dashboard so don't forget to disable this code...
-
-	#reportStatus($dbh);
+	print "********* Running debug tasks...\n";
+	reportStatus($dbh);
 	#check_dhcpEvent($dbh);	
 
 	#print (networkSetupOk()?"Network set up properly":"Failed to set up network!");

@@ -742,8 +742,35 @@ void checkMysql()
 #include <unistd.h>
 #include <arpa/inet.h>
 
+#include <sys/file.h>
+#include <fcntl.h>
+#
+int acquire_lock(const char *lockfile)
+{
+    int fd = open(lockfile, O_CREAT | O_RDWR, 0644);
+    if (fd < 0) {
+        perror("open lockfile");
+        return -1;
+    }
+
+    if (flock(fd, LOCK_EX | LOCK_NB) < 0) {
+        close(fd);
+        return -1;   // already locked
+    }
+
+    return fd;       // KEEP OPEN
+}
+
 int main(void)
 {
+    //Use lock file to ensure that taralink is not started twice.
+    int lock_fd = acquire_lock("/tmp/taralink.lock");
+
+    if (lock_fd < 0) {
+        printf("Already running\n");
+        exit(1);
+    }
+
     //Normally, buffers 4k before printing to log file when running in background
     setbuf(stdout, NULL);
     setbuf(stderr, NULL);
@@ -841,10 +868,12 @@ int main(void)
         */
 
     }
-
+    
     close(nl_fd);
     close(udp_fd);
     close(soc_fd);
     printf("\nQuitting taralink. To stop tarakernel: sudo rmmod tarakernel\n");
+
+    close(lock_fd);     //Close lock file (preventing program from starting twice)
     return 0;
 }
