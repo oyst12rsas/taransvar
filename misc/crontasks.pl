@@ -141,7 +141,20 @@ sub reportStatus {
 	$json{"mem"} = `free -h | awk '/Mem:/ {print \$3 "/" \$2}'`;
 	chomp($json{"mem"});
 
+	#my $szSQL = "select inet_ntoa(ip) from traffic where coalesce(lastSeen, created) > NOW() - INTERVAL 1 MINUTE";
+	my $szSQL = "SELECT COUNT(DISTINCT ipFrom) AS unique_ips FROM traffic WHERE COALESCE(lastSeen, created) > NOW() - INTERVAL 5 MINUTE AND ipFrom <> INET_ATON('10.100.0.1') and ipFrom BETWEEN INET_ATON('10.100.0.0') AND INET_ATON('10.100.255.255')";
+
+	#To see the user names: 
+	#SELECT DISTINCT INET_NTOA(ipFrom) FROM traffic WHERE COALESCE(lastSeen, created) > NOW() - INTERVAL 5 MINUTE   AND (ipFrom & INET_ATON('255.255.0.0')) = INET_ATON('10.100.0.0'); 
+
+	my $sthCount = $dbh->prepare($szSQL);
+	$sthCount->execute() or die "execution failed: $sthSetup->errstr()";
+	my $cCount = $sthCount->fetchrow_hashref();
+	$json{"usr"} = $cCount->{"unique_ips"};
+	$sthCount->finish();
+
 	my $cJson = encode_json(\%json);
+	print "Status: $cJson\n";
 
 	for my $i (1 .. 3)
 	{
@@ -169,7 +182,7 @@ sub reportStatus {
 	}
 
 	print "\n\n********************** About to store status in setup table *****************\n";
-	my $szSQL = "update setup set networkStatus = ?, networkStatusChecked = now()";
+	$szSQL = "update setup set networkStatus = ?, networkStatusChecked = now()";
 	$sthSetup = $dbh->prepare($szSQL) or die "prepare statement failed: $dbh->errstr()";
 	$sthSetup->execute($cJson) or die "execution failed: $sthSetup->errstr()";
 	print "\n\nStatus stored in setup table\n";

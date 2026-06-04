@@ -113,9 +113,10 @@ bool getTrafficReport(char *lpSendBuf, int bufSize)
 	return true;    //Means found traffic
 }
 
+
 bool trafficReportToTaralinkFound(int nProcessId)
 {
-    pr_info("tarakernel: ************* Dropping sending traffic report upon request by taralink. Implementing sending at own will..\n");
+  //  pr_info("tarakernel: ************* Dropping sending traffic report upon request by taralink. Implementing sending at own will..\n");
     return false;
 
 /*    if (pSetup->bTrafficReportsBeingHandled)
@@ -198,7 +199,7 @@ void sendTrafficReport()
 
     if (getTrafficReport(lpSendBuf, N_SENDBUF_SIZE))
     {
-        pr_warn("tarakernel: About to send: %s\n", lpSendBuf);
+        //pr_warn("tarakernel: About to send: %s\n", lpSendBuf);
     	send_to_user(lpSendBuf);
     }
 
@@ -221,7 +222,7 @@ void checkTimedOperation(void)
 
     if (nTrafficReportLoops++ >= 5)
     {
-        pr_warn("tarakernel: 5th timer so sending traffic report...!\n");
+        //pr_warn("tarakernel: 5th timer so sending traffic report...!\n");
         sendTrafficReport();
         return;     //Don't do other timed operations... 
     }

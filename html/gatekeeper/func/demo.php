@@ -238,6 +238,9 @@ function getServerStatus($seconds_since, $status)
 	$szServerStatus .= (isset($status)?check($json["lnk"]):'<img src="img/green_dot.png">');
 	$szServerStatus .= (isset($status)?check($json["cron"]):'<img src="img/green_dot.png">');
 
+	$nActiveUsers = isset($json["usr"])?$json["usr"]:"?";
+	$szServerStatus .= ";nbsp;$nActiveUsers";
+
 	return $szServerStatus;
 }
 

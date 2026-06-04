@@ -369,7 +369,8 @@ static struct timer_list my_timer;
 
 static void my_timer_cb(struct timer_list *t)
 {
-	pr_info("For now not getting here..... (unless you read this message)\n");
+	//Call back function for timer
+	//pr_info("tarakernel: For now not getting here..... (unless you read this message)\n");
 
 	//printk("tarakernel: my_timer fired  ******************** DEBUGGING ONLY:::\n");
 		
@@ -399,7 +400,7 @@ static int __init hello_init(void)
 	
 	if (1) 	//Do testing here after pSetup is initialized
 	{
-		pr_info("******** DEBUGGING (not initializing) **************");
+		//pr_info("tarakernel: ******** DEBUGGING (not initializing) **************");
 		//Set up a timer
 		timer_setup(&my_timer, my_timer_cb, 0);
     	mod_timer(&my_timer, jiffies + msecs_to_jiffies(5 * 1000));	// fire once after 1 second 

@@ -447,7 +447,6 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 			{
 				struct _Remote_infection *pInfection = initElaboratedThreatInfo(pPacket);	//module_tagging.c
 				bool bDropping = cUnion.cTag.presumed_infected > pSetup->nBlockIncomingTaggedTrafficLevel;
-				char cBuf[1000];
 
 				//ØT asdf 260526
 
@@ -474,7 +473,7 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 
 					if (strlen(pSetup->c100) == sizeof(pSetup->c100)-1)	//NOTE c100 is now 200 chars
 						if (!dropFromLogging(pPacket))
-							pr_warn("tarakernel: ***** ERROR **** pSetup->c100 buffer is to short. %zu bytes required (currently %zu)\n", strlen(cBuf)+1, sizeof(pSetup->c100));
+							pr_warn("tarakernel: ***** ERROR **** pSetup->c100 buffer is too short. %zu bytes required (currently %zu)\n", strlen(pSetup->c100)+1, sizeof(pSetup->c100));
 
 					if (!dropFromLogging(pPacket))
 						pr_info("tarakernel: PR infected: %s", pSetup->c100);
