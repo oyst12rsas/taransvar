@@ -356,7 +356,7 @@ static void send_to_user(const char *msg)
 
     res = nlmsg_unicast(nl_sk, skb_out, pid);
     if (res < 0)
-        printk(KERN_INFO "Error while sending to user: %d\n", res);
+        printk(KERN_INFO "tarakernel: Error while sending to user: %d\n", res);
 }
 
 

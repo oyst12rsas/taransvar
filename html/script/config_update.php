@@ -256,7 +256,7 @@ if (isset($_GET["f"]))
 	            $stmt = $conn->prepare($szSQL);
 	            $stmt->bind_param("d", $row["routerId"]); 
 	            $stmt->execute();
-	            addWarningRecord("Partner status updated for $szFromIp"); 
+	            //addWarningRecord("Partner status updated for $szFromIp"); 
 			}
 			else 
 			{

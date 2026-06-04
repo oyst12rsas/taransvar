@@ -110,10 +110,20 @@ sub reportStatus {
 	$json{"boot"} = $cSetup->{"secondsSinceBoot"}+0;
 	$json{"msg"} = $cSetup->{"dmesg"};
 
+	$json{"knl"} = (moduleRunning("tarakernel")?"1":0);
+	if (!$json{"knl"}) {
+		#tarakerlen is not running.. try to start it. 
+		system ("modprobe tarakernel");
+		saveWarning("Tarakernel was not running when reporting status. Trying to start it\n");
+	}
+
 	#$json{"lnk"} = (programRunning("taralink")?"1":0);	
 	$json{"lnk"} = (programRunningLockFileHeld("/tmp/taralink.lock")?1:0);
+	if (!$json{"lnk"}) {
+		system("nohup /root/taransvar/taralink >/tmp/taralink.log 2>&1 &");		
+		saveWarning("Taralink was not running when reporting status. Trying to start it\n");
+	}
 
-	$json{"knl"} = (moduleRunning("tarakernel")?"1":0);
 #	$json{"cron"} = (programRunning("crontasks.pl")?"1":0);
 
 	my $bLockFileHeld = (programRunningLockFileHeld($szCrontasksLockFileName)?1:0);

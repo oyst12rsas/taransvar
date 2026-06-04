@@ -46,17 +46,20 @@ var szUpdateRoutine = "hackReport";
 <?php
 
 	$conn = getConnection();
+	print "<h2>Registered infections in our net:</h2>";
+	print '<table id="infectionsTbl">';
+	print '<tr><th>When</th><th>Who</th><th>Nettmask</th><th>&nbsp;</th><th>Severity</th><th>Botnet</th><th>Info priv</th><th>Info pub</th></tr>';
+
+	/*
 
 	$sql = "SELECT infectionId, inet_ntoa(ip) as ip, inet_ntoa(nettmask) as nettmask, status, CAST(active AS UNSIGNED) as active, I.lastSeen, hostname, description from internalInfections I left outer join unit u on u.unitId = I.unitId order by I.lastSeen desc";
 	$result = $conn->query($sql);
 
-	print "<h2>Registered infections in our net:</h2>";
 	$nFound = 0;
 
 	if ($result) 
 	{
 		// output data of each row  
-		print '<table id="infectionsTbl">';
 		$nCount=0;
 		while($row = $result->fetch_assoc()) 
 		{
@@ -90,9 +93,10 @@ var szUpdateRoutine = "hackReport";
 	{
 		print "Error fetching data!<br>";
 	}
+		*/
 	print "</table>";
 
-	$sql = "SELECT reportId, inet_ntoa(ip) as ip, port, inet_ntoa(partnerIp) as partnerIp, partnerPort, status, h.created, h.lastSeen, h.unitId, hostname, description from hackReport h left outer join unit u on u.unitId = h.unitId order by h.created desc limit 50";
+	$sql = "SELECT reportId, inet_ntoa(ip) as ip, port, inet_ntoa(partnerIp) as partnerIp, partnerPort, status, h.created, h.lastSeen, h.unitId, hostname, description, why, severity from hackReport h left outer join unit u on u.unitId = h.unitId order by h.created desc limit 25";
 	$result = $conn->query($sql);
 
 	if ($result) 
@@ -102,14 +106,14 @@ var szUpdateRoutine = "hackReport";
 		while($row = $result->fetch_assoc()) 
 		{       
 			if (++$nCount == 1)
-				print "<h2>Hacking attempts reported by partners and fans:</h2><table id=\"hackReportTbl\"><tr><th>Last seen</th><th>Attacker</th><th>Who</th><th>Status</th></tr>";
+				print "<h2>Hacking attempts reported by partners and fans:</h2><table id=\"hackReportTbl\"><tr><th>Last seen</th><th>Attacker</th><th>Who</th><th>Severity</th><th>Status</th><th>Why</th></tr>";
 
 			if ($row["unitId"])
 	        	$szWhom = ($row["description"] && strlen($row["description"])?$row["description"]:$row["hostname"]);
 			else
 				$szWhom = "ISP: ".$row["partnerIp"];
 
-			print '<tr id="hr'.$row['reportId'].'"><td>'.$row["lastSeen"].'</td><td>'.$row["ip"].':'.$row["port"].'</td><td>'.$szWhom.'</td><td>'.$row["status"].'</td>';
+			print '<tr id="hr'.$row['reportId'].'"><td>'.$row["lastSeen"].'</td><td>'.$row["ip"].':'.$row["port"].'</td><td>'.$szWhom.'</td><td>'.$row["severity"].'</td><td>'.$row["status"].'</td><td>'.$row["why"].'</td>';
 			//print "<td>" . $row["toIP"]. "</td><td>" . $row["protocol"]."</td>";
     		print "</tr>";
 	  	}

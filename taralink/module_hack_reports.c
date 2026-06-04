@@ -291,6 +291,7 @@ void checkHackReports()
 		}//me or mine
 		else
 		{
+			/*	Probably always ends here when no NAT... Just skip this for now.
 			if (!nNettmask)
 				printf("This is not a router.\n");
 			int nSecondeAgo = atoi(row[5]);
@@ -307,6 +308,7 @@ void checkHackReports()
                  	                
 			printf("%s",szBuffer);
 			addWarningRecord(szBuffer);
+			*/
 		}
 
 		if (bUpdateHandled) {

@@ -11,7 +11,7 @@ function sjekk($field)
 
 function listServerStatus()
 {
-	print "About to list server status.<br>";
+	//print "About to list server status.<br>";
 	$conn = getConnection();
 	$sql = "select routerId, partnerStatusReceived as time, inet_ntoa(ip) as ip, status from partnerRouter";
 	$result = $conn->query($sql);

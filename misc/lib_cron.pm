@@ -506,12 +506,14 @@ sub handleConntrack {
 			if ($szGatewayIp eq "")
 	    	{
                 $szGatewayIp = $szRetDestIp; 
-	    	} else {
-		    	if ($szGatewayIp ne $szRetDestIp) {
-		        	print "Return destination IP should always be the gateway IP ($szGatewayIp <> $szRetDestIp)....\n"; 
-					saveWarning("Return destination IP should always be the gateway IP ($szGatewayIp <> $szRetDestIp)....");
-		        }
-			}
+	    	} 
+			# Created lots of warnings on VPS.. Should be checked.. disabling for now
+			#else {
+		    #	if ($szGatewayIp ne $szRetDestIp) {
+		    #    	print "Return destination IP should always be the gateway IP ($szGatewayIp <> $szRetDestIp)....\n"; 
+			#		saveWarning("Return destination IP should always be the gateway IP ($szGatewayIp <> $szRetDestIp)....");
+		    #    }
+			#}
 
 		    print "$szSourceIp:$nSourcePort -> $szDestIp:$nDestPort | $szRetSourceIp:$nRetSourcePort -> $szRetDestIp:$nRetDestPort\n"; 
 		 	#print "$szLine\n";
@@ -538,8 +540,9 @@ sub handleConntrack {
 					$szInternalIp = $szSourceIp;
 					$nInternalPort = $nSourcePort;
 				} else {
-					print "**** ERROR **** Source IP is not internal when processing conntrack..";
-					saveWarning("**** ERROR **** Source IP is not internal when processing conntrack..");
+					#Generated warnings on VPS (not NAT). Should be checked.
+					#print "**** ERROR **** Source IP is not internal when processing conntrack..";
+					#saveWarning("**** ERROR **** Source IP is not internal when processing conntrack..");
 					if (isInternal($szRetDestIp)) {
 						$szInternalIp = $szRetDestIp;
 						$nInternalPort = $nRetDestPort;
@@ -551,9 +554,11 @@ sub handleConntrack {
 							if (isInternal($szDestIp)) {
 								$szInternalIp = $szDestIp;
 								$nInternalPort = $nDestPort;
-							} else {
-								saveWarning("****** ERROR ***** None are internal when saving NAT port assignment. Aborting.");
-								#return;
+							}
+							 else {
+								#Gave warning on VPS (Not NAT)
+							#	saveWarning("****** ERROR ***** None are internal when saving NAT port assignment. Aborting.");
+								return;
 							}
 						}
 					}
@@ -912,12 +917,12 @@ sub fixDevicesOldWay {
 				my $szSQL = "update setup set internalNic = '$szInternalLink', handled = b'0'";
 				my $sth = $dbh->prepare($szSQL) or die "prepare statement failed: $dbh->errstr()";
 				$sth->execute() or die "execution failed: $dbh->errstr()";
-		                my $szLog = "\nInternal Nic changed from $szCurrentInternalNic to $szInternalLink\n";
-		        	saveWarning($szLog);
-		                print $szLog
-		        } else {
-		        	print "Still no additional network found for connected units.\n"; 
-		        }
+				my $szLog = "\nInternal Nic changed from $szCurrentInternalNic to $szInternalLink\n";
+				saveWarning($szLog);
+				print $szLog
+		    } else {
+		    	print "Still no additional network found for connected units.\n"; 
+	        }
 		}
 
 		#if ($szInternalLink ne "") {
