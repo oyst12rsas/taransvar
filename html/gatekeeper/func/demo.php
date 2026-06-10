@@ -239,7 +239,7 @@ function getServerStatus($seconds_since, $status)
 	$szServerStatus .= (isset($status)?check($json["cron"]):'<img src="img/green_dot.png">');
 
 	$nActiveUsers = isset($json["usr"])?$json["usr"]:"?";
-	$szServerStatus .= ";nbsp;$nActiveUsers";
+	$szServerStatus .= "&nbsp;$nActiveUsers";
 
 	return $szServerStatus;
 }
@@ -280,7 +280,7 @@ function vpn_demo()
 	        {
 	        	if (!$nCount) 
 				{
-	        		print "<tr><td>Site</td><td>IP</td><td>Status</td><td>Gatekeeper</td><td>Sample bank</td><td>Honey</td></tr>";
+	        		print "<tr><td>Site</td><td>IP</td><td>Status *)</td><td>Gatekeeper</td><td>Sample bank</td><td>Honey</td></tr>";
 	        		print "<tr><td>Me".$szMyNickname."</td><td>&nbsp;</td><td>".$szMyServerStatus."</td><td>&nbsp;</td><td><a href=\"../samplebank/index.php\">[go to]</a></td><td><a href=\"../honeypot/index.php\">[go to]</a></td></tr>";
 				}
 
@@ -292,6 +292,7 @@ function vpn_demo()
 	            $nCount++;
 	        }
 	        print "</table>";
+			print "*) Dots: tarakernel, taralink, crontasks. Number: Active users last 5 minutes.";
         }
 
 }

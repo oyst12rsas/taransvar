@@ -40,8 +40,35 @@ function colorMark($szSubject, $szColorInstructions)
 	return $szSubject;
 }
 
-
 function dmesg()
+{
+	$nLastId = $_GET["id"];
+    CXmlCommand::setInnerHTML("log", "", "ID: $nLastId");//, $cMoreParamsArr = array())
+
+	$szSQL = "select dmesgId, txt from dmesg where dmesgId > ? order by dmesgId limit 100";
+	$dbh = getConnection();
+	$row = 0;
+	
+	$stmt = $dbh->prepare($szSQL);
+	$stmt->bind_param("i", $nLastId); 
+    $stmt->execute();
+	$result = $stmt->get_result(); // get the mysqli result
+
+	if ($result->num_rows > 0) 
+	{
+		// output data of each row  
+		$nCount=0;
+		while ($row = $result->fetch_assoc()) 
+		{
+			$nRowId = "ms".$row["dmesgId"];
+	        $cArr = array($row["txt"]); 
+
+        	CXmlCommand::addTableRow("dmesgTbl", "top", $nRowId, $cArr, "", $nRowId);//$szHTML)
+		}
+	}
+}
+
+function dmesgOld()
 {
 	
 	if (isset($_GET["srch"]))
@@ -71,13 +98,19 @@ function dmesg()
 	//CXmlCommand::alert("About to read..");
 	$conn = getConnection();
 	$szSQL = "select inet_ntoa(adminIp) as ip, dmesg, unix_timestamp(now())-unix_timestamp(dmesgUpdated) as secsAgo from setup";
-	$result = $conn->query($szSQL);
 	$row = 0;
 	
-	if ($result && $result->num_rows > 0) 
+	$stmt = $dbh->prepare($szSQL);
+	$stmt->bind_param("i", $szIp); 
+    $stmt->execute();
+	$result = $stmt->get_result(); // get the mysqli result
+
+	if ($result->num_rows > 0) 
 	{
-		if ($row = $result->fetch_assoc()) 
-        {
+		// output data of each row  
+		$nCount=0;
+		if($row = $result->fetch_assoc()) 
+		{
 			//Lines come with newest at bottom.. rearrange to newest first
 			$lines = explode("\n", ($row["dmesg"]?$row["dmesg"]:""));
 			$lines = array_reverse($lines);

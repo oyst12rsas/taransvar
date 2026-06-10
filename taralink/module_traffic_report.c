@@ -2,15 +2,15 @@
 
 
 static int test_stmt_error(MYSQL_STMT * stmt, int status)
-    {
-        if (status) {
-            char cBuf[200];
-            sprintf(cBuf, "***** Error: %s (errno: %d)", mysql_stmt_error(stmt), mysql_stmt_errno(stmt)); 
-            fprintf(stderr, "%s\n", cBuf);
-            addWarningRecord(cBuf);
-        }
-        return status;
-    }
+{
+	if (status) {
+		char cBuf[200];
+		sprintf(cBuf, "***** Error: %s (errno: %d)", mysql_stmt_error(stmt), mysql_stmt_errno(stmt)); 
+		fprintf(stderr, "%s\n", cBuf);
+		addWarningRecord(cBuf);
+	}
+    return status;
+}
 
 char *bufferToHex(char *lpBuffer, int len, char* lpTarget, int nBufSize)
 {

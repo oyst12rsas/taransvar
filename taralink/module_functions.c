@@ -1,5 +1,38 @@
 //module_functions.c
 
+#include <stdio.h>
+#include <ctype.h>
+
+void urlencode(const char *src, char *dst, size_t dstsize);
+void urlencode(const char *src, char *dst, size_t dstsize)
+{
+    const char *hex = "0123456789ABCDEF";
+
+    while (*src && dstsize > 1)
+    {
+        unsigned char c = (unsigned char)*src;
+
+        if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~')
+        {
+            *dst++ = c;
+            dstsize--;
+        }
+        else
+        {
+            if (dstsize < 4)
+                break;
+
+            *dst++ = '%';
+            *dst++ = hex[c >> 4];
+            *dst++ = hex[c & 0x0F];
+            dstsize -= 3;
+        }
+
+        src++;
+    }
+
+    *dst = '\0';
+}
 
 void insertWarningMessage(MYSQL *conn, char *szWarning, MYSQL_BIND *lpRec); 
 void insertWarningMessage(MYSQL *conn, char *szWarning, MYSQL_BIND *lpRec) 

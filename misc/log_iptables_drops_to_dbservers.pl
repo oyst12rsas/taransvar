@@ -7,7 +7,7 @@ use func;	#NOTE! See comment above regarding lib..
 
 #log_iptables_drops_to_dbserver.pl (started by crontab)
 
-my @cDbServers = ("10.47.255.11","10.47.14.15");
+my @cDbServers = ("10.47.14.15");
 
 my $remote_port = 514;
 

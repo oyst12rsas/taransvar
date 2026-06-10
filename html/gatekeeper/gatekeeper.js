@@ -3,6 +3,34 @@
 
 
 
+function updateCountdown() {
+    // Target date/time
+    var cTargetTime = document.getElementById("targetTime");
+
+    if (!cTargetTime)
+        return;
+
+    const targetDate = new Date(cTargetTime.innerHTML);//
+
+    const now = new Date();
+    const diff = targetDate - now;
+
+    if (diff <= 0) {
+        document.getElementById("countdown").innerHTML = "Time's up!";
+        clearInterval(timer);
+        return;
+    }
+
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+    const minutes = Math.floor((diff / (1000 * 60)) % 60);
+    const seconds = Math.floor((diff / 1000) % 60);
+
+    var cDiv = document.getElementById("countdown");
+
+    if (cDiv)
+        cDiv.innerHTML = `${days}d ${hours}h ${minutes}m ${seconds}s`;
+}
 
 function debugging()
 {

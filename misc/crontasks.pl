@@ -35,7 +35,7 @@ if (!$ARGV[0] || $ARGV[0] ne "force")
 	flock($lock_fh, LOCK_EX | LOCK_NB) or die "Already running. Aborting.\n";
 }
 # keep $fh open for whole script lifetime
-print "Able to lock lock file.\n";
+print "Able to lock crontasks lock file.\n";
 
 sub getUrl
 {
@@ -450,8 +450,12 @@ sub trySendWarningToRouter
 sub handle_syslogThreat_record {
 	my ($conn, $row) = @_;
 
-	if (! defined $row->{'protocol'} || ($row->{'protocol'} ne "tcp" && $row->{'protocol'} ne 'udp' && $row->{'protocol'} ne 'ICMP')) {
+	if (! defined $row->{'protocol'} || (lc($row->{'protocol'}) ne "tcp" && lc($row->{'protocol'}) ne 'udp' && lc($row->{'protocol'}) ne 'icmp')) {
 		print "Unknown or unspecified protocol (only tcp, udp and ICMP allowed). Skipping...\n";
+		my $szSQL = "update syslogThreat set handling = 'Unhandled protocol', handled = b'1' where syslogThreatId = ?";
+		my $sth = $conn->prepare($szSQL);
+		$sth->execute($row->{syslogThreatId}) or die "execution failed: $sth->errstr()";
+		$sth->finish;
 		return;
 	}
 
@@ -468,7 +472,7 @@ sub handle_syslogThreat_record {
 	print "Finishing for syslogThreat ID: $row->{syslogThreatId}\n";
 
 	if ($nUnitId) {
-		my $szSQL = "update syslogThreat set unit_id = ?, handled = b'1' where syslogThreatId = ?";
+		my $szSQL = "update syslogThreat set unit_id = ?, handled = b'1', handling = 'My unit. Unitid set' where syslogThreatId = ?";
 		my $sth = $conn->prepare($szSQL);
 		$sth->execute($nUnitId, $row->{syslogThreatId}) or die "execution failed: $sth->errstr()";
 		$sth->finish;
@@ -481,7 +485,7 @@ sub handle_syslogThreat_record {
 		trySendWarningToRouter($row);
 
     	print "No conntrack match found.\n";
-		my $szSQL = "update syslogThreat set handled = b'1' where syslogThreatId = ?";
+		my $szSQL = "update syslogThreat set handled = b'1', handling = 'Alien unit: $row->{'dst'}:$row->{'dst_port'}' where syslogThreatId = ?";
 		my $sth = $conn->prepare($szSQL);
 		$sth->execute($row->{syslogThreatId}) or die "execution failed: $sth->errstr()";
 		$sth->finish;
@@ -665,7 +669,10 @@ if (!runningAsCron() && !runningBootCheck())	#Run "sudo perl crontasks.pl whatev
 	#  That way you can check any debug code without the cron job distrubing the process.
 	#Displays a warning in dashboard so don't forget to disable this code...
 	print "********* Running debug tasks...\n";
-	reportStatus($dbh);
+	#reportStatus($dbh);
+	#handle_syslogThreat_table($dbh);
+	logDmesg();
+
 	#check_dhcpEvent($dbh);	
 
 	#print (networkSetupOk()?"Network set up properly":"Failed to set up network!");
@@ -678,7 +685,6 @@ if (!runningAsCron() && !runningBootCheck())	#Run "sudo perl crontasks.pl whatev
 	#workshopSetup();
 	#dhcpServerStatusOk();
 	#doKill("taralink");
-	#logDmesg();
 	#checkWhoIs($dbh, $nNumberOfWhoIsLookupsPerIteration);
 	#sendPendingWgets();
 	#checkNetworkSetup();
@@ -746,7 +752,6 @@ if (defined $pSetup->{"internalNic"})		#NOTE! This is not tested!!!
 	print "No internal nic. Dropping dhcp_dump.\n";
 }
 reportStatus($dbh);
-handle_syslogThreat_table($dbh);
 
 #handleRequestsForDmsg();
 
@@ -780,6 +785,7 @@ while (time() - $nTimeStarted < 52)
 	logDmesg();
 	checkWhoIs($dbh, $nNumberOfWhoIsLookupsPerIteration);
 	sendPendingWgets();
+	handle_syslogThreat_table($dbh);	#iptables drops ++ are handled here.
 
 	print "\nWaiting to do repetitive tasks (dmesg capture, whois lookups, ++?). Ctrl-C to break\n";
 	sleep $nSecondsToSleepBetweenIterations;

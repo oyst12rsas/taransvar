@@ -1,6 +1,6 @@
 <?php
 session_start();
-$nRequiredDbVersion=66;	//NOTE! Make sure this line is always number 3 because that's claimed below.
+$nRequiredDbVersion=69;	//NOTE! Make sure this line is always number 3 because that's claimed below.
 
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
@@ -10,7 +10,11 @@ include "dbfunc.php";
 //require_once "../script/getSenderIp.php";
 include "../taraLib.php";
 
-$szErrorMessage = "";	//Use it to print message...
+//$szErrorMessage = "";
+//$szErrorMessage = '<h3><font color="red">I\'ll be down for planned maintainance 1pm GMT today (Friday 5th)</font></h3><b>Let me know if it\'s inconvenient. I\'m flexible.<b><br><br>';	//Use it to print message...
+$szErrorMessage = "";//'<h3><font color="red">The Demo network will be taken down in <div id="countdown"></div></font></h3><br>';	//Use it to print message...
+$szTargetTime = "2026-06-09T16:00Z";	//Zulu/GMT time... Set to "" if not relevant
+
 
 //Check if db is updated otherwise the script often fails...
 
@@ -174,7 +178,7 @@ else
 	        							$szIam = "bot";
 	        						else
 	        						{
-	        							$szErrorMessage = "<font color=\"red\">**** ERROR **** Registered IP is not same as used in demo.. You can schedule misc/crontasks.pl to keep it updated.</font>";
+	        							$szErrorMessage = "<h2><font color=\"red\">**** ERROR **** Registered IP is not same as used in demo.. You can schedule misc/crontasks.pl to keep it updated.</font></h2>";
 	        							$szIam = false;
 	        						}
 								
@@ -263,6 +267,16 @@ td {
 		//now always init..
 			initUpdater();
 		//}
+
+		<?php
+		if (strlen($szErrorMessage))
+		{ 
+		?>
+		updateCountdown();
+		const timer = setInterval(updateCountdown, 1000);
+		<?php			
+		}
+		?>
 	}
 </script>
 <script type="text/javascript" src="std.js"></script>
@@ -277,6 +291,7 @@ var cJsonParam = new Object;
 ?></title>
 </head>
 <body onload="pageLoader()">
+<div id="targetTime" style="display:none;"><?php print $szTargetTime; ?></div>
 <table class="center"><tr><td bgcolor="#AAB396">
 <?php
 
@@ -554,7 +569,8 @@ if (isset($_SESSION["userid"]) && isset($_GET["f"]) &&  in_array($_GET["f"], arr
 	setupMenu();
 }
 
-print "<h2>$szErrorMessage</h2>";
+if (strlen($szErrorMessage))
+	print "$szErrorMessage";
 
 if (isAdmin())
 {

@@ -389,19 +389,20 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 		//mysql_close(conn);
 		//conn = getConnection();
 
-#ifdef SETUP_INTERNAL_INFECTIONS
+//#ifdef SETUP_INTERNAL_INFECTIONS
 
 		//*************************Send info on internal infections (in the network) ****************
 		//printf("Reading internal unit infections...\n");
 		
 		if (bReadChangesOnly)
-			lpHandledWhere = "handled is null or handled = b'0'";
+			lpHandledWhere = "WHERE COALESCE(handled, b'0') = b'0'";
 	    else
-	        lpHandledWhere = "active = b'1'";
+
+	        lpHandledWhere = ""; //Now send severity = 1 if deactivated... Before: "where active = b'1'";
 
 		sprintf(szSQL, "select inet_ntoa(ip) as ip, inet_ntoa(nettmask) as nettmask, coalesce(status,'NULL'), \
 			infectionId, handled, coalesce(CAST(active AS UNSIGNED),0) as active, coalesce(infoSharePartners,'NULL'), \
-			coalesce(unitId,0), coalesce(severity,0), coalesce(botnetId,0), ip, nettmask from internalInfections where %s", lpHandledWhere);
+			coalesce(unitId,0), coalesce(severity,0), coalesce(botnetId,0), ip, nettmask from internalInfections %s", lpHandledWhere);
 		//printf("SQL: %s\n", szSQL);
 
 		if (mysql_query(conn, szSQL)) {
@@ -427,7 +428,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 			if (!nActive)
 			{
 				lpSendInfectionInfo = "N/A";
-				lpSendSeverity = "0";
+				lpSendSeverity = "1";	//Send severity = 1 if inactive to let receiver block ssh and/other important ports.
 			}
 
 			printf("****** Active: %d (%s), info: %s, severity: %s. After: %s/%s\n", nActive, row[5], row[6], row[8], lpSendInfectionInfo, lpSendSeverity);
@@ -460,7 +461,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 		if (nFound)
 			strcpy(cReply+strlen(cReply), "|");
 
-#endif //#ifdef SETUP_INTERNAL_INFECTIONS
+//#endif //#ifdef SETUP_INTERNAL_INFECTIONS
 		//asdf - 260405 - testing...
 		//mysql_close(conn);
 		//conn = getConnection();

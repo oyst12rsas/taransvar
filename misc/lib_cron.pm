@@ -138,10 +138,9 @@ sub sendStatus {
 	my $szUrl = "http://".$szIP."/script/config_update.php?f=demo&iam=".$szIAm."&status=".url_encode($szStatus);
 	print "******* Sending status: URL: $szUrl\n";
 	system("wget --level=1 $szUrl > /root/setup/log/wget.txt");
-	#asdfasdf
 	my $szSQL = "update partnerRouter set demoStatusReplied = now() where ip = inet_aton(?);";
 	my $conn = getConnection();
-        my $stmt = $conn->prepare($szSQL);
+	my $stmt = $conn->prepare($szSQL);
 	$stmt->execute($szIP);
 	$conn->disconnect;
 	
@@ -173,21 +172,51 @@ sub changeDemoIpAddress {	#NOTE Only used in this lib, don't export
 
 
 sub logDmesg {
-	#************ Capture tarakernel records from dmesg and store in setup->dmesg field
-	print "\n\n******************** Updating setup->dmesg **********************\n\n";
-	my $szDmesgLogFile = getLogRoot()."dmesg.txt"; 
-	system('sudo dmesg | grep tarakernel | grep -v "^[[:space:]]*$" > '.$szDmesgLogFile);
-	open my $fhDmesg, '<', $szDmesgLogFile or die "Can't open file $!";
-	my $file_content = do { local $/; <$fhDmesg> };
-	close $fhDmesg;
-	my $szSQL = "update setup set dmesg = ?, dmesgUpdated = now()";
-        my $sthDemo = $dbh->prepare($szSQL);
-        $file_content=~s/tarakernel\:\s//g;
-        $sthDemo->execute($file_content) or die "execution failed: $sthDemo->errstr()";
-        my $nDmsgLen = length($file_content); 
-        if ($nDmsgLen < 100) {
-		print "****** WARNING **** dmesg log is only $nDmsgLen characters:\n$file_content\n";
-	}#asdf
+
+	#Make sure dmesg reader script is running... 
+	my $name = "worker_read_dmesg";
+	my $script = "$name.pl";
+	my $szLogFile = "/root/setup/log/$name.log";
+	print "perl $script > $szLogFile\n";
+	system("nohup perl $script >> $szLogFile 2>&1 &");
+	print "Script started\n";
+
+	$dbh = getConnection();
+	my $nMaxId = 0;
+	
+	my $stmt = $dbh->prepare("select dmesgId from dmesg order by dmesgId desc limit 1");
+	$stmt->execute() or die "execution failed: $dbh->errstr()";
+	if (my $row = $stmt->fetchrow_hashref()) {
+		if ($row->{"dmesgId"}) {
+			$stmt->finish;
+			$nMaxId = $row->{"dmesgId"};
+		} else {
+			return;
+		}
+ 	} else {
+		return;
+	}
+
+	$stmt = $dbh->prepare("delete from dmesg where dmesgId < ?");
+	my $nDelete = $nMaxId - 1000;
+	$stmt->execute($nDelete) or die "execution failed: $dbh->errstr()";	
+
+
+#	#************ Capture tarakernel records from dmesg and store in setup->dmesg field
+#	print "\n\n******************** Updating setup->dmesg **********************\n\n";
+#	my $szDmesgLogFile = getLogRoot()."dmesg.txt"; 
+#	system('sudo dmesg | grep tarakernel | grep -v "^[[:space:]]*$" > '.$szDmesgLogFile);
+#	open my $fhDmesg, '<', $szDmesgLogFile or die "Can't open file $!";
+#	my $file_content = do { local $/; <$fhDmesg> };
+#	close $fhDmesg;
+#	my $szSQL = "update setup set dmesg = ?, dmesgUpdated = now()";
+#	my $sthDemo = $dbh->prepare($szSQL);
+#	$file_content=~s/tarakernel\:\s//g;
+#	$sthDemo->execute($file_content) or die "execution failed: $sthDemo->errstr()";
+#	my $nDmsgLen = length($file_content); 
+#	if ($nDmsgLen < 100) {
+#	print "****** WARNING **** dmesg log is only $nDmsgLen characters:\n$file_content\n";
+#	}#asdf
 }
 
 sub deleteConfigUpdateTempFiles {

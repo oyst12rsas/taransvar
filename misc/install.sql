@@ -214,9 +214,26 @@ alter table hackReport add why varchar(255);
 alter table syslog add count int unsigned not null default 0;
 update setup set dbVersion = 66;
 
+#version 67 (260610)
+alter table syslogThreat add handling varchar(255);
+alter table setup add systemMessage varchar(255);
+update setup set dbVersion = 67;
+
+#version 68 (260610)
+alter table internalInfections add why varchar(255);
+update setup set dbVersion = 68;
+
+#version 69 (260610)
+create table dmesg (
+    dmesgId BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    created timestamp not null default current_timestamp,
+    txt varchar(255),
+    primary key(dmesgId)
+);
+update setup set dbVersion = 69;
+
 #******** NEXT TIME ALSO add *****
-alter table setup add systemMessage varchar 255;
-#update setup set dbVersion = 67;
+#update setup set dbVersion = 70;
 
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 

@@ -6,6 +6,79 @@ typedef struct  {
 
 #include <arpa/inet.h>
 
+uint32_t getIpOfRegisteredPartnerRouter(
+    MYSQL *conn,
+    uint32_t ip,
+    char *szRouterIp,
+    size_t nBufSize
+) {
+    const char *lpSQL =
+        "SELECT ip, INET_NTOA(ip) "
+        "FROM partnerRouter "
+        "WHERE (? & nettmask) = (ip & nettmask) "
+        "ORDER BY BIT_COUNT(nettmask) DESC "
+        "LIMIT 1";
+
+    MYSQL_STMT *stmt = mysql_stmt_init(conn);
+    if (!stmt) {
+        printf("Could not initialize statement\n");
+        return 0;
+    }
+
+    int status = mysql_stmt_prepare(stmt, lpSQL, strlen(lpSQL));
+    test_stmt_error(stmt, status);
+
+    MYSQL_BIND param[1];
+    memset(param, 0, sizeof(param));
+
+    param[0].buffer_type = MYSQL_TYPE_LONG;
+    param[0].buffer = &ip;
+    param[0].buffer_length = sizeof(ip);
+    param[0].is_unsigned = 1;
+
+    status = mysql_stmt_bind_param(stmt, param);
+    test_stmt_error(stmt, status);
+
+    status = mysql_stmt_execute(stmt);
+    test_stmt_error(stmt, status);
+
+    uint32_t nRouterIp = 0;
+    unsigned long nIpLen = 0;
+    my_bool is_null[2] = {0, 0};
+
+    MYSQL_BIND rec[2];
+    memset(rec, 0, sizeof(rec));
+
+    rec[0].buffer_type = MYSQL_TYPE_LONG;
+    rec[0].buffer = &nRouterIp;
+    rec[0].buffer_length = sizeof(nRouterIp);
+    rec[0].is_unsigned = 1;
+    rec[0].is_null = &is_null[0];
+
+    rec[1].buffer_type = MYSQL_TYPE_STRING;
+    rec[1].buffer = szRouterIp;
+    rec[1].buffer_length = nBufSize;
+    rec[1].length = &nIpLen;
+    rec[1].is_null = &is_null[1];
+
+    status = mysql_stmt_bind_result(stmt, rec);
+    test_stmt_error(stmt, status);
+
+    status = mysql_stmt_fetch(stmt);
+
+    if (status == MYSQL_NO_DATA) {
+        printf("No router found for this ip\n");
+        nRouterIp = 0;
+        if (nBufSize > 0)
+            szRouterIp[0] = '\0';
+    } else if (status != 0 && status != MYSQL_DATA_TRUNCATED) {
+        test_stmt_error(stmt, status);
+    }
+
+    mysql_stmt_close(stmt);
+    return nRouterIp;
+}
+
 void sendToGlogalDbServers(_GlobalServers *cGlobalDb, char *szParams, uint32_t nMyIp, char *cMyIp);
 void sendToGlogalDbServers(_GlobalServers *cGlobalDb, char *szParams, uint32_t nMyIp, char *cMyIp)
 {
@@ -36,9 +109,9 @@ void sendToGlogalDbServers(_GlobalServers *cGlobalDb, char *szParams, uint32_t n
 	    			if (lpGlobalDbIp && strlen(lpGlobalDbIp) > 7)
 	    			{
 						printf("About to send to global DB server: %s (me: %s)\n", lpGlobalDbIp, cMyIp);
-						char szUrl[255];
+						char szUrl[400];
 						char szWgetBuff[2000];
-						sprintf(szUrl, "http://%s/script/%s", lpGlobalDbIp, szParams);
+						snprintf(szUrl, sizeof(szUrl), "http://%s/script/config_update.php?%s", lpGlobalDbIp, szParams);
 						*szWgetBuff = 0;
 						printf("Sending request: %s\n", szUrl);
 						wget(szUrl, szWgetBuff, sizeof(szWgetBuff));  //Using global static buffers because reply doesn't come immediately.
@@ -133,7 +206,7 @@ void checkHackReports()
     mysql_free_result(res);
 	
 	//NOTE! Not checking hackReports regarding units in our network until 10 seconds later to give the system the chance to import recent port assignments
-	sprintf(szSQL, "select reportId, ip, port, inet_ntoa(ip), created, TIMESTAMPDIFF(SECOND, created, NOW()) as SecondsSince, sendAttemptCount, inet_ntoa(sentByIp) from hackReport where handledTime is null and (ip <> %u or created < DATE_SUB(NOW(), INTERVAL 10 SECOND))", nMyIp);
+	sprintf(szSQL, "select reportId, ip, port, inet_ntoa(ip), created, TIMESTAMPDIFF(SECOND, created, NOW()) as SecondsSince, sendAttemptCount, inet_ntoa(sentByIp), why from hackReport where handledTime is null and (ip <> %u or created < DATE_SUB(NOW(), INTERVAL 10 SECOND))", nMyIp);
 
 	if (mysql_query(conn, szSQL)) {
 		fprintf(stderr, "**** ERROR *** While fetching hackReports: %s\n", mysql_error(conn));
@@ -148,13 +221,15 @@ void checkHackReports()
 
 	while ((row = mysql_fetch_row(res)) != NULL)
 	{
+		char cWhat[256];
+		*cWhat = 0;
 	    if (atoi(row[6]) > 10)
         {
 			setHackReportAsHandled("Aborted (timed out 10 times)", atoi(row[0]));
             continue;
 	    }
 	        
-		printf("Hack report %s, %s %s:%s, sent by: %s, count: %s\n", row[0], row[4], row[3], row[2], row[7], row[6]);
+		printf("Hack report %s, %s %s:%s, sent by: %s, count: %s, wt: %s\n", row[0], row[4], row[3], row[2], row[7], row[6], row[8]);
 
 		if (updateConn == NULL)
 			updateConn = getConnection();
@@ -167,6 +242,8 @@ void checkHackReports()
 
 		if (isMeOrMine(nNumericIp, nMyIp, nNettmask))
 		{
+			strcpy(cWhat, "Me or my unit. ");
+			printf("Me or my unit caused hackReport to be filed..\n");
 
 			if (nNumericIp != nMyIp)
 			{
@@ -194,7 +271,8 @@ void checkHackReports()
 			}
 			else
 			{
-				//This is a hacking report regarding one of my units.. Find what unit it was based on 
+				strcpy(cWhat, "NAT'ed unit. ");
+				//This is a hacking report regarding one of my NAT'ed units.. Find what unit it was based on 
 				printf("This is a hacking report regarding one of my units.. Find what unit it was based on\n"); 
 				//the port and put in internalInfections table
 		
@@ -238,6 +316,8 @@ void checkHackReports()
 
 			if (nInfectionId > 0)
 			{
+				printf("Updating internalInfections record\n");
+				strncpy(cWhat, "Already reg as infected. ", sizeof(cWhat) - strlen(cWhat));
 				//NOTE! 260312 - Even though it's in the internalInfections table, it may be deactivated... so don't put it back in active state here...
 				//This IP is already registered in internalInfections. Update it (those are the IP  
 				//addresses that will be sent to tarakernel and be subject to tagging and blocking). 
@@ -253,16 +333,57 @@ void checkHackReports()
 				}
         	          		
 			} else {
+				printf("Creating new internalInfections record.\n");
+				strncpy(cWhat, "Not reg as infected. ", sizeof(cWhat) - strlen(cWhat));
+
+				//Check if special case... 
+				char *lpWhat = row[8];
+				if (strstr(lpWhat, "sinkhole"))
+				{
+					snprintf(cWhat, sizeof(cWhat) - strlen(cWhat), "Sinkhole accessed. ");
+				}
+
 				//This IP is not yet registered in internalInfections. Put it there.
 				//(those are the IP addresses that will be sent to tarakernel and be subject to tagging and blocking).
-				sprintf(cSQL, "insert into internalInfections (ip, nettmask, status, unitId) values (%d, inet_aton('255.255.255.255'), 'firsttime', %d)", nNumericIp, nUnitId);
+				sprintf(cSQL, "insert into internalInfections (ip, nettmask, status, unitId, severity, why) values (%d, inet_aton('255.255.255.255'), 'firsttime', %d, 7, ?)", nNumericIp, nUnitId);
+
+			    MYSQL_STMT *stmt = mysql_stmt_init(localUpdate);
+    			if (!stmt) {
+        			printf("Could not initialize statement\n");
+        			return 0;
+    			}
+
+				printf("Preparing statement.\n");
+			    int status = mysql_stmt_prepare(stmt, cSQL, strlen(cSQL));
+    			test_stmt_error(stmt, status);
+
+    			MYSQL_BIND param[1];
+    			memset(param, 0, sizeof(param));
+			    unsigned long nWhatLen = strlen(cWhat);
+
+    			param[0].buffer_type = MYSQL_TYPE_STRING;
+    			param[0].buffer = cWhat;
+			    param[0].buffer_length = sizeof(cWhat);
+			    param[0].length = &nWhatLen;
+    			param[0].is_unsigned = 0;
+
+				printf("Binding statement.\n");
+			    status = mysql_stmt_bind_param(stmt, param);
+    			test_stmt_error(stmt, status);
+
+				printf("Executing statement.\n");
+    			status = mysql_stmt_execute(stmt);
+    			test_stmt_error(stmt, status);
+
+				mysql_stmt_close(stmt);
+
 				lpHackReportStatus = "Infection registered";
 				printf("New unit not yet registered as infected. Inserted now.\n");                                          
-				if (mysql_query(localUpdate, cSQL)) {
+				/*if (mysql_query(localUpdate, cSQL)) {
 					fprintf(stderr, "**** ERROR **** While inserting internalInfections: %s\n", mysql_error(localUpdate));
 					addWarningRecord("******** ERROR ****** While updating internalInfections");
 					return;
-				}
+				}*/
 			}
 				
 			if (nUnitId)
@@ -291,7 +412,40 @@ void checkHackReports()
 		}//me or mine
 		else
 		{
-			/*	Probably always ends here when no NAT... Just skip this for now.
+			printf("Hack attempt from none of my units. Report back to ISP and global DB servers\n");
+			//260608 Ends here when fails to log in to gatekeeper too many times (7 within a minute?) 
+			///*	Probably always ends here when no NAT... Just skip this for now.
+
+			//Check if from unit belonging to partner. report?
+			char szRouterIp[50];
+			if (!lookupConn)
+				lookupConn = getConnection();
+
+			uint32_t nRouterIp = getIpOfRegisteredPartnerRouter(lookupConn, nNumericIp, szRouterIp, sizeof(szRouterIp));
+			char szParams[400], czCodedWhat[255];
+			//For any reason, send it to the global DB servers.
+			urlencode(row[8]?row[8]:"", czCodedWhat, sizeof(czCodedWhat));
+			snprintf(szParams, sizeof(szParams), "f=report&ip=%s&port=%s&wt=%s", row[3]?row[3]:"", row[2]?row[2]:"", czCodedWhat);
+
+			if (nRouterIp)
+			{
+				printf("Found ISP: %s\n", szRouterIp);
+				//Send message to router and globalDBpartners
+
+				char szUrl[255];
+				char szWgetBuff[2000];
+				snprintf(szUrl, sizeof(szUrl), "http://%s/script/config_update.php?%s", szRouterIp, szParams);
+				*szWgetBuff = 0;
+				printf("Sending ISP: %s\n", szUrl);
+				wget(szUrl, szWgetBuff, sizeof(szWgetBuff));  //Using global static buffers because reply doesn't come immediately.
+   			}
+			else
+				printf("Not belonging to other router. Sending to global DB servers");
+			
+			//For any reason, send it to the global DB servers.
+			sendToGlogalDbServers(&cGlobalDb, szParams, nMyIp, cMyIp);			
+
+			/*Old code probably causing lots of insertions in hackReport table... hopefully better with code above
 			if (!nNettmask)
 				printf("This is not a router.\n");
 			int nSecondeAgo = atoi(row[5]);
@@ -309,10 +463,14 @@ void checkHackReports()
 			printf("%s",szBuffer);
 			addWarningRecord(szBuffer);
 			*/
+			
 		}
 
 		if (bUpdateHandled) {
-		    setHackReportAsHandled("firstTime", atoi(row[0]));
+			if (!*cWhat)			
+				strcpy(cWhat, "FirstTime");
+
+		    setHackReportAsHandled(cWhat, atoi(row[0]));
 		}
 	}//while more records.
 

@@ -1,4 +1,37 @@
 
+<style>
+.tableFrame {
+    border: 1px solid black;
+    padding: 5px;
+    display: inline-block;
+}
+.compactTable {
+    border-collapse: collapse;
+	border: none;
+}
+
+.compactTable tr,
+.compactTable td {
+    padding: 0;
+    margin: 0;
+	border: none;
+	text-align: left;
+}
+
+.compactTable h1,
+.compactTable h2,
+.compactTable h3,
+.compactTable p,
+.compactTable div {
+    margin: 0;
+    padding: 0;
+}
+
+.compactTable tr,
+.compactTable td {
+    border: none;
+}
+</style>
 <script>
 var szUpdateRoutine = "dmesg";	
 
@@ -18,6 +51,47 @@ function logSrch()
 <?php 
 
 function listLog()
+{//asdf
+	$szAdminIp = 0;
+	$conn = getConnection();
+	$szSQL = "select inet_ntoa(adminIp) as adminIp from setup";
+	$result = $conn->query($szSQL);
+	if ($result) 
+	{
+		if ($result->num_rows > 0 && $row = $result->fetch_assoc()) 
+		{
+			if (isset($row["adminIp"]))
+				$szAdminIp = $row["adminIp"];
+		}
+		$result->free();
+	}
+
+	$nLastId = 0;
+
+	$szSQL = "select dmesgId, txt from dmesg order by dmesgId desc limit 100";
+	$result = $conn->query($szSQL);
+	if ($result && $result->num_rows > 0) 
+	{
+		$szDmsg = "";
+		$szMsg = "";
+		print "<div class=\"tableFrame\"><table id=\"dmesgTbl\" class=\"compactTable\"><tr style=\"display:none\"><th>dmesg</th></tr>";
+		while ($row = $result->fetch_assoc()) 
+		{
+			if (!$nLastId)
+			{
+				$nLastId = $row["dmesgId"]+0;
+			}
+			$szMsg = $row["txt"];//."<br>".$szMsg;
+			print "<tr id=\"ms".$row["dmesgId"]."\"><td style=\"text-align: left;\">".$szMsg."</td></tr>";
+		}
+    		
+
+		print "</table></div>";
+		print "Log <div id=\"log\"></div>";
+	}
+}
+
+function listLogOld()
 {//asdf
 	$conn = getConnection();
 	$szSQL = "select inet_ntoa(adminIp) as ip, dmesg, unix_timestamp(now())-unix_timestamp(dmesgUpdated) as secsAgo from setup";
@@ -61,7 +135,7 @@ function listLog()
 		$nCount=0;
 		while($row = $result->fetch_assoc()) 
 		{
-	    		print "<tr><td>".$row["lineId"]."</td><td>".$row["theTime"]."</td><td>".$row["theText"]."</td></tr>";
+    		print "<tr><td>".$row["lineId"]."</td><td>".$row["theTime"]."</td><td>".$row["theText"]."</td></tr>";
 			$nCount++;
 	  	}
 		print "</table>";

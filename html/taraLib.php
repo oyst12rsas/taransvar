@@ -62,7 +62,7 @@ function getUrl($baseUrl, $params = [])
 
 function logMsg($szMsg)
 {
-	$conn = getConnection;
+	$conn = getConnection();
 	$stmt = $conn->prepare("insert into systemMessage (message) values (?)");
 	$stmt->bind_param("s", $szMsg);
 	$stmt->execute();

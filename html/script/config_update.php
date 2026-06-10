@@ -86,29 +86,29 @@ if (isset($_GET["f"]))
                 //print "$sql";
                 //print "Port: -".$_GET["port"]."-";
 
-                $ip       = $_GET["ip"];
-                $port     = (int)$_GET["port"];
-                $what     = isset($_GET["wt"]) ? $_GET["wt"] : "hack";
-                $ourid    = isset($_GET["ourid"]) ? (int)$_GET["ourid"] : 0;
-                $fromPort = (int)$nFromPort;
+				$ip       = $_GET["ip"];
+				$port     = (int)$_GET["port"];
+				$what     = isset($_GET["wt"]) ? $_GET["wt"] : "hack";
+				$ourid    = isset($_GET["ourid"]) ? (int)$_GET["ourid"] : 0;
+				$fromPort = (int)$nFromPort;
 				logMsg("Hackreport: $ip:$port, $what");
 
                 $szSQL = "select reportId, TIMESTAMPDIFF(SECOND, coalesce(lastSeen, created), NOW()) AS seconds_since from hackReport where ip = inet_aton(?) and port = ? and why = ? order by coalesce(lastSeen, created) desc limit 1";
-            	$stmt = $conn->prepare($sql);
+            	$stmt = $conn->prepare($szSQL);
 	            $stmt->bind_param("sis", $ip, $port, $what);
 	            $stmt->execute();
 	            $result = $stmt->get_result(); // get the mysqli result
                 $nSeconds = 1000;
 
             	if ($result) 
-	            {
-		            if($row = $result->fetch_assoc()) 
-            		{
-                        $nSeconds = aton($row["seconds_since"]);
+				{
+					if($row = $result->fetch_assoc()) 
+					{
+						$nSeconds = $row["seconds_since"]+0;
 						$nReportId = $row["reportId"];
-                    }
-                    $result->close();
-                }
+					}
+					$result->close();
+				}
 
                 if ($nSeconds < 30)
                 {
@@ -125,15 +125,15 @@ if (isset($_GET["f"]))
 					logMsg("Inserting..");
 
 	                $szSQL = "insert into hackReport
-    	                (ip, port, partnerIp, partnerPort, why, sentByIp, ipOwnerId)
-        	            values (inet_aton(?), ?, inet_aton(?), ?, ?, inet_aton(?), ?)";
+						(ip, port, partnerIp, partnerPort, why, sentByIp, ipOwnerId)
+						values (inet_aton(?), ?, inet_aton(?), ?, ?, inet_aton(?), ?)";
 
-            	    $stmt = $conn->prepare($szSQL);
-                	$stmt->bind_param(
-	                    "sisissi",
-    	                $ip,
-        	            $port,
-            	        $szFromIp,
+					$stmt = $conn->prepare($szSQL);
+					$stmt->bind_param(
+						"sisissi",
+						$ip,
+						$port,
+						$szFromIp,
                 	    $fromPort,
                     	$what,
 	                    $szFromIp,
