@@ -350,7 +350,7 @@ void checkHackReports()
 			    MYSQL_STMT *stmt = mysql_stmt_init(localUpdate);
     			if (!stmt) {
         			printf("Could not initialize statement\n");
-        			return 0;
+        			return;
     			}
 
 				printf("Preparing statement.\n");
@@ -432,7 +432,7 @@ void checkHackReports()
 				printf("Found ISP: %s\n", szRouterIp);
 				//Send message to router and globalDBpartners
 
-				char szUrl[255];
+				char szUrl[500];
 				char szWgetBuff[2000];
 				snprintf(szUrl, sizeof(szUrl), "http://%s/script/config_update.php?%s", szRouterIp, szParams);
 				*szWgetBuff = 0;

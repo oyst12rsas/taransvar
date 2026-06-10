@@ -3,7 +3,6 @@
 #include <stdio.h>
 #include <ctype.h>
 
-void urlencode(const char *src, char *dst, size_t dstsize);
 void urlencode(const char *src, char *dst, size_t dstsize)
 {
     const char *hex = "0123456789ABCDEF";

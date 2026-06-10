@@ -100,6 +100,7 @@ unsigned int inet__aton(char *lpIp);
 int send_to_kernel(int fd, const void *data, size_t len);
 void insertHackReport(MYSQL *conn, uint32_t ip, unsigned short port, uint32_t nSenderIp, char *cInfo, unsigned int nInfectionId, unsigned int nSeverity, unsigned int nBotnetId);
 static int test_stmt_error(MYSQL_STMT * stmt, int status);  //Defined in module_traffic_report.c for now
+void urlencode(const char *src, char *dst, size_t dstsize);
 
 
 int fd = 0;
