@@ -42,10 +42,33 @@ function colorMark($szSubject, $szColorInstructions)
 
 function dmesg()
 {
-	$nLastId = $_GET["id"];
+	
+	if (isset($_GET["srch"]))
+	{
+		$szSearch = $_GET["srch"];
+		$_SESSION["srch"] = $_GET["srch"];
+	}
+	else
+		$szSearch = isset($_SESSION["srch"])?$_SESSION["srch"]:"";
+
+	if (isset($_GET["filter"]))
+		$szFilter = $_SESSION["filter"] = $_GET["filter"];
+	else	
+		$szFilter = isset($_SESSION["filter"])?$_SESSION["filter"]:"";
+
+	if (isset($_GET["hold"]))
+		$szHold = $_SESSION["hold"] = $_GET["hold"];
+	else	
+		$szHold = isset($_SESSION["hold"])?$_SESSION["hold"]:"";
+
+	if ((int)$szHold)
+		return;
+
+
+	$nLastId = (isset($_GET["id"])?$_GET["id"]:0);
     CXmlCommand::setInnerHTML("log", "", "ID: $nLastId");//, $cMoreParamsArr = array())
 
-	$szSQL = "select dmesgId, txt from dmesg where dmesgId > ? order by dmesgId limit 100";
+	$szSQL = "select dmesgId, unix_timestamp(now())-unix_timestamp(created) as secsAgo, txt from dmesg where dmesgId > ? order by dmesgId limit 100";
 	$dbh = getConnection();
 	$row = 0;
 	
@@ -61,9 +84,19 @@ function dmesg()
 		while ($row = $result->fetch_assoc()) 
 		{
 			$nRowId = "ms".$row["dmesgId"];
-	        $cArr = array($row["txt"]); 
+	        //$cArr = array($row["secsAgo"],"&nbsp;", $row["txt"]); 
+			$szColored = colorMark($row["txt"], $szSearch);
 
-        	CXmlCommand::addTableRow("dmesgTbl", "top", $nRowId, $cArr, "", $nRowId);//$szHTML)
+       		$cArr = array($szColored); 
+
+			if ((int)$szFilter)
+			{
+				//If filter is on, add to table only if text is changed. 
+				if (strcmp($szColored, $row["txt"]))
+		        	CXmlCommand::addTableRow("dmesgTbl", "top", $nRowId, $cArr, "", $nRowId);//$szHTML)
+			}
+			else
+	        	CXmlCommand::addTableRow("dmesgTbl", "top", $nRowId, $cArr, "", $nRowId);//$szHTML)
 		}
 	}
 }

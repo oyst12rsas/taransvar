@@ -52,6 +52,18 @@ function logSrch()
 
 function listLog()
 {//asdf
+	unset($_SESSION["hold"]);
+
+			$szSearch = (isset($_SESSION["srch"]) && strlen($_SESSION["srch"]))?$_SESSION["srch"]:"10.0.0.16(green)^TAG:(red)";
+			$szChecked = isset($_SESSION["filter"])&&$_SESSION["filter"]?" checked":"";
+			$szHold = isset($_SESSION["hold"])&&$_SESSION["hold"]?" checked":"";
+
+			print '<form onsubmit="logSrch(); return false;">
+			<label for="crit">Mark/filter:</label><input id="crit" value="'.$szSearch.'" size="60"> <label for="filter">Filter:</label><input type="checkbox"'.$szChecked.' id="filter"> <label for="hold">Hold:</label><input type="checkbox"'.$szHold.' id="hold">
+			<input type="submit"></form>';
+
+
+
 	$szAdminIp = 0;
 	$conn = getConnection();
 	$szSQL = "select inet_ntoa(adminIp) as adminIp from setup";
@@ -68,27 +80,38 @@ function listLog()
 
 	$nLastId = 0;
 
-	$szSQL = "select dmesgId, txt from dmesg order by dmesgId desc limit 100";
+	$szSQL = "select dmesgId, unix_timestamp(now())-unix_timestamp(created) as secsAgo, txt from dmesg order by dmesgId desc limit 100";
 	$result = $conn->query($szSQL);
+	if (!$result)
+	{
+    	die($conn->error);
+	}	
+	print "<div class=\"tableFrame\"><table id=\"dmesgTbl\" class=\"compactTable\"><tr style=\"display:none\"><th>ago</th><th>dmesg</th></tr>";
 	if ($result && $result->num_rows > 0) 
 	{
 		$szDmsg = "";
 		$szMsg = "";
-		print "<div class=\"tableFrame\"><table id=\"dmesgTbl\" class=\"compactTable\"><tr style=\"display:none\"><th>dmesg</th></tr>";
+		$szRows = "";
 		while ($row = $result->fetch_assoc()) 
 		{
 			if (!$nLastId)
 			{
 				$nLastId = $row["dmesgId"]+0;
+				//if ($row["secsAgo"]+0 > 10)
+				//	print '<tr><td colspan="3"><font color="rd">Data are not updated!</font></td></tr>';
 			}
 			$szMsg = $row["txt"];//."<br>".$szMsg;
-			print "<tr id=\"ms".$row["dmesgId"]."\"><td style=\"text-align: left;\">".$szMsg."</td></tr>";
+			//$szNextRow = "<tr id=\"ms".$row["dmesgId"]."\"><td>".$row["secsAgo"]."</td><td>&nbsp;&nbsp;</td><td style=\"text-align: left;\">".$szMsg."</td></tr>";
+			$szNextRow = "<tr id=\"ms".$row["dmesgId"]."\"><td style=\"text-align: left;\">".$szMsg."</td></tr>";
+			$szRows = $szRows.$szNextRow;	//Insert the new row on top..
 		}
-    		
-
-		print "</table></div>";
-		print "Log <div id=\"log\"></div>";
+		print $szRows;
 	}
+	else
+		print "Unable to read dmesg records..";
+
+	print "</table></div>";
+	print "Log <div id=\"log\"></div>";
 }
 
 function listLogOld()

@@ -743,6 +743,7 @@ print "Starting workshopSetup()\n";
 workshopSetup();	#If workshopId is set in dashboard setup, it will register other computers with same workshopId as partners.
 start_iptables_monitor();	#Check if iptables_log_monitor.pl is already running. If not, starts it
 start_local_iptables_monitor();
+logDmesg();		#Just ensuring that worker_read_dmesg.pl is running
 print "Starting start_process_dhcpdump()\n";
 if (defined $pSetup->{"internalNic"})		#NOTE! This is not tested!!!
 {
@@ -782,7 +783,6 @@ while (time() - $nTimeStarted < 52)
 
 	check_dhcpEvent($dbh);	
 	handleConntrack($dbh);	#NOTE! Import port assignments. Import dhcp leases before this..
-	logDmesg();
 	checkWhoIs($dbh, $nNumberOfWhoIsLookupsPerIteration);
 	sendPendingWgets();
 	handle_syslogThreat_table($dbh);	#iptables drops ++ are handled here.
