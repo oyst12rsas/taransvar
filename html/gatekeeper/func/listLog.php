@@ -97,8 +97,11 @@ function listLog()
 			if (!$nLastId)
 			{
 				$nLastId = $row["dmesgId"]+0;
-				//if ($row["secsAgo"]+0 > 10)
-				//	print '<tr><td colspan="3"><font color="rd">Data are not updated!</font></td></tr>';
+				if ($row["secsAgo"]+0 > 10)
+				{
+					print '<tr><td><font color="rd">Data are not updated!</font></td></tr>';
+					break;
+				}
 			}
 			$szMsg = $row["txt"];//."<br>".$szMsg;
 			//$szNextRow = "<tr id=\"ms".$row["dmesgId"]."\"><td>".$row["secsAgo"]."</td><td>&nbsp;&nbsp;</td><td style=\"text-align: left;\">".$szMsg."</td></tr>";
