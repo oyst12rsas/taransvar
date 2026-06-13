@@ -8,11 +8,9 @@ set -euo pipefail
 SSID="Tara_Hotspot"
 WIFI_PASSWORD="TaraHotspot1234"
 
-WG_IF="wg0"
-WG_PORT="51820"
-WG_ENDPOINT="YOUR_VPS_IP_OR_DOMAIN:443"
-WG_ALLOWED_IPS="10.47.0.0/16,10.100.0.0/16"
-WG_ADDRESS="10.47.X.X/32"   # CHANGE AFTER ØYSTEIN ASSIGNS IP
+VPN_IF="wt0"
+NETBIRD_MGMT_URL="https://netbird.taransvar.no"
+NETBIRD_SETUP_KEY="PASTE_SETUP_KEY_HERE"
 
 TARA_REPO="https://github.com/YOUR_ORG/YOUR_TARA_REPO.git"
 TARA_DIR="/opt/tara"
@@ -202,56 +200,40 @@ EOF
     systemctl enable dnsmasq
 }
 
-configure_wireguard() {
-    echo "[+] Configuring WireGuard..."
+install_netbird() {
+    echo "[+] Installing NetBird..."
 
-    mkdir -p /etc/wireguard
-    chmod 700 /etc/wireguard
-
-    if [[ ! -f /etc/wireguard/privatekey ]]; then
-        wg genkey | tee /etc/wireguard/privatekey | wg pubkey > /etc/wireguard/publickey
-        chmod 600 /etc/wireguard/privatekey
+    if ! command -v netbird >/dev/null 2>&1; then
+        curl -fsSL https://pkgs.netbird.io/install.sh | sh
     fi
 
-    local private_key
-    private_key=$(cat /etc/wireguard/privatekey)
+    systemctl enable netbird || true
 
-    cat > /etc/wireguard/$WG_IF.conf <<EOF
-[Interface]
-Address = $WG_ADDRESS
-PrivateKey = $private_key
+    echo "[+] Joining NetBird network..."
 
-[Peer]
-PublicKey = VPS_PUBLIC_KEY_HERE
-Endpoint = $WG_ENDPOINT
-AllowedIPs = $WG_ALLOWED_IPS
-PersistentKeepalive = 25
-EOF
+    if [[ "$NETBIRD_SETUP_KEY" == "PASTE_SETUP_KEY_HERE" ]]; then
+        echo "[ERROR] NETBIRD_SETUP_KEY is not configured."
+        echo "Create a reusable setup key in NetBird UI and paste it into this script."
+        exit 1
+    fi
 
-    chmod 600 /etc/wireguard/$WG_IF.conf
+    netbird up \
+        --management-url "$NETBIRD_MGMT_URL" \
+        --setup-key "$NETBIRD_SETUP_KEY"
 
-    systemctl enable wg-quick@$WG_IF || true
+    echo "[+] Waiting for NetBird interface $VPN_IF..."
 
-    echo
-    echo "===================================================="
-    echo " WireGuard key generated"
-    echo "===================================================="
-    echo
-    echo "Send this public key to Øystein:"
-    echo
-    cat /etc/wireguard/publickey
-    echo
-    echo "Then edit:"
-    echo "  /etc/wireguard/$WG_IF.conf"
-    echo
-    echo "Replace:"
-    echo "  WG_ADDRESS=$WG_ADDRESS"
-    echo "  VPS_PUBLIC_KEY_HERE"
-    echo "  WG_ENDPOINT=$WG_ENDPOINT"
-    echo
-    echo "Then start WireGuard:"
-    echo "  sudo systemctl restart wg-quick@$WG_IF"
-    echo
+    for i in {1..20}; do
+        if ip link show "$VPN_IF" >/dev/null 2>&1; then
+            echo "[+] NetBird interface found: $VPN_IF"
+            return
+        fi
+        sleep 1
+    done
+
+    echo "[ERROR] NetBird interface $VPN_IF not found."
+    netbird status || true
+    exit 1
 }
 
 configure_nat_firewall() {
@@ -262,8 +244,8 @@ configure_nat_firewall() {
     iptables -t nat -C POSTROUTING -s "$HOTSPOT_CIDR" -o "$WAN_IF" -j MASQUERADE 2>/dev/null || \
         iptables -t nat -A POSTROUTING -s "$HOTSPOT_CIDR" -o "$WAN_IF" -j MASQUERADE
 
-    iptables -t nat -C POSTROUTING -s "$HOTSPOT_CIDR" -o "$WG_IF" -j MASQUERADE 2>/dev/null || \
-        iptables -t nat -A POSTROUTING -s "$HOTSPOT_CIDR" -o "$WG_IF" -j MASQUERADE
+    iptables -t nat -C POSTROUTING -s "$HOTSPOT_CIDR" -o "$VPN_IF" -j MASQUERADE 2>/dev/null || \
+        iptables -t nat -A POSTROUTING -s "$HOTSPOT_CIDR" -o "$VPN_IF" -j MASQUERADE
 
     iptables -C FORWARD -i "$HOTSPOT_IF" -o "$WAN_IF" -s "$HOTSPOT_CIDR" -j ACCEPT 2>/dev/null || \
         iptables -A FORWARD -i "$HOTSPOT_IF" -o "$WAN_IF" -s "$HOTSPOT_CIDR" -j ACCEPT
@@ -271,11 +253,11 @@ configure_nat_firewall() {
     iptables -C FORWARD -i "$WAN_IF" -o "$HOTSPOT_IF" -d "$HOTSPOT_CIDR" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
         iptables -A FORWARD -i "$WAN_IF" -o "$HOTSPOT_IF" -d "$HOTSPOT_CIDR" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 
-    iptables -C FORWARD -i "$HOTSPOT_IF" -o "$WG_IF" -s "$HOTSPOT_CIDR" -j ACCEPT 2>/dev/null || \
-        iptables -A FORWARD -i "$HOTSPOT_IF" -o "$WG_IF" -s "$HOTSPOT_CIDR" -j ACCEPT
+    iptables -C FORWARD -i "$HOTSPOT_IF" -o "$VPN_IF" -s "$HOTSPOT_CIDR" -j ACCEPT 2>/dev/null || \
+        iptables -A FORWARD -i "$HOTSPOT_IF" -o "$VPN_IF" -s "$HOTSPOT_CIDR" -j ACCEPT
 
-    iptables -C FORWARD -i "$WG_IF" -o "$HOTSPOT_IF" -d "$HOTSPOT_CIDR" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
-        iptables -A FORWARD -i "$WG_IF" -o "$HOTSPOT_IF" -d "$HOTSPOT_CIDR" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+    iptables -C FORWARD -i "$VPN_IF" -o "$HOTSPOT_IF" -d "$HOTSPOT_CIDR" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
+        iptables -A FORWARD -i "$VPN_IF" -o "$HOTSPOT_IF" -d "$HOTSPOT_CIDR" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 
     netfilter-persistent save || true
 }
@@ -357,7 +339,7 @@ main() {
     configure_hotspot_ip
     configure_hostapd
     configure_dnsmasq
-    configure_wireguard
+    install_netbird
     configure_nat_firewall
     install_tara_systems
     restart_services

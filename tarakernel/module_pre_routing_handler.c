@@ -96,7 +96,7 @@ int isMeOrMine(unsigned int nIp)
 	
 	if ((nIp & pSetup->nNettmask) == (pSetup->nInternalIp & pSetup->nNettmask))
 	        return 1;
-	
+			
     return 0;	
 }
 
@@ -423,8 +423,36 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 		return NF_ACCEPT;
 	}
 
-	//Can we check here if inbound traffic to this computer (nettwork)?
-	if (isMeOrMine(pPacket->ip_header->daddr))
+	int bFromMeOrMine = isMeOrMine(pPacket->ip_header->saddr);
+	int bToMeOrMine = isMeOrMine(pPacket->ip_header->daddr);
+
+	if (bFromMeOrMine && bToMeOrMine)
+	{
+		char szInfectionInfo[200];
+		*szInfectionInfo = 0;
+		//Internal traffic between me and subnet
+		if (pPacket->ip_header->daddr == pSetup->nInternalIp || pPacket->ip_header->daddr == pSetup->nMyIp)		//asdfasdf
+		{
+			struct _InfectionSpecification *pInfected = isInfected(pPacket->ip_header->saddr);
+			if (pInfected)
+				snprintf(szInfectionInfo, sizeof(szInfectionInfo), " (infected unit. severity: %d)", pInfected->nSeverity);
+
+			//From subnet to me.
+			if (!dropFromLogging(pPacket))
+				pr_info("tarakernel: PR: Inbound from subnet %s:%d -> %s:%d%s\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort, szInfectionInfo);
+		}
+		else
+		{
+			if (pSetup->cShowInstructions.bits.showOther)
+				if (!dropFromLogging(pPacket))
+					pr_info("tarakernel: PR: Outbound to subnet %s:%d -> %s:%d\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort, szInfectionInfo);
+
+		}
+
+		return NF_ACCEPT;
+	}
+
+	if (bToMeOrMine)
 	{
         /*
                     Is this where we check for tagging and match with information about servers in the network?
@@ -491,7 +519,6 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 		        //Remove the tag by default. This is traffic to the server (forwarded traffic doesn't come here..??????)
 		        //Note! Sometimes (always?) even a Ubuntu computer droppes the package if tagged this way... (maybe because of checksum error?)
 		        //sprintf(pSetup->c100, "Tag was %04X (removed) Infected: %u, owners_id: %u, block threshold: %u",  pPacket->tcp_header->urg_ptr, cUnion.cTag.presumed_infected, cUnion.cTag.owners_id, pSetup->nBlockIncomingTaggedTrafficLevel);
-		            
 
 				if (clearIncomingTag(pPacket))
 				{
@@ -557,11 +584,12 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 //          	if (pSetup->cShowInstructions.bits.doReportTraffic)
 //                reportInboundTraffic(pPacket);	//ØT 260305 - report everything PRE ROUTING....
 		
-        }    
+    }    
 
-	//Can we check here if outbound traffic from this computer or subnet?
-	if (isMeOrMine(pPacket->ip_header->saddr))
+	if (bFromMeOrMine)
 	{
+		//Outbound traffic
+
 		bToOrFromMe = 1;
 
         if (isPartner(pPacket->ip_header->daddr)) 	
@@ -597,7 +625,7 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 	    	if (pSetup->cShowInstructions.bits.showPreRouteNonPartner)
 				if (!dropFromLogging(pPacket))
 					pr_info("tarakernel: PR: Outbound for non-partner %s:%d -> %s:%d\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort); 
-	}
+	}//from me or mine
 	
 	if (!bToOrFromMe)
 	{
@@ -675,16 +703,14 @@ static unsigned int module_ip4_post_routing_handler(void *priv, struct sk_buff *
 
 	if (pPacket->ip_header->saddr == pSetup->nInternalIp || pPacket->ip_header->daddr == pSetup->nInternalIp)
 	{
-	    //To or from the router itself (not to be forwarded to other..). This is probably not interesting to anybody. (except my firewall.....)
+	    //To or from the router itself on LAN side (not to be forwarded to other..). This is probably not interesting to anybody. (except my firewall.....)
 		//OT_Changed: 260225 - incoming traffic is interesting to "SampleBank" or "HoneyPot"... Start logging this....
 		//reportInboundTraffic(pPacket);	//ØT 260305 - NOw report everything prerouting..//OT_Changed: 260225 - added this... 
 		checkFree(pPacket, true);	//Now leaving POST_ROUTING - so kfree the memory
 		return NF_ACCEPT;
 	}
         
-	//Can we check here if inbound traffic to this computer (NOTE inbound to sub nettwork will be checked below)?
-	if (pPacket->ip_header->daddr == pSetup->nMyIp)//ipMyAddress)
-	//if (isMeOrMine(pPacket->ip_header->daddr))
+	if (pPacket->ip_header->daddr == pSetup->nMyIp) //Inbound on WAN side
 	{
         bToOrFromMe = 1;
               
@@ -702,11 +728,9 @@ static unsigned int module_ip4_post_routing_handler(void *priv, struct sk_buff *
 			else
 				pSetup->cGlobalStatistics.nFromPartnerUntagged++;
 		}		      
-        }    
+    }    
 
-	//Can we check here if outbound traffic from this computer (NOTE! Outbound traffic from sub network will be checked below)?
-	if (pPacket->ip_header->saddr == pSetup->nMyIp)
-	//if (isMeOrMine(pPacket->ip_header->saddr))
+	if (pPacket->ip_header->saddr == pSetup->nMyIp)	//Outboud on WAN side
 	{
         bToOrFromMe = 1;
 
@@ -717,25 +741,6 @@ static unsigned int module_ip4_post_routing_handler(void *priv, struct sk_buff *
 			int nRetval = checkFixTagging(pPacket, bForwarding, state);  //Defined in module_forwarding.c
 			checkFree(pPacket, true);	//Now leaving POST_ROUTING - so kfree the memory
 			return nRetval;
-		
-        	/* Code below is now fixed by checkFixTagging()
-        	if (pSetup->cShowInstructions.bits.doTagging)
-			{
-				union _TagUnion cUnion;
-
-				cUnion.cTag.version_no = TAG_VERSION_NO;
-				cUnion.cTag.presumed_infected = 5; //Presumably bot. TO DO: Diversify this....
-				cUnion.cTag.botnet_id = 99; //To be assigned by Akili Bomba.. To be implemented later...
-				pPacket->tcp_header->urg_ptr= cUnion.nBe16;//(__be16)cTag;//htons(0xFF00);  //Tag the package.
-				pSetup->cGlobalStatistics.nOutboundTagged++;
-				sprintf(pSetup->c100, "Tag: (%04X) Infected: %u, botnetId: %u", pPacket->tcp_header->urg_ptr, cUnion.cTag.presumed_infected, cUnion.cTag.botnet_id);
-			}
-			else
-			        strcpy(pSetup->c100, "BUT TAGGING IS DISABLED");
-			        
-	        	if (pSetup->cShowInstructions.bits.showPreRoutePartner)
-				pr_info("tarakernel: POST ROUTING Outbound for partner. Tagging is normally handled in forwarding (T001): %s (%s -> %s)\n", pSetup->c100, pPacket->cSourceIp, pPacket->cDestIp);
-			*/
 		}
 		else
         	if (pSetup->cShowInstructions.bits.showPreRouteNonPartner)

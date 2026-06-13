@@ -356,7 +356,14 @@ static void send_to_user(const char *msg)
 
     res = nlmsg_unicast(nl_sk, skb_out, pid);
     if (res < 0)
-        printk(KERN_INFO "tarakernel: Error while sending to user: %d\n", res);
+	{
+		if (res == -ECONNREFUSED) {			//-ECONNREFUSED == -111
+    		printk(KERN_INFO "tarakernel:\n**** ERROR **** userspace netlink portid %u is stale - restart taralink and tarakernel\n\n", pid);
+    		//pid = 0;	- don't reset.. better try again and get same error for the logs
+		}		
+		else
+	        printk(KERN_INFO "tarakernel: Error while sending to user: %d\n", res);
+	}
 }
 
 

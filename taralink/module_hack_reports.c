@@ -184,15 +184,18 @@ void checkHackReports()
 	//char szGlobalDb3[30];
 
 	char *lpSql = "select adminIP, inet_ntoa(adminIP), inet_ntoa(globalDb1ip), inet_ntoa(globalDb2ip), inet_ntoa(globalDb3ip), nettmask from setup"; 
+	//printf("About to query\n");
 	if (mysql_query(conn, lpSql)) {
 		fprintf(stderr, "**** ERROR ******* While finding setup: %s\n", mysql_error(conn));
 		addWarningRecord("**** ERROR ******* While finding setup");
+		printf("DB query error. Aborting.\n");
 		return;
 	}
 	res = mysql_use_result(conn);
 	row = mysql_fetch_row(res);
-	nMyIp = atoi(row[0]);
-	nNettmask = atoi(row[5]);
+	//printf("After fetch_row\n");
+	nMyIp = (row[0]?atoi(row[0]):0);
+	nNettmask = (row[5]?atoi(row[5]):0);
 	strcpy(cMyIp, row[1]);
 	for (int n=0; n < 3; n++)
 	{
@@ -203,6 +206,7 @@ void checkHackReports()
 	//strcpy(szGlobalDb2, row[3]);
 	//strcpy(szGlobalDb3, row[4]);
 	
+	//printf("Freeing result\n");
     mysql_free_result(res);
 	
 	//NOTE! Not checking hackReports regarding units in our network until 10 seconds later to give the system the chance to import recent port assignments

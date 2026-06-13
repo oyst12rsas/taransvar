@@ -177,7 +177,7 @@ sub logDmesg {
 	my $name = "worker_read_dmesg";
 	my $script = "$name.pl";
 	my $szLogFile = "/root/setup/log/$name.log";
-	print "perl $script > $szLogFile\n";
+	print "Starting: perl $script >> $szLogFile\n";
 	system("nohup perl $script >> $szLogFile 2>&1 &");
 	print "Script started\n";
 
@@ -191,16 +191,18 @@ sub logDmesg {
 			$stmt->finish;
 			$nMaxId = $row->{"dmesgId"};
 		} else {
+			print "**** ERROR: No dmesg records yet!\n";
 			return;
 		}
  	} else {
+		print "**** ERROR: Unable to read dmesg records..!\n";
 		return;
 	}
 
 	$stmt = $dbh->prepare("delete from dmesg where dmesgId < ?");
 	my $nDelete = $nMaxId - 1000;
 	$stmt->execute($nDelete) or die "execution failed: $dbh->errstr()";	
-
+	print "Deleted dmesg with id < $nDelete\n";
 
 #	#************ Capture tarakernel records from dmesg and store in setup->dmesg field
 #	print "\n\n******************** Updating setup->dmesg **********************\n\n";

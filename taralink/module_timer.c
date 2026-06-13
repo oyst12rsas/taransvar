@@ -89,18 +89,22 @@ void timer_callback(union sigval timer_data)
 	//printf("About to check for requests for assistance..\n");
 
     #ifdef DO_REQUEST_ASSISTANCE
+	    printf("Checking checkRequestAssistance..\n");
 	    checkRequestAssistance();
-	    //printf("Finished checking for requests for assistance..\n");
+	    printf("Finished checking for requests for assistance..\n");
     #endif
           
     #ifdef DO_CHECK_HACK_REPORTS
+        //printf("Checking hack reports\n");
         checkHackReports();   //Checks if there's reported attacks by units in our network  (module_hack_reports.c)              
+        //printf("Finished checking hack reports\n");
     #endif
           
     #ifdef DO_SETUP_CHECK    
     	//pSockData = getSockData();
 	    //getKernelSocket(pSockData);
 
+        //printf("Checking status\n");
         int nSequenceNumber, bIsInbound, bReadChangesOnly;
     	int nRetval = sentConfiguration(nSequenceNumber=0, bIsInbound=0, bReadChangesOnly=1); 
 	    //printf("After sentConfiguration\n");

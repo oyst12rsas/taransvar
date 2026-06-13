@@ -249,7 +249,7 @@ char *interpretSetup(char *lpBlockDescriptor, char *lpIpList)
             //pSetup->nShowInstructions  = nMyIp;
         pSetup->cShowInstructions.nValues  = nMyIp;
 
-        pr_info("tarakernel: Setup saved: %08X, %08X, %08X, %02X\n",pSetup->nMyIp, pSetup->nInternalIp, pSetup->nNettmask, pSetup->cShowInstructions.nValues);
+        pr_info("tarakernel: Setup saved: %pI4, %pI4, %pI4, %02X\n",&pSetup->nMyIp, &pSetup->nInternalIp, &pSetup->nNettmask, pSetup->cShowInstructions.nValues);
             
         pr_info("tarakernel: Show: SS:%d, SPRP:%d, SHRNP:%d, SFP:%d, SFNP:%d, SUPTR:%d, orpn:%d, other:%d, tag:%d, inspect:%d, block:%d\n",
               pSetup->cShowInstructions.bits.showStatus,

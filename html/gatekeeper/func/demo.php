@@ -225,10 +225,16 @@ function check($field)
 	return (isset($field) && $field == "1" ? '<img src="img/green_dot.png">':'<img src="img/red_dot.png">');
 }
 
+function getGatewayIP()
+{
+	//Don't know if we should make this more advance.. It's printed when this machine has not received status from a partner.
+	return "100.68.165.190";//10.100.0.1
+}
+
 function getServerStatus($seconds_since, $status)
 {
-	if (!strlen($status))
-		return '<a href="http://10.100.0.1/index.php?f=demo">Check status on router</a>';
+	if (!isset($status) || !strlen($status))
+		return '<a href="http://'.getGatewayIP().'/gatekeeper/index.php?f=demo">Check status on router</a>';
 
 	if ($seconds_since+0 > 65)
 		return '<font color="red">Server is troubled. Better use another.</font>';
