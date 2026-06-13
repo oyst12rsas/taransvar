@@ -122,10 +122,11 @@ sub reportStatus {
 	if (!$json{"lnk"}) {
 		system("nohup /root/taransvar/taralink >/tmp/taralink.log 2>&1 &");		
 		sleep(2);
-		if (programRunningLockFileHeld("/tmp/taralink.lock"))
+		if (programRunningLockFileHeld("/tmp/taralink.lock")) {
 			saveWarning("Taralink was not running when reporting status. Seems like managed to start it\n");
-		else
+		} else {
 			saveWarning("*** WARNING *** Taralink is still not running after trying to start it.\n");
+		}
 	}
 
 #	$json{"cron"} = (programRunning("crontasks.pl")?"1":0);
