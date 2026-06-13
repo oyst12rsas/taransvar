@@ -341,7 +341,7 @@ void checkHackReports()
 				strncpy(cWhat, "Not reg as infected. ", sizeof(cWhat) - strlen(cWhat));
 
 				//Check if special case... 
-				char *lpWhat = row[8];
+				char *lpWhat = row[8]?row[8]:"";
 				if (strstr(lpWhat, "sinkhole"))
 				{
 					snprintf(cWhat, sizeof(cWhat) - strlen(cWhat), "Sinkhole accessed. ");

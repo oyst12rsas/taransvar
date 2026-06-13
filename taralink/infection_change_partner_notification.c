@@ -414,8 +414,8 @@ void *worker(void *arg) {
 
 	char cInternalIp[100];
 	char cExternalIp[100];
-	strcpy(cInternalIp, row[3]);
-	strcpy(cExternalIp, row[2]);
+	strcpy(cInternalIp, (row[3]?row[3]:""));
+	strcpy(cExternalIp, (row[2]?row[2]:""));
     u_int32_t nNettmask = (row[4]?atoi(row[4]):0);
     u_int32_t nAdminIp = (row[0]?atoi(row[0]):0);
     u_int32_t nInternalIp = (row[1]?atoi(row[1]):0);

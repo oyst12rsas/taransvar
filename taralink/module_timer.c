@@ -89,9 +89,9 @@ void timer_callback(union sigval timer_data)
 	//printf("About to check for requests for assistance..\n");
 
     #ifdef DO_REQUEST_ASSISTANCE
-	    printf("Checking checkRequestAssistance..\n");
+	    //printf("Checking checkRequestAssistance..\n");
 	    checkRequestAssistance();
-	    printf("Finished checking for requests for assistance..\n");
+	    //printf("Finished checking for requests for assistance..\n");
     #endif
           
     #ifdef DO_CHECK_HACK_REPORTS
