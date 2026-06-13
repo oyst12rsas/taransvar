@@ -445,7 +445,7 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 		{
 			if (pSetup->cShowInstructions.bits.showOther)
 				if (!dropFromLogging(pPacket))
-					pr_info("tarakernel: PR: Outbound to subnet %s:%d -> %s:%d\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort, szInfectionInfo);
+					pr_info("tarakernel: PR: Outbound to subnet %s:%d -> %s:%d%s\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort, szInfectionInfo);
 
 		}
 
