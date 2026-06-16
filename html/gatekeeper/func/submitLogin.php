@@ -19,6 +19,17 @@ function loginAttempt($username, $password)
 function submitLogin()
 {
 	$szUserName = $_GET["email"];
+
+	$szSenderIp = getSenderIp();
+	//Check if tried to login with an IP address... If so, only own IP is allowed.
+	if (filter_var($szUserName, FILTER_VALIDATE_IP) && strcmp($szUserName, $szSenderIp)) 
+	{
+			include "login.php";
+			login();
+			print '<font color="red">You can login here with IP address, but only your own - which is '.$szSenderIp.'</font>';
+			return;
+	}			
+
 	//print "Trying to login... User: ".$szUserName.", pass: ".$_GET["pass"]."<br>";
 	$szSQL = "select userId, password, loginFailsSinceSuccess, loginFailReportedTime from user where username = ?";
 	$conn = getConnection();
@@ -72,9 +83,6 @@ function submitLogin()
 		}
 	}
 	else {
-
-		$szSenderIp = getSenderIp();
-
 		if (!strcmp($szUserName, $szSenderIp))
 			$selfReg = true;
 		else

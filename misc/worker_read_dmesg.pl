@@ -39,8 +39,12 @@ while (my $line = <$fh>) {
         $szTxt =~ s/^\s+//;
         chomp $szTxt;
 
-        #print "$szTxt\n";
+        print "Imported: $line\n";
         $sth->execute($szTxt) or die "execution failed: " . $sth->errstr;
+    }
+    else
+    {
+        print "Not imported: $line\n";
     }
 }
 

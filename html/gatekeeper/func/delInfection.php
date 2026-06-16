@@ -2,6 +2,12 @@
 
 function delInfection()
 {
+	if (!isAdmin())
+	{
+		print "Only admin may delete infections.";
+		return;
+	}
+
 	if (isset($_GET["id"]))
 	{
 		$conn = getConnection();

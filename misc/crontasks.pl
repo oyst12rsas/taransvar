@@ -120,8 +120,8 @@ sub reportStatus {
 	#$json{"lnk"} = (programRunning("taralink")?"1":0);	
 	$json{"lnk"} = (programRunningLockFileHeld("/tmp/taralink.lock")?1:0);
 	if (!$json{"lnk"}) {
-		system("nohup /root/taransvar/taralink >/tmp/taralink.log 2>&1 &");		
-		sleep(2);
+		system("nohup /root/taransvar/taralink >>/tmp/taralink.log 2>&1 &");		
+		sleep(7);	#2 sec seemed not enoug (got "still not running after trying to start it")
 		if (programRunningLockFileHeld("/tmp/taralink.lock")) {
 			saveWarning("Taralink was not running when reporting status. Seems like managed to start it\n");
 		} else {
@@ -157,6 +157,16 @@ sub reportStatus {
 	my $cCount = $sthCount->fetchrow_hashref();
 	$json{"usr"} = $cCount->{"unique_ips"};
 	$sthCount->finish();
+
+	#Find seconds since the last dmesg was logged.
+	$szSQL = "select TIMESTAMPDIFF(SECOND, created, NOW()) AS seconds_since from dmesg order by dmesgId desc limit 1";
+	my $sth = $dbh->prepare($szSQL);
+	$sth->execute() or die "execution failed: $sthSetup->errstr()";
+	my $cSeconds = $sth->fetchrow_hashref();
+	$json{"dmesg"} = $cSeconds->{"seconds_since"};
+	$sthCount->finish();
+
+	#************* Assemble the json and send it to DB Servers and store it locally.
 
 	my $cJson = encode_json(\%json);
 	print "Status: $cJson\n";
@@ -676,14 +686,14 @@ if (!runningAsCron() && !runningBootCheck())	#Run "sudo perl crontasks.pl whatev
 	print "********* Running debug tasks...\n";
 	#reportStatus($dbh);
 	#handle_syslogThreat_table($dbh);
-	logDmesg();
+	#logDmesg();
 
 	#check_dhcpEvent($dbh);	
 
 	#print (networkSetupOk()?"Network set up properly":"Failed to set up network!");
 	#checkRequests();
 	#startTaraLinkOk();
-    #handleConntrack($dbh);
+	#handleConntrack($dbh);
 	#start_process_dhcpdump($pSetup->{"internalNic"});	#NOTE! Just making sure dhcp_capture.pl is running..
 	#checkDbVersion($dbh);
 	

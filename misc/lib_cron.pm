@@ -170,26 +170,23 @@ sub changeDemoIpAddress {	#NOTE Only used in this lib, don't export
 	$sth->execute($szTo, $szFrom) or die "execution failed: $dbh->errstr()";
 }
 
-
 sub logDmesg {
-
-	#Make sure dmesg reader script is running... 
-	my $name = "worker_read_dmesg";
-	my $script = "$name.pl";
-	my $szLogFile = "/root/setup/log/$name.log";
-	print "Starting: perl $script >> $szLogFile\n";
-	system("nohup perl $script >> $szLogFile 2>&1 &");
-	print "Script started\n";
 
 	$dbh = getConnection();
 	my $nMaxId = 0;
-	
-	my $stmt = $dbh->prepare("select dmesgId from dmesg order by dmesgId desc limit 1");
+	my $name = "worker_read_dmesg";
+
+	#First check if stale script.. Otherwise kills newly started script.	
+	my $stmt = $dbh->prepare("select dmesgId, TIMESTAMPDIFF(SECOND, created, NOW()) AS seconds_since from dmesg order by dmesgId desc limit 1");
 	$stmt->execute() or die "execution failed: $dbh->errstr()";
 	if (my $row = $stmt->fetchrow_hashref()) {
 		if ($row->{"dmesgId"}) {
 			$stmt->finish;
 			$nMaxId = $row->{"dmesgId"};
+			if ($row->{"seconds_since"}+0 > 1000) {
+				system("pkill -f worker_read_dmesg.pl");
+				print "\n\n********** WARNING *********** $name.pl was stale (no dmesg msg in 1000 sec). Tried to kill it. ps -aux | grep worker_  to see when it was (re)started.\n"
+			}
 		} else {
 			print "**** ERROR: No dmesg records yet!\n";
 			return;
@@ -199,6 +196,14 @@ sub logDmesg {
 		return;
 	}
 
+	#Make sure dmesg reader script is running... 
+	my $script = "/root/taransvar/perl/$name.pl";
+	my $szLogFile = "/root/setup/log/$name.log";
+	print "Starting: perl $script >> $szLogFile\n";
+	system("nohup perl $script >> $szLogFile 2>&1 &");
+	print "Script started\n";
+
+	#Delete old messages. 
 	$stmt = $dbh->prepare("delete from dmesg where dmesgId < ?");
 	my $nDelete = $nMaxId - 1000;
 	$stmt->execute($nDelete) or die "execution failed: $dbh->errstr()";	
@@ -412,8 +417,8 @@ sub getNewUnknownUnitId {
 }
 
 sub is_valid_ipv4 {
-    my ($ip) = @_;
-    return defined inet_aton($ip);
+	my ($ip) = @_;
+	return defined inet_aton($ip);
 }
 
 sub findWhatUnitHasIp {
@@ -493,7 +498,7 @@ sub handleConntrack {
 	my $szGatewayIp = "";
 
 	while( my $szLine = <$info>)  {
-		print "Handling: $szLine\n";
+		#print "Handling: $szLine\n";
         # Matching [ASSURED] - records
         #tcp      6 48 CLOSE_WAIT src=192.168.50.100 dst=172.217.170.163 sport=40968 dport=443 src=172.217.170.163 dst=192.168.100.10 sport=443 dport=40968 [ASSURED] mark=0 use=1
 
@@ -505,22 +510,22 @@ sub handleConntrack {
         if ($szLine =~ /tcp\s*(\d+)\s(\d+)\s(\w*)\ssrc\=(\S*)\sdst=(\S*)\ssport=(\d*)\sdport=(\d*)\ssrc\=(\S*)\sdst=(\S*)\ssport\=(\d*)\sdport=(\d*)(.+)/)        	
 		{
 	        $bMatchFound = 1;
-	        print "$1|$2|$3|$4|$5|$6|$7|$8|$9|$10|$11|$12\n"; 
-	        $szSourceIp = $4;
-	        $szDestIp = $5;
-	        $nSourcePort = $6;
-	        $nDestPort = $7;
-	        $szRetSourceIp = $8;
-	        $szRetDestIp = $9;
-	        $nRetSourcePort = $10;
-	        $nRetDestPort = $11;
+	        #print "$1|$2|$3|$4|$5|$6|$7|$8|$9|$10|$11|$12\n"; 
+			$szSourceIp = $4;
+			$szDestIp = $5;
+			$nSourcePort = $6;
+			$nDestPort = $7;
+			$szRetSourceIp = $8;
+			$szRetDestIp = $9;
+			$nRetSourcePort = $10;
+			$nRetDestPort = $11;
 		} else {
             # Matching [UNREPLIED] - records
             if ($szLine =~ /tcp\s*(\d+)\s(\d+)\s(\w*)\ssrc\=(\S*)\sdst=(\S*)\ssport=(\d*)\sdport=(\d*)\s\S*\ssrc\=(\S*)\sdst=(\S*)\ssport\=(\d*)\sdport=(\d*)(.+)/)
             {
 				#tcp      6 95 ESTABLISHED src=192.168.50.100 dst=4.152.45.219 sport=44228 dport=443 [UNREPLIED] src=4.152.45.219 dst=192.168.100.19 sport=443 dport=44228 mark=0 use=1
 	    		$bMatchFound = 1;
-				print "$1|$2|$3|$4|$5|$6|$7|$8|$9|$10|$11|$12\n"; 
+				#print "$1|$2|$3|$4|$5|$6|$7|$8|$9|$10|$11|$12\n"; 
 	        	$szSourceIp = $4;
 	        	$szDestIp = $5;
 	            $nSourcePort = $6;
@@ -533,7 +538,7 @@ sub handleConntrack {
 		}
 	
 		if ($bMatchFound) {
-			print "Interpreted: $szLine\n";
+			#print "Interpreted: $szLine\n";
 			if ($szGatewayIp eq "")
 	    	{
                 $szGatewayIp = $szRetDestIp; 
@@ -546,59 +551,87 @@ sub handleConntrack {
 		    #    }
 			#}
 
-		    print "$szSourceIp:$nSourcePort -> $szDestIp:$nDestPort | $szRetSourceIp:$nRetSourcePort -> $szRetDestIp:$nRetDestPort\n"; 
-		 	#print "$szLine\n";
-
 			my $szInternalIp;
 			my $nInternalPort;
-			
-			my $bIsNATnet = isInternal($szSourceIp);
 
-			if ($bIsNATnet) {
+			if ($szSourceIp ne $szRetDestIp)
+			{
+				print "NAT for $szSourceIp:$nInternalPort\n";
 				$szInternalIp = $szSourceIp;
 				$nInternalPort = $nSourcePort;
-			} else {
-				#This may simply mean there's no NAT... 
-
-				my $source_int   = unpack("N", inet_aton($szSourceIp));
-				my $nMyNet = $nMyIp & $nMyNettmask;
-				my $nSourceNet = $source_int & $nMyNettmask;
-				my $bInternal = ($nMyNet == $nSourceNet);
-				print "My net: $nMyNet, source net: $nSourceNet\n";
-
-				if ($bInternal) {
-					print "Internal source without NAT found... $szSourceIp\n";
-					$szInternalIp = $szSourceIp;
-					$nInternalPort = $nSourcePort;
-				} else {
-					#Generated warnings on VPS (not NAT). Should be checked.
-					#print "**** ERROR **** Source IP is not internal when processing conntrack..";
-					#saveWarning("**** ERROR **** Source IP is not internal when processing conntrack..");
-					if (isInternal($szRetDestIp)) {
-						$szInternalIp = $szRetDestIp;
-						$nInternalPort = $nRetDestPort;
-					} else {
-						if (isInternal($szRetSourceIp)) {
-							$szInternalIp = $szRetSourceIp;
-							$nInternalPort = $nRetSourcePort;
-						} else {
-							if (isInternal($szDestIp)) {
-								$szInternalIp = $szDestIp;
-								$nInternalPort = $nDestPort;
-							}
-							 else {
-								#Gave warning on VPS (Not NAT)
-							#	saveWarning("****** ERROR ***** None are internal when saving NAT port assignment. Aborting.");
-								return;
-							}
-						}
-					}
+			}
+			else 
+			{
+				if ($szDestIp ne $szRetSourceIp)
+				{
+					print "********* WARNING **** port assignment based on dest ip... Check this. Assuming $szDestIp:$nDestPort is internal NAT'ed unit.\n";
+					$szInternalIp = $szDestIp;
+					$nInternalPort = $nDestPort
+				}
+				else
+				{
+					print "No NAT, next record, please\n";
+					next;
 				}
 			}
 
+		    print "$szSourceIp:$nSourcePort -> $szDestIp:$nDestPort | $szRetSourceIp:$nRetSourcePort -> $szRetDestIp:$nRetDestPort\n"; 
+		 	#print "$szLine\n";
+
+#			my $nMyIp = $cSetup->{"internalIP"}+0;	
+#			my $nMyNettmask = $cSetup->{"nettmask"}+0;
+
+#			my $source_int   = unpack("N", inet_aton($szSourceIp));
+#			my $nMyNet = $nMyIp & $nMyNettmask;
+#			my $nSourceNet = $source_int & $nMyNettmask;
+#			my $bInternal = ($nMyNet == $nSourceNet);
+
+#			my $bIsNATnet = $bInternal; #isInternal($szSourceIp);	#isInternal checks on 50 or 60 sub net... no longer in use....
+
+#			if ($bIsNATnet) {
+#				$szInternalIp = $szSourceIp;
+#				$nInternalPort = $nSourcePort;
+#			} else {
+				#This may simply mean there's no NAT... 
+
+#				print "My net: $nMyNet, source net: $nSourceNet\n";
+
+#				if ($bInternal) {
+#					print "Internal source without NAT found... $szSourceIp\n";
+#					$szInternalIp = $szSourceIp;
+#					$nInternalPort = $nSourcePort;
+#				} else {
+#					#Generated warnings on VPS (not NAT). Should be checked.
+#					#print "**** ERROR **** Source IP is not internal when processing conntrack..";
+#					#saveWarning("**** ERROR **** Source IP is not internal when processing conntrack..");
+#					if (isInternal($szRetDestIp)) {
+#						$szInternalIp = $szRetDestIp;
+#						$nInternalPort = $nRetDestPort;
+#					} else {
+#						if (isInternal($szRetSourceIp)) {
+#							$szInternalIp = $szRetSourceIp;
+#							$nInternalPort = $nRetSourcePort;
+#						} else {
+#							if (isInternal($szDestIp)) {
+#								$szInternalIp = $szDestIp;
+#								$nInternalPort = $nDestPort;
+#							}
+#							 else {
+								#Gave warning on VPS (Not NAT)
+								#	saveWarning("****** ERROR ***** None are internal when saving NAT port assignment. Aborting.");
+#								print "No NAT or forward?? Get next one??\n";
+								#return;
+								#Will skip to next record..
+#							}
+#						}
+#					}
+#				}
+#			}
+
 			my $nFound = 0;
 
-			if ($bIsNATnet) {
+			if (1)#$bIsNATnet) 
+			{
 				#NOTE! Can only do this if NAT... 
 				#Skip saving if last use of same port was same IP.. NOTE! Should also check if it's same mac or other ID...
 	            my $szSQL = "select portAssignmentId, inet_ntoa(ipAddress) as ip, unitId from unitPort where port = $nInternalPort order by portAssignmentId desc limit 1";
@@ -655,8 +688,7 @@ sub handleConntrack {
 					#ØT 250130 - this is very wrong...	$szUnitId = getNewUnknownUnitId($dbh, $szInternalIp);
 
 		        }
-
-                
+               
 		        #Update the unit table lastSeen
 		        if ($szUnitId ne "NULL") {
 	    	    	my $szSQL = "update unit set lastSeen = now() where unitId = ?";
@@ -981,6 +1013,11 @@ sub getDemo {
 }
 
 sub updateGlobalDemo {
+
+	#This function is no longer in use... Better use gatekeeper log with filtering on IPs of interest than sending parts of dmesg like this...
+	print "updateGlobalDemo() is no longer in use.. Returning..\n";
+	return;
+	
 	print "************* NOTE! This section still doesn't reflect that there's several demo rows per computer....\n";
 
 	my $cDemoRow = 0;
@@ -1499,8 +1536,6 @@ sub checkRequests {
 	}
 }
 
+#lib_cron.pm
 
 1;
-
-
-

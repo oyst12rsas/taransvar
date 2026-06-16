@@ -243,6 +243,8 @@ void checkHackReports()
 		u_int32_t nUnitId = 0;
 		char cSQL[400];
 		int bUpdateHandled = 1;   //By default update the handled field after handling...
+		char *lpIp = (row[3]?row[3]:"(null)");
+		u_int32_t nInternaIpFromUnitPort = 0;
 
 		if (isMeOrMine(nNumericIp, nMyIp, nNettmask))
 		{
@@ -281,7 +283,7 @@ void checkHackReports()
 				//the port and put in internalInfections table
 		
 				//OT 250212 - Seems like this SQL did not select the most 
-				sprintf(szSQL, "select portAssignmentId, UP.created, ifnull(U.unitId,0), UP.ipAddress, description, dhcpClientId, vci, hostname from unitPort UP join unit U on U.unitId = UP.unitId where port = %s order by portAssignmentId desc limit 1", row[2]); 
+				sprintf(szSQL, "select portAssignmentId, UP.created, ifnull(U.unitId,0), UP.ipAddress, description, dhcpClientId, vci, hostname, inet_ntoa(UP.ipAddress) from unitPort UP join unit U on U.unitId = UP.unitId where port = %s order by portAssignmentId desc limit 1", row[2]); 
 				//printf ("SQL: %s\n", szSQL);
 				if (mysql_query(updateConn, szSQL)) {
 					fprintf(stderr, "****** ERROR ***** While finding port assignment: %s\n", mysql_error(updateConn));
@@ -293,9 +295,13 @@ void checkHackReports()
 				if (lookupRow)
 				{
 					nUnitId = atoi(lookupRow[2]);
-					printf("Hackreport %s port %s is %s %s %s %s %s\n", row[4], row[2], lookupRow[3], lookupRow[4], lookupRow[5], lookupRow[6], lookupRow[7]); 
+					printf("Hackreport %s port %s is %s %s %s %s %s\n", row[4], row[2], lookupRow[8], lookupRow[4], lookupRow[5], lookupRow[6], lookupRow[7]); 
 					if (!lookupConn)
 						lookupConn = getConnection();
+
+					printf("Setting ip\n");
+					nInternaIpFromUnitPort = (lookupRow[3]?atoi(lookupRow[3]):0);
+					printf("ip set\n");
                                 
 					//Hacking report found on one of our connected units.
 					//Check if this address is already registered. Get the last one if several and check if not different unit.. 
@@ -312,11 +318,20 @@ void checkHackReports()
 						nInfectionId = atoi(lookupRow2[0]);
 
 					mysql_free_result(lookupRes2);
+					printf("Freeing\n");
 				}
+				else
+				{
+					printf("No port assignment found for %s:%s (should check conntrack??).\n", lpIp, row[2]);
+				}
+				printf("freeing lookupRes\n");
 				mysql_free_result(lookupRes);
+				printf("lookupRes freed\n");
 			}
 
+			printf("getting connection\n");
 			localUpdate = getConnection();
+			printf("got the connection\n");
 
 			if (nInfectionId > 0)
 			{
@@ -337,7 +352,7 @@ void checkHackReports()
 				}
         	          		
 			} else {
-				printf("Creating new internalInfections record.\n");
+				printf("Creating new internalInfections record for %s:%s (internal ip: %u).\n", lpIp, (row[2]?row[2]:"(null)"), nInternaIpFromUnitPort);
 				strncpy(cWhat, "Not reg as infected. ", sizeof(cWhat) - strlen(cWhat));
 
 				//Check if special case... 
@@ -349,6 +364,14 @@ void checkHackReports()
 
 				//This IP is not yet registered in internalInfections. Put it there.
 				//(those are the IP addresses that will be sent to tarakernel and be subject to tagging and blocking).
+				//NOTE! Check first if NAT'ed subnet. If so, store true IP.
+				if (nInternaIpFromUnitPort)
+				{
+					nNumericIp = nInternaIpFromUnitPort;
+					printf("Storing ip from unitPort as in (%d)", nInternaIpFromUnitPort);
+				}
+				//What about port? Should the original port of the NAT port be stored.. It's normally the same number if few units (name number is available)..
+
 				sprintf(cSQL, "insert into internalInfections (ip, nettmask, status, unitId, severity, why) values (%d, inet_aton('255.255.255.255'), 'firsttime', %d, 7, ?)", nNumericIp, nUnitId);
 
 			    MYSQL_STMT *stmt = mysql_stmt_init(localUpdate);

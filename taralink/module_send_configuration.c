@@ -429,6 +429,8 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 			{
 				lpSendInfectionInfo = "N/A";
 				lpSendSeverity = "1";	//Send severity = 1 if inactive to let receiver block ssh and/other important ports.
+				nActive = 1;			//If active = 0 is sent, then tarakernel will remove it from the list....
+				printf("Sending severity 1 for deactivated infection\n");
 			}
 
 			printf("****** Active: %d (%s), info: %s, severity: %s. After: %s/%s\n", nActive, row[5], row[6], row[8], lpSendInfectionInfo, lpSendSeverity);

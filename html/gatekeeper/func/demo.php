@@ -220,6 +220,11 @@ alter table demo add botStatus varchar[255] null;
 	print "</td></tr></table>"; //End of main table (with list of units and infections on left side)
 }
 
+function getDot($bOk)
+{
+	return '<img src="img/'.($bOk?"green":"red").'_dot.png">';
+}
+
 function check($field)
 {
 	return (isset($field) && $field == "1" ? '<img src="img/green_dot.png">':'<img src="img/red_dot.png">');
@@ -243,6 +248,9 @@ function getServerStatus($seconds_since, $status)
 	$szServerStatus = (isset($status)?check($json["knl"]):'<img src="img/green_dot.png">');
 	$szServerStatus .= (isset($status)?check($json["lnk"]):'<img src="img/green_dot.png">');
 	$szServerStatus .= (isset($status)?check($json["cron"]):'<img src="img/green_dot.png">');
+
+	$nSeconds = (isset($json["dmesg"])?$json["dmesg"]:1000000);
+	$szServerStatus .= getDot($nSeconds < 90);
 
 	$nActiveUsers = isset($json["usr"])?$json["usr"]:"?";
 	$szServerStatus .= "&nbsp;$nActiveUsers";
@@ -298,7 +306,7 @@ function vpn_demo()
 	            $nCount++;
 	        }
 	        print "</table>";
-			print "*) Dots: tarakernel, taralink, crontasks. Number: Active users last 5 minutes.";
+			print "*) Dots: tarakernel, taralink, crontasks, dmesg. Number: Active users last 5 minutes.";
         }
 
 }
