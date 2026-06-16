@@ -439,8 +439,8 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 			//															ip		nett	active status  infID   severity botnetId info
 			int nPosLeft = sizeof(cReply)-strlen(cReply)-1;
 			if (nPosLeft > 0)
-				snprintf(cReply+strlen(cReply), nPosLeft, "%s:%s-%s-%s-%s-%s-%s-%s^", 
-							row[0], row[1], row[5], row[2], row[3], lpSendSeverity, row[9], lpSendInfectionInfo);
+				snprintf(cReply+strlen(cReply), nPosLeft, "%s:%s-%d-%s-%s-%s-%s-%s^", 
+							row[0], row[1], nActive, row[2], row[3], lpSendSeverity, row[9], lpSendInfectionInfo);
 			else
 				nCharsTruncated += 70;
 

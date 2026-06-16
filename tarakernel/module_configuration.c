@@ -156,7 +156,7 @@ void listInfectionsPointerList(void)
 			strcpy(cBuf+strlen(cBuf), ", ");
 
 		//sprintf(cBuf+strlen(cBuf), "%d.%d.%d.%d(%08X)", (int)ipAddressBytes[0], (int)ipAddressBytes[1], (int)ipAddressBytes[2], (int)ipAddressBytes[3], pNode->cInfection.ipAddress);
-		sprintf(cBuf+strlen(cBuf), "%pI4", &pNode->cInfection.ipAddress);
+		sprintf(cBuf+strlen(cBuf), "%pI4(%u)", &pNode->cInfection.ipAddress, &pNode->cInfection.nSeverity);
 		pNode = pNode->pNext;
 	}
 
@@ -487,6 +487,8 @@ _Node *storeInfectionInPointerList(__be32 ipAddress, __be32 ipNettmask, char *lp
 		pInfection->cInfection.lpInfo = NULL;
 		pInfection->cInfection.nTag = 0;	//Init all fields.
 		pInfection->cInfection.cTag.owners_id = nMaxOwnersId + 1;
+
+		/****** NOTE! This is not supposed to be decided in tarakernel.. I think this is given by the data from taralink.. */
 		if (!strcmp(lpQuality, "firsttime"))
 		{
 			//cNewElement.cThreat. = C_REQUESTS_CLEAN;
@@ -641,7 +643,7 @@ void removeInfectionFromPointerList(uint32_t ipAddress, uint32_t ipNettmask, sho
 			if (pSetup->pConfigurationPointerList[BLOCK_DESCRIPTIOR_INFECTIONS])
 				pr_info("First infection in list is now %pI4\n", &((struct _Node*)pSetup->pConfigurationPointerList[BLOCK_DESCRIPTIOR_INFECTIONS])->cInfection.ipAddress);
 			else
-				pr_info("Infection list is now empty.\n");
+				pr_info("tarakernel: Infection list is now empty.\n");
 
 		    return;
         }

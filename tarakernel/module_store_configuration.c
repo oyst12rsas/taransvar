@@ -470,7 +470,7 @@ char *interpretNextBatch(int nBlockDescriptor, char *lpConfiguration)
 						//				(int)ipAddressBytes[0], (int)ipAddressBytes[1], (int)ipAddressBytes[2], (int)ipAddressBytes[3], (int)ipNettmaskBytes[0], (int)ipNettmaskBytes[1], (int)ipNettmaskBytes[21], (int)ipNettmaskBytes[3],
 						    						nInfectionId, nSeverity, nBotnetId,cInfo);
 
-				    	if (nActive)
+				    	if (nActive)	//Not sure if we should remove deactivated infections... Should be tested.
 						{
 						    //struct _InfectionSpecification *pInfection = (struct _InfectionSpecification *)storeInstruction(nBlockDescriptor, ipAddress, ipNettmask, port, quality);	//NOTE! Defined in module_configuration.c
 						    //
@@ -487,8 +487,14 @@ char *interpretNextBatch(int nBlockDescriptor, char *lpConfiguration)
 									pInfection->lpInfo = memAlloc(strlen(cInfo)+1);
 									if (pInfection->lpInfo)
 										strcpy(pInfection->lpInfo, cInfo);
+
+									pr_info("Info set to %s and severity to %u\n", pInfection->lpInfo, pInfection->nSeverity);
 								}
+								else 
+									pr_info("*********** ERROR ******** No infection found..\n");
 							}
+							else 
+								pr_info("*********** ERROR ******** No node found..\n");
 						}
 						else
 							removeInfection(ip_be, ipNettmask, port);
@@ -578,7 +584,7 @@ char *interpretNextBatch(int nBlockDescriptor, char *lpConfiguration)
 		}		
 
 	}
-	pr_info("%d instruction(s) handled.\n", nCountInstructions);
+	pr_info("tarakernel: %d instruction(s) handled.\n", nCountInstructions);
 
 	return lpPointer;// + strlen(lpPointer) +1;
 }

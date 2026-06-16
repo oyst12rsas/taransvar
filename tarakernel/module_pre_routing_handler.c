@@ -412,15 +412,31 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 	if (isListedForInspection(pPacket->dIp) || isListedForInspection(pPacket->sIp))
 		packetInterpreter(pPacket);
 
+	struct _InfectionSpecification *pInfected = isInfected(pPacket->ip_header->saddr);
+
     //if (pPacket->ip_header->saddr == pSetup->nInternalIp || pPacket->ip_header->daddr == pSetup->nInternalIp)
     if (isSubNet(pPacket->ip_header->saddr) && isSubNet(pPacket->ip_header->daddr))
 	{
 		if (pSetup->cShowInstructions.bits.showOther)
 			if (!dropFromLogging(pPacket))
-				pr_info("tarakernel: PR: Traffic with subnet %s:%d -> %s:%d\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort);
+			{
+				char cInfectedUnit[200];
+				if (pInfected)
+						snprintf(cInfectedUnit, sizeof(cInfectedUnit), "(infected - severity: %d)", pInfected->nSeverity);
+				else
+					*cInfectedUnit = 0;
+
+				pr_info("tarakernel: PR: Traffic with subnet %s:%d -> %s:%d %s\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort, cInfectedUnit);
+			}
 			
 		checkFree(pPacket, false /*bLeavingPostRouting*/);
 		return NF_ACCEPT;
+	}
+
+	if (pPacket->dPort == 22 && pInfected)
+	{
+		pr_info("tarakernel: PR: Dropping traffic from infected unit to port 22 (ssh) %s:%d -> %s:%d (severity: %d)\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort, pInfected->nSeverity);
+		return NF_DROP;
 	}
 
 	int bFromMeOrMine = isMeOrMine(pPacket->ip_header->saddr);
@@ -433,7 +449,6 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 		//Internal traffic between me and subnet
 		if (pPacket->ip_header->daddr == pSetup->nInternalIp || pPacket->ip_header->daddr == pSetup->nMyIp)		//asdfasdf
 		{
-			struct _InfectionSpecification *pInfected = isInfected(pPacket->ip_header->saddr);
 			if (pInfected)
 				snprintf(szInfectionInfo, sizeof(szInfectionInfo), " (infected unit. severity: %d)", pInfected->nSeverity);
 

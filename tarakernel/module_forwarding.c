@@ -112,6 +112,15 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 	if (pPacket->ip_header->protocol != IPPROTO_TCP)
 		return NF_ACCEPT;	//260320 - not sure about this......
 
+	struct _InfectionSpecification *pInfected = isInfected(pPacket->ip_header->saddr);
+
+	if (pPacket->dPort == 22 && pInfected)
+	{
+		pr_info("tarakernel: FW: Dropping traffic from infected unit to port 22 (ssh) %s:%d -> %s:%d (severity: %d)\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort, pInfected->nSeverity);		
+		return NF_DROP;
+	}
+
+
     checkThatTcp(pPacket,"start of forward handler");	//260320 - asdf... got problem with this....
 
 	if (pPacket->tcp_header->urg)
