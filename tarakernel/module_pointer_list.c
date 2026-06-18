@@ -29,8 +29,8 @@ _Node *getNewBefore(_Node *pPointer, int nStructSize)
 	_Node *pNewElement = NULL; //memAlloc(nNodeSize);
 
 
-	pr_info("nStructSize=%d total=%zu in_atomic=%d irqs_disabled=%d\n",
-        nStructSize,
+	pr_info("nStructSize=%zu total=%zu in_atomic=%d irqs_disabled=%d\n",
+        (size_t)nStructSize,
         sizeof(_Node *) + nStructSize,
         in_atomic(),
         irqs_disabled());
@@ -40,7 +40,7 @@ _Node *getNewBefore(_Node *pPointer, int nStructSize)
 
 	if (!pNewElement)
 	{
-		pr_warn("tarakernel: ***** ERROR from getNewBefore() - unable to allocate %d byte\n", nNodeSize);
+		pr_warn("tarakernel: ***** ERROR from getNewBefore() - unable to allocate %zu byte\n", nNodeSize);
 		return NULL;
 	}
     
