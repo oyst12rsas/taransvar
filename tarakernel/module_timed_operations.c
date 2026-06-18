@@ -29,11 +29,11 @@ void reportInfectionsList(void)
 
 void debugRoutine(void)
 {
-      //You may do debugging here and pr_info("tarakernel: This ends in the log..."); to print.
-      //  doPointerTest();
-      //  doInfectionsPointerListTest();
+	//You may do debugging here and pr_info("tarakernel: This ends in the log..."); to print.
+	//  doPointerTest();
+	//  doInfectionsPointerListTest();
 
-      //reportInfectionsList();
+	//reportInfectionsList();
 }
 
 char *bufferToHex(char *lpBuffer, int len, char* lpTarget, int nBufSize); //To avoid compiler warning...
@@ -212,6 +212,37 @@ void checkTimedOperation(void)
 {
     static int nTrafficReportLoops = 0;
 
+	/*	static bool bErrorDiscovered = false;
+
+    pr_warn("tarakernel: Testing memory allocation..\n");
+	if (bErrorDiscovered)
+		pr_warn("tarakernel: ************** ERROR HAS BEEN DISCOVERED ***********\n");
+    _Node *pFirst = NULL;    
+
+    for (int n = 0; n < 100; n++) 
+	{
+        pFirst = getNewBefore(pFirst, 100);
+		if (!pFirst)
+		{
+			pr_warn("tarakernel: ************ ERROR ALLOCATING **************");
+			bErrorDiscovered = true; 
+		}
+	}
+
+    int nCount = 0;
+
+    for (_Node *pPtr = pFirst; pPtr;)
+	{
+        nCount++;
+		_Node *pNext = pPtr->pNext;
+		kfree(pPtr);
+ 		pPtr = pNext;
+
+	}
+
+    pr_warn("tarakernel: %d elements created..\n", nCount);
+*/	
+
     if (pSetup->bSendTrafficReport)
     {
         pr_warn("tarakernel: Timed operations... And set to send traffic report...!\n");
@@ -227,7 +258,7 @@ void checkTimedOperation(void)
         return;     //Don't do other timed operations... 
     }
 
-    pr_warn("tarakernel: Timed operations... (none doing anything now)\n");
+    //pr_warn("tarakernel: Timed operations...\n");
 
 /*
     241230 - probably not working.... checkRequestForStatus() is called with process id 0 below and such messages are never being sent... 

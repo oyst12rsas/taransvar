@@ -4,15 +4,6 @@
 
 static _Node *pPointerList = NULL;
 
-void *memAlloc(int nSize)
-{
-	//_Node *pNewElement = kzalloc(nNodeSize, GFP_KERNEL); //Same as the standard kmalloc() but sets to zero
-	_Node *pNewElement = kvmalloc(nSize, GFP_KERNEL); //Calls first kmalloc(). If that fails, tries vmalloc()
-	if (pNewElement)
-		memset(pNewElement, 0, nSize);
-	return pNewElement;  
-}
-
 _Node *getLast(_Node *pPointer)
 {
 	while (pPointer->pNext)
@@ -20,16 +11,41 @@ _Node *getLast(_Node *pPointer)
 	return pPointer;
 }
 
+void *memAlloc(size_t nSize)
+{
+	//_Node *pNewElement = kzalloc(nNodeSize, GFP_KERNEL); //Same as the standard kmalloc() but sets to zero
+	//_Node *pNewElement = kvmalloc(nSize, GFP_KERNEL); //Calls first kmalloc(). If that fails, tries vmalloc()
+	_Node *pNewElement = kvmalloc(nSize, GFP_ATOMIC);
+	if (pNewElement)
+		memset(pNewElement, 0, nSize);
+	return pNewElement;  
+}
+
 _Node *getNewBefore(_Node *pPointer, int nStructSize)
 {
-	int nNodeSize = sizeof(pPointer) + nStructSize;
-	_Node *pNewElement = memAlloc(nNodeSize);
-  
+	//int nNodeSize = sizeof(pPointer) + nStructSize;
+	size_t nNodeSize = sizeof(_Node *) + nStructSize;	
+
+	_Node *pNewElement = NULL; //memAlloc(nNodeSize);
+
+
+	pr_info("nStructSize=%d total=%zu in_atomic=%d irqs_disabled=%d\n",
+        nStructSize,
+        sizeof(_Node *) + nStructSize,
+        in_atomic(),
+        irqs_disabled());
+
+	//if (!pNewElement)
+		pNewElement = kzalloc(nNodeSize, GFP_ATOMIC);
+
 	if (!pNewElement)
-    	return NULL;
+	{
+		pr_warn("tarakernel: ***** ERROR from getNewBefore() - unable to allocate %d byte\n", nNodeSize);
+		return NULL;
+	}
     
 	if (pPointer)
-    	pNewElement->pNext = pPointer; 
+		pNewElement->pNext = pPointer; 
     
 	return pNewElement;
 }

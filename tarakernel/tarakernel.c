@@ -333,7 +333,7 @@ static void send_to_user(const char *msg)
 
 	if (!pid)
 	{
-		pr_info("tarakernel: ****** ERROR ****** Taralink process id not yet initialized... Unable to send message - aborting: %s\n", msg);
+		pr_info("tarakernel: ****** ERROR ****** Taralink process id not yet initialized (maybe been cleared because stale)... Unable to send message - aborting: %s\n", msg);
 		return;
 	}
 
@@ -358,8 +358,9 @@ static void send_to_user(const char *msg)
     if (res < 0)
 	{
 		if (res == -ECONNREFUSED) {			//-ECONNREFUSED == -111
-    		printk(KERN_INFO "tarakernel:\n**** ERROR **** userspace netlink portid %u is stale - restart taralink and tarakernel\n\n", pid);
-    		//pid = 0;	- don't reset.. better try again and get same error for the logs
+    		printk(KERN_INFO "tarakernel:\n**** ERROR **** userspace netlink portid %u is stale - Setting to 0 for reinitialization\n\n", pid);	//Before: restart taralink and tarakernel
+    		//WRONG??????  pid = 0;	- don't reset.. better try again and get same error for the logs
+			pSetup->taralink_pid = 0;
 		}		
 		else
 	        printk(KERN_INFO "tarakernel: Error while sending to user: %d\n", res);
@@ -394,7 +395,7 @@ static void my_timer_cb(struct timer_list *t)
 }
 
 
-static int __init hello_init(void) 
+static int __init tarakernel_init(void) 
 {
     //doPointerTest();  //See module_pointer_list.c
     //return 0;
@@ -493,9 +494,13 @@ static int __init hello_init(void)
 	return 0;
 }
 
-static void __exit hello_exit(void) 
+static void __exit tarakernel_exit(void) 
 {
-    if (pSetup->nf_PRE_ROUTING_hook_ops != NULL) {
+    pr_warn("tarakernel: exit start\n");
+
+   	timer_delete_sync(&my_timer);
+
+	if (pSetup->nf_PRE_ROUTING_hook_ops != NULL) {
 		nf_unregister_net_hook(&init_net, pSetup->nf_PRE_ROUTING_hook_ops);
 		kfree(pSetup->nf_PRE_ROUTING_hook_ops);
 	}
@@ -508,16 +513,18 @@ static void __exit hello_exit(void)
 		kfree(pSetup->nf_FORWARDING_hook_ops);
 	}
 
+	if (pSetup->nl_sk)
+		netlink_kernel_release(pSetup->nl_sk);
+
     printk(KERN_INFO "tarakernel: Tarakernel stopped.\n");
 	netlink_kernel_release(pSetup->nl_sk);
 
     // timer: safe teardown when unloading 
-    timer_delete_sync(&my_timer);
-    pr_info("tarakernel: timer stopped\n");
+    pr_warn("tarakernel: exit done\n");
 }
 
-module_init(hello_init); 
-module_exit(hello_exit);
+module_init(tarakernel_init); 
+module_exit(tarakernel_exit);
 
 MODULE_LICENSE("GPL");
 

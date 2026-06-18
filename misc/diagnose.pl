@@ -36,9 +36,6 @@ if (! -e $szThisFile) {
 
 print "\n\n******* Taransvar cyber security system diagnostics ******\n(run misc/setup_network.pl for setting up and diagnosing networks setup)\n";
 
-checkDhcpServer();
-
-
 #***** fix the crontasks.pl if still contains the developers user name in path...
 use Cwd 'abs_path';
 my $abs_path = abs_path($szThisFile);
@@ -70,16 +67,6 @@ if (@devices < 2) {
 if (!ableToPing("google.com")) {
 	print "****** ERROR ******* You seem not connected (unable to ping google.com). This may also be caused by DNS setup.\n\n";
 	$nErrors++;
-}
-
-#*********************** Check if DHCPDUMP is running *************************
-
-my $bFound = programRunning("dhcpdump");
-if ($bFound) {
-	print "DHCPDUMP is running..\n";
-} else {
-	print "\n****** WARNING ********* DHCPDUMP is not running..\nIt's only required if you want this computer as a router (hosting a subnet)\nRun crontasks.pl manually and look for errors.\n\n";
-	$nWarnings++;
 }
 
 #**************************Check cron jobs...
@@ -116,8 +103,6 @@ if (-e $szLogTxt) {
 	print "******* ERROR! cron directory doesn't exist. Not yet set up.\n\nSetup it up with: sudo crontab -u root -e\n\n";
 	$nErrors++;
 }
-
-checkDbVersion($dbh);	#Defined in lib_cron.pm
 
 sub getMac {
 	my ($szMac) = @_;
@@ -417,7 +402,7 @@ if ($ARGV[0]) {
 #my $address      = Net::Address::IP::Local->public;
 #print "My address: $address\n"; 
 
-my $szSQL = "select inet_ntoa(adminIp) as ip, inet_ntoa(internalIP) as internalIP, dmesg, ifnull(unix_timestamp(now())-unix_timestamp(dmesgUpdated),1000) as secsAgo, CAST(hotspot AS UNSIGNED) as hotspot from setup";
+my $szSQL = "select inet_ntoa(adminIp) as ip, internalIP as nInternal, inet_ntoa(internalIP) as internalIP, dmesg, ifnull(unix_timestamp(now())-unix_timestamp(dmesgUpdated),1000) as secsAgo, CAST(hotspot AS UNSIGNED) as hotspot from setup";
 
 my $sth = $dbh->prepare($szSQL) or die "prepare statement failed: $dbh->errstr()";
 #print "$szSQL\n";
@@ -432,6 +417,20 @@ if ($cSetup = $sth->fetchrow_hashref()) {
 		print "******* ERROR **** Invalid or missing IP in database (".$szAdminIP."). http://localhost?f=setup to fix.\n";
 		$nErrors++;
 	}
+} else {
+	print "********* ERROR *** Unable to read ip addresses and dmesg from setup.. You should check if the database is properly installed.\n";
+	$nErrors++;
+	#exit; no need to exit
+}
+
+
+#*********** Check if running hotspot
+my $nInternalIp = (defined $cSetup->{"nInternal"}?$cSetup->{"nInternal"}+0:0);
+my $bRunningHotspot = (($nInternalIp & 4294901760) == 3232235520);	#internalIP is 192.168.0.0/16
+
+if ($bRunningHotspot) {
+	print "Running hotspot (internal IP is 192.168.0.0/16). Checking DHCP\n";
+
 	if (!validIp($cSetup->{'internalIP'})) {
 		print "******* WARNING **** Internal IP is not set up in database. It should be set to 192.168.50.1 in case you want to connect a subnet. http://localhost?f=setup to fix.\n";
 		$nWarnings++;
@@ -439,80 +438,78 @@ if ($cSetup = $sth->fetchrow_hashref()) {
 		$szInternalIP = $cSetup->{'internalIP'}; 
 
 	}
-} else {
-	print "********* ERROR *** Unable to read ip addresses and dmesg from setup.. You should check if the database is properly installed.\n";
-	$nErrors++;
-	#exit; no need to exit
-}
 
-$nErrors += checkHotspot();
+	checkDhcpServer();
 
-#************************ Check dmesg for specific texts that indicate that something is wrong...
-#************ NOTE! Using record from above so don't put other functions between *******************
-my $szDmesg = "";
-my $nSecsAgo = "";
+	#*********************** Check if DHCPDUMP is running *************************
 
-if ($cSetup) {
-	$szDmesg = $cSetup->{'dmesg'};
-	$nSecsAgo = $cSetup->{'secsAgo'};
-	
-	if ($nSecsAgo > 20) {
-		#$abs_path holds the full path to crontasks.pl... get rid of the file name so it's only the directory. 
-		my $nLastPos = rindex($abs_path, "/");
-		my $szCrontasksScript = substr($abs_path, 0, $nLastPos)."/crontasks.pl"; 
-		print "****** ERROR dmesg content is not saved to DB ($nSecsAgo > 20 sek).\nThis probably means that crontasks.pl is not cunning as cron job.\nTo check: crontab -u root -e (choose nano if asked). Put line there with:\n* * * * * perl $szCrontasksScript\n(The asterisks there mean run every minute of every hour, every hour of the day, every day of month, every day of week, every month of year - in short, every minute)\nWithout crontasks.pl running, the system will not work properly.\n";
-		$nErrors++;
-	}
-	else {
-		#print "dmesg stored $nSecsAgo seconds ago.\n"; 
-	}
-	
-} else {
-	print "****** NOT YET LEARNED TO get my own dmesg .....\n";
-}
-
-#*************** CHECK iptables **********************
-my $szIptables = getDumpTxt("iptables -t nat -L");
-
-my @cRequired = ("Chain PREROUTING (policy ACCEPT)", "Chain INPUT (policy ACCEPT)", "Chain OUTPUT (policy ACCEPT)", "Chain POSTROUTING (policy ACCEPT)", "MASQUERADE  all  --  anywhere             anywhere   ");
-
-#my @cIpTablesArray = split("\n", $szIptables);
-my $nIpTablesNotFound = 0;
-
-foreach (@cRequired) {
-	#my @matches = grep { /$_/ } @cIpTablesArray;
-	
-#	if (@matches) {
-
-	if (index($szIptables, $_) >= 0) {
-		#print $_." found..\n";
+	my $bFound = programRunning("dhcpdump");
+	if ($bFound) {
+		print "DHCPDUMP is running..\n";
 	} else {
-		print "**** $_ NOT found..\n";
-		$nIpTablesNotFound++;
+		print "\n****** WARNING ********* DHCPDUMP is not running..\nIt's only required if you want this computer as a router (hosting a subnet)\nRun crontasks.pl manually and look for errors.\n\n";
+		$nWarnings++;
 	}
+
+	$nErrors += checkHotspot();
+
+	#*************** CHECK iptables **********************
+	my $szIptables = getDumpTxt("iptables -t nat -L");
+
+	my @cRequired = ("Chain PREROUTING (policy ACCEPT)", "Chain INPUT (policy ACCEPT)", "Chain OUTPUT (policy ACCEPT)", "Chain POSTROUTING (policy ACCEPT)", "MASQUERADE  all  --  anywhere             anywhere   ");
+
+	#my @cIpTablesArray = split("\n", $szIptables);
+	my $nIpTablesNotFound = 0;
+
+	foreach (@cRequired) {
+		#my @matches = grep { /$_/ } @cIpTablesArray;
+	
+	#	if (@matches) {
+
+		if (index($szIptables, $_) >= 0) {
+			#print $_." found..\n";
+		} else {
+			print "**** $_ NOT found..\n";
+			$nIpTablesNotFound++;
+		}
+	}
+
+	if ($nIpTablesNotFound) {
+		print "\n**** WARNING **** Probably missing iptables rules. If this computer is used as router,\nthen iptables should be set up correctly to allow traffic to flow through it.\nCheck Gatekeeper document on how to do that. You can also check the misc/iptables.sh on how to set it up.\nThis has to be run every time you start the server unless you set it up to run automatically.\n\n";  
+	}
+} else {
+	print "\nNot running hotspot. Skipping those tests.\n\n";
 }
 
-if ($nIpTablesNotFound) {
-	print "\n**** WARNING **** Probably missing iptables rules. If this computer is used as router,\nthen iptables should be set up correctly to allow traffic to flow through it.\nCheck Gatekeeper document on how to do that. You can also check the misc/iptables.sh on how to set it up.\nThis has to be run every time you start the server unless you set it up to run automatically.\n\n";  
+checkDbVersion($dbh);	#Defined in lib_cron.pm
+
+#***** Check background processes running	asdfasdf
+my $nMaxId = 0;
+my $worker_name = "worker_read_dmesg";
+
+#First check if stale script.. Otherwise kills newly started script.	
+my $stmt = $dbh->prepare("select dmesgId, TIMESTAMPDIFF(SECOND, created, NOW()) AS seconds_since from dmesg order by dmesgId desc limit 1");
+$stmt->execute() or die "execution failed: $dbh->errstr()";
+if (my $row = $stmt->fetchrow_hashref()) {
+	if ($row->{"dmesgId"}) {
+		$stmt->finish;
+		$nMaxId = $row->{"dmesgId"};
+		if ($row->{"seconds_since"}+0 > 200) {
+			print "\n\n********** ERROR *********** $worker_name.pl is stale. Last msg ".$row->{"seconds_since"}." seconds ago..\n";
+			$nErrors++;
+		}
+	} else {
+			print "**** ERROR: No dmesg records yet!\n";
+			$nErrors++;
+	}
+} else {
+	print "**** ERROR: Unable to read dmesg records..!\n";
+	$nErrors++;
 }
 
-
-#NOTE! The below part is not finished so keep it at the end...
-print "******************** ADD MORE FUNCTIONALITY TO INTERPRET the dmesg log\n";
-
-my @DmsgLines = split("\n",$szDmesg); 
-my $nLines = 0;
-foreach (@DmsgLines)
-{
-	#if ($_ =~ /^.*DHCPACK\son\s(\S*).*/ ) {
-	#print "Line: $_ \n";
-	$nLines++;
-}
-
-#print "$nLines lines in stored dmesg log:\n$szDmesg\n";
-
-if ($nLines < 100) {
-	print "********* WARNING ****** dmesg log only contains $nLines lines.\nIt probably means that tarakernel has never been running or that crontask.pl is not set up as a cron job. Please see top of script for how.\n"; 
+my $dmsg_worker_lockfile = "/tmp/$worker_name.pl.lock";
+if (!programRunningLockFileHeld($dmsg_worker_lockfile)) {
+	print "*** ERROR **** $worker_name.pl is not running in background. Supposed to be started by crontasks.pl (run as cron task) - lock file: $dmsg_worker_lockfile\n";
 }
 
 if (!moduleRunning("tarakernel")) {
@@ -582,6 +579,40 @@ if ($row = $sth->fetchrow_hashref()) {
 	$nErrors++;
 }
 
+sub getCountWhere {	
+	my ($szTable, $szWhere) = @_;
+	$szSQL = "select count(*) as records from $szTable ".(length($szWhere) > 0?"where $szWhere":"");
+	$sth = $dbh->prepare($szSQL) or die "prepare statement failed: $dbh->errstr()";
+	#print "$szSQL\n";
+	$sth->execute() or die "execution failed: $sth->errstr()";
+	my $row;
+	if ($row = $sth->fetchrow_hashref()) {
+		my $nRecords = $row->{'records'}+0;
+		return $nRecords;
+	}
+	else {
+		print "***** ERROR fetching number of records in $szTable table. Probably something wrong with your database.\n";
+		$nErrors++;
+		return -1;
+	}
+}
+
+my $unhandedSyslogThreats = getCountWhere("syslogThreat", "handled is null");
+if ($unhandedSyslogThreats > 500) {
+	print "********* WARNING ****** $unhandedSyslogThreats unhandled syslog threats (attack under way??) - system can't keep up.\n";
+}
+
+my $syslogThreatsLastHour = getCountWhere("syslogThreat", "created > DATE_SUB(NOW(), INTERVAL 60 MINUTE)");
+if ($syslogThreatsLastHour > 100) {
+	print "********* WARNING ****** $syslogThreatsLastHour (more than 100) syslog threats last hour (attack under way??)\n";
+}
+
+my $unhandedHackReports = getCountWhere("hackReport", "created > DATE_SUB(NOW(), INTERVAL 60 MINUTE)");
+if ($unhandedHackReports > 100) {
+	print "********* ERROR ****** $unhandedHackReports (more than 100) hackReport last hour (attack under way??)\n";
+}
+
+
 sub sameNet {
 	my @cIp1 = @{$_[0]};
 	my @cIp2 = @{$_[1]};
@@ -607,7 +638,12 @@ if (!$nErrors)	#This may be a lot so don't put it on the screen if there's error
 {
 	my $szInternal = (!defined($szInternalIP) || $szInternalIP eq ""?"[INTERNAL IP NOT SET!]":$szInternalIP);
 	
-	print "\nIP setup:\nMain IP (the one giving you internet): $szAdminIP\nInternal IP (for managing subnet): $szInternal\n\n";
+	print "\nIP setup:\nMain IP (the one giving you internet): $szAdminIP\n";
+	
+	if ($bRunningHotspot) {
+		print "Internal IP (for managing subnet): $szInternal\n\n";
+	}
+
 	my $szPartners = "";
 	$szSQL = "select inet_ntoa(ip) as ip, unix_timestamp(now()) - unix_timestamp(partnerStatusReceived) as statusReceived, unix_timestamp(now()) - unix_timestamp(partnerStatusReplied) as statusReplied from partnerRouter order by ip";
 	my $sth = $dbh->prepare($szSQL) or die "prepare statement failed: $dbh->errstr()";

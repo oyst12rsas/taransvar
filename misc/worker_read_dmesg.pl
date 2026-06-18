@@ -40,7 +40,7 @@ while (my $line = <$fh>) {
         chomp $szTxt;
 
         print "Imported: $line\n";
-        $sth->execute($szTxt) or die "execution failed: " . $sth->errstr;
+        $sth->execute(substr($szTxt, 0, 254)) or die "execution failed: " . $sth->errstr;
     }
     else
     {

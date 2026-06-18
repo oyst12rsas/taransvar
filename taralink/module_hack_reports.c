@@ -322,7 +322,7 @@ void checkHackReports()
 				}
 				else
 				{
-					printf("No port assignment found for %s:%s (should check conntrack??).\n", lpIp, row[2]);
+					printf("No port assignment found for %s:%s (should check conntrack?).\n", lpIp, row[2]);
 				}
 				printf("freeing lookupRes\n");
 				mysql_free_result(lookupRes);

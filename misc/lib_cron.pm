@@ -171,7 +171,7 @@ sub changeDemoIpAddress {	#NOTE Only used in this lib, don't export
 }
 
 sub logDmesg {
-
+	print "\n\nEntering logDmesg()\n";
 	$dbh = getConnection();
 	my $nMaxId = 0;
 	my $name = "worker_read_dmesg";
@@ -199,9 +199,11 @@ sub logDmesg {
 	#Make sure dmesg reader script is running... 
 	my $script = "/root/taransvar/perl/$name.pl";
 	my $szLogFile = "/root/setup/log/$name.log";
-	print "Starting: perl $script >> $szLogFile\n";
-	system("nohup perl $script >> $szLogFile 2>&1 &");
-	print "Script started\n";
+	# print "Starting: perl $script >> $szLogFile\n";203
+
+	my $szCmd = "nohup perl $script >> $szLogFile 2>&1 &";
+	system($szCmd);
+	print "Script started: $szCmd\n";
 
 	#Delete old messages. 
 	$stmt = $dbh->prepare("delete from dmesg where dmesgId < ?");

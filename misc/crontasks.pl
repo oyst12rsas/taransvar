@@ -20,7 +20,6 @@ use lib_cron;
 use lib_net;
 
 use POSIX qw(setsid);
-
 use Fcntl qw(:flock);
 
 print "Usage:\nperl crontasks.pl\tRun only debugging tasks then quit.\nperl crontasks.pl cron\t\tTo run as by cron\nperl crontasks.pl force\t\tStart even if crontasks.pl already running\n";
@@ -36,63 +35,6 @@ if (!$ARGV[0] || $ARGV[0] ne "force")
 }
 # keep $fh open for whole script lifetime
 print "Able to lock crontasks lock file.\n";
-
-sub getUrl
-{
-    my ($szUrl, %cParams) = @_;
-
-    use URI;
-    use LWP::UserAgent;
-
-    my $ua = LWP::UserAgent->new(
-        timeout => 5
-    );
-
-    my $url = URI->new($szUrl);
-    $url->query_form(%cParams);
-
-    print "URL: $url\n";
-
-    my $response = $ua->get($url);
-
-    if ($response->is_success) {
-        return $response->decoded_content;
-    }
-
-    print "HTTP error: " . $response->status_line . "\n";
-    return "ERROR";
-}
-
-sub urlencode
-{
-	#NOTE! should install liburi-perl and use URI::Escape;, then uri_escape() instead...
-
-    my ($s) = @_;
-
-    $s =~ s/([^A-Za-z0-9\-_.!~*'()])/sprintf("%%%02X", ord($1))/eg;
-
-    return $s;
-}
-
-sub programRunningLockFileHeld {
-	#Move this to func.pm (for other scripts to use..)
-    my ($szLockfileName) = @_;
-
-	print "Lock file: $szLockfileName\n";
-
-    open(my $fh, '>>', $szLockfileName)
-        or die "Cannot open $szLockfileName: $!";
-
-    # Try to acquire lock non-blocking
-    if (flock($fh, LOCK_EX | LOCK_NB))
-    {
-        # Nobody had it -> release immediately
-        close($fh);
-        return 0;
-    }
-
-    return 1;
-}
 
 sub reportStatus {
 	my ($dbh) = @_;
@@ -331,48 +273,6 @@ sub print_hashref {
     print "----\n";
 }
 
-sub find_conntrack_entry {
-    my (%args) = @_;
-
-    my $proto      = $args{proto}      // 'tcp';
-    my $target_ip  = $args{target_ip}  // die "target_ip required";
-    my $target_port= $args{target_port}// die "target_port required";
-
-    open(my $fh, "-|", "conntrack", "-L", "-p", $proto)
-        or die "Cannot run conntrack: $!";
-
-    while (my $line = <$fh>) {
-        chomp $line;
-
-        # Match original tuple: src=... dst=... sport=... dport=...
-        # and later NAT/reply tuple containing honeypot target
-        my ($src1,$dst1,$sport1,$dport1,
-            $src2,$dst2,$sport2,$dport2) =
-            $line =~ /src=([0-9.]+)\s+dst=([0-9.]+)\s+sport=(\d+)\s+dport=(\d+).*?src=([0-9.]+)\s+dst=([0-9.]+)\s+sport=(\d+)\s+dport=(\d+)/;
-
-        next unless defined $src1;
-
-        # Find flows whose translated/reply side involves the honeypot
-        if ($src2 eq $target_ip && $sport2 == $target_port) {
-            close($fh);
-            return {
-                raw_line       => $line,
-                orig_src_ip    => $src1,
-                orig_dst_ip    => $dst1,
-                orig_src_port  => $sport1,
-                orig_dst_port  => $dport1,
-                reply_src_ip   => $src2,
-                reply_dst_ip   => $dst2,
-                reply_src_port => $sport2,
-                reply_dst_port => $dport2,
-            };
-        }
-    }
-
-    close($fh);
-    return undef;
-}
-
 sub get_unit_from_conntrack {
     my (%args) = @_;
 
@@ -513,7 +413,7 @@ sub handle_syslogThreat_table
 	#finding unitId for records in syslogThreat by calling conntrack... Should probably also put in 
 	my ($dbh) = @_;
 
-	my $szSQL = "select syslogId, syslogThreatId, src_ip, inet_ntoa(src_ip) as src, src_port, dst_ip, inet_ntoa(dst_ip) as dst, dst_port, protocol, service, description from syslogThreat where handled is null limit 1000";
+	my $szSQL = "select syslogId, syslogThreatId, src_ip, inet_ntoa(src_ip) as src, src_port, dst_ip, inet_ntoa(dst_ip) as dst, dst_port, protocol, service, description from syslogThreat where handled is null limit 100";
 	my $sth = $dbh->prepare($szSQL);
 	print "\n\nFinding unhandled syslogThreat records.\n";
 	$sth->execute() or die "execution failed: $sth->errstr()";
@@ -686,7 +586,7 @@ if (!runningAsCron() && !runningBootCheck())	#Run "sudo perl crontasks.pl whatev
 	print "********* Running debug tasks...\n";
 	#reportStatus($dbh);
 	#handle_syslogThreat_table($dbh);
-	#logDmesg();
+	logDmesg();		#lib_cron.pm
 
 	#check_dhcpEvent($dbh);	
 

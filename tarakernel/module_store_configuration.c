@@ -486,15 +486,26 @@ char *interpretNextBatch(int nBlockDescriptor, char *lpConfiguration)
 									pInfection->nBotnetId = nBotnetId;
 									pInfection->lpInfo = memAlloc(strlen(cInfo)+1);
 									if (pInfection->lpInfo)
+									{
 										strcpy(pInfection->lpInfo, cInfo);
-
-									pr_info("Info set to %s and severity to %u\n", pInfection->lpInfo, pInfection->nSeverity);
+										pr_info("tarakernel: Info set to %s and severity to %u\n", pInfection->lpInfo, pInfection->nSeverity);
+									}
+									else
+										pr_info("tarakernel: ********* ERROR allocating memory for threat info: %s and severity to %u\n", pInfection->lpInfo, pInfection->nSeverity);
 								}
 								else 
-									pr_info("*********** ERROR ******** No infection found..\n");
+									pr_info("tarakernel: *********** ERROR ******** No infection found..\n");
 							}
-							else 
-								pr_info("*********** ERROR ******** No node found..\n");
+							else
+							{
+								int nCount = 0;
+								struct _Node *pInfection;
+
+								for (pInfection = pSetup->pConfigurationPointerList[nBlockDescriptor]; pInfection; pInfection = pInfection->pNext)
+									nCount++;
+
+								pr_info("tarakernel: *********** ERROR ******** No node found.. (%d currently in the list)\n", nCount);
+							}
 						}
 						else
 							removeInfection(ip_be, ipNettmask, port);
@@ -503,19 +514,19 @@ char *interpretNextBatch(int nBlockDescriptor, char *lpConfiguration)
 						pr_info("tarakernel: *************** ERROR! (res: %d) Infection: %s Interpretation failed\n", nRes, lpPointer);
 				}
 
-				pr_info("tarakernel: Checking list after insertion...\n");
-				listInfectionsPointerList();
+				//pr_info("tarakernel: Checking list after insertion...\n");
+				//listInfectionsPointerList();
 				break;
   
             case BLOCK_DESCRIPTIOR_PARTNERS:
 				{
-				pr_info("About to read partners: %s\n", lpPointer); 
+				pr_info("tarakernel: About to read partners: %s\n", lpPointer); 
 					char *lpColon = strchr(lpPointer, ':');
 				//No idea why sscanf is returning 1 instead of 2 and cNettmask is undefine: if ((nRes = sscanf(lpPointer, "%s:%s", cIP, cNettmask)) >0) 
 					if (lpColon)
 					{
 						*lpColon = 0;
-						pr_info("Partner:%s/%s\n", lpPointer, lpColon + 1);
+						pr_info("tarakernel: Partner:%s/%s\n", lpPointer, lpColon + 1);
 						storePartner(lpPointer, lpColon + 1);
 					}
 					else

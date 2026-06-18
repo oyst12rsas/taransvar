@@ -448,7 +448,7 @@ void *worker(void *arg) {
     int nActiveConnectionsFound = 0;
 
     while (fgets(line, sizeof(line), fp)) {
-		printf("Handling: %s\n", line);
+		//printf("Handling: %s\n", line);
 
 /*  	const char *line =
         	"tcp 6 431999 ESTABLISHED "
@@ -484,7 +484,7 @@ void *worker(void *arg) {
 	    struct conntrack_record rec;
     	int rc;
 
-        printf("Calling parse_conntrack_line()\n");
+        //printf("Calling parse_conntrack_line()\n");
 	    rc = parse_conntrack_line(line, &rec);
     	if (rc != 0) {
         	printf("******** parse failed ** rc=%d: %s\n", rc, line);
@@ -492,7 +492,7 @@ void *worker(void *arg) {
 		}
 		else
         {
-            printf("Calling record_matches_client_nat()\n");
+            //printf("Calling record_matches_client_nat()\n");
 		    if (record_matches_client_nat(&rec, cInfectedIpAddr, cExternalIp))	//cInternalIp - is the gateway...
 			{
 				if (!strcmp(rec.proto, "tcp"))

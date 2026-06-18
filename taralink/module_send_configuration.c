@@ -1,3 +1,7 @@
+#define MAX_INFECTIONS	100
+#define MAX_COLORLISTINGS 100
+#define MAX_SETUP_RECORDS 100
+#define PACKET_LEN_SAFETY_BUFFER	100
 
 #include "../tarakernel/module_globals.h" 
 
@@ -181,7 +185,7 @@ bool getSetupStringNewOk(MYSQL *conn, MYSQL *updateConn, char *cSetupString, int
 
 			unsigned int  nBlockingThreshold = atoi(row[4]);
 
-			snprintf(cSetupString, nBuffSize, "SETUP|%08X^%08X^%08X^%01X^%02X^%s^|", adminIP, internalIP, nettmask, nBlockingThreshold, cShowStatusBits.nValues, szDontDmesgIPs);
+			snprintf(cSetupString, nBuffSize, "SETUP|%08X^%08X^%08X^%01X^%02X^%s^", adminIP, internalIP, nettmask, nBlockingThreshold, cShowStatusBits.nValues, szDontDmesgIPs);
 				//strcpy(cReply+strlen(cReply), "SETUP|");
 				//strcpy(cReply+strlen(cReply), row[0]);
 				//strcpy(cReply+strlen(cReply), "|");
@@ -245,7 +249,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 	MYSQL *conn, *updateConn;
 	MYSQL_RES *res;
 	MYSQL_ROW row;
-	char cReply[C_BUFF_SIZE];	
+	char cReply[C_BUFF_SIZE];	//4090 probably
 	*cReply = 0;
 	int bFoundData = 0;
 	int nFound = 0;
@@ -260,7 +264,94 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 		//printf("Reading configuration.....\n");
 		sprintf(cReply, "CONFIG %d|", nSequenceNumber);
 		
-#ifdef SETUP_INTERNAL_SERVERS
+		if (!bReadChangesOnly)
+		{
+			/*It's a challenge when there's too many infections, white/black lists, port forwards and more... 
+			Before, it was thought to be handled with batches... But maybe it's better to use the handled 
+			field in the data. Set them all as not handled at the first sending of config. Then send the next ones on timer. 
+			Then can read as many as we went and leave the others for the next batch (we may need a separate field "sentTarakernel" but can try without).
+			*/
+
+			if (mysql_query(conn, "update internalInfections set handled = b'0'")
+				|| mysql_query(conn, "update colorListings set handled = b'0'")
+				|| mysql_query(conn, "update honeyport set handled = b'0'")
+				|| mysql_query(conn, "update inspection set handled = b'0'")
+				|| mysql_query(conn, "update internalServers set handled = b'0'")
+				|| mysql_query(conn, "update partnerRouter set handled = b'0'")
+				) {
+			    fprintf(stderr, "%s\n", mysql_error(conn));
+			    reportErrorReadin("servers");
+		    	return 0;
+			}
+			printf("********** WARNING ******* Testing using handled field to assemble batches of settings. Initiated now.\n");
+		}
+
+		//ØT 260617 - moved here (to avoid setup from ending in later batch if lots of other info)
+//#ifdef SETUP_SETUP
+		//************** Add setup *****************
+		//printf("Reading setup...\n");
+		bool bReadSetup = 1;
+
+		if (bReadChangesOnly)
+		{
+			//Thought there was problem reading lots of fields (but the problem was memory leak elsewhere).. so implemented this check to see if handled is true or false
+			char *lpSQL = "select dmesgUpdated from setup where coalesce(handled, b'0') = b'1' limit 1";
+
+			if (mysql_query(conn, lpSQL)) {
+				fprintf(stderr, "taralink: %s\n", mysql_error(conn));
+				reportErrorReadin("setup");
+				return 0;
+			}
+				
+			//res = mysql_use_result(conn);
+			res = mysql_store_result(conn);		
+			if (!res) {
+			    fprintf(stderr, "mysql_use_result failed: %s\n", mysql_error(conn));
+    			return 0;
+			}		
+
+			if ((row = mysql_fetch_row(res)) == NULL)
+				printf("Setup is changed. Sending to tarakernel.\n");
+			else 
+			{
+				//printf("Setup unchanged. Skipping sending. Dmsg read: %s\n", row[0]?row[0]:"(NULL)");
+				bReadSetup = false;
+			}
+
+	    	mysql_free_result(res);
+			res = NULL;
+		}
+	
+		if (bReadSetup)
+		{
+			//char cSetupString[1000];
+			//20k memory leak per minute before due to long mysql query.. Old method saved in getSetupStringOk() function...
+			char cSetupStringNew[1000];
+			if (//!getSetupStringOk(conn, updateConn, cSetupString, sizeof(cSetupString), bReadChangesOnly) ||
+				!getSetupStringNewOk(conn, updateConn, cSetupStringNew, sizeof(cSetupStringNew), bReadChangesOnly))
+				return 0;
+
+			/*if (strcmp(cSetupString, cSetupStringNew))
+				printf("********** WARNING ********* Setting strings differ: (old/new)\n%s\n%s\n", cSetupString, cSetupStringNew);
+			else
+				printf("New and old setup routines agree: %s\n", cSetupString);
+				*/
+			int nPosLeft = sizeof(cReply)-strlen(cReply)-1;
+			if (nPosLeft > 0)
+				snprintf(cReply+strlen(cReply), nPosLeft, "%s|", cSetupStringNew);	//ØT added "|"" 
+			else
+				nCharsTruncated += strlen(cSetupStringNew);
+
+		    bFoundData = 1;
+		}
+		//else	
+		//	printf("Skipping reading (already handled)\n");
+			
+		//printf("Freeing up connections\n");
+//#endif //#ifdef SETUP_SETUP
+
+
+//#ifdef SETUP_INTERNAL_SERVERS
 
 		//***************** Internal servers **********************
 		  
@@ -273,9 +364,9 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 		sprintf(szSQL, "select publicPort, protection, ip, inet_ntoa(ip), port, coalesce(handled,0) from internalServers");
 		
 		if (bReadChangesOnly)
-		      strcpy(szSQL+strlen(szSQL), " where handled is null");
+			strcpy(szSQL+strlen(szSQL), " where handled is null");
 
-                //printf("SQL: %s\n", szSQL);
+		//printf("SQL: %s\n", szSQL);
 		
 		//if (bReadChangesOnly)
 		//      strcpy(szSQL+strlen(szSQL), " where handled is null");
@@ -299,11 +390,15 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 
 			printf("%s:%s->%s - %s\n", row[3], row[4], row[0], row[1]);
 			int nPosLeft = sizeof(cReply)-strlen(cReply)-1;
-			if (nPosLeft > 0)
+			if (nPosLeft > PACKET_LEN_SAFETY_BUFFER)
 				snprintf(cReply+strlen(cReply), nPosLeft, "%s-%s^", row[0], row[1]);
 			else
+			{
 				nCharsTruncated += 25;
-				
+				printf("WARNING! Breaking on buffer almost full when reading internal servers");
+				break;
+			}
+
 			nFound++;
 			if (atoi(row[5]) == 0)
 			{
@@ -322,7 +417,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 			
 		mysql_free_result(res);
 
-#endif //#ifdef SETUP_INTERNAL_SERVERS
+//#endif //#ifdef SETUP_INTERNAL_SERVERS
 
 
 		//printf("Setup after servers: %s\n", cReply);
@@ -333,14 +428,16 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 		//conn = getConnection();
 
 
-#ifdef SETUP_BLACK_AND_WHITELISTS
+//#ifdef SETUP_BLACK_AND_WHITELISTS
 
 		//************** Add the white- and blacklistings *****************
 	    //printf("Reading black- and white listings...\n");
-		strcpy(szSQL, "select inet_ntoa(ip) as ip, upper(color), ip as aIp, handled from vListings");
+		sprintf(szSQL, "select inet_ntoa(ip) as ip, upper(color), ip as aIp, handled from vListings"); 
 		
 		if (bReadChangesOnly)
 		    strcpy(szSQL+strlen(szSQL), " where handled is null");
+
+		sprintf(szSQL + strlen(szSQL), " limit %u", MAX_COLORLISTINGS);
 
 		if (mysql_query(conn, szSQL)) {
 			fprintf(stderr, "%s\n", mysql_error(conn));
@@ -368,10 +465,14 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 
 			//printf("%s : %s\n", row[0], row[1]);
 			int nPosLeft = sizeof(cReply)-strlen(cReply)-1;
-			if (nPosLeft > 0)
+			if (nPosLeft > PACKET_LEN_SAFETY_BUFFER)
 				snprintf(cReply+strlen(cReply), nPosLeft, "%s^", row[0]);
 			else
+			{
 				nCharsTruncated += 12;
+				printf("WARNING! Breaking on buffer almost full when reading white/blacklist");
+				break;
+			}
 
 			nFound++;
 			updateHandled(updateConn, "colorListings", "ip", row[2]);
@@ -383,7 +484,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 		if (nFound)
 			strcpy(cReply+strlen(cReply), "|");
 
-#endif //#ifdef SETUP_BLACK_AND_WHITELISTS
+//#endif //#ifdef SETUP_BLACK_AND_WHITELISTS
 
 		//asdf - 260405 - testing...
 		//mysql_close(conn);
@@ -402,7 +503,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 
 		sprintf(szSQL, "select inet_ntoa(ip) as ip, inet_ntoa(nettmask) as nettmask, coalesce(status,'NULL'), \
 			infectionId, handled, coalesce(CAST(active AS UNSIGNED),0) as active, coalesce(infoSharePartners,'NULL'), \
-			coalesce(unitId,0), coalesce(severity,0), coalesce(botnetId,0), ip, nettmask from internalInfections %s", lpHandledWhere);
+			coalesce(unitId,0), coalesce(severity,0), coalesce(botnetId,0), ip, nettmask from internalInfections %s limit %d", lpHandledWhere, MAX_INFECTIONS);
 		//printf("SQL: %s\n", szSQL);
 
 		if (mysql_query(conn, szSQL)) {
@@ -438,11 +539,15 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 			//printf("taralink: Infection found : %s-%s-%s-%s\n", row[0], row[1], row[5], row[2]);
 			//															ip		nett	active status  infID   severity botnetId info
 			int nPosLeft = sizeof(cReply)-strlen(cReply)-1;
-			if (nPosLeft > 0)
+			if (nPosLeft > PACKET_LEN_SAFETY_BUFFER)
 				snprintf(cReply+strlen(cReply), nPosLeft, "%s:%s-%d-%s-%s-%s-%s-%s^", 
 							row[0], row[1], nActive, row[2], row[3], lpSendSeverity, row[9], lpSendInfectionInfo);
 			else
+			{
 				nCharsTruncated += 70;
+				printf("WARNING! Breaking on buffer almost full when reading internal infections");
+				break;
+			}
 
 			//	ip				nett	active status  infID   severity botnetId info
 /*INFECTION|	100.100.100.100:255.255.255.255-1-(null)-       -1503633950-        -1503633942-0-(null)^
@@ -460,6 +565,12 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 
 		mysql_free_result(res);
 
+		if (nFound == MAX_INFECTIONS)
+		{
+			printf("\n\n\n********** WARNING ********** Stopped at %u infections. You should clean up or increase the limit if it's safe...\n\n", MAX_INFECTIONS);
+		}
+
+
 		if (nFound)
 			strcpy(cReply+strlen(cReply), "|");
 
@@ -468,7 +579,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 		//mysql_close(conn);
 		//conn = getConnection();
 
-#ifdef SETUP_PARTNERS
+//#ifdef SETUP_PARTNERS
 
 		//*************************Send partner info ****************
 		//printf("Reading partners...\n");
@@ -498,10 +609,14 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 
 			printf("Partner found : %s-%s\n", row[0], row[1]);
 
-			if (nPosLeft > 0)
+			if (nPosLeft > PACKET_LEN_SAFETY_BUFFER)
 				snprintf(cReply+strlen(cReply), nPosLeft, "%s:%s^", row[0], row[1]);
 			else
+			{
 				nCharsTruncated += 25;
+				printf("WARNING! Breaking on buffer almost full when reading partern routers");
+				break;
+			}
 
 			nFound++;
 			updateHandled(updateConn, "partnerRouter", "routerId", row[2]);
@@ -518,13 +633,13 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 		//else
 		//	printf("No routers updated\n", nFound);
 
-#endif //#define SETUP_PARTNERS
+//#endif //#define SETUP_PARTNERS
 
 		//asdf - 260405 - testing...
 		//mysql_close(conn);
 		//conn = getConnection();
 
-#ifdef SETUP_INSPECTIONS
+//#ifdef SETUP_INSPECTIONS
 
 		//************** Add packet inspection into ([INSPECT|DROP])the white- and blacklistings *****************
 		//printf("Reading inspections...\n");
@@ -567,10 +682,15 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 			}
 
 			printf("%s : %s\n", row[0], row[1]);
-			if (nPosLeft > 0)
+			if (nPosLeft > PACKET_LEN_SAFETY_BUFFER)
 				snprintf(cReply+strlen(cReply), nPosLeft, "%s:%s^", row[0], row[1]);
 			else
+			{
 				nCharsTruncated += 25;
+				printf("WARNING! Breaking on buffer almost full when reading honeypots");
+				break;
+			}
+
 			nFound++;
 			updateHandled(updateConn, "inspection", "ip", row[3]);
 		}
@@ -580,12 +700,12 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 			strcpy(cReply+strlen(cReply), "|");
 		    bFoundData = 1;
         }
-#endif //#ifdef SETUP_INSPECTIONS
+//#endif //#ifdef SETUP_INSPECTIONS
 		//asdf - 260405 - testing...
 		//mysql_close(conn);
 		//conn = getConnection();
 
-#ifdef SETUP_HONEYPOTS
+//#ifdef SETUP_HONEYPOTS
 
 		//************** Add honeyports ([HONEY]) *****************
 		//printf("Reading honeypots...\n");
@@ -669,10 +789,14 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 
             //printf("Assistance request: %s:%s-%s-%s-%d\n", row[1], row[2], row[3], row[4], nActive);
 			int nPosLeft = sizeof(cReply)-strlen(cReply)-1;
-			if (nPosLeft > 0)
+			if (nPosLeft > PACKET_LEN_SAFETY_BUFFER)
 				snprintf(cReply+strlen(cReply), nPosLeft, "%s:%s-%s-%s-%d^", row[1], (row[2]?row[2]:"0"), row[3], row[4], nActive);
 			else
+			{
 				nCharsTruncated += 10;
+				printf("WARNING! Breaking on buffer almost full when reading honeypots");
+				break;
+			}
 			nFound++;
 			updateHandled(updateConn, "assistanceRequest", "requestId", row[0]);
 		}
@@ -683,74 +807,12 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 			strcpy(cReply+strlen(cReply), "|");
         }
 
-#endif //#ifdef SETUP_HONEYPOTS
+//#endif //#ifdef SETUP_HONEYPOTS
 
 		//asdf - 260405 - testing...
 		//mysql_close(conn);
 		//conn = getConnection();
 
-#ifdef SETUP_SETUP
-		//************** Add setup *****************
-		//printf("Reading setup...\n");
-		bool bReadSetup = 1;
-
-		if (bReadChangesOnly)
-		{
-			//Thought there was problem reading lots of fields (but the problem was memory leak elsewhere).. so implemented this check to see if handled is true or false
-			char *lpSQL = "select dmesgUpdated from setup where coalesce(handled, b'0') = b'1' limit 1";
-
-			if (mysql_query(conn, lpSQL)) {
-				fprintf(stderr, "taralink: %s\n", mysql_error(conn));
-				reportErrorReadin("setup");
-				return 0;
-			}
-				
-			//res = mysql_use_result(conn);
-			res = mysql_store_result(conn);		
-			if (!res) {
-			    fprintf(stderr, "mysql_use_result failed: %s\n", mysql_error(conn));
-    			return 0;
-			}		
-
-			if ((row = mysql_fetch_row(res)) == NULL)
-				printf("Setup is changed. Sending to tarakernel.\n");
-			else 
-			{
-				//printf("Setup unchanged. Skipping sending. Dmsg read: %s\n", row[0]?row[0]:"(NULL)");
-				bReadSetup = false;
-			}
-
-	    	mysql_free_result(res);
-			res = NULL;
-		}
-
-		if (bReadSetup)
-		{
-			//char cSetupString[1000];
-			//20k memory leak per minute before due to long mysql query.. Old method saved in getSetupStringOk() function...
-			char cSetupStringNew[1000];
-			if (//!getSetupStringOk(conn, updateConn, cSetupString, sizeof(cSetupString), bReadChangesOnly) ||
-				!getSetupStringNewOk(conn, updateConn, cSetupStringNew, sizeof(cSetupStringNew), bReadChangesOnly))
-				return 0;
-
-			/*if (strcmp(cSetupString, cSetupStringNew))
-				printf("********** WARNING ********* Setting strings differ: (old/new)\n%s\n%s\n", cSetupString, cSetupStringNew);
-			else
-				printf("New and old setup routines agree: %s\n", cSetupString);
-				*/
-			int nPosLeft = sizeof(cReply)-strlen(cReply)-1;
-			if (nPosLeft > 0)
-				snprintf(cReply+strlen(cReply), nPosLeft, "%s", cSetupStringNew);
-			else
-				nCharsTruncated += strlen(cSetupStringNew);
-
-		    bFoundData = 1;
-		}
-		//else	
-		//	printf("Skipping reading (already handled)\n");
-			
-		//printf("Freeing up connections\n");
-#endif //#ifdef SETUP_SETUP
 
         //***************** Finish it up 
 

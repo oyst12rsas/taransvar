@@ -9,12 +9,13 @@ package func;
 use strict;
 use warnings;
 use Exporter qw(import);
+use Fcntl qw(:flock);
 
 # these CAN be exported.
 our @EXPORT_OK = qw();
 
 # these are exported by default.
-our @EXPORT = qw( getSysRoot getLogRoot getPerlScriptDir getIptablesLogFileName getDbNow getConnection getNiceTimestamp trim validIp getLastInsertId getString doExecute addWarningRecord getSourceRoot ableToPing ipOfDevice programWithParamsRunning programRunning moduleRunning getFileContents getFileLines getDumpTxt uptime getDevices isLanAddress getSetup resetSetup getProcessId doKill addToLogFile getNewestFile setSetupField setNetworkStatus );
+our @EXPORT = qw( getSysRoot getLogRoot getPerlScriptDir getIptablesLogFileName getDbNow getConnection getNiceTimestamp trim validIp getLastInsertId getString doExecute addWarningRecord getSourceRoot ableToPing ipOfDevice programWithParamsRunning programRunning moduleRunning getFileContents getFileLines getDumpTxt uptime getDevices isLanAddress getSetup resetSetup getProcessId doKill addToLogFile getNewestFile setSetupField setNetworkStatus getUrl urlencode programRunningLockFileHeld find_conntrack_entry );
 
 my $cSetup = 0;
 
@@ -629,6 +630,113 @@ sub setNetworkStatus {
 	my ($szWarn) = @_;
 	setSetupField(0, "networkStatus", $szWarn);
 }
+
+
+
+
+sub getUrl
+{
+    my ($szUrl, %cParams) = @_;
+
+    use URI;
+    use LWP::UserAgent;
+
+    my $ua = LWP::UserAgent->new(
+        timeout => 5
+    );
+
+    my $url = URI->new($szUrl);
+    $url->query_form(%cParams);
+
+    print "URL: $url\n";
+
+    my $response = $ua->get($url);
+
+    if ($response->is_success) {
+        return $response->decoded_content;
+    }
+
+    print "HTTP error: " . $response->status_line . "\n";
+    return "ERROR";
+}
+
+
+sub urlencode
+{
+	#NOTE! should install liburi-perl and use URI::Escape;, then uri_escape() instead...
+
+    my ($s) = @_;
+
+    $s =~ s/([^A-Za-z0-9\-_.!~*'()])/sprintf("%%%02X", ord($1))/eg;
+
+    return $s;
+}
+
+sub programRunningLockFileHeld {
+	#Move this to func.pm (for other scripts to use..)
+    my ($szLockfileName) = @_;
+
+	print "Lock file: $szLockfileName\n";
+
+    open(my $fh, '>>', $szLockfileName)
+        or die "Cannot open $szLockfileName: $!";
+
+    # Try to acquire lock non-blocking
+    if (flock($fh, LOCK_EX | LOCK_NB))
+    {
+        # Nobody had it -> release immediately
+        close($fh);
+        return 0;
+    }
+
+    return 1;
+}
+
+
+sub find_conntrack_entry {
+    my (%args) = @_;
+
+    my $proto      = $args{proto}      // 'tcp';
+    my $target_ip  = $args{target_ip}  // die "target_ip required";
+    my $target_port= $args{target_port}// die "target_port required";
+
+    open(my $fh, "-|", "conntrack", "-L", "-p", $proto)
+        or die "Cannot run conntrack: $!";
+
+    while (my $line = <$fh>) {
+        chomp $line;
+
+        # Match original tuple: src=... dst=... sport=... dport=...
+        # and later NAT/reply tuple containing honeypot target
+        my ($src1,$dst1,$sport1,$dport1,
+            $src2,$dst2,$sport2,$dport2) =
+            $line =~ /src=([0-9.]+)\s+dst=([0-9.]+)\s+sport=(\d+)\s+dport=(\d+).*?src=([0-9.]+)\s+dst=([0-9.]+)\s+sport=(\d+)\s+dport=(\d+)/;
+
+        next unless defined $src1;
+
+        # Find flows whose translated/reply side involves the honeypot
+        if ($src2 eq $target_ip && $sport2 == $target_port) {
+            close($fh);
+            return {
+                raw_line       => $line,
+                orig_src_ip    => $src1,
+                orig_dst_ip    => $dst1,
+                orig_src_port  => $sport1,
+                orig_dst_port  => $dport1,
+                reply_src_ip   => $src2,
+                reply_dst_ip   => $dst2,
+                reply_src_port => $sport2,
+                reply_dst_port => $dport2,
+            };
+        }
+    }
+
+    close($fh);
+    return undef;
+}
+
+
+
 
 1;
 

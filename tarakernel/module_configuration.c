@@ -146,17 +146,20 @@ void listInfectionsPointerList(void)
 	    nCount++;
 	    if (strlen(cBuf) > C_SEGMENT_MAX_SIZE-30)
 	    {
-	        strcpy(cBuf+strlen(cBuf), "[truncated]");
-	        break;
+			char * lpTruncString = "[truncated]";
+			if (!strstr(cBuf, lpTruncString))
+	        	strcpy(cBuf+strlen(cBuf), lpTruncString);
+	        //break;	Better count them all..
 	    }
+		else
+		{
+			if (*cBuf)
+				strcpy(cBuf+strlen(cBuf), ", ");
+
+			//sprintf(cBuf+strlen(cBuf), "%d.%d.%d.%d(%08X)", (int)ipAddressBytes[0], (int)ipAddressBytes[1], (int)ipAddressBytes[2], (int)ipAddressBytes[3], pNode->cInfection.ipAddress);
+			sprintf(cBuf+strlen(cBuf), "%pI4(%u)", &pNode->cInfection.ipAddress, pNode->cInfection.nSeverity);
+		}
 	
-		//unsigned char* ipAddressBytes = (unsigned char*)&pNode->cInfection.ipAddress;
-
-		if (*cBuf)
-			strcpy(cBuf+strlen(cBuf), ", ");
-
-		//sprintf(cBuf+strlen(cBuf), "%d.%d.%d.%d(%08X)", (int)ipAddressBytes[0], (int)ipAddressBytes[1], (int)ipAddressBytes[2], (int)ipAddressBytes[3], pNode->cInfection.ipAddress);
-		sprintf(cBuf+strlen(cBuf), "%pI4(%u)", &pNode->cInfection.ipAddress, &pNode->cInfection.nSeverity);
 		pNode = pNode->pNext;
 	}
 
@@ -467,6 +470,13 @@ _Node *storeInfectionInPointerList(__be32 ipAddress, __be32 ipNettmask, char *lp
 		pr_info("tarakernel: %pI4 is a new infection.. add it\n", &ipAddress);
 
 		pInfection = getNewBefore(pSetup->pConfigurationPointerList[BLOCK_DESCRIPTIOR_INFECTIONS], sizeof(struct _InfectionSpecification));
+
+		if (!pInfection)
+		{
+			pr_info("tarakernel: *********** ERROR *********** Unable to allocate memory for new infection.. Aborting.\n");
+			return NULL; 
+		}
+
 		pSetup->pConfigurationPointerList[BLOCK_DESCRIPTIOR_INFECTIONS] = pInfection;
 	}
 	else
@@ -510,7 +520,7 @@ _Node *storeInfectionInPointerList(__be32 ipAddress, __be32 ipNettmask, char *lp
 	unsigned int frequency : 3; //See C_FREQ_CLEAN++ definition above
 	unsigned int botNetId;	//Assigned by AkiliBomba
 };*/
-	listInfectionsPointerList();
+	//listInfectionsPointerList();
 	return pInfection;
 }//storeInfectionInPointerList()
 
@@ -657,8 +667,8 @@ void removeInfectionFromPointerList(uint32_t ipAddress, uint32_t ipNettmask, sho
 void removeInfection(volatile uint32_t ipAddress, volatile uint32_t ipNettmask, short port)
 {
     removeInfectionFromPointerList(ipAddress, ipNettmask, port);
-	listInfectionsPointerList();
-        return;
+	//listInfectionsPointerList();
+    return;
         
 /*	int n;
 	struct _InfectionSpecification *pInfectionArray = (struct _InfectionSpecification *)pSetup->pConfiguration[BLOCK_DESCRIPTIOR_INFECTIONS];

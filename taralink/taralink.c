@@ -332,7 +332,10 @@ void checkReportStatus(char *lpPayload)
             for (int n = 0; n < 3; n++)
             {
                 char *lpGlobalDbIp = row[n+2];
-                if (lpGlobalDbIp && strlen(lpGlobalDbIp) > 7)
+
+                //printf("About to send to %s\n", lpGlobalDbIp);
+
+                if (lpGlobalDbIp && (strlen(lpGlobalDbIp) > 7))
                 {
   		            sprintf(szUrl, "http://%s/script/config_update.php?f=ping&nick=%s&status=%s", lpGlobalDbIp, lpNickNameUrlEncoded, lpPayloadEncoded);
   		            *szWgetBuff = 0;
@@ -767,12 +770,39 @@ int acquire_lock(const char *lockfile)
 int main(void)
 {
     //Use lock file to ensure that taralink is not started twice.
-    int lock_fd = acquire_lock("/tmp/taralink.lock");
+    char *lpLockFile = "/tmp/taralink.lock";
+
+    int lock_fd = open(lpLockFile, O_CREAT | O_RDWR, 0644);
+    if (lock_fd < 0) {
+        char cMsg[200];
+        snprintf(cMsg, sizeof(cMsg), "Lockfile (%s) is open taralink is already running.", lpLockFile);
+        perror(cMsg);
+        return -1;
+    }
+
+    if (flock(lock_fd, LOCK_EX | LOCK_NB) < 0) {
+        if (errno == EWOULDBLOCK) {
+            //char cMsg[200];
+            //snprintf(cMsg, sizeof(cMsg), );
+            fprintf(stderr, "Unable to claim lockfile (%s). Another instance is running\n", lpLockFile);
+        }
+        else
+        {
+            char cMsg[200];
+            snprintf(cMsg, sizeof(cMsg), "flock error (errno = %d, lock file: %s). Aborting.\n", errno, lpLockFile);
+            perror(cMsg);
+        }
+        close(lock_fd);
+        return -1;
+    }
+
+
+/*    int lock_fd = acquire_lock(lpLockFile);
 
     if (lock_fd < 0) {
         printf("Already running\n");
         exit(1);
-    }
+    } */
 
     //Normally, buffers 4k before printing to log file when running in background
     setbuf(stdout, NULL);
@@ -808,7 +838,7 @@ int main(void)
         if (udp_fd >= 0) close(udp_fd);
         if (soc_fd >= 0) close(soc_fd);
         printf("Unable to open sockets.. Did you forget sudo? Aborting..\n");
-        return 1;
+        goto cleanup;
     }
 
     const char *text = "hello kernel";
@@ -871,12 +901,15 @@ int main(void)
         */
 
     }
-    
+
+cleanup: 
+
     close(nl_fd);
     close(udp_fd);
     close(soc_fd);
     printf("\nQuitting taralink. To stop tarakernel: sudo rmmod tarakernel\n");
 
     close(lock_fd);     //Close lock file (preventing program from starting twice)
-    return 0;
+    unlink(lpLockFile);    
+   return 0;
 }
