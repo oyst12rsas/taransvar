@@ -183,7 +183,7 @@ void checkHackReports()
 	//char szGlobalDb2[30];
 	//char szGlobalDb3[30];
 
-	char *lpSql = "select adminIP, inet_ntoa(adminIP), inet_ntoa(globalDb1ip), inet_ntoa(globalDb2ip), inet_ntoa(globalDb3ip), nettmask from setup"; 
+	char *lpSql = "select adminIP, inet_ntoa(adminIP), inet_ntoa(globalDb1ip), inet_ntoa(globalDb2ip), inet_ntoa(globalDb3ip), nettmask, internalIP from setup"; 
 	//printf("About to query\n");
 	if (mysql_query(conn, lpSql)) {
 		fprintf(stderr, "**** ERROR ******* While finding setup: %s\n", mysql_error(conn));
@@ -195,6 +195,7 @@ void checkHackReports()
 	row = mysql_fetch_row(res);
 	//printf("After fetch_row\n");
 	nMyIp = (row[0]?atoi(row[0]):0);
+	uint32_t nInternalIp = (row[6]?atoi(row[6]):0);
 	nNettmask = (row[5]?atoi(row[5]):0);
 	strcpy(cMyIp, row[1]);
 	for (int n=0; n < 3; n++)
@@ -246,7 +247,7 @@ void checkHackReports()
 		char *lpIp = (row[3]?row[3]:"(null)");
 		u_int32_t nInternaIpFromUnitPort = 0;
 
-		if (isMeOrMine(nNumericIp, nMyIp, nNettmask))
+		if (isMeOrMine(nNumericIp, nInternalIp, nNettmask))	//260223 - Changed from nMyIP (adminIP) to nInternalIp for determining if isMeOrMine()
 		{
 			strcpy(cWhat, "Me or my unit. ");
 			printf("Me or my unit caused hackReport to be filed..\n");

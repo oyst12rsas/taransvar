@@ -127,7 +127,9 @@ void checkUpdateTag(MYSQL *conn, char *lpIpHex, char *lpPortHex, char *lpTagHex)
 			if (bHackReportSaysInfected != bTrafficSaysInfected)
 			{
 				bInsertHackReport = true;
-				printf("\n************ HackReport found but it disagrees with traffic.. Insert new hack report: Traffic tag: %s, hack report severity: %d\n", lpTagHex, severity);
+				//printf("\n************ HackReport found but it disagrees with traffic.. Insert new hack report: Traffic tag: %s, hack report severity: %d\n", lpTagHex, severity);
+				bInsertHackReport = false;
+				printf("\n************ HackReport found but it disagrees with traffic.. Used to insert new hack report: Traffic tag: %s, hack report severity: %d (but now dropping inserting b'coz created lots of records - doesn't find the newly inserted record above so always makes new one.)\n", lpTagHex, severity);
 	    		//printf("\n************ HackReport for 0x%s:0x%s. Tag: 0x%s - ID: %u, severity: %d\n\n", lpIpHex, lpPortHex, lpTagHex, nReportId, severity);
 			}
 

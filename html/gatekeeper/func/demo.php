@@ -249,6 +249,9 @@ function getServerStatus($seconds_since, $status)
 	$szServerStatus .= (isset($status)?check($json["lnk"]):'<img src="img/green_dot.png">');
 	$szServerStatus .= (isset($status)?check($json["cron"]):'<img src="img/green_dot.png">');
 
+	if (isset($json["trfc"]))
+		$szServerStatus .= check($json["cron"]);
+
 	$nSeconds = (isset($json["dmesg"])?$json["dmesg"]:1000000);
 	$szServerStatus .= getDot($nSeconds < 90);
 
@@ -306,7 +309,7 @@ function vpn_demo()
 	            $nCount++;
 	        }
 	        print "</table>";
-			print "*) Dots: tarakernel, taralink, crontasks, dmesg. Number: Active users last 5 minutes.";
+			print "*) Dots: tarakernel, taralink, crontasks, dmesg, traffic data. Number: Active users last 5 minutes.";
         }
 
 }

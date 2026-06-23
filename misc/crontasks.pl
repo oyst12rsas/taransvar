@@ -90,10 +90,8 @@ sub reportStatus {
 
 	#my $szSQL = "select inet_ntoa(ip) from traffic where coalesce(lastSeen, created) > NOW() - INTERVAL 1 MINUTE";
 	my $szSQL = "SELECT COUNT(DISTINCT ipFrom) AS unique_ips FROM traffic WHERE COALESCE(lastSeen, created) > NOW() - INTERVAL 5 MINUTE AND ipFrom <> INET_ATON('10.100.0.1') and ipFrom BETWEEN INET_ATON('10.100.0.0') AND INET_ATON('10.100.255.255')";
-
 	#To see the user names: 
 	#SELECT DISTINCT INET_NTOA(ipFrom) FROM traffic WHERE COALESCE(lastSeen, created) > NOW() - INTERVAL 5 MINUTE   AND (ipFrom & INET_ATON('255.255.0.0')) = INET_ATON('10.100.0.0'); 
-
 	my $sthCount = $dbh->prepare($szSQL);
 	$sthCount->execute() or die "execution failed: $sthSetup->errstr()";
 	my $cCount = $sthCount->fetchrow_hashref();
@@ -107,6 +105,16 @@ sub reportStatus {
 	my $cSeconds = $sth->fetchrow_hashref();
 	$json{"dmesg"} = $cSeconds->{"seconds_since"};
 	$sthCount->finish();
+
+	#Find seconds since last traffic record
+	#my $szSQL = "select inet_ntoa(ip) from traffic where coalesce(lastSeen, created) > NOW() - INTERVAL 1 MINUTE";
+	$szSQL = "SELECT  TIMESTAMPDIFF(SECOND, coalesce(lastSeen, created), NOW()) AS seconds_since from traffic T order by trafficId desc limit 1";
+	my $sthLast = $dbh->prepare($szSQL);
+	$sthLast->execute() or die "execution failed: $sthSetup->errstr()";
+	$cSeconds = $sthLast->fetchrow_hashref();
+	$json{"trfc"} = $cSeconds->{"seconds_since"};
+	$sthCount->finish();
+
 
 	#************* Assemble the json and send it to DB Servers and store it locally.
 
@@ -299,7 +307,10 @@ sub get_unit_from_conntrack {
 		$sth->finish;
 
 		#update internalInfections
-		register_internal_infection($conn, $nUnitId, $ct->{orig_src_ip});
+		# 260623 - router was registered as an internalInfection.. Only call if $nUnitId was found??
+		if ($nUnitId) { 
+			register_internal_infection($conn, $nUnitId, $ct->{orig_src_ip});
+		}
 
 	} else {
 		print "Returning from get_unit_from_conntrack - none found for $args{target_ip}:$args{target_port}\n";
@@ -584,9 +595,9 @@ if (!runningAsCron() && !runningBootCheck())	#Run "sudo perl crontasks.pl whatev
 	#  That way you can check any debug code without the cron job distrubing the process.
 	#Displays a warning in dashboard so don't forget to disable this code...
 	print "********* Running debug tasks...\n";
-	#reportStatus($dbh);
+	reportStatus($dbh);
 	#handle_syslogThreat_table($dbh);
-	logDmesg();		#lib_cron.pm
+	#logDmesg();		#lib_cron.pm
 
 	#check_dhcpEvent($dbh);	
 
