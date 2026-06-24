@@ -961,6 +961,11 @@ unsigned int tagThePacket(struct _PacketInspection *pPacket, const struct nf_hoo
     #define DO_URG_PTR_TAGGING
     #ifdef DO_URG_PTR_TAGGING
     //***************Using urg_ptr **************************
+
+/*  ***********NOTE ********* Might want to change this from just copying for the pInfected->nTag because it's important
+    that we can interprete this at the other end and the nTag is a combination of bits (severity+botnetId+ internal ID)..
+    */
+
 	pPacket->tcp_header->urg_ptr= pInfected->nTag;//(__be16)cTag;//htons(0xFF00);  //Tag the package.
 	pSetup->cGlobalStatistics.nOutboundTagged++;
     #endif

@@ -431,18 +431,28 @@ int create_netlink_socket(void)
 
 void registerRemoteInfection(u_int32_t nSenderIp, char *lpMessage)
 {
-    printf("About to interprete: %s\n", lpMessage);
+    printf("About to interprete (but taralink doesn't know what to do with it yet...): %s\n", lpMessage);
 
     char cPrefix[100], cSourceIp[100], cInfo[255];
     unsigned int sPort, dVersion, dInfected, dOwners_id, nInfectionId, nSeverity, nBotnetId; 
-    unsigned int nVersion, nPreseumeInfected, nOnersId;
+    unsigned int nVersion,  nPresumeInfected, nOnersId;
 
     int nFlds = sscanf(lpMessage, "%99[^ ] %99[^:]:%u^%u^%u^%u^%u^%u^%u^%255[^\n]", 
-        cPrefix, cSourceIp, &sPort, &nVersion, &nPreseumeInfected, &nOnersId, &nInfectionId, &nSeverity, &nBotnetId, cInfo);
+        cPrefix, cSourceIp, &sPort, &nVersion, &nPresumeInfected, &nOnersId, &nInfectionId, &nSeverity, &nBotnetId, cInfo);
 
     if (nFlds == 10)
-    {
+    {   
+        if (strcmp(cPrefix, "ELABORATED_THREAT_INFO"))
+            printf("**** ERROR *** Prefix is supposed to be ELABORATED_THREAT_INFO\n");
+
         printf("Able to decode full record. Severity: %u\n", nSeverity);
+
+        if (nPresumeInfected != nSeverity)
+        {
+            //printf("presumed_infection (%d) <> nSeverity (%d). Using presume_infection.\n", nPresumeInfected, nSeverity);
+            //nSeverity = nPresumeInfected;
+            printf("presumed_infection (%d) <> nSeverity (%d). Keeping nSeverity.\n", nPresumeInfected, nSeverity);
+        }
     }
     else
     {

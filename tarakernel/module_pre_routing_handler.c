@@ -405,7 +405,6 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 		else
 			checkFree(pPacket, false /*bLeavingPostRouting*/);
 
-
 		return nRetval; //NF_ACCEPT or NF_DROP;
 	}
 
@@ -498,10 +497,15 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 					pr_warn("tarakernel: *** WARNING *** PR incoming tagged message (from %pI4:%u) and remote infection severity differs: Stored: %u, incoming msg: %u", &pPacket->ip_header->saddr, pPacket->tcp_header->source, cUnion.cTag.presumed_infected, pInfection->nSeverity);
 					pSetup->bSendTrafficReport = 1;	//Initiate sending of traffic data on next timer (in module_timed_operations.c -> checkTimedOperation() )
 					//asdfasdf ... should mark pInfection so don't keep sending....
+					if (pInfection)	//260623 - Added storing...
+						pInfection->nSeverity = cUnion.cTag.presumed_infected;
+					else
+						pr_warn("tarakernel: ***** ERROR *** infection was not initialized..\n"); 
 				}
 				else
 				{
-					snprintf(pSetup->c100, sizeof(pSetup->c100)-1, "%s Tag-severity %u/%u. %s->%s, severity: %d, botnet: %d, owner_id: %d, info: %s, rx+tx: %d/%d\n", 
+					char cMsg[1000];
+					snprintf(cMsg, sizeof(cMsg)-1, "%s Tag-severity %u/%u. %s->%s, severity: %d, botnet: %d, owner_id: %d, info: %s, rx+tx: %d/%d\n", 
 							(bDropping?"**DROPPING packet**":"(tag removed)"), 
 							cUnion.cTag.presumed_infected, 
 							pSetup->nBlockIncomingTaggedTrafficLevel, 
@@ -514,12 +518,12 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 							pInfection->nByteCount, 
 							pInfection->nPacketCount);
 
-					if (strlen(pSetup->c100) == sizeof(pSetup->c100)-1)	//NOTE c100 is now 200 chars
+					if (strlen(cMsg) >= sizeof(cMsg)-1)	//NOTE c100 is now 200 chars
 						if (!dropFromLogging(pPacket))
-							pr_warn("tarakernel: ***** ERROR **** pSetup->c100 buffer is too short. %zu bytes required (currently %zu)\n", strlen(pSetup->c100)+1, sizeof(pSetup->c100));
+							pr_warn("tarakernel: ***** ERROR **** cMsg buffer is too short. %zu bytes required (currently %zu)\n", strlen(cMsg)+1, sizeof(cMsg));
 
 					if (!dropFromLogging(pPacket))
-						pr_info("tarakernel: PR infected: %s", pSetup->c100);
+						pr_info("tarakernel: PR infected: %s", cMsg);
 				}
 
 			    if (bDropping)
@@ -551,8 +555,8 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
                 //pPacket->tcp_header->URG = 0;
 				//NOTE! THIS WAS MOST LIKELY BECASE THE CHECKSUM WAS WRONG. IT'S NOW BEING CALCULATED ABOVE
 			}
-			else
-			    strcpy(pSetup->c100, "(Not tagged)");
+			//else
+			//    strcpy(pSetup->c100, "(Not tagged)");
 
 			//Check tagging based on DSCP part of ToS (Type of Service)
 			uint8_t dscp = getDscp(pPacket);
@@ -587,7 +591,7 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 		        if (pSetup->cShowInstructions.bits.showPreRoutePartner) {
 					//pr_info("tarakernel: PRE ROUTING: Inbound from partner: %s (%s -> %s)\n",pSetup->c100, pPacket->cSourceIp, pPacket->cDestIp);
 					if (!dropFromLogging(pPacket))
-						pr_info("tarakernel: PRE ROUTING Inbound from partner(%pI4): %s (%s:%d -> %s:%d)\n", &nPartnerIp, pSetup->c100, pPacket->cSourceIp, ntohs(pPacket->tcp_header->source), pPacket->cDestIp, ntohs(pPacket->tcp_header->dest)); 
+						pr_info("tarakernel: PRE ROUTING Inbound from partner(%pI4): (%s:%d -> %s:%d)\n", &nPartnerIp, pPacket->cSourceIp, ntohs(pPacket->tcp_header->source), pPacket->cDestIp, ntohs(pPacket->tcp_header->dest)); 
 				}
 				if (cUnion.cTag.version_no)
 				  pSetup->cGlobalStatistics.nFromPartnerTagged++;

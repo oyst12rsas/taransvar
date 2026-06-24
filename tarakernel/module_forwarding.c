@@ -51,7 +51,10 @@ int checkFixTagging(struct _PacketInspection *pPacket, bool bForwarding, const s
 
 		if (pSetup->cShowInstructions.bits.showForwardPartner)
 			if (!dropFromLogging(pPacket))
-				pr_info("tarakernel: %s to partner: %s->%s: Tag: (%04X)\n", lpPrOrFw, pPacket->cSourceIp, pPacket->cDestIp, pPacket->tcp_header->urg_ptr);
+				pr_info("tarakernel: %s to partner (changed): %s->%s: Tag: %04X, presumed_inf: %u, severity: %u\n", lpPrOrFw, pPacket->cSourceIp, pPacket->cDestIp, 
+							pPacket->tcp_header->urg_ptr, 
+							pInfected?pInfected->cTag.presumed_infected:0,
+							pInfected?pInfected->nSeverity:0 );
 	}
 	else
   		if (!bCommentPrinted) //Already printed on this package... no need for more.	

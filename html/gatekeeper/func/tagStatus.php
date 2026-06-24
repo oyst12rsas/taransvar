@@ -26,7 +26,10 @@ function tagStatus()
 
 
 	$szIP = getSenderIp();
-	print "Your IP: ".$szIP."<br>";
+	//$port = $_SERVER['SERVER_PORT']+0;		
+	$clientPort = $_SERVER['REMOTE_PORT'];
+
+	print "Your IP/port: ".$szIP.":".$clientPort."<br>";
 
 	$conn = getConnection();
 	$nInfectionsCount = 0;
@@ -82,9 +85,10 @@ function tagStatus()
 
 	//********************* hackReports ********************** */
 
-	$sql = "SELECT reportId, inet_ntoa(ip) as ip, port, inet_ntoa(partnerIp) as partnerIp, severity, partnerPort, status, h.created, h.lastSeen, h.unitId, hostname, description, why, TIMESTAMPDIFF(SECOND, coalesce(h.lastSeen, h.created), NOW()) AS seconds_since from hackReport h left outer join unit u on u.unitId = h.unitId where ip = inet_aton(?) order by h.created desc limit 5";
+	//ØT 260623 - Select only the port of the user (in case of NAT or all ports (port == 0) if no NAT (in the future, for now all ports are sent))
+	$sql = "SELECT reportId, inet_ntoa(ip) as ip, port, inet_ntoa(partnerIp) as partnerIp, severity, partnerPort, status, h.created, h.lastSeen, h.unitId, hostname, description, why, TIMESTAMPDIFF(SECOND, coalesce(h.lastSeen, h.created), NOW()) AS seconds_since from hackReport h left outer join unit u on u.unitId = h.unitId where ip = inet_aton(?) and (port = 0 or port = ?) order by h.created desc limit 5";
 	$stmt = $conn->prepare($sql);
-	$stmt->bind_param("s", $szIP);
+	$stmt->bind_param("si", $szIP, $clientPort);
 	$stmt->execute();
 	$result = $stmt->get_result(); // get the mysqli result
 	$nHackReportCount=0;
@@ -122,9 +126,9 @@ function tagStatus()
 
 	//********************* traffic ********************** */
 
-	$sql = "SELECT trafficId, inet_ntoa(T.ipFrom) as ipFrom, inet_ntoa(T.ipTo) as ipTo, portFrom, portTo, coalesce(lastSeen, created) as lastSeen, count, tag, TIMESTAMPDIFF(SECOND, coalesce(lastSeen, created), NOW()) AS seconds_since from traffic T where T.ipFrom = inet_aton(?) order by trafficId desc limit 5";
+	$sql = "SELECT trafficId, inet_ntoa(T.ipFrom) as ipFrom, inet_ntoa(T.ipTo) as ipTo, portFrom, portTo, coalesce(lastSeen, created) as lastSeen, count, tag, TIMESTAMPDIFF(SECOND, coalesce(lastSeen, created), NOW()) AS seconds_since from traffic T where T.ipFrom = inet_aton(?) and (T.portFrom = 0 or T.portFrom = ?) order by trafficId desc limit 5";
 	$stmt = $conn->prepare($sql);
-	$stmt->bind_param("s", $szIP);
+	$stmt->bind_param("si", $szIP, $clientPort);
 	$stmt->execute();
 	$result = $stmt->get_result(); // get the mysqli result
 	$nTrafficCount=0;

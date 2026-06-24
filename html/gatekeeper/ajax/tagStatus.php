@@ -66,10 +66,20 @@ function tagStatus()
 	else
 	{
 		$conn = getConnection();
-		$szSQL = "select severity, infoSharePartners, why, inet_ntoa(partnerIp) as reportedByIp from hackReport where ip = inet_aton(?) order by lastSeen desc limit 1";
+
+		/*NOTE! This is wrong.. If partner is doing NAT, then search only on the same port, otherwise return only if portnumber == 0 (applies to all on same IP)
+		for now, not setting port = 0 if not NAT, but that's probably ok for this function - treat as if no NAT */
+		//$szSQL = "select severity, infoSharePartners, why, inet_ntoa(partnerIp) as reportedByIp from hackReport where ip = inet_aton(?) order by lastSeen desc limit 1";
+		//$stmt = $conn->prepare($szSQL);
+		//$stmt->bind_param("s", $szSenderIp); 
+
+		$szSQL = "select severity, infoSharePartners, why, inet_ntoa(partnerIp) as reportedByIp from hackReport where ip = inet_aton(?) and (port = 0 || port = ?) order by lastSeen desc limit 1";
 		$stmt = $conn->prepare($szSQL);
-		$stmt->bind_param("s", $szSenderIp); 
-	    $stmt->execute();
+		$clientPort = $_SERVER['REMOTE_PORT']+0;
+
+		$stmt->bind_param("si", $szSenderIp, $clientPort); 
+
+		$stmt->execute();
 		$result = $stmt->get_result(); // get the mysqli result
 		$nTagStatusBasedOnHackReport = 0;
 		$nSeverity = 0;
@@ -95,9 +105,9 @@ function tagStatus()
 		$nTrafficSecondsSince = -1;
 
 		//$sql = "SELECT trafficId, created, lastSeen, count, tag, TIMESTAMPDIFF(SECOND, coalesce(lastSeen, created), NOW()) AS seconds_since from traffic T where T.ipFrom = inet_aton(?) order by trafficId desc limit 1";
-		$sql = "SELECT trafficId, created, lastSeen, count, tag, TIMESTAMPDIFF(SECOND, coalesce(lastSeen, created), NOW()) AS seconds_since from traffic T order by trafficId desc limit 1";
+		$sql = "SELECT trafficId, created, lastSeen, count, tag, TIMESTAMPDIFF(SECOND, coalesce(lastSeen, created), NOW()) AS seconds_since from traffic T where ipFrom = inet_aton(?) and portFrom = ? order by trafficId desc limit 1";
 		$stmt = $conn->prepare($sql);
-		//$stmt->bind_param("s", $szSenderIp); 
+		$stmt->bind_param("si", $szSenderIp, $clientPort); 
 		$stmt->execute();
 		$result = $stmt->get_result(); // get the mysqli result
 
@@ -114,6 +124,8 @@ function tagStatus()
 
 		if ($nTagStatusBasedOnTraffic != $nTagStatusBasedOnHackReport)
 		{
+			$tagStatus = "Hack: $nTagStatusBasedOnHackReport<br>Traffic: $nTagStatusBasedOnTraffic<br>";
+			/*
 			if ($nTrafficSecondsSince < 30)
 				//$tagStatus .= "<br>Traffic data are recent. So most likely ".($nTagStatusBasedOnTraffic?'<font color="red">TAGGED</font>':'<font color="green">CLEAN</font>');
 				$tagStatus = '<font color="green">You are clean</font><br>(Some contradiction, though. Tap to see.)';
@@ -121,6 +133,7 @@ function tagStatus()
 				//$tagStatus = '<font color="yellow">Traffic log contradicts hack reports!</font>';
 			else
 				$tagStatus = "Contradicting info. Traffic data is not updated. Please try another server. (Tap for more info)";
+			*/
 		}
 		else
 		{

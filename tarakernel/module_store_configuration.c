@@ -470,6 +470,14 @@ char *interpretNextBatch(int nBlockDescriptor, char *lpConfiguration)
 						//				(int)ipAddressBytes[0], (int)ipAddressBytes[1], (int)ipAddressBytes[2], (int)ipAddressBytes[3], (int)ipNettmaskBytes[0], (int)ipNettmaskBytes[1], (int)ipNettmaskBytes[21], (int)ipNettmaskBytes[3],
 						    						nInfectionId, nSeverity, nBotnetId,cInfo);
 
+						if (!nActive)
+						{
+							//Set deactivated infection to 1 (probably already done by taralink) to allow blocking of ssh traffic from any unit that is infected (this may by changable from setting later).
+							nActive = 1;
+							nSeverity = 1;
+							pr_info("***** WARNING ****** Severity of deactivated infecton set to 1\n");
+						}
+
 				    	if (nActive)	//Not sure if we should remove deactivated infections... Should be tested.
 						{
 						    //struct _InfectionSpecification *pInfection = (struct _InfectionSpecification *)storeInstruction(nBlockDescriptor, ipAddress, ipNettmask, port, quality);	//NOTE! Defined in module_configuration.c
@@ -483,6 +491,7 @@ char *interpretNextBatch(int nBlockDescriptor, char *lpConfiguration)
 									//Store additional data.. 
 									pInfection->nInfectionId = nInfectionId;
 									pInfection->nSeverity = nSeverity;
+									pInfection->cTag.presumed_infected = nSeverity;	//Probably doesn't change anything bcoz the alternative is 0...
 									pInfection->nBotnetId = nBotnetId;
 									pInfection->lpInfo = memAlloc(strlen(cInfo)+1);
 									if (pInfection->lpInfo)

@@ -26,7 +26,7 @@ char *bufferToHex(char *lpBuffer, int len, char* lpTarget, int nBufSize)
       return lpTarget;
 }
 
-void checkUpdateTag(MYSQL *conn, char *lpIpHex, char *lpPortHex, char *lpTagHex)
+void checkUpdateHackReport(MYSQL *conn, char *lpIpHex, char *lpPortHex, char *lpTagHex)
 {
 	//MYSQL *conn = getConnection();
 
@@ -47,7 +47,7 @@ void checkUpdateTag(MYSQL *conn, char *lpIpHex, char *lpPortHex, char *lpTagHex)
         exit(1);
     }
 
-	char *lpSql = "select reportId, severity from hackReport where ip = CONV(?,16,10) and port = CONV(?,16,10) order by coalesce(lastSeen, created) limit 1";
+	char *lpSql = "select reportId, severity from hackReport where ip = CONV(?,16,10) and port = CONV(?,16,10) order by coalesce(lastSeen, created) desc limit 1";	//260623 - Was ordering ascending.. meaing we got an old probably...
 
 	status = mysql_stmt_prepare(stmt, lpSql, strlen(lpSql));
 	test_stmt_error(stmt, status); //line which gives me the syntax error 
@@ -144,9 +144,14 @@ void checkUpdateTag(MYSQL *conn, char *lpIpHex, char *lpPortHex, char *lpTagHex)
 		unsigned int nIp = strtoul(lpIpHex, NULL, 16);		
 		unsigned short nPort = (unsigned short)strtoul(lpPortHex, NULL, 16);		
 		char *lpInfo = "From traffic report.";
-		unsigned int nSeverity = (nTag > 10? 7 : 0);
 
-		insertHackReport(conn, nIp, nPort, 0 /*nSenderIp*/, lpInfo, 0 /*nInfectionId*/, nSeverity, 0 /*nBotnetId*/);
+		union _TagUnion cUnion;
+		cUnion.nTag = nTag;
+		unsigned int nSeverity = cUnion.cTag.presumed_infected;	//Changed from what's below....
+		//unsigned int nSeverity = (nTag > 10? 7 : 0);
+		//260623 - NOTE! FIND CORRECT SEVERITY AT LEAST...
+
+		insertHackReport(conn, nIp, nPort, 0 /*nSenderIp*/, lpInfo, cUnion.cTag.owners_id /*nInfectionId*/, nSeverity, 0 /*nBotnetId*/);
 	}
 
 
@@ -319,7 +324,7 @@ void handleTrafficReportFromKernel(char *lpPayload, int nDataLength)
 				fprintf(stderr, "MySQL error inserting/updating traffic record: %s\nSQL: %s\n", mysql_error(conn), cSql);
 				//printf("******** ERROR inserting/updating traffic record.\n");
 
-			checkUpdateTag(conn, cFields[0], cFields[1], cFields[5]);
+			checkUpdateHackReport(conn, cFields[0], cFields[1], cFields[5]);
 		}
 	}
 	printf("%d records inserted, %d updated in traffic table.\n", nInserts, nUpdates);
