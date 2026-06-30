@@ -73,7 +73,7 @@ function tagStatus()
 		//$stmt = $conn->prepare($szSQL);
 		//$stmt->bind_param("s", $szSenderIp); 
 
-		$szSQL = "select severity, infoSharePartners, why, inet_ntoa(partnerIp) as reportedByIp from hackReport where ip = inet_aton(?) and (port = 0 || port = ?) order by lastSeen desc limit 1";
+		$szSQL = "select reportId, severity, infoSharePartners, why, inet_ntoa(partnerIp) as reportedByIp from hackReport where ip = inet_aton(?) and (port = 0 || port = ?) order by lastSeen desc limit 1";
 		$stmt = $conn->prepare($szSQL);
 		$clientPort = $_SERVER['REMOTE_PORT']+0;
 
@@ -82,17 +82,18 @@ function tagStatus()
 		$stmt->execute();
 		$result = $stmt->get_result(); // get the mysqli result
 		$nTagStatusBasedOnHackReport = 0;
+		$nHackSeverity = 0;
 		$nSeverity = 0;
 
 		if ($result->num_rows > 0) 
 		{
 			if($row = $result->fetch_assoc()) 
 			{
-				$nSeverity = (int)$row["severity"];
-				if ($nSeverity > 1)
+				$nHackSeverity = (int)$row["severity"];
+				if ($nHackSeverity > 1)
 				{
 					$nTagStatusBasedOnHackReport = 1;
-					$tagStatus = '<br><font color="red">YOU ARE TAGGED</font></b><br>Severity: '.$nSeverity."<br>Contact provider";
+					$tagStatus = '<br><font color="red">YOU ARE TAGGED</font></b><br>Severity (hackReport): '.$nHackSeverity."<br>Contact provider";
 				}
 				else
 					$tagStatus = '<font color="green">You are clean</font>';
@@ -110,37 +111,53 @@ function tagStatus()
 		$stmt->bind_param("si", $szSenderIp, $clientPort); 
 		$stmt->execute();
 		$result = $stmt->get_result(); // get the mysqli result
+		$nTrafficSeverity = 0;
 
 		if ($result) 
 		{
 			if ($row = $result->fetch_assoc()) 
 			{
 				$nTrafficSecondsSince = $row["seconds_since"];
-				if ((int)$row["tag"] > 1)	//Note! tag contains more than just severity... but omit that for now...
+				$tag = $row["tag"]+0;
+
+				if ($tag > 1)	//Note! tag contains more than just severity... but omit that for now...
 					$nTagStatusBasedOnTraffic = 1;
+
+				//**** WARNING **** Check struct _Tag definition in tarakernel/module_globals.h */
+				$version_no        =  $tag        & 0x3;       // 2 bits
+				$presumed_infected = ($tag >> 2)  & 0xF;       // 4 bits
+				$owners_id         = ($tag >> 6)  & 0x3FF;     // 10 bits
+
+				$nTrafficSeverity = $presumed_infected;
 		  	}
 			$result->close();
 		} 
 
-		if ($nTagStatusBasedOnTraffic != $nTagStatusBasedOnHackReport)
+		//if ($nTagStatusBasedOnTraffic != $nTagStatusBasedOnHackReport)
+		if ($nTrafficSeverity != $nHackSeverity)
 		{
-			$tagStatus = "Hack: $nTagStatusBasedOnHackReport<br>Traffic: $nTagStatusBasedOnTraffic<br>";
-			/*
-			if ($nTrafficSecondsSince < 30)
+			$tagStatus = "Hack: $nHackSeverity<br>Traffic: $nTrafficSeverity<br>";
+			
+			if ($nTrafficSecondsSince < 30 && $nTrafficSeverity <= 1)
 				//$tagStatus .= "<br>Traffic data are recent. So most likely ".($nTagStatusBasedOnTraffic?'<font color="red">TAGGED</font>':'<font color="green">CLEAN</font>');
-				$tagStatus = '<font color="green">You are clean</font><br>(Some contradiction, though. Tap to see.)';
+				$tagStatus = '<font color="green">You are clean</font><br>(Though: '.$tagStatus.')';
 				//Traffic data are recent. So most likely ".($nTagStatusBasedOnTraffic?'<font color="red">TAGGED</font>':'<font color="green">CLEAN</font>');
 				//$tagStatus = '<font color="yellow">Traffic log contradicts hack reports!</font>';
 			else
-				$tagStatus = "Contradicting info. Traffic data is not updated. Please try another server. (Tap for more info)";
-			*/
+			{
+				$tagStatus = "Contradicting info!<br>".($nTrafficSecondsSince >= 30?"<b>Traffic data is not updated. <br>Please try another server.</b>":"(Tap for more info)").$tagStatus;
+			}
 		}
 		else
 		{
-			if ($nTagStatusBasedOnTraffic)
-				$tagStatus = '<br><font color="red">YOU ARE TAGGED</font></b><br>Severity: '.$nSeverity."<br>Contact provider";
+			//if ($nTagStatusBasedOnTraffic)
+			if ($nTrafficSeverity > 1)
+				$tagStatus = '<br><font color="red">YOU ARE TAGGED</font></b><br>Severity: '.$nTrafficSeverity."<br>Contact provider";
 			else
-				$tagStatus = '<font color="green">You are clean</font>';
+				if ($nTrafficSeverity == 1)
+					$tagStatus = '<font color="green">You are clean</font><br>(though tagged - you can\'t ssh)';
+				else
+					$tagStatus = '<font color="green">You are clean</font><br>(no history)';
 
 			if ($nTrafficSecondsSince >= 0)
 				$tagStatus .= "<br>Traffic $nTrafficSecondsSince sec ago.";

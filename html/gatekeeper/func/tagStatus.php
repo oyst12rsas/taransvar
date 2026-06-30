@@ -138,10 +138,22 @@ function tagStatus()
 		while($row = $result->fetch_assoc()) 
 		{
 			if ($nTrafficCount == 0)
-				print '<h2>Traffic</h2><table id="trafficTbl"><tr><th>From</td><td>Last seen</td><td>Count</td><td>Tag</td></tr>';
+				print '<h2>Traffic</h2><table id="trafficTbl"><tr><th>From</td><td>Last seen</td><td>Count</td><td>Tag</td><td>Severity</td></tr>';
 
 			$szTimeSince = getPrintableSecondsSince((int)$row["seconds_since"]);
-    		print '<tr id="tr'.$row["trafficId"].'"><td>'.$row["ipFrom"].":".$row["portFrom"]."</td><td>".$szTimeSince."</td><td>".$row["count"]."</td><td>".$row["tag"]."</td>";
+
+			$tag = $row["tag"]+0;
+
+			//**** WARNING **** Check struct _Tag definition in tarakernel/module_globals.h */
+			$version_no        =  $tag        & 0x3;       // 2 bits
+			$presumed_infected = ($tag >> 2)  & 0xF;       // 4 bits
+			$owners_id         = ($tag >> 6)  & 0x3FF;     // 10 bits
+
+			//echo "version=$version_no\n";
+			//echo "infected=$presumed_infected\n";
+			//echo "owner=$owners_id\n";
+
+    		print '<tr id="tr'.$row["trafficId"].'"><td>'.$row["ipFrom"].":".$row["portFrom"]."</td><td>".$szTimeSince."</td><td>".$row["count"]."</td><td>".$row["tag"]."</td><td>".$presumed_infected."</td>";
     		//print '<td><a href="index.php?f=delpartner&ip='.$row["partnerId"].'">[Delete]</a></td>';
     		print "</tr>";
 			$nTrafficCount++;

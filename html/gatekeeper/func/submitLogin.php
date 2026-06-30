@@ -1,5 +1,29 @@
 <?php
 
+function createUser($conn, $szUserName, $szPassword, $bIsAdmin)
+{
+	$szSQL = "insert into user(username, password, isAdmin) values (?, ?, b'".$bIsAdmin."')";
+	$stmt = $conn->prepare($szSQL);
+	$stmt->bind_param("ss", $szUserName, $szPassword);
+	$stmt->execute();
+	return last_insert_id($conn);
+}
+
+function getUserInfo($conn, $szUserName)
+{
+	$szSQL = "select userId, password, loginFailsSinceSuccess, loginFailReportedTime from user where username = ?";
+	$stmt = $conn->prepare($szSQL);
+	$stmt->bind_param("s", $szUserName);
+	$stmt->execute();
+	$result = $stmt->get_result(); // get the mysqli result
+	if ($result)
+		$row = $result->fetch_assoc();
+	else 
+		$row = 0;
+
+	return $row;
+}
+
 function loginAttempt($username, $password)
 {
 	//print "About to log..<br>";
@@ -16,6 +40,66 @@ function loginAttempt($username, $password)
 	$stmt->execute();
 }
 
+function partnerClientLoginHandled($szSenderIp, $szUserName)
+{
+	//Check if sender IP is the IP address of a partner
+	$szSQL = "select partnerId from partnerRouter where ip = inet_aton(?)";
+	$conn = getConnection();
+	$stmt = $conn->prepare($szSQL);
+	$stmt->bind_param("s", $szSenderIp);
+	$stmt->execute();
+	$result = $stmt->get_result(); // get the mysqli result
+	if ($result)
+	{
+		$row = $result->fetch_assoc();
+
+		if ($row)
+		{
+			print "Partner ".$row["partnerId"]." is identified as owner of this IP.<br><br>";
+			$szUserPort = $_SERVER['REMOTE_PORT'];
+			$szURL = "http://$szSenderIp/script/verify_user.php?u=$szUserName:$szUserPort";
+			//print "URL: $szURL<br>";
+
+			$baseUrl = "http://$szSenderIp/script/verify_user.php";
+			$params = ["u" => $szUserName.":".$szUserPort];
+
+			$result = getUrlArray($baseUrl, $params);
+
+			if ($result['success']) {
+				$szResult = $result['output'];
+				$cResult = explode(":",$szResult);
+				$szLanIP = $cResult[1];
+				if (!strcmp($szLanIP, $szUserName))
+				{
+					print "User name verified by gateway..<br>";
+
+					$szUserNameISP = "$szUserName@$szSenderIp";
+					$row = getUserInfo($conn, $szUserNameISP);
+
+					if (!$row)
+						$_SESSION["userid"] = createUser($conn, $szUserNameISP, $_GET["pass"], 0 /*$bIsAdmin*/);
+					else
+						$_SESSION["userid"] = $row["userId"];
+					$_SESSION["hold"] = 0;	//Otherwise hold might be default on in Log window...
+
+					return true;	//All handled here...
+					
+				}
+				else
+				{
+					print "Result from validation (changed): $szLanIP ($szUserName)<br>";
+				}
+			} else {
+    			echo $result['error'];
+			}
+
+			return true;	//All handled here. Just return for submitLogin()
+		}
+	}
+
+	return false;	//Default handling.. show error..
+}
+
 function submitLogin()
 {
 	$szUserName = $_GET["email"];
@@ -24,23 +108,20 @@ function submitLogin()
 	//Check if tried to login with an IP address... If so, only own IP is allowed.
 	if (filter_var($szUserName, FILTER_VALIDATE_IP) && strcmp($szUserName, $szSenderIp)) 
 	{
-			include "login.php";
-			login();
-			print '<font color="red">You can login here with IP address, but only your own - which is '.$szSenderIp.'</font>';
+		//Check it this is NATed user from partner...
+		if (partnerClientLoginHandled($szSenderIp, $szUserName))
 			return;
+
+		include "login.php";
+		login();
+		print '<font color="red">You can login here with IP address, but only your own - which is '.$szSenderIp.'</font>';
+		return;
 	}			
 
 	//print "Trying to login... User: ".$szUserName.", pass: ".$_GET["pass"]."<br>";
-	$szSQL = "select userId, password, loginFailsSinceSuccess, loginFailReportedTime from user where username = ?";
 	$conn = getConnection();
-	$stmt = $conn->prepare($szSQL);
-	$stmt->bind_param("s", $szUserName);
-	$stmt->execute();
-	$result = $stmt->get_result(); // get the mysqli result
-	if ($result)
-		$row = $result->fetch_assoc();
-	else 
-		$row = 0;
+	$row = getUserInfo($conn, $szUserName);
+
 	if ($row)
 	{
 		$nLoginFailsSinceSuccess = $row["loginFailsSinceSuccess"]+0;
@@ -122,11 +203,7 @@ function submitLogin()
 					$bIsAdmin = 1;
 			}
 
-			$szSQL = "insert into user(username, password, isAdmin) values (?, ?, b'".$bIsAdmin."')";
-			$stmt = $conn->prepare($szSQL);
-			$stmt->bind_param("ss", $szUserName, $_GET["pass"]);
-			$stmt->execute();
-			$_SESSION["userid"] = last_insert_id($conn);
+			$_SESSION["userid"] = createUser($conn, $szUserName, $_GET["pass"], $bIsAdmin);
 			if ($bIsAdmin)
 				print "You are the first user here and will be set as admin. You might want to save the user name. Or you'll find it in the user table.";
 			else

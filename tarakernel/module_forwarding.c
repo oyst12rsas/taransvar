@@ -115,7 +115,7 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 	if (pPacket->ip_header->protocol != IPPROTO_TCP)
 		return NF_ACCEPT;	//260320 - not sure about this......
 
-	struct _InfectionSpecification *pInfected = isInfected(pPacket->ip_header->saddr);
+	struct _InfectionSpecification *pInfected = isInfected(pPacket->ip_header->saddr);	//Check if packet is from infected unit in my subnet
 
 	if (pPacket->dPort == 22 && pInfected)
 	{
@@ -135,7 +135,6 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 		//Packet from our own subnet going to a partner and their subnet.
 		bool bForwarding = true;
 		int nRetval = checkFixTagging(pPacket, bForwarding, state);	//state may be NF_INET_FORWARD??
-
 
 		#ifdef ALTERNATIVE_TAGGING
 
@@ -204,7 +203,7 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
   	//#define C_INTERNAL_IP "192.168"
 	//if (strstr(lpIpFrom,C_INTERNAL_IP) != lpIpFrom || strstr(lpIpTo,C_INTERNAL_IP) != lpIpTo)
 	bool bSMine, bDMine;
-	if (!(bDMine = isMeOrMine(pPacket->ip_header->daddr))||!(bDMine = isMeOrMine(pPacket->ip_header->saddr)))
+	if (!(bDMine = isMeOrMine(pPacket->ip_header->daddr))||!(bSMine = isMeOrMine(pPacket->ip_header->saddr)))
 	{
 		//This is not traffic between two units in local network...
 		//kfree(lpIpFrom);
@@ -220,9 +219,7 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 				if (pSetup->cShowInstructions.bits.showOther)
 					if (!dropFromLogging(pPacket))
 						pr_info("tarakernel: Traffic with forwarded port: %s:%d->%s:%d\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort);///%s\n", ipFrom, ipTo);
-			      
 			}
-		
 		}
 		
 		pSetup->cGlobalStatistics.nForwarded++;

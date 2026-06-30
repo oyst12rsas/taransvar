@@ -1,6 +1,6 @@
 <?php
 session_start();
-$nRequiredDbVersion=69;	//NOTE! Make sure this line is always number 3 because that's claimed below.
+$nRequiredDbVersion=70;	//NOTE! Make sure this line is always number 3 because that's claimed below.
 
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);

@@ -145,14 +145,31 @@ void reportInboundTraffic(struct _PacketInspection *pPacket)
 		return;
 	}
 
+	//If doing NAT and this is sub unit, then log as port 0 so don't have to send report for all ports...
+	struct _ipPort2		cTraffic;
+	cTraffic.sIp = pPacket->ip_header->saddr;
+	cTraffic.sPort = pPacket->sPort;
+	cTraffic.dIp = pPacket->ip_header->daddr;
+	cTraffic.dPort = pPacket->dPort;
+
+	if (!pSetup->bDoingNAT)	//260629
+	{
+		if (cTraffic.sIp != pSetup->nMyIp && isMeOrMine(cTraffic.sIp)) 	//From my subnet but not my IP address (forwarded but NOT NAT) Set to 0 to indicate that applies to all traffic from this IP
+			cTraffic.sPort = 0;
+
+		//Not sure if we should do this on outbound traffic.... It's only inbound traffic that is being logged, so drop this..
+		//if (cTraffic.dIp != cSetup.nAdminIp && isMeOrMine(cTraffic.dIp)) 	//To my subnet but not my IP address (inbound but NOT NAT)
+		//	cTraffic.dPort = 0;
+	}
+
     //Queue this packet for sending to ABMonitor for further handling. 
     int n = 0;
     for (n = 0; n < sizeof(pSetup->cPendingIncomingReportArr) / sizeof(struct _ipPort2); n++)
     {
-          if (pSetup->cPendingIncomingReportArr[n].sIp == pPacket->ip_header->saddr && 
-			pSetup->cPendingIncomingReportArr[n].dIp == pPacket->ip_header->daddr && 
-              pSetup->cPendingIncomingReportArr[n].sPort == pPacket->sPort &&
-              pSetup->cPendingIncomingReportArr[n].dPort == pPacket->dPort)
+          if (pSetup->cPendingIncomingReportArr[n].sIp == cTraffic.sIp && 
+			pSetup->cPendingIncomingReportArr[n].dIp == cTraffic.dIp && 
+              pSetup->cPendingIncomingReportArr[n].sPort == cTraffic.sPort &&
+              pSetup->cPendingIncomingReportArr[n].dPort == cTraffic.dPort)
           {
                 //Already have registered traffic on this ip/port. Increase the count.
                 pSetup->cPendingIncomingReportArr[n].nCount++;
@@ -168,10 +185,10 @@ void reportInboundTraffic(struct _PacketInspection *pPacket)
                 if (!pSetup->cPendingIncomingReportArr[n].sIp)
                 {
                       //Found an available slot...
-                      pSetup->cPendingIncomingReportArr[n].sIp = pPacket->ip_header->saddr;
-                      pSetup->cPendingIncomingReportArr[n].dIp = pPacket->ip_header->daddr;
-                      pSetup->cPendingIncomingReportArr[n].sPort = pPacket->sPort;
-                      pSetup->cPendingIncomingReportArr[n].dPort = pPacket->dPort;
+                      pSetup->cPendingIncomingReportArr[n].sIp = cTraffic.sIp;
+                      pSetup->cPendingIncomingReportArr[n].dIp = cTraffic.dIp;
+                      pSetup->cPendingIncomingReportArr[n].sPort = cTraffic.sPort;
+                      pSetup->cPendingIncomingReportArr[n].dPort = cTraffic.dPort;
                       pSetup->cPendingIncomingReportArr[n].nCount = 1;
 
 					  pSetup->cPendingIncomingReportArr[n].nTag = pPacket->tcp_header->urg_ptr;	//OT_Changed: 260225 - just testing if can get this through taralink to DB
@@ -187,7 +204,7 @@ void reportInboundTraffic(struct _PacketInspection *pPacket)
     {
           //Array is full... Print warning...
           if (pSetup->cShowInstructions.bits.showOther)
-                pr_info("tarakernel: ******* Queue of traffic reports is full (n=%d)... Please inform tarakernel support center\n", n);
+                pr_info("tarakernel: ******* Queue of traffic reports is full (n=%d)... Please inform support center\n", n);
     }
 }
 

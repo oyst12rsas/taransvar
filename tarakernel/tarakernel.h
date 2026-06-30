@@ -203,6 +203,7 @@ struct _Remote_infection {
 struct _Setup {
 	bool bTrafficReportsBeingHandled;
 	bool bSendTrafficReport; 		//Important if incoming tagged traffic that we don't know of...
+	bool bDoingNAT;					//If not doing NAT, then don't send and store individual ports in traffic report and elevated threat message to partners (mark all regarding same unit with port = 0). 
     char cTrafficPrefix[8]; //supposed to contain "TRAFFIC|", see C_TRAFFIC_REPORT_PREFIX defined in module_globals.h
 	struct _ipPort2 cPendingIncomingReportArr[C_TRAFFIC_REPORT_ARRAY_SIZE]; //struct _ipPort2 is defined in module_globals.h because also used by AbMonitor
 	//struct _ipPort2 cPendingOutgoingReportArr[C_TRAFFIC_REPORT_ARRAY_SIZE];  

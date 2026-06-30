@@ -35,7 +35,8 @@ enum et_CheckType {e_PossiblePartner};
 
 struct _showStatusBits 
 {
-        unsigned short nDummy : 2;
+    //    unsigned short nDummy : 2;    NOTE! All 16 bits are used (so removing the nDummy field). When adding more fields, do 32bit??...
+        unsigned char doingNAT : 1;
         unsigned char showStatus : 1;
         unsigned char showPreRoutePartner : 1;
         unsigned char showPreRouteNonPartner : 1;
@@ -61,7 +62,7 @@ union _showStatusBitsUnion
 
 
 //OT_changed: 260225 - _Tag, _TagUnion and _PacketInspection moved from tarakernel.h,  _TagUnion put in _PacketInspection and _ipPort2 structures...
-
+//***************** WARNING ************ If changing this structure, then also change the php interpretation in gatekeeper/ajax/tagStatus.php */
 struct _Tag { //2 bytes - for use with the tcp_header->urg_ptr until we decide to increase TCP header size
 	unsigned int version_no : 2; //ØT 260323 3->2  //Set to TAG_VERSION_NO. Counting down in case field is used and hoping that it points to outside the block and programmers care to check.
 	unsigned int presumed_infected : 4; //ØT 260323 3->4 //0=No indication, 1=Wifi/VPN, 2=rough partner, 3=probably malconfig, 4=probably sporadic, 5=probably bot  
@@ -76,15 +77,13 @@ union _TagUnion {
 };
 
 struct _ipPort2 {
-	//volatile uint32_t ip;
-        volatile uint32_t sIp, dIp;   //NOTE! Probably shouldn't user volatile in kernel....
-	//uint32_t sPort, dPort, nCount;
-        unsigned short int sPort, dPort, nCount;  //u32
-        union {
-                struct _Tag     cTag;
-                uint16_t        nTag;
-        };
-        //union _TagUnion cTagUnion;
+    uint32_t sIp, dIp;
+    uint16_t sPort, dPort, nCount;
+
+    union {
+        struct _Tag cTag;
+        uint16_t nTag;
+    };
 };
 
 #endif

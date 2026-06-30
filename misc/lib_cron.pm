@@ -193,7 +193,7 @@ sub logDmesg {
 		}
  	} else {
 		print "**** ERROR: Unable to read dmesg records..!\n";
-		return;
+		#return;	Got here on first run (no records) - and because returned, never got to start the log script...
 	}
 
 	#Make sure dmesg reader script is running... 
@@ -458,6 +458,12 @@ sub handleConntrack {
 	$sthSetup->execute() or die "execution failed: $sthSetup->errstr()";
 	my $cSetup = $sthSetup->fetchrow_hashref();
 	$sthSetup->finish;
+
+	if (!$cSetup->{"internalIP"}) {
+		print "Interlan IP not send. Skipping conntrack";
+		return;
+	}
+	
 	my $nMyIp = $cSetup->{"internalIP"}+0;	
 	my $nMyNettmask = $cSetup->{"nettmask"}+0;
 

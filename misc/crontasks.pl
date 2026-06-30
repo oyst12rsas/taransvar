@@ -576,7 +576,7 @@ my $nSecondsToSleepBetweenIterations = 5;
 my $nNumberOfWhoIsLookupsPerIteration = 5;	#Increase if too few have owner name in traffic list in http://localhost/index.php?f=traffic
 
 my $nice_timestamp = getNiceTimestamp();
-print "Started: $nice_timestamp\n\n";
+print "\n\n\nStarted: $nice_timestamp\n\n";
 
 my $pSetup = getSetup();
 
@@ -722,9 +722,11 @@ while (time() - $nTimeStarted < 52)
 
 $dbh->disconnect;
 
+my $nice_timestamp = getNiceTimestamp();
+
 if ($nCount < 5 && $nSecondsToSleepBetweenIterations > 0) {
-	print "****** WARNING crontasks.pl only managed to make $nCount iterations.\nYou may consider to reduce \$nSecondsToSleepBetweenIterations from ".$nSecondsToSleepBetweenIterations."\n";  
+	print "$nice_timestamp: ****** WARNING crontasks.pl only managed to make $nCount iterations.\nYou may consider to reduce \$nSecondsToSleepBetweenIterations from ".$nSecondsToSleepBetweenIterations."\n";  
 } else {
-	print "\nFinished! Managed $nCount iterations.\n";
+	print "\n$nice_timestamp: Finished! Managed $nCount iterations.\n\n\n";
 }
 

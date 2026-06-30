@@ -249,10 +249,12 @@ function getServerStatus($seconds_since, $status)
 	$szServerStatus .= (isset($status)?check($json["lnk"]):'<img src="img/green_dot.png">');
 	$szServerStatus .= (isset($status)?check($json["cron"]):'<img src="img/green_dot.png">');
 
-	if (isset($json["trfc"]))
-		$szServerStatus .= check($json["cron"]);
-
 	$nSeconds = (isset($json["dmesg"])?$json["dmesg"]:1000000);
+	$szServerStatus .= getDot($nSeconds < 90);
+
+//	if (isset($json["trfc"]))
+//		$szServerStatus .= check($json["cron"]);
+	$nSeconds = (isset($json["trfc"])?$json["trfc"]:1000000);
 	$szServerStatus .= getDot($nSeconds < 90);
 
 	$nActiveUsers = isset($json["usr"])?$json["usr"]:"?";

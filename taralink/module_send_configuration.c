@@ -85,6 +85,7 @@ bool getSetupStringNewOk(MYSQL *conn, MYSQL *updateConn, char *cSetupString, int
 			nettmask, \
 			handled, \
 			blockIncomingTaggedTrafficThreshold, \
+			doingNAT, \
 			showStatus, \
 			showPreRoutePartner, \
 			showPreRouteNonPartner, \
@@ -128,6 +129,7 @@ bool getSetupStringNewOk(MYSQL *conn, MYSQL *updateConn, char *cSetupString, int
 			//cShowStatusBits.bits.nDummy = 0;
 			int nField = 5;
 			//printf("reading bit fields...\n");
+			cShowStatusBits.bits.doingNAT  = (row[nField]?*row[nField]:0);	nField++;
 			cShowStatusBits.bits.showStatus  = (row[nField]?*row[nField]:0);	nField++;
 			cShowStatusBits.bits.showPreRoutePartner  = (row[nField]?*row[nField]:0);	nField++;
 			cShowStatusBits.bits.showPreRouteNonPartner  = (row[nField]?*row[nField]:0);	nField++;
@@ -145,6 +147,8 @@ bool getSetupStringNewOk(MYSQL *conn, MYSQL *updateConn, char *cSetupString, int
 			cShowStatusBits.bits.doOther  = (row[nField]?*row[nField]:0);	nField++;
 
 			//printf("after reading bit fields...\n");
+
+			printf("This server is %sdoing NAT\n", (cShowStatusBits.bits.doingNAT?"":"NOT "));
 
 			#define N_MAX_DONT_DMSG_IPs 150
 			int nDontMsgFldNo = nField++;	

@@ -17,29 +17,29 @@
 int isNewTcpConnection(struct sk_buff *skb);
 int isNewTcpConnection(struct sk_buff *skb)
 {
-    struct iphdr *iph;
-    struct tcphdr _tcph, *tcph;
+	struct iphdr *iph;
+	struct tcphdr _tcph, *tcph;
 
-    if (!skb)
-        return 0;
+	if (!skb)
+		return 0;
 
-    if (!pskb_may_pull(skb, sizeof(struct iphdr)))
-        return 0;
+	if (!pskb_may_pull(skb, sizeof(struct iphdr)))
+		return 0;
 
-    iph = ip_hdr(skb);
-    if (!iph || iph->version != 4 || iph->protocol != IPPROTO_TCP)
-        return 0;
+	iph = ip_hdr(skb);
+	if (!iph || iph->version != 4 || iph->protocol != IPPROTO_TCP)
+		return 0;
 
-    tcph = skb_header_pointer(skb, ip_hdrlen(skb), sizeof(_tcph), &_tcph);
-    if (!tcph)
-        return 0;
+	tcph = skb_header_pointer(skb, ip_hdrlen(skb), sizeof(_tcph), &_tcph);
+	if (!tcph)
+		return 0;
 
-    if (tcph->syn && !tcph->ack) {
-        //pr_info("tarakernel: TCP SYN seen\n");
-        return 1;
-    }
+	if (tcph->syn && !tcph->ack) {
+		//pr_info("tarakernel: TCP SYN seen\n");
+		return 1;
+	}
 
-    return 0;
+	return 0;
 }
 
 #define CTMARK_THREAT_SENT 0x100
@@ -47,42 +47,42 @@ int isNewTcpConnection(struct sk_buff *skb)
 int shouldSendThreatUdp(struct sk_buff *skb);
 int shouldSendThreatUdp(struct sk_buff *skb)
 {
-    struct nf_conn *ct;
-    enum ip_conntrack_info ctinfo;
-    struct iphdr *iph;
-    struct tcphdr _tcph, *tcph;
+	struct nf_conn *ct;
+	enum ip_conntrack_info ctinfo;
+	struct iphdr *iph;
+	struct tcphdr _tcph, *tcph;
 
-    if (!skb)
-        return 0;
+	if (!skb)
+		return 0;
 
-    iph = ip_hdr(skb);
-    if (!iph || iph->version != 4 || iph->protocol != IPPROTO_TCP)
-        return 0;
+	iph = ip_hdr(skb);
+	if (!iph || iph->version != 4 || iph->protocol != IPPROTO_TCP)
+		return 0;
 
-    tcph = skb_header_pointer(skb, ip_hdrlen(skb), sizeof(_tcph), &_tcph);
-    if (!tcph)
-        return 0;
+	tcph = skb_header_pointer(skb, ip_hdrlen(skb), sizeof(_tcph), &_tcph);
+	if (!tcph)
+		return 0;
 
-    ct = nf_ct_get(skb, &ctinfo);
-    if (!ct)
-        return 0;
+	ct = nf_ct_get(skb, &ctinfo);
+	if (!ct)
+		return 0;
 
-    /* only on SYN */
-    if (!(tcph->syn && !tcph->ack))
-        return 0;
+	/* only on SYN */
+	if (!(tcph->syn && !tcph->ack))
+		return 0;
 
-    pr_info("tarakernel: ct=%px ctinfo=%d mark(before)=0x%x\n", ct, ctinfo, ct->mark);
+	pr_info("tarakernel: ct=%px ctinfo=%d mark(before)=0x%x\n", ct, ctinfo, ct->mark);
 
-    if (ct->mark & CTMARK_THREAT_SENT) {
-        pr_info("tarakernel: threat UDP already sent for this conntrack\n");
-        return 0;
-    }
+	if (ct->mark & CTMARK_THREAT_SENT) {
+		pr_info("tarakernel: threat UDP already sent for this conntrack\n");
+		return 0;
+	}
 
-    ct->mark |= CTMARK_THREAT_SENT;
+	ct->mark |= CTMARK_THREAT_SENT;
 
-    pr_info("tarakernel: ct=%px mark(after)=0x%x\n", ct, ct->mark);
-    pr_info("tarakernel: first SYN for this conntrack, sending threat UDP\n");
-    return 1;
+	pr_info("tarakernel: ct=%px mark(after)=0x%x\n", ct, ct->mark);
+	pr_info("tarakernel: first SYN for this conntrack, sending threat UDP\n");
+	return 1;
 }
 
 int isNew(struct sk_buff *skb);
@@ -510,6 +510,9 @@ void sendUdpPacketToReceiver(struct _PacketInspection *pPacket)
 
 struct _Remote_infection *findRemoteInfectionInfoReceived(__be32 sIp, __be16 sPort, bool bRegister, bool *pbRegistered)
 {
+    //If sIp is a partners subnet, then store port = 0 so don't have to record all ports from same origin (260629). 
+
+
     int nAvailable = -1;
     *pbRegistered = false;
 
@@ -519,7 +522,8 @@ struct _Remote_infection *findRemoteInfectionInfoReceived(__be32 sIp, __be16 sPo
 		struct _Remote_infection *pInfection = pSetup->cRemoteInfectionInfoReceived[n];
 		if (pInfection)
         {
-            if (pInfection->saddr == sIp && pInfection->sport == sPort)
+            //Check if it's the port or == 0, indicating forwarding without NAT and applies to all ports (260629)
+            if (pInfection->saddr == sIp && (pInfection->sport == 0 || pInfection->sport == sPort))
             {
                 pInfection->timestamp = ktime_get_real_seconds();
                 pr_info("tarakernel: Infection found. Info: %s\n", pInfection->lpInfo);
@@ -572,7 +576,18 @@ struct _Remote_infection *findRemoteInfectionInfoReceived(__be32 sIp, __be16 sPo
             *pbRegistered = true;
 			pInfection->saddr = sIp;	
 			pInfection->sport = sPort;
+
 			pSetup->cRemoteInfectionInfoReceived[nAvailable] = pInfection;	//Init before putting in array because other processes may access it before finilized. 
+
+            //260629: Check if it's from partner that is not doing NAT (meaning applies to all units with this IP. NOTE! This info may already hae been found and should be re-used instead for checking again..)
+    		u32 nPartnerIp = isPartner(sIp);
+
+            if (nPartnerIp && (nPartnerIp != sIp))
+            {
+                pr_info("tarakernel: ******* WARNING: From partner but no NAT. Storing remote infection with port == 0 to indicate that it applies to all ports. Partner: %pI4, traffic from %pI4\n", &nPartnerIp, &sIp);
+    			pInfection->sport = 0;
+            }
+
             return pInfection;
         }
         else

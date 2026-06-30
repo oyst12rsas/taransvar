@@ -33,6 +33,7 @@ function getPartnerRouterOf($szIp)
 
 function getUrl($baseUrl, $params = [])
 {
+	//************* Better use getUrlArray() below */
     if (!empty($params)) {
         $baseUrl .= '?' . http_build_query($params);
     }
@@ -58,6 +59,58 @@ function getUrl($baseUrl, $params = [])
     curl_close($ch);
 
     return "HTTP $httpCode\n$output";
+}
+
+function getUrlArray($baseUrl, $params = [])
+{
+	/* USAGE:
+
+	$result = getUrlArray($url,$params);
+
+	if ($result['success']) {
+    	echo $result['output'];
+	} else {
+    	echo $result['error'];
+	}
+	
+	*/
+
+
+    if (!empty($params)) {
+        $baseUrl .= '?' . http_build_query($params);
+    }
+
+    $ch = curl_init($baseUrl);
+
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_CONNECTTIMEOUT => 3,
+        CURLOPT_TIMEOUT        => 10,
+    ]);
+
+    $output = curl_exec($ch);
+
+    if ($output === false) {
+        $err = curl_error($ch);
+        curl_close($ch);
+
+        return [
+            'success' => false,
+            'error'   => $err,
+            'http'    => null,
+            'output'  => null
+        ];
+    }
+
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    return [
+        'success' => true,
+        'http'    => $httpCode,
+        'output'  => $output
+    ];
 }
 
 function logMsg($szMsg)

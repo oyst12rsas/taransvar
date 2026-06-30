@@ -28,7 +28,7 @@ function unitsMore()
 		return;
 	
 	$conn = getConnection();
-	$sql = "select routerId, name, partnerStatusReceived as time, inet_ntoa(ip) as ip, status from partnerRouter r join partner p on p.partnerId = r.partnerId where routerId = ?";
+	$sql = "select routerId, name, partnerStatusReceived as time, TIMESTAMPDIFF(SECOND, partnerStatusReceived, NOW()) AS seconds_since, inet_ntoa(ip) as ip, status from partnerRouter r join partner p on p.partnerId = r.partnerId where routerId = ?";
 	$stmt = $conn->prepare($sql);
 	$stmt->bind_param("i", $_GET["id"]);
 	$stmt->execute();
@@ -44,8 +44,11 @@ function unitsMore()
 
 		$status = json_decode($row["status"], true);
 
-
 		print '<tr><td>Name</td><td>'.$row["name"].'</td></tr>';
+
+		$nSecondsSince = $row["seconds_since"]+0;
+		print '<tr><td>Reported</td><td>'.($nSecondsSince > 65?'<font color="red">':'').$nSecondsSince.($nSecondsSince > 65?'</font>':'').'</td></tr>';
+
 	//	print '<tr><td>Status</td><td>'.$row["status"].'</td></tr>';
 		print '<tr><td>Kernel</td><td>'.getBitStatus($status["knl"]).'</td></tr>';
 		unset($status["knl"]);

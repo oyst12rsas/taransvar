@@ -269,6 +269,9 @@ char *interpretSetup(char *lpBlockDescriptor, char *lpIpList)
               //pSetup->cShowInstructions.bits.doOther
 		        );
 
+		pr_info("tarakernel: This server is %sdoing NAT\n", (pSetup->cShowInstructions.bits.doingNAT?"":"NOT "));
+		pSetup->bDoingNAT = pSetup->cShowInstructions.bits.doingNAT;
+
 		//Get list of IP addresses not to log to dmesg (setup->dontDmesgIPs)
         lpIpList = lpSep+1; 
         lpSep = strchr(lpIpList, '^');

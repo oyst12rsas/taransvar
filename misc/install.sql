@@ -232,8 +232,12 @@ create table dmesg (
 );
 update setup set dbVersion = 69;
 
+#version 70 (260629)
+alter table setup add doingNAT bit(1) not NULL default b'0' after statusIntervalSec;
+update setup set dbVersion = 70;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 70;
+#update setup set dbVersion = 71;
 
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 

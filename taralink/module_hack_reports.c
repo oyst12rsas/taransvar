@@ -460,12 +460,21 @@ void checkHackReports()
 				printf("Found ISP: %s\n", szRouterIp);
 				//Send message to router and globalDBpartners
 
-				char szUrl[500];
-				char szWgetBuff[2000];
-				snprintf(szUrl, sizeof(szUrl), "http://%s/script/config_update.php?%s", szRouterIp, szParams);
-				*szWgetBuff = 0;
-				printf("Sending ISP: %s\n", szUrl);
-				wget(szUrl, szWgetBuff, sizeof(szWgetBuff));  //Using global static buffers because reply doesn't come immediately.
+				if (!strcmp(lpIp, szRouterIp) && (row[8] && !strcmp(row[8], "From traffic report.")))
+				{
+					printf("\nThis is hackReport based on tagged traffic report from ISP. No use sending it back to the same ISP (%s).. Skip\n\n", szRouterIp);
+				}
+				else
+				{
+					printf("\n****** Not expected to send this... %s - %s, what: %s\n", lpIp, szRouterIp, row[8]);
+
+					char szUrl[500];
+					char szWgetBuff[2000];
+					snprintf(szUrl, sizeof(szUrl), "http://%s/script/config_update.php?%s", szRouterIp, szParams);
+					*szWgetBuff = 0;
+					printf("Sending ISP: %s\n", szUrl);
+					wget(szUrl, szWgetBuff, sizeof(szWgetBuff));  //Using global static buffers because reply doesn't come immediately.
+				}
    			}
 			else
 				printf("Not belonging to other router. Sending to global DB servers");
