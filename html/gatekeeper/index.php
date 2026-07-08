@@ -1,6 +1,6 @@
 <?php
 session_start();
-$nRequiredDbVersion=71;	//NOTE! Make sure this line is always number 3 because that's claimed below.
+$nRequiredDbVersion=72;	//NOTE! Make sure this line is always number 3 in the file because that's claimed below.
 
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
@@ -307,8 +307,8 @@ function requiresLogin($f)
 
 function printMenuChoice($szFunc, $szPrint)
 {
-	if (requiresLogin($szFunc))
-		print '<span style="color: #777; opacity: 0.6; pointer-events: none;">'.$szPrint.'</span>';
+	if (requiresLogin($szFunc))	//; pointer-events: none
+		print '<span style="color: #777; opacity: 0.6;"><a href="index.php?f=login">'.$szPrint.'</a></span>';
 	else
 		print '<a href="index.php?f='.$szFunc.'">'.$szPrint.'</a>';
 }

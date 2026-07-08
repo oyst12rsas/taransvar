@@ -234,6 +234,7 @@ struct _Setup {
 	struct nf_hook_ops *nf_FORWARDING_hook_ops;// = NULL;
 	char c100[200];
 	unsigned char nBlockIncomingTaggedTrafficLevel;
+	unsigned char nBlockSshThreshold;
 	
 	struct _CheckIp cCheckThese[C_CHECK_ARRAY_SIZE];
 

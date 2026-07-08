@@ -85,6 +85,7 @@ bool getSetupStringNewOk(MYSQL *conn, MYSQL *updateConn, char *cSetupString, int
 			nettmask, \
 			handled, \
 			blockIncomingTaggedTrafficThreshold, \
+			blockSshThreshold, \
 			doingNAT, \
 			showStatus, \
 			showPreRoutePartner, \
@@ -127,7 +128,7 @@ bool getSetupStringNewOk(MYSQL *conn, MYSQL *updateConn, char *cSetupString, int
 			union _showStatusBitsUnion cShowStatusBits;
 			cShowStatusBits.nValues = 0; //Initialize the whole union / structure
 			//cShowStatusBits.bits.nDummy = 0;
-			int nField = 5;
+			int nField = 6;
 			//printf("reading bit fields...\n");
 			cShowStatusBits.bits.doingNAT  = (row[nField]?*row[nField]:0);	nField++;
 			cShowStatusBits.bits.showStatus  = (row[nField]?*row[nField]:0);	nField++;
@@ -188,8 +189,9 @@ bool getSetupStringNewOk(MYSQL *conn, MYSQL *updateConn, char *cSetupString, int
 			uint32_t nettmask = (uint32_t)strtoul(row[2]?row[2]:"0", NULL, 10);
 
 			unsigned int  nBlockingThreshold = atoi(row[4]);
+			unsigned int  nBlockSshThreshold = atoi(row[5]);
 
-			snprintf(cSetupString, nBuffSize, "SETUP|%08X^%08X^%08X^%01X^%02X^%s^", adminIP, internalIP, nettmask, nBlockingThreshold, cShowStatusBits.nValues, szDontDmesgIPs);
+			snprintf(cSetupString, nBuffSize, "SETUP|%08X^%08X^%08X^%01X^%01X^%02X^%s^", adminIP, internalIP, nettmask, nBlockingThreshold, nBlockSshThreshold, cShowStatusBits.nValues, szDontDmesgIPs);
 				//strcpy(cReply+strlen(cReply), "SETUP|");
 				//strcpy(cReply+strlen(cReply), row[0]);
 				//strcpy(cReply+strlen(cReply), "|");

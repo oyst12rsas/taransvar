@@ -47,7 +47,8 @@ function saveSetupNew()
 	getUpdateSetupIp("nettmask", 			"nett", $cConn);
 
 	getUpdateIntField("statusIntervalSec", 			"statusinterval", $cConn); 
-	getUpdateIntField("blockIncomingTaggedTrafficThreshold", "tagThreshold", $cConn); 
+	getUpdateIntField("blockIncomingTaggedTrafficThreshold","tagThreshold", $cConn); 
+	getUpdateIntField("blockSshThreshold", 					"sshThreshold", $cConn); 
 	getUpdateIntField("workshopId", 			"ws", $cConn); 
 
 	getUpdateBitField("showStatus", 		"showstatus", $cConn);
@@ -103,7 +104,7 @@ function setup()
 
     print "<h2>Setup</h2>";
 	$szSQL = "select adminIp, inet_ntoa(adminIp) as adminIpA, inet_ntoa(internalIP) as internalIP, inet_ntoa(nettmask) as nettmask, 
-		statusIntervalSec, if(showStatus,1,0) as showStatus, ifnull(blockIncomingTaggedTrafficThreshold,0) as threshold, showPreRoutePartner, showPreRouteNonPartner, showForwardPartner, showForwardNonPartner, showUrgentPtrUsage, showOwnerless, showOther, showNew1, showNew2, doTagging, doReportTraffic, doInspection, doBlocking, doOther, inet_ntoa(globalDb1ip) as globalDb1ip, inet_ntoa(globalDb2ip) as globalDb2ip, inet_ntoa(globalDb3ip) as globalDb3ip, background, dbVersion, uptime, workshopId, dontDmesgIPs, nickname from setup";
+		statusIntervalSec, if(showStatus,1,0) as showStatus, ifnull(blockIncomingTaggedTrafficThreshold,0) as threshold, ifnull(blockSshThreshold,0) as sshThreshold, showPreRoutePartner, showPreRouteNonPartner, showForwardPartner, showForwardNonPartner, showUrgentPtrUsage, showOwnerless, showOther, showNew1, showNew2, doTagging, doReportTraffic, doInspection, doBlocking, doOther, inet_ntoa(globalDb1ip) as globalDb1ip, inet_ntoa(globalDb2ip) as globalDb2ip, inet_ntoa(globalDb3ip) as globalDb3ip, background, dbVersion, uptime, workshopId, dontDmesgIPs, nickname from setup";
 	$conn = getConnection();
 	$result = $conn->query($szSQL);
     $nCount =0;
@@ -124,7 +125,8 @@ function setup()
                 <tr><td>Internal IP</td><td><input name="intIp" value="<?php print $row["internalIP"]; ?>"></td></tr>
                 <tr><td>Nettmask</td><td><input name="nett" value="<?php print $row["nettmask"]; ?>"></td></tr>
                 <tr><td>Status interval</td><td><input name="statusinterval" value="<?php print $row["statusIntervalSec"]; ?>"></td></tr>
-                <tr><td>Taggin threshold *)</td><td><input name="tagThreshold" value="<?php print $row["threshold"]; ?>"></td></tr>
+                <tr><td>Tagging threshold *)</td><td><input name="tagThreshold" value="<?php print $row["threshold"]; ?>"></td></tr>
+                <tr><td>SSH threshold *)</td><td><input name="sshThreshold" value="<?php print $row["sshThreshold"]; ?>"></td></tr>
                 <tr><td>Global DB 1</td><td><input name="db1" value="<?php print $row["globalDb1ip"]; ?>"></td></tr>
                 <tr><td>Global DB 2</td><td><input name="db2" value="<?php print $row["globalDb2ip"]; ?>"></td></tr>
                 <tr><td>Global DB 3</td><td><input name="db3" value="<?php print $row["globalDb3ip"]; ?>"></td></tr>

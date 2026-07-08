@@ -241,9 +241,12 @@ alter table syslog modify count int unsigned not null default 1;
 alter table setup add isDbServer bit(1) not NULL default b'0' after statusIntervalSec;
 update setup set dbVersion = 71;
 
-#******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 72;
+#version 72 (260708)
+alter table setup add blockSshThreshold tinyint not null default 0 after blockIncomingTaggedTrafficThreshold;
+update setup set dbVersion = 72;
 
+#******** NEXT TIME ALSO add *****
+#update setup set dbVersion = 73;
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 
 #can import DB changes automatically based on the content of this file...

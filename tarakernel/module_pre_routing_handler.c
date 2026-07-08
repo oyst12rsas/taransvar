@@ -454,9 +454,9 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 		return NF_ACCEPT;
 	}
 
-	if (pPacket->dPort == 22 && pInfected)
+	if (pPacket->dPort == 22 && pInfected && pInfected->nSeverity > pSetup->nBlockSshThreshold)
 	{
-		pr_info("tarakernel: PR: Dropping traffic from infected unit to port 22 (ssh) %s:%d -> %s:%d (severity: %d)\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort, pInfected->nSeverity);
+		pr_info("tarakernel: PR: Dropping traffic from infected unit to port 22 (ssh) %s:%d -> %s:%d (severity/threshold: %d/%d)\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort, pInfected->nSeverity, pSetup->nBlockSshThreshold);
 		return NF_DROP;
 	}
 
