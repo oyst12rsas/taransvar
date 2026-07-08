@@ -589,7 +589,6 @@ struct _InfectionSpecification *isInfectedPointerList(volatile uint32_t ipAddres
 	//Commented out code is for listing internal infected units.
 //	char cInfectedUnits[1000];
 //	strcpy(cInfectedUnits, "");
-	int nSlot = 0;
 
 	for (struct _Node *pNode = pSetup->pConfigurationPointerList[BLOCK_DESCRIPTIOR_INFECTIONS]; pNode; pNode = pNode->pNext)
 	{
@@ -602,9 +601,8 @@ struct _InfectionSpecification *isInfectedPointerList(volatile uint32_t ipAddres
 
 		if (pNode && ipAddress == pNode->cInfection.ipAddress)
 		{
-		    //pr_info("tarakernel: **** Traffic from infected unit! Threat category: %d. Infected units: %s\n", pNode->cInfection.cTag.presumed_infected, cInfectedUnits); 
-			pr_info("tarakernel: **** Traffic from infected unit %pI4! (slot %d) Cat: %d, ID: %d, severity: %d, botnetId: %d, info: %s.\n", 
-				&pNode->cInfection.ipAddress, nSlot++, pNode->cInfection.cTag.presumed_infected, pNode->cInfection.nInfectionId, pNode->cInfection.nSeverity, pNode->cInfection.nBotnetId, pNode->cInfection.lpInfo); 
+			//pr_info("tarakernel: **** Traffic from infected unit %pI4! (slot %d) Cat: %d, ID: %d, severity: %d, botnetId: %d, info: %s.\n", 
+			//	&pNode->cInfection.ipAddress, nSlot++, pNode->cInfection.cTag.presumed_infected, pNode->cInfection.nInfectionId, pNode->cInfection.nSeverity, pNode->cInfection.nBotnetId, pNode->cInfection.lpInfo); 
 		    return &pNode->cInfection;
 		}
 	}

@@ -146,7 +146,7 @@ void reportInboundTraffic(struct _PacketInspection *pPacket)
 	}
 
 	//If doing NAT and this is sub unit, then log as port 0 so don't have to send report for all ports...
-	struct _ipPort2		cTraffic;
+	struct _ipPort2	cTraffic;
 	cTraffic.sIp = pPacket->ip_header->saddr;
 	cTraffic.sPort = pPacket->sPort;
 	cTraffic.dIp = pPacket->ip_header->daddr;
@@ -166,45 +166,50 @@ void reportInboundTraffic(struct _PacketInspection *pPacket)
     int n = 0;
     for (n = 0; n < sizeof(pSetup->cPendingIncomingReportArr) / sizeof(struct _ipPort2); n++)
     {
-          if (pSetup->cPendingIncomingReportArr[n].sIp == cTraffic.sIp && 
-			pSetup->cPendingIncomingReportArr[n].dIp == cTraffic.dIp && 
-              pSetup->cPendingIncomingReportArr[n].sPort == cTraffic.sPort &&
-              pSetup->cPendingIncomingReportArr[n].dPort == cTraffic.dPort)
-          {
-                //Already have registered traffic on this ip/port. Increase the count.
-                pSetup->cPendingIncomingReportArr[n].nCount++;
+		if (pSetup->cPendingIncomingReportArr[n].sIp == cTraffic.sIp && 
+				pSetup->cPendingIncomingReportArr[n].dIp == cTraffic.dIp && 
+				pSetup->cPendingIncomingReportArr[n].sPort == cTraffic.sPort &&
+				pSetup->cPendingIncomingReportArr[n].dPort == cTraffic.dPort)
+		{
+			//Already have registered traffic on this ip/port. Increase the count.
+			pSetup->cPendingIncomingReportArr[n].nCount++;
 
-				//Update tagging info so that the once that hits the DB is the most recent. 
-				pSetup->cPendingIncomingReportArr[n].nTag = pPacket->tcp_header->urg_ptr;								
+			//Update tagging info so that the once that hits the DB is the most recent. 
+			uint16_t nExTag = pSetup->cPendingIncomingReportArr[n].nTag;
+			pSetup->cPendingIncomingReportArr[n].nTag = pPacket->tcp_header->urg_ptr;								
+			if (pSetup->cPendingIncomingReportArr[n].nTag != nExTag)
+				pr_info("Tag for traffic %pI4:%u changed from %u -> %u\n", &cTraffic.sIp, cTraffic.sPort, nExTag, pSetup->cPendingIncomingReportArr[n].nTag);
                 
          	//if (pSetup->cShowInstructions.bits.showOther)
                 //        pr_info("tarakernel: PR: Reporting incoming traffic %s:%d -> %s:%d (increased count at #%d)\n",pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort, n);
-                break;
-          }
-          else
-                if (!pSetup->cPendingIncomingReportArr[n].sIp)
-                {
-                      //Found an available slot...
-                      pSetup->cPendingIncomingReportArr[n].sIp = cTraffic.sIp;
-                      pSetup->cPendingIncomingReportArr[n].dIp = cTraffic.dIp;
-                      pSetup->cPendingIncomingReportArr[n].sPort = cTraffic.sPort;
-                      pSetup->cPendingIncomingReportArr[n].dPort = cTraffic.dPort;
-                      pSetup->cPendingIncomingReportArr[n].nCount = 1;
+            break;
+		}
+        else
+			if (!pSetup->cPendingIncomingReportArr[n].sIp)
+            {
+            	//Found an available slot...
+                pSetup->cPendingIncomingReportArr[n].sIp = cTraffic.sIp;
+            	pSetup->cPendingIncomingReportArr[n].dIp = cTraffic.dIp;
+                pSetup->cPendingIncomingReportArr[n].sPort = cTraffic.sPort;
+                pSetup->cPendingIncomingReportArr[n].dPort = cTraffic.dPort;
+                pSetup->cPendingIncomingReportArr[n].nCount = 1;
 
-					  pSetup->cPendingIncomingReportArr[n].nTag = pPacket->tcp_header->urg_ptr;	//OT_Changed: 260225 - just testing if can get this through taralink to DB
-					  //pSetup->cPendingIncomingReportArr[n].nTag = 316;//TESTING 260225 pPacket->tcp_header->urg_ptr;	//OT_Changed: 260225 - just testing if can get this through taralink to DB
+				pSetup->cPendingIncomingReportArr[n].nTag = pPacket->tcp_header->urg_ptr;	//OT_Changed: 260225 - just testing if can get this through taralink to DB
+				pr_info("Traffic stored %pI4:%u - tag: %u\n", &cTraffic.sIp, cTraffic.sPort, pSetup->cPendingIncomingReportArr[n].nTag);
 
-                  //    if (pSetup->cShowInstructions.bits.showOther)
+				//pSetup->cPendingIncomingReportArr[n].nTag = 316;//TESTING 260225 pPacket->tcp_header->urg_ptr;	//OT_Changed: 260225 - just testing if can get this through taralink to DB
+
+                //    if (pSetup->cShowInstructions.bits.showOther)
               	//	      pr_info("tarakernel: PR: Reporting incoming traffic %s:%d -> %s:%d (put at #%d)\n",pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort, n);
-                      break;
-                }
+            	break;
+            }
     }
     
     if (n == sizeof(pSetup->cPendingIncomingReportArr) / sizeof(struct _ipPort2))
     {
-          //Array is full... Print warning...
-          if (pSetup->cShowInstructions.bits.showOther)
-                pr_info("tarakernel: ******* Queue of traffic reports is full (n=%d)... Please inform support center\n", n);
+		//Array is full... Print warning...
+    	if (pSetup->cShowInstructions.bits.showOther)
+            pr_info("tarakernel: ******* Queue of traffic reports is full (n=%d)... Please inform support center\n", n);
     }
 }
 
@@ -218,7 +223,7 @@ struct _PacketInspection *getPacketInfo(void *priv, struct sk_buff *skb, const s
 	ct = nf_ct_get(skb, &ctinfo);
 	if (0)	//ØT 260316 - just testing... (ct) 
 	{
-    	if (ct->mark == 0) 
+		if (ct->mark == 0) 
 		{
 			int n=0;
 			//mark is not set.. Create a new memory object - check first if stored....if so, then that's error?
@@ -383,7 +388,7 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
         
 	if (!bReceivedConfiguration)
 	{
-                //NOTE! IF YOU CHANGE THIS TEXT, THEN ALSO CHANGE IN crontasks.pl. IT'S LOOKING FOR IT
+        //NOTE! IF YOU CHANGE THIS TEXT, THEN ALSO CHANGE IN crontasks.pl. IT'S LOOKING FOR IT
 		pr_info("tarakernel: Start taralink to send configuration! %s -> %s\n", pPacket->cSourceIp, pPacket->cDestIp); 
 		checkFree(pPacket, false /*bLeavingPostRouting*/);
 		return NF_ACCEPT;
@@ -444,7 +449,7 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 
 				pr_info("tarakernel: PR: Traffic with subnet %s:%d -> %s:%d %s\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort, cInfectedUnit);
 			}
-			
+
 		checkFree(pPacket, false /*bLeavingPostRouting*/);
 		return NF_ACCEPT;
 	}
@@ -501,7 +506,7 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 	        */
 			union _TagUnion cUnion;
 			cUnion.nTag = pPacket->tcp_header->urg_ptr;
-			
+
 			if (cUnion.nTag)
 			{
 				struct _Remote_infection *pInfection = initElaboratedThreatInfo(pPacket);	//module_tagging.c
@@ -521,7 +526,7 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 				}
 				else
 				{
-					char cMsg[1000];
+					char cMsg[800];	//Frame size got > 1024 when set to 1000 - much smaller should be sufficient.
 					snprintf(cMsg, sizeof(cMsg)-1, "%s Tag-severity %u/%u. %s->%s, severity: %d, botnet: %d, owner_id: %d, info: %s, rx+tx: %d/%d\n", 
 							(bDropping?"**DROPPING packet**":"(tag removed)"), 
 							cUnion.cTag.presumed_infected, 
@@ -572,8 +577,11 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
                 //pPacket->tcp_header->URG = 0;
 				//NOTE! THIS WAS MOST LIKELY BECASE THE CHECKSUM WAS WRONG. IT'S NOW BEING CALCULATED ABOVE
 			}
-			//else
-			//    strcpy(pSetup->c100, "(Not tagged)");
+			else
+			{
+				pr_info("tarakernel: Incoming (from partner) not tagged: %pI4:%u -> %pI4:%u tag: %u",
+					 &pPacket->ip_header->saddr, pPacket->sPort, &pPacket->ip_header->saddr, pPacket->dPort, cUnion.nTag);
+			}
 
 			//Check tagging based on DSCP part of ToS (Type of Service)
 			uint8_t dscp = getDscp(pPacket);
@@ -665,8 +673,8 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 	
 	if (!bToOrFromMe)
 	{
-        	if (pSetup->cShowInstructions.bits.showOwnerless)
-        	{
+        if (pSetup->cShowInstructions.bits.showOwnerless)
+        {
 			char cBuf1[50], cBuf2[50];
 			if (!dropFromLogging(pPacket))
 				pr_info("tarakernel: PR: Neither to or from me.. What is this? %s:%d (%s) -> %s:%d (%s)\n", 

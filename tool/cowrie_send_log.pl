@@ -19,10 +19,10 @@
 # Configuration
 # --------------------------------------------------
 my $COWRIE_JSON   = "/home/cowrie/cowrie/var/log/cowrie/cowrie.json";
-my $REPORT_TO_IP   = "10.10.10.10";   # change if needed
+my $REPORT_TO_IP   = "100.68.181.35";   # change if needed
 my $ROUTERVM_PORT = 514;             # Use port 514 UDP if you want taralink to handle it on receiving end.
 my $ALERT_PROTO = "udp";
-my $SENSOR_NAME   = "honeypotvm";
+my $SENSOR_NAME   = "cowrie";
 
 my $OBSERVED_PROTO  = "tcp";			# Protocol used in attack - ssh (TCP)
 

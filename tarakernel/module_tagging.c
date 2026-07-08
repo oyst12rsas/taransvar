@@ -982,7 +982,15 @@ unsigned int tagThePacket(struct _PacketInspection *pPacket, const struct nf_hoo
     */
 
 	pPacket->tcp_header->urg_ptr= pInfected->nTag;//(__be16)cTag;//htons(0xFF00);  //Tag the package.
+    //NOTE! Seems like not setting:
+    pPacket->tcp_header->urg = (pInfected->nTag?1:0);   //260630 - seemd like had forgotten this...
 	pSetup->cGlobalStatistics.nOutboundTagged++;
+
+    {
+	    union _TagUnion cUnion;
+	    cUnion.nTag = pPacket->tcp_header->urg_ptr;
+        pr_info("tarakernel: FW: Sending tagged traffic. Tag: %u, severity: %u, urg: %u\n", cUnion.nTag, cUnion.cTag.presumed_infected, pPacket->tcp_header->urg);
+    }
     #endif
 
     //***********************Using DSCP - 6-bit (max value: 63) part of TOS (Type of Service)

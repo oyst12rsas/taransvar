@@ -68,8 +68,8 @@ function partnerClientLoginHandled($szSenderIp, $szUserName)
 			if ($result['success']) {
 				$szResult = $result['output'];
 				$cResult = explode(":",$szResult);
-				$szLanIP = $cResult[1];
-				if (!strcmp($szLanIP, $szUserName))
+				$szLanIP = (isset($cResult[1])?$cResult[1]:"");
+				if (!strcmp((isset($szLanIP)?$szLanIP:""), $szUserName))
 				{
 					print "User name verified by gateway..<br>";
 
@@ -129,7 +129,7 @@ function submitLogin()
 
 		if ($row["password"] == $_GET["pass"])
 		{
-			print "WELCOME! You are logged in.";
+			print "<br>WELCOME! You are logged in.</b><br><br>";
 			$_SESSION["userid"] = $row["userId"];
 			$_SESSION["hold"] = 0;	//Otherwise hold might be default on in Log window...
 			$szSenderIp = getSenderIp();
@@ -137,6 +137,8 @@ function submitLogin()
 			$stmt = $conn->prepare($szSQL);
 			$stmt->bind_param("ss", $szSenderIp, $szUserName);
 			$stmt->execute();
+			require_once ("func/main.php");
+			main();
 		}
 		else
 		{

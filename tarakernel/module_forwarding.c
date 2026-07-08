@@ -21,6 +21,8 @@ int checkFixTagging(struct _PacketInspection *pPacket, bool bForwarding, const s
 	                      (nSenderIsInfected && nRequestedAssistance? " and":""),
 	                      (nRequestedAssistance? " receiver has requested ASSISTANCE!":"")); 
 	        
+	pr_info("tarakernel: FW - in checkFixTagging for %s->%s\n", pPacket->cSourceIp, pPacket->cDestIp);
+
 	if (pSetup->cShowInstructions.bits.doTagging)
 	{
 		//First check if this unit has requested assistance alleviating brute force/D-DOS attack
@@ -86,7 +88,10 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 	}
 	
 	if (!skb)
+	{
+		pr_info("tarakernel: ***** FW ERROR - no skb record. Aborting.\n");
 		return NF_ACCEPT;
+	}
 
 	//Just checking if mark is set in PRE_ROUTING
 
@@ -123,7 +128,6 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 		return NF_DROP;
 	}
 
-
     checkThatTcp(pPacket,"start of forward handler");	//260320 - asdf... got problem with this....
 
 	if (pPacket->tcp_header->urg)
@@ -135,6 +139,8 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 		//Packet from our own subnet going to a partner and their subnet.
 		bool bForwarding = true;
 		int nRetval = checkFixTagging(pPacket, bForwarding, state);	//state may be NF_INET_FORWARD??
+
+		pr_info("tarakernel: FW: Forwarding to partner (after tagging).. %s->%s, urg_ptr %04X.\n", pPacket->cSourceIp, pPacket->cDestIp, pPacket->tcp_header->urg_ptr);
 
 		#ifdef ALTERNATIVE_TAGGING
 
@@ -165,6 +171,13 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 		#endif
 
 		checkFree(pPacket, nRetval != NF_ACCEPT /*bLeavingPostRouting*/);
+
+		//ØT - need to check why unable to get the tag...
+		union _TagUnion cUnion;
+		cUnion.nTag = pPacket->tcp_header->urg_ptr;
+		pr_info("tarakernel: **** FW: Checking outbound tag: %pI4:%d -> %pI4:%d tag: %u, severity: %u\n (packet->nTag: %u)", 
+			&pPacket->ip_header->saddr, pPacket->sPort, &pPacket->ip_header->saddr, pPacket->dPort, cUnion.nTag, cUnion.cTag.presumed_infected, pPacket->nTag);
+
 		return nRetval;
 	}
 
@@ -202,8 +215,11 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 	//To check traffic between two nodes in local network running through router, get rid of the rest... 
   	//#define C_INTERNAL_IP "192.168"
 	//if (strstr(lpIpFrom,C_INTERNAL_IP) != lpIpFrom || strstr(lpIpTo,C_INTERNAL_IP) != lpIpTo)
-	bool bSMine, bDMine;
-	if (!(bDMine = isMeOrMine(pPacket->ip_header->daddr))||!(bSMine = isMeOrMine(pPacket->ip_header->saddr)))
+
+	bool bDMine = isMeOrMine(pPacket->ip_header->daddr);
+	bool bSMine = isMeOrMine(pPacket->ip_header->saddr);
+
+	if (!bDMine||!bSMine)
 	{
 		//This is not traffic between two units in local network...
 		//kfree(lpIpFrom);
@@ -237,7 +253,7 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 		sprintf(pSetup->c100, "%u.%u.%u.%u", IPADDRESS(nBigEndian));
 	}
 
-	if (isMeOrMine(pPacket->ip_header->daddr)||isMeOrMine(pPacket->ip_header->saddr))
+	if (bDMine||bSMine)
 	{
 		if (pSetup->cShowInstructions.bits.showForwardNonPartner)
 			if (!dropFromLogging(pPacket))

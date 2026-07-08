@@ -236,8 +236,13 @@ update setup set dbVersion = 69;
 alter table setup add doingNAT bit(1) not NULL default b'0' after statusIntervalSec;
 update setup set dbVersion = 70;
 
+#version 71 (260703)
+alter table syslog modify count int unsigned not null default 1;
+alter table setup add isDbServer bit(1) not NULL default b'0' after statusIntervalSec;
+update setup set dbVersion = 71;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 71;
+#update setup set dbVersion = 72;
 
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 

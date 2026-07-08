@@ -93,11 +93,11 @@ else
 fi
 
 if ! grep -q crontasks "/var/spool/cron/crontabs/root" ; then
-  echo "* * * * * perl /root/taransvar/perl/crontasks.pl cron" >> /var/spool/cron/crontabs/root
+  echo "* * * * * /bin/perl /root/taransvar/perl/crontasks.pl cron" >> /var/spool/cron/crontabs/root
 fi
 
 if ! grep -q startup.pl "/var/spool/cron/crontabs/root" ; then
-  echo "@reboot perl /root/taransvar/perl/startup.pl > /root/wifi/log/startup.txt" >> /var/spool/cron/crontabs/root
+  echo "@reboot /bin/perl /root/taransvar/perl/startup.pl > /root/wifi/log/startup.txt" >> /var/spool/cron/crontabs/root
 fi
 service cron reload
 

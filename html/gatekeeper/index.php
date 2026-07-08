@@ -1,6 +1,6 @@
 <?php
 session_start();
-$nRequiredDbVersion=70;	//NOTE! Make sure this line is always number 3 because that's claimed below.
+$nRequiredDbVersion=71;	//NOTE! Make sure this line is always number 3 because that's claimed below.
 
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
@@ -296,6 +296,26 @@ var cJsonParam = new Object;
 <table class="center"><tr><td bgcolor="#AAB396">
 <?php
 
+function requiresLogin($f)
+{
+	if (!isset($f))
+		return true;
+
+	return !in_array($f, array("submitLogin", 'demo','listLog','infections','traffic','about'));
+}
+
+
+function printMenuChoice($szFunc, $szPrint)
+{
+	if (requiresLogin($szFunc))
+		print '<span style="color: #777; opacity: 0.6; pointer-events: none;">'.$szPrint.'</span>';
+	else
+		print '<a href="index.php?f='.$szFunc.'">'.$szPrint.'</a>';
+}
+
+
+
+
 function showMenu()
 { 
 global $setupRow;
@@ -306,15 +326,16 @@ global $setupRow;
 </h1>
 <table>
 <tr>
-<td bgcolor="white"><a href="index.php?f=infections">Infection</a></td>
-<td bgcolor="white"><a href="index.php?f=listLog">Log</a></td>
-<td bgcolor="white"><a href="index.php?f=traffic">Traffic</a></td>
-<td bgcolor="white"><a href="index.php?f=units">Units</a></td>
-<td bgcolor="white"><a href="index.php?f=attack">Attack</a></td>
-<td bgcolor="white"><a href="index.php?f=demo">Demo</a></td>
-<td bgcolor="white"><a href="index.php?f=about">About</a></td>
-<td bgcolor="white"><a href="index.php?f=setupMenu">Setup menu</a></td>
-<td bgcolor="white"><a href="index.php?f=help">Help</a></td>
+<td bgcolor="white"><?php printMenuChoice("main", "Home"); ?></td>
+<td bgcolor="white"><?php printMenuChoice("infections", "Infections"); ?></td>
+<td bgcolor="white"><?php printMenuChoice("listLog", "Log"); ?></td>
+<td bgcolor="white"><?php printMenuChoice("traffic", "Traffic"); ?></td>
+<td bgcolor="white"><?php printMenuChoice("units", "Units"); ?></td>
+<td bgcolor="white"><?php printMenuChoice("attack", "Attack"); ?></td>
+<td bgcolor="white"><?php printMenuChoice("demo", "Demo"); ?></td>
+<td bgcolor="white"><?php printMenuChoice("about", "About"); ?></td>
+<td bgcolor="white"><?php printMenuChoice("setupMenu", "Setup menu"); ?></td>
+<td bgcolor="white"><?php printMenuChoice("help", "Help"); ?></td>
 </tr>
 </table>
 <?php
@@ -588,7 +609,10 @@ if (isAdmin())
 	$conn->close();
 }
 
-if (!isset($_SESSION["userid"]) && (!isset($_GET["f"]) || $_GET["f"] <> "submitLogin"))
+if (!isset($_GET["f"]) || !strcmp($_GET["f"], ""))
+	$_GET["f"] = "main";
+
+if (!isset($_SESSION["userid"]) && requiresLogin($_GET["f"]))
 {
 	include "func/login.php";
 	login();
