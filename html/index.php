@@ -1,5 +1,8 @@
 <?php
 
+header("Location: /gatekeeper/");
+exit;
+
 session_start();
 print "";
 require_once "db_connect.php";

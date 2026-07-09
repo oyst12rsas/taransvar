@@ -301,6 +301,50 @@ if (isset($_GET["f"]))
 
 			exit;                	
         }
+		case "unitIp":
+			if (!isset($_GET["ip"]) || !isset($_GET["port"]))
+			{
+				print "Insufficient parameters";
+				exit;
+			}
+
+			$szIp = $_GET["ip"];
+			$nPort = $_GET["port"];
+			$conn = getConnection();
+			$szSQL = "select inet_ntoa(ipAddress) as ip, TIMESTAMPDIFF(SECOND, lastSeen, NOW()) AS seconds_since, unitId from unitPort where port = inet_aton(?) limit 1";
+			//print "$szSQL<br>";
+			$stmt = $conn->prepare($szSQL);
+			$stmt->bind_param("d", $nPort);//, $szMe); 
+			$stmt->execute();
+			$result = $stmt->get_result(); // get the mysqli result
+			$data = [];
+			if ($result && $row = $result->fetch_assoc())
+			{
+				$data["ip"] = $row["ip"];
+				$data["sec"] = $row["seconds_since"];
+			}
+			else
+			{
+				$data["error"] = "1";
+				$data["found"] = "-1";
+
+				//Check if recent data exist
+				$szSQL = "select TIMESTAMPDIFF(SECOND, lastSeen, NOW()) AS seconds_since from unitPort order by lastSeen desc limit 1;";
+				$stmt = $conn->prepare($szSQL);
+				$stmt->execute();
+				$result = $stmt->get_result(); // get the mysqli result
+				if ($result && $row = $result->fetch_assoc())
+				{
+					if ($row["seconds_since"]+0 < 20)
+						$data["updated"] = "1";
+					else
+						$data["updated"] = "0";
+				}
+			}
+
+			$json = json_encode($data);
+			echo $json;				
+			exit;
 
 		default:
         	print "Unknown parameter: ".$_GET["f"];

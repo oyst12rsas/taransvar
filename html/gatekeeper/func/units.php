@@ -40,8 +40,109 @@ function listServerStatus()
 }
 
 
+function getDot($bOk)
+{
+	return '<img src="img/'.($bOk?"green":"red").'_dot.png">';
+}
+
+function check($field)
+{
+	return (isset($field) && $field == "1" ? '<img src="img/green_dot.png">':'<img src="img/red_dot.png">');
+}
+
+function getGatewayIP()
+{
+	//Don't know if we should make this more advance.. It's printed when this machine has not received status from a partner.
+	return "100.68.165.190";//10.100.0.1
+}
+
+function getServerStatus($seconds_since, $status)
+{
+	if (!isset($status) || !strlen($status))
+		return '<a href="http://'.getGatewayIP().'/gatekeeper/index.php?f=demo">Check status on router</a>';
+
+	if ($seconds_since+0 > 65)
+		return '<font color="red">Server is troubled. Better use another.</font>';
+
+	$json = json_decode($status, true);
+	$szServerStatus = (isset($status)?check($json["knl"]):'<img src="img/green_dot.png">');
+	$szServerStatus .= (isset($status)?check($json["lnk"]):'<img src="img/green_dot.png">');
+	$szServerStatus .= (isset($status)?check($json["cron"]):'<img src="img/green_dot.png">');
+
+	$nSeconds = (isset($json["dmesg"])?$json["dmesg"]:1000000);
+	$szServerStatus .= getDot($nSeconds < 90);
+
+//	if (isset($json["trfc"]))
+//		$szServerStatus .= check($json["cron"]);
+	$nSeconds = (isset($json["trfc"])?$json["trfc"]:1000000);
+	$szServerStatus .= getDot($nSeconds < 90);
+
+	$nActiveUsers = isset($json["usr"])?$json["usr"]:"?";
+	$szServerStatus .= "&nbsp;$nActiveUsers";
+
+	return $szServerStatus;
+}
+
+function vpn_demo()
+{
+	$conn=getConnection();
+
+	$szSQL = "select networkStatus, TIMESTAMPDIFF(SECOND, networkStatusChecked, NOW()) AS seconds_since, nickname from setup";
+	$conn->query($szSQL) or die(mysql_error());
+	$result = $conn->query($szSQL);
+	$szMyServerStatus = "Error reading setup!";
+	$szMyNickname = "";
+
+	if ($result)
+	{
+		if ($result->num_rows > 0) 
+			if ($row = $result->fetch_assoc()) 
+			{
+				$szMyServerStatus = getServerStatus($row["seconds_since"], $row["networkStatus"]);
+				$szMyNickname = " (".$row["nickname"].")";
+			}
+		$result->free();
+	}
+
+	$szWhere = !isAdmin()?"where showToAdminsOnly = b'0'":"";
+	$szSQL = "select name, inet_ntoa(ip) as ip, partnerStatusReceived, status, TIMESTAMPDIFF(SECOND, partnerStatusReceived, NOW()) AS seconds_since from partnerRouter R join partner P on P.partnerId = R.partnerId $szWhere";
+	//print "<br>$szSQL<br>";
+	$conn->query($szSQL) or die(mysql_error());
+	$result = $conn->query($szSQL);
+
+	if ($result->num_rows > 0) 
+	{
+		// output data of each row  
+		print "<h2>Involved sites:</h2><table>";
+		$nCount=0;
+		while($row = $result->fetch_assoc()) 
+		{
+			if (!$nCount) 
+			{
+				print "<b>NOTE</b> ! If you have problems opening these, then check that you VPN setup, Allowed IPs contain 100.68.0.0/16 (add if not)<br>";
+
+				print "<tr><td>Site</td><td>IP</td><td>Status *)</td><td>Gatekeeper</td><td>Sample bank</td><td>Honey</td></tr>";
+				print "<tr><td>Me".$szMyNickname."</td><td>&nbsp;</td><td>".$szMyServerStatus."</td><td>&nbsp;</td><td><a href=\"../samplebank/index.php\">[go to]</a></td><td><a href=\"../honeypot/index.php\">[go to]</a></td></tr>";
+			}
+
+			$szServerStatus = getServerStatus($row["seconds_since"], $row["status"]);
+			$szGatekeeper = "http://".$row["ip"]."/gatekeeper/index.php";
+			$szSamplebank = "http://".$row["ip"]."/samplebank/index.php";
+			$szHoneypot =  "http://".$row["ip"]."/honeypot/index.php";
+			print "<tr><td>".$row["name"]."</td><td>".$row["ip"]."</td><td>".$szServerStatus."</td><td><a href=\"".$szGatekeeper."\">[go to]</h></td><td><a href=\"".$szSamplebank."\">[go to]</h></td><td><a href=\"".$szHoneypot."\">[go to]</h></td></tr>";
+			$nCount++;
+		}
+		print "</table>";
+		print "*) Dots: tarakernel, taralink, crontasks, dmesg, traffic data. Number: Active users last 5 minutes.";
+	}
+}
+
+
 function units()
 {
+
+	vpn_demo();
+
 	$conn = getConnection();
 	if (isAdmin())
 	{
@@ -60,7 +161,7 @@ function units()
 					or ($row["adminIP"] == isset($row["globalDb3ip"])?$row["globalDb3ip"]:-1)
 					)
 				{
-					print "<b>You're logged in as admin on DB server... So these units have reported status:</b>";
+					print "<br><br><b>You're logged in as admin on DB server... So these units have reported status:</b>";
 					listServerStatus();
 				}
 				else

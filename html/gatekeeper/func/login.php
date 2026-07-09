@@ -36,6 +36,9 @@ function login()
 		}
 	}
 
+//	if (!strcmp($_SERVER['SERVER_ADDR']), "10.100.1.1")
+	print "<b>NOTE!</b> You no longer need to login - except for disabled menu choices.<br>";
+
 	?>
 	<form action="index.php">
 	<table>

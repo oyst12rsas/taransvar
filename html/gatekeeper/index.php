@@ -301,13 +301,13 @@ function requiresLogin($f)
 	if (!isset($f))
 		return true;
 
-	return !in_array($f, array("submitLogin", 'demo','listLog','infections','traffic','about'));
+	return !in_array($f, array("submitLogin", 'demo','listLog','infections','traffic','about','units'));
 }
 
 
 function printMenuChoice($szFunc, $szPrint)
 {
-	if (requiresLogin($szFunc))	//; pointer-events: none
+	if (!isset($_SESSION["userid"]) && requiresLogin($szFunc))	//; pointer-events: none
 		print '<span style="color: #777; opacity: 0.6;"><a href="index.php?f=login">'.$szPrint.'</a></span>';
 	else
 		print '<a href="index.php?f='.$szFunc.'">'.$szPrint.'</a>';
