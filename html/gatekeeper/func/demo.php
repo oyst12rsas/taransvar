@@ -220,70 +220,44 @@ alter table demo add botStatus varchar[255] null;
 	print "</td></tr></table>"; //End of main table (with list of units and infections on left side)
 }
 
-
-function isGateway($szIP)
-{
-	if (strpos($szIP, "10.100.0.") == 0)
-		return false; //This is a phone or similar unit. 
-}
-
 function demo()
 {
-	print "<h1>New demo</h1>";
-	print '<font color="red">The list of connected servers is moved to <a href="index.php?f="units">"Units"</a></font><br><br>';
-	print "My IP: ".$_SERVER['SERVER_ADDR']."<br>";
+?>
+<script>
+function toggleText(link) {
+    const container = link.closest(".expandable");
+    const shortText = container.querySelector(".short-text");
+    const longText = container.querySelector(".long-text");
+
+    const showingLong = longText.style.display !== "none";
+
+    shortText.style.display = showingLong ? "block" : "none";
+    longText.style.display = showingLong ? "none" : "block";
+}
+</script>
+<table><tr><td colspan="2"><h1>New demo</h1></td></tr>
+<tr><td colspan="2"><font color="red">The list of connected servers is moved to <a href="index.php?f="units">"Units"</a></font></td></tr><br>
+<?php
+
+	print '';
+	print "<tr><td>This server IP:</td><td>".$_SERVER['SERVER_ADDR'];
+
+?>
+
+<?php
+
+	print "</td></tr>";
 	$szIP = getSenderIp();
-	print "Your IP address: ".$szIP."<br>";
+	print "<tr><td>Your IP address:</td><td>".$szIP." port: ".$_SERVER['REMOTE_PORT']."</td></tr>";
 
-	//Check if senders IP is a TaraSec gateway (no need to send this request to a phone...)
-	if (isGateway($szIP))
-	{
-		$url = "http://$szIP/script/config_update.php";
-		print "$url<br>";
-		$params = [];
-		$params["f"] = "unitIp";
-		$params["ip"] = $szIP; //Not necessary.. should be same as this server
-		$params["port"] = $_SERVER['REMOTE_PORT'];
-
-		$result = getUrlArray($url,$params);
-
-		if ($result['success']) {
-    		echo $result['output']."<br>";
-
-			$data = json_decode($result['output'], true);
-
-			if (isset($data["error"]))
-			{
-				//print "An error occurred..<br>";
-				if (isset($data["found"]) && !strcmp($data["found"], "-1"))
-				{
-					if ($data["updated"]+0 == 1)
-						print "Gateway doesn't have any data on port ".$params["port"]."<br>Waiting up to a minute might help.<br>";
-					else
-						print "The server is having issues. Port assignment data is currently not update. Please try again later or inform support team.<br>";
-				}
-				else
-					print "Unknown error... should be investigated..<br>";
-			}
-			else
-			{
-				print "Internal IP: ".$data["ip"]."<br>";
-				print "Seconds since seen: ".$data["sec"]."<br>";
-			}
-
-		} else {
-    		echo $result['error']."<br>";
-
-			if (json_last_error() !== JSON_ERROR_NONE) {
-				print "Server didn't return a valid reply. Aborting.";
-				return;
-			}
-		}
-	}
-	else
-	{
-		print '<br>For a guided demo, go to one of our servers with cheese name in <a href="index.php?f=units">the involved sites list<a>. From there, click "Demo" in menu.';
-	}
+	//if (isAdmin())
+	//{
+		require_once("demoNewFunc.php");
+		demoNewFunc();
+	//}
+	//else
+	//	print '<tr><td colspan="2">This function is being develped. Thank you for checking.</td></tr>';
+	print "</table>";
 }
 
 function oldDemo()

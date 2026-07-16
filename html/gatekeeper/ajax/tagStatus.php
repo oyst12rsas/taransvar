@@ -27,8 +27,14 @@ function meOrMine($nIp, $szIp)
 	return 0;
 }
 
+
 function tagStatus()
 {
+
+	//****************** NOTE ************************
+	// READ THIS FROM TAGDATA INSTEAD:  function getTagData() defubed ub html_root/taraLib.php
+
+
 	//CXmlCommand::setInnerHTML("tagStatus", "", "TESTING");//, $cMoreParamsArr = array())
 	//return;
 
@@ -39,6 +45,7 @@ function tagStatus()
 	if (meOrMine(0, $szSenderIp))
 	{
 		//One of my units... Read status from internalInfections table
+		//READ THIS FROM TAGDATA INSTEAD:
 		$szSQL = "select infectionId, lastSeen, infoSharePartners, severity, CAST(active AS UNSIGNED) as active from internalInfections where ip = inet_aton(?) order by infectionId desc limit 1";
 		$conn = getConnection();
 		$stmt = $conn->prepare($szSQL);
@@ -65,6 +72,10 @@ function tagStatus()
 	}
 	else
 	{
+
+
+		//READ THIS FROM TAGDATA INSTEAD:
+
 		$conn = getConnection();
 
 		/*NOTE! This is wrong.. If partner is doing NAT, then search only on the same port, otherwise return only if portnumber == 0 (applies to all on same IP)
@@ -101,6 +112,9 @@ function tagStatus()
 		  	}
 		} 
 		//********************* traffic ********************** 
+
+	//READ THIS FROM TAGDATA INSTEAD: (traffic)
+
 
 		$nTagStatusBasedOnTraffic = 0;
 		$nTrafficSecondsSince = -1;

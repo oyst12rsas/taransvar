@@ -311,7 +311,7 @@ if (isset($_GET["f"]))
 			$szIp = $_GET["ip"];
 			$nPort = $_GET["port"];
 			$conn = getConnection();
-			$szSQL = "select inet_ntoa(ipAddress) as ip, TIMESTAMPDIFF(SECOND, lastSeen, NOW()) AS seconds_since, unitId from unitPort where port = inet_aton(?) limit 1";
+			$szSQL = "select inet_ntoa(ipAddress) as ip, TIMESTAMPDIFF(SECOND, lastSeen, NOW()) AS seconds_since, unitId, nickname from unitPort join setup where port = ? limit 1";
 			//print "$szSQL<br>";
 			$stmt = $conn->prepare($szSQL);
 			$stmt->bind_param("d", $nPort);//, $szMe); 
@@ -320,6 +320,7 @@ if (isset($_GET["f"]))
 			$data = [];
 			if ($result && $row = $result->fetch_assoc())
 			{
+				$data["nickname"] = $row["nickname"];	//260714
 				$data["ip"] = $row["ip"];
 				$data["sec"] = $row["seconds_since"];
 			}
@@ -335,11 +336,13 @@ if (isset($_GET["f"]))
 				$result = $stmt->get_result(); // get the mysqli result
 				if ($result && $row = $result->fetch_assoc())
 				{
-					if ($row["seconds_since"]+0 < 20)
+					if ($row["seconds_since"]+0 < 90)
 						$data["updated"] = "1";
 					else
 						$data["updated"] = "0";
 				}
+				$data["sec"] = $row["seconds_since"];
+
 			}
 
 			$json = json_encode($data);

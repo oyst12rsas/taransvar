@@ -226,4 +226,152 @@ function checkIfTooManyLoginAttemptFromIp($szIp)
 	}
 }
 
+function getTagData()
+{
+	//READ THIS FROM TAGDATA INSTEAD:
+	$szSenderIp = getSenderIp();
+	$clientPort = $_SERVER['REMOTE_PORT']+0;
+
+	$szSQL = "select infectionId, lastSeen, infoSharePartners, severity, CAST(active AS UNSIGNED) as active from internalInfections where ip = inet_aton(?) order by infectionId desc limit 1";
+	$conn = getConnection();
+	$stmt = $conn->prepare($szSQL);
+	$stmt->bind_param("s", $szSenderIp); 
+    $stmt->execute();
+	$result = $stmt->get_result(); // get the mysqli result
+	$retval = [];
+
+	//Default values
+	$nInfectionSeverity = -1;	//Not found
+	$nInfectionDisabled = 0;
+
+	if (($result->num_rows > 0) && ($row = $result->fetch_assoc())) 
+	{
+		if (((int)$row["active"] == 0))
+		{
+			$nInfectionSeverity = 1;
+			$nInfectionDisabled = 1;
+		}
+		else
+			$nInfectionSeverity = $row["severity"];
+	}
+
+	$result->close();
+	$stmt->close();
+
+	$retval["infectionSeverity"] = $nInfectionSeverity;
+	$retval["infectionDisabled"] = $nInfectionDisabled;
+
+	//READ THIS FROM TAGDATA INSTEAD: (hackReport)
+//	$conn = getConnection();
+
+	$szSQL = "select reportId, severity, infoSharePartners, why, inet_ntoa(partnerIp) as reportedByIp, TIMESTAMPDIFF(SECOND, coalesce(lastSeen, created), NOW()) AS seconds_since from hackReport where ip = inet_aton(?) and (port = 0 || port = ?) order by lastSeen desc limit 1";
+	$stmt = $conn->prepare($szSQL);
+
+	$stmt->bind_param("si", $szSenderIp, $clientPort); 
+
+	$stmt->execute();
+	$result = $stmt->get_result(); // get the mysqli result
+	$nTagStatusBasedOnHackReport = 0;
+	$nHackReportSecondsSince = -1;
+	$nHackSeverity = 0;
+
+	if ($result->num_rows > 0) 
+	{
+		if($row = $result->fetch_assoc()) 
+		{
+			$nHackSeverity = (int)$row["severity"];
+			$nHackReportSecondsSince = $row["seconds_since"];
+
+			if ($nHackSeverity > 1)
+				$nTagStatusBasedOnHackReport = 1;
+	  	}
+	} 
+
+	$result->close();
+	$stmt->close();
+
+	$retval["hackReportSeverity"] = $nHackSeverity;
+	$retval["hackReportSecondsSince"] = $nHackReportSecondsSince;
+
+	//READ THIS FROM TAGDATA INSTEAD: (traffic)
+
+	$nTagStatusBasedOnTraffic = 0;
+	$nTrafficSecondsSince = -1;
+
+	$sql = "SELECT trafficId, created, lastSeen, count, tag,
+               TIMESTAMPDIFF(SECOND, COALESCE(lastSeen, created), NOW()) AS seconds_since
+        FROM traffic T
+        WHERE ipFrom = INET_ATON(?) AND portFrom = ?
+        ORDER BY trafficId DESC
+        LIMIT 1";
+
+	$stmt = $conn->prepare($sql);
+	if (!$stmt) {
+	    throw new Exception("Prepare failed: " . $conn->error);
+	}
+
+	if (!$stmt->bind_param("si", $szSenderIp, $clientPort)) {
+    	throw new Exception("Bind failed: " . $stmt->error);
+	}
+
+	$retval["senderIp"] = $szSenderIp;
+	$retval["senderPort"] = $clientPort;
+
+	if (!$stmt->execute()) {
+    	throw new Exception("Execute failed: " . $stmt->error);
+	}
+
+	$result = $stmt->get_result();
+	if (!$result) {
+    	throw new Exception("get_result failed: " . $stmt->error);
+	}
+
+	$nTrafficSeverity = 0;
+
+	if ($row = $result->fetch_assoc()) {
+    	$nTrafficSecondsSince = (int)$row["seconds_since"];
+    	$tag = (int)$row["tag"];
+
+    	if ($tag > 1) {
+	        $nTagStatusBasedOnTraffic = 1;
+    	}
+
+    	$version_no        =  $tag        & 0x3;
+    	$presumed_infected = ($tag >> 2)  & 0xF;
+    	$owners_id         = ($tag >> 6)  & 0x3FF;
+
+	    $nTrafficSeverity = $presumed_infected;
+	}
+
+	$result->close();
+	$stmt->close();
+
+	$retval["trafficSeverity"] = $nTagStatusBasedOnTraffic;
+	$retval["trafficSecondsSince"] = $nTrafficSecondsSince;
+
+	//Sum it all up.
+	$nSeverity = $nInfectionSeverity;
+
+	//If recent infected traffic discovered, then that's more important.
+
+	if ($nTrafficSecondsSince >= 0 && $nTrafficSecondsSince < 45)
+	{
+		if ($nTagStatusBasedOnTraffic > $nSeverity)
+			$nSeverity = $nTagStatusBasedOnTraffic;
+	}
+	else
+		if ($nHackSeverity > $nSeverity)
+			$nSeverity = $nHackSeverity;
+
+	$retval["severity"] = $nSeverity;
+
+	//Usage
+	//$data = getTagData();
+	//$json = json_encode($data);
+	//return $json;				
+	return $retval;
+}
+
+
+
 ?>
