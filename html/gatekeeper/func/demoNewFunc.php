@@ -104,6 +104,15 @@ If you're not yet infected, you can go to <a href="<?php print $szGwLogin; ?>">y
 <?php
 }
 
+function isLanSide($szIP)
+{
+	//NOTE! This is based on TaraSec IP addresses..
+	if (str_starts_with($szIP, "10.")) {
+    	return true;
+	}		
+	return false;
+}
+
 function demoNewFunc()
 {
 	//Also in caller... remove when merged...
@@ -135,7 +144,13 @@ function demoNewFunc()
 					if ($data["updated"]+0 == 1)
 						print "<tr><td colspan=\"2\">Gateway doesn't have any data on port ".$params["port"]."<br>Waiting up to a minute might help.</td></tr>";
 					else
-						print "<tr><td colspan=\"2\">The server is having issues. Port assignment data is currently not updated. Please try again later or inform support team.</td></tr>";
+					{
+						//if sender's IP is not on LAN side, there may not be any NAT'ed clients recently..
+						if (!isLanSide($szIP))
+							print "<tr><td colspan=\"2\">You are on WAN side. Server is having issues or currenly no clients visiting from LAN side. Port assignment data is currently not updated. Please try again later or try to connect on LAN side e.g by using Wireguard QR code.</td></tr>";
+						else
+							print "<tr><td colspan=\"2\">The server is having issues. Port assignment data is currently not updated. Please try again later or inform support team.</td></tr>";
+					}
 				}
 				else
 					print "Unknown error... should be investigated..<br>";

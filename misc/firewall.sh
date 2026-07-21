@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # TaraSec firewall configuration
-#Uncomment and save local configuration as /etc/tarasecfw.conf
+#Uncomment and save local configuration whith:
+# sudo nano /etc/tarasecfw.conf
 
 # Central database server
 #DBSERVER="100.68.181.35"
@@ -59,6 +60,18 @@ iptables -P INPUT DROP
 iptables -P FORWARD ACCEPT
 iptables -P OUTPUT ACCEPT
 
+# -------------------------------------------------
+# MACHINE-SPECIFIC RULES
+# Add local gateway/forwarding/NAT rules here
+# -------------------------------------------------
+#Uncomment below if this is a tarasec gateway between LAN and WAN VPN networks
+#iptables -t nat -A POSTROUTING -o wt0 -j MASQUERADE
+#iptables -A FORWARD -i wg0 -o wt0 -j ACCEPT
+#iptables -A FORWARD -i wt0 -o wg0 \
+#    -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+
+
 iptables -A INPUT -i lo -j ACCEPT
 
 iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
@@ -99,4 +112,4 @@ if ! dpkg-query -W -f='${Status}' netfilter-persistent 2>/dev/null | grep -q "in
     apt-get update
     apt-get install -y netfilter-persistent
 fi
-sudo netfilter-persistent save
+netfilter-persistent save

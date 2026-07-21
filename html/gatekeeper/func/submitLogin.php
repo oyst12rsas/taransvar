@@ -11,7 +11,7 @@ function createUser($conn, $szUserName, $szPassword, $bIsAdmin)
 
 function getUserInfo($conn, $szUserName)
 {
-	$szSQL = "select userId, password, loginFailsSinceSuccess, loginFailReportedTime from user where username = ?";
+	$szSQL = "select userId, password, loginFailsSinceSuccess, loginFailReportedTime, isAdmin from user where username = ?";
 	$stmt = $conn->prepare($szSQL);
 	$stmt->bind_param("s", $szUserName);
 	$stmt->execute();
@@ -100,6 +100,9 @@ function partnerClientLoginHandled($szSenderIp, $szUserName)
 	return false;	//Default handling.. show error..
 }
 
+function getBitField()
+{}
+
 function submitLogin()
 {
 	$szUserName = $_GET["email"];
@@ -137,6 +140,26 @@ function submitLogin()
 			$stmt = $conn->prepare($szSQL);
 			$stmt->bind_param("ss", $szSenderIp, $szUserName);
 			$stmt->execute();
+
+			//$value = ; 
+			//if (ord($row['isAdmin']) === 1)	Older php versions.
+			if ((int)$row['isAdmin'] === 1)	//Handles both int and string returned for bit(1) field.. 
+			{
+			//	print "<h1>IS ADMIN</h1>";
+				$_SESSION["isAdmin"] = 1;
+			}
+			else
+			{
+			//	print "<h1>NOT ADMIN</h1>";
+
+			/*	echo PHP_VERSION."<br>";
+				var_dump($row['isAdmin']);
+				echo ord($row['isAdmin']) . "<br>";
+				echo bin2hex($row['isAdmin']) . "<br>";
+				var_dump(mysqli_get_client_info() . "<br>");
+			*/
+			}
+
 			require_once ("func/main.php");
 			main();
 		}
@@ -203,11 +226,15 @@ function submitLogin()
 				$row = $result->fetch_assoc();
 				if ($row && ($row["count"] == "0"))
 					$bIsAdmin = 1;
+				$result->free();
 			}
 
 			$_SESSION["userid"] = createUser($conn, $szUserName, $_GET["pass"], $bIsAdmin);
 			if ($bIsAdmin)
+			{
 				print "You are the first user here and will be set as admin. You might want to save the user name. Or you'll find it in the user table.";
+				$_SESSION["isAdmin"] = 1;
+			}
 			else
 				print "New user registered.";
 		}

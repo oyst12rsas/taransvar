@@ -26,17 +26,26 @@ function unitsMore()
 {
 	if (!isAdmin())
 		return;
-	
+
 	$conn = getConnection();
-	$sql = "select routerId, name, partnerStatusReceived as time, TIMESTAMPDIFF(SECOND, partnerStatusReceived, NOW()) AS seconds_since, inet_ntoa(ip) as ip, status from partnerRouter r join partner p on p.partnerId = r.partnerId where routerId = ?";
-	$stmt = $conn->prepare($sql);
-	$stmt->bind_param("i", $_GET["id"]);
-	$stmt->execute();
-	$result = $stmt->get_result(); // get the mysqli result
-	if ($result)
-		$row = $result->fetch_assoc();
+	
+	if (!isset($_GET["id"]) || !($_GET["id"]+0))
+	{
+		require_once("func/units.php");		//To get getNetworkStatusThisComputer()
+		$row = getNetworkStatusThisComputer($conn);
+	}
 	else
-		$row = 0;
+	{
+		$sql = "select routerId, name, partnerStatusReceived as time, TIMESTAMPDIFF(SECOND, partnerStatusReceived, NOW()) AS seconds_since, inet_ntoa(ip) as ip, status from partnerRouter r join partner p on p.partnerId = r.partnerId where routerId = ?";
+		$stmt = $conn->prepare($sql);
+		$stmt->bind_param("i", $_GET["id"]);
+		$stmt->execute();
+		$result = $stmt->get_result(); // get the mysqli result
+		if ($result)
+			$row = $result->fetch_assoc();
+		else
+			$row = 0;
+	}
 
 	if ($row) 
 	{
@@ -80,6 +89,17 @@ function unitsMore()
 		print '<tr><td>Nettmask</td><td>'.$status["nett"].'</td></tr>';
 		unset($status["nett"]);
 
+		print '<tr><td>SQL connections</td>';
+		if (isset($status["sqlThrds"]))
+		{
+			print '<td>'.$status["sqlThrds"].'</td>';
+			unset($status["sqlThrds"]);
+		}
+		else
+			print '<td>Not set (old version)</td>';
+
+		print '</tr>';
+
 		if (count($status))
 			print '<tr><td>Remaining</td><td>'.json_encode($status).'</td></tr>';
 
@@ -97,6 +117,9 @@ function unitsMore()
 			print '<tr><td colspan="2">'.$row["status"].'</td></tr>';
 		else
 			print '<tr><td colspan="2"><a href="index.php?f=unitsMore&id='.$_GET["id"].'&json">See full json</a></td></tr>';
+
+		if ($row["len"]+0 > 200)
+			print '<tr><td colspan="2"><font color="red">'.$row["len"].' characters of 255 available used for status! Consider switch to text field.</font></td></tr>';
 
 		print "<table>";
 

@@ -26,7 +26,8 @@ $bOk = $result->num_rows > 0 && $setupRow = $result->fetch_assoc();
 
 function isAdmin()
 {
-	$szSQL = "select CAST(isAdmin AS UNSIGNED) as isAdmin from user where userId = ?";
+	//This is not necessary on every request... store in $_SESSION[] when logging in instead. 260717
+/*	$szSQL = "select CAST(isAdmin AS UNSIGNED) as isAdmin from user where userId = ?";
 	$conn = getConnection();
 	$stmt = $conn->prepare($szSQL);
 	$nUserId = isset($_SESSION["userid"])?$_SESSION["userid"]+0:0;
@@ -38,8 +39,12 @@ function isAdmin()
 		$row = $result->fetch_assoc();
 		if ($row)
 			return ($row["isAdmin"] == "1");
+		$result->free();
 	}
+	$conn->close();
 	return false;
+*/
+	return isset($_SESSION["isAdmin"]) && ($_SESSION["isAdmin"] == 1);
 }
 
 
@@ -113,6 +118,7 @@ function getDemo()
 	
 	$result = $conn->query($sql);
 	$bOk = $result->num_rows > 0 && $row = $result->fetch_assoc(); 
+	$result->free();
 	$conn->close();
 	if ($bOk)
 	{
@@ -188,6 +194,7 @@ else
 	        					$sql = "update demo set iAm = '$szIam'";
 	        					$result = $conn->query($sql);
 	        					//print "<br>iAm updated...<br>";
+								$result->free();
 	        				}
 	        			}
 				
@@ -301,7 +308,7 @@ function requiresLogin($f)
 	if (!isset($f))
 		return true;
 
-	return !in_array($f, array("submitLogin", 'demo','listLog','infections','traffic','about','units'));
+	return !in_array($f, array("submitLogin", 'demo','listLog','infections','traffic','about','units', 'unitsMore','tagStatus'));
 }
 
 
@@ -359,26 +366,26 @@ function setupMenu()
 <?php
 }
 
-
-
 function getString($szSQL)
 {
 	$conn = getConnection();
 	$result = $conn->query($szSQL);
+	$string = false;
 
-	if ($result->num_rows > 0) 
+	if ($result)
 	{
-		// output data of each row  
-		print "<h2>Last requests:</h2><table>";
-		if ($row = $result->fetch_row()) 
+		if ($result->num_rows > 0) 
 		{
-			$conn->close();
-			//print "<br>getString() returned ".$row[0]."<br>";
-			return $row[0];
-	  	}
-	} 
-	return false;
+			// output data of each row  
+			print "<h2>Last requests:</h2><table>";
+			if ($row = $result->fetch_row()) 
+				$string = $row[0];
+		} 
+		$result->free();
+	}
+
 	$conn->close();
+	return $string;
 }
 
 function listPartners()
@@ -426,6 +433,7 @@ function listPartners()
 	{
 	  echo "No partners registered<br>";
 	}
+	$result->free();	//260717
 	$conn->close();
 	//print 'Supposed to list servers';
 
@@ -441,9 +449,12 @@ function getDomainName($nDomainId)
 {
 	$szSQL = "select domainName from domain where domainId = ".$_GET["id"];
 	//print "SQL: $szSQL<br>";
-	$res = getConnection()->query($szSQL);
+	$conn = getConnection(); 
+	$res = $conn->query($szSQL);
 	$row = $res->fetch_assoc();
 	$domain = $row["domainName"];
+	$res->free();	//260717
+	$conn->close();	//260717
 	return $domain;
 }
 
@@ -461,6 +472,7 @@ function editDescription()
 		$stmt = $conn->prepare($szSQL);
 		$stmt->bind_param("si", $_GET["desc"], $_GET["id"]); 
 	    $stmt->execute();
+		$conn->close();	//260717
                	
        	//print "$szSQL<br>";
         //$result = $conn->query($szSQL);
@@ -493,6 +505,7 @@ function addAssistanceRequest()
 			$stmt->bind_param("sii", $_GET["ip"],$_GET["port"], $nThreshold); //$_GET["ip"], 
 	        $stmt->execute();
         	print "I think it's registered...".$_GET["ip"].":".$_GET["port"]."<br><br><a href=\"index.php?f=attack\">See list</a>";
+			$conn->close();//260717
         	return;
         }
         else
@@ -606,6 +619,7 @@ if (isAdmin())
 	else
 		if ($result->num_rows > 1)
 			print "<a href=\"index.php?f=warnings\"><font color=\"red\">There are warnings. Click here to see.</font></a><br><br>";
+	$result->close();	//260717
 	$conn->close();
 }
 

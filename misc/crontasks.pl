@@ -107,7 +107,6 @@ sub reportStatus {
 	$sthCount->finish();
 
 	#Find seconds since last traffic record
-	#my $szSQL = "select inet_ntoa(ip) from traffic where coalesce(lastSeen, created) > NOW() - INTERVAL 1 MINUTE";
 	$szSQL = "SELECT  TIMESTAMPDIFF(SECOND, coalesce(lastSeen, created), NOW()) AS seconds_since from traffic T order by trafficId desc limit 1";
 	my $sthLast = $dbh->prepare($szSQL);
 	$sthLast->execute() or die "execution failed: $sthSetup->errstr()";
@@ -115,6 +114,32 @@ sub reportStatus {
 	$json{"trfc"} = $cSeconds->{"seconds_since"};
 	$sthCount->finish();
 
+	#Find open mysql connections
+	$szSQL = "SHOW STATUS LIKE 'Threads_connected'";
+	$sth = $dbh->prepare($szSQL);
+	$sth->execute() or die "execution failed: $sthSetup->errstr()";
+	my $rec = $sth->fetchrow_hashref();
+	$json{"sqlThrds"} = $rec->{"Value"};
+	$sth->finish();
+
+	#Check if boot is required, updates available and time of last automatic update
+	$json{"bootReq"} = -e "/var/run/reboot-required" ? 1 : 0;
+
+	my $updates = `/usr/lib/update-notifier/apt-check 2>&1`;
+	chomp $updates;
+
+	$json{"updates"} = $updates;
+
+	#$json{"updates"} = `/usr/lib/update-notifier/apt-check`;
+	
+	#$json{"lastUpdate"} = `stat -c %y /var/lib/apt/periodic/update-success-stamp`;
+	my $file = "/var/lib/apt/periodic/update-success-stamp";
+	if (-e $file) {
+		my $seconds_since = time - (stat($file))[9];		
+		$json{"lstUp"} = $seconds_since;
+	} else {
+		$json{"lstUp"} = -1;
+	}
 
 	#************* Assemble the json and send it to DB Servers and store it locally.
 
@@ -722,7 +747,7 @@ while (time() - $nTimeStarted < 52)
 
 $dbh->disconnect;
 
-my $nice_timestamp = getNiceTimestamp();
+$nice_timestamp = getNiceTimestamp();
 
 if ($nCount < 5 && $nSecondsToSleepBetweenIterations > 0) {
 	print "$nice_timestamp: ****** WARNING crontasks.pl only managed to make $nCount iterations.\nYou may consider to reduce \$nSecondsToSleepBetweenIterations from ".$nSecondsToSleepBetweenIterations."\n";  
