@@ -87,7 +87,7 @@ function getDotByInterval($json, $szTag, $nOk, $nError, $szTitleOk, $szTitleWarn
 function check($json, $field, $ifTrue, $ifFalse)
 {
 	if (!isset($json[$field]))
-		return '<span title="Old version. Scripts is not yet checking \$field\""><img src="img/yellow_dot.png"></span>';
+		return '<span title="Old version. Scripts is not yet checking &quot;'.$field.'&quot;"><img src="img/yellow_dot.png"></span>';
 
 	return '<span title="'.($json[$field] == "1" ? $ifTrue : $ifFalse).'">'.getDot($json[$field] == "1").'</span>';
 }

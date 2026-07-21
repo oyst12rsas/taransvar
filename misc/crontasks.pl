@@ -660,7 +660,7 @@ if (!runningAsCron() && !runningBootCheck())	#Run "sudo perl crontasks.pl whatev
 	#  That way you can check any debug code without the cron job distrubing the process.
 	#Displays a warning in dashboard so don't forget to disable this code...
 	print "********* Running debug tasks...\n";
-	reportStatus($dbh);
+	#reportStatus($dbh);
 	#handle_syslogThreat_table($dbh);
 	#logDmesg();		#lib_cron.pm
 
@@ -690,7 +690,7 @@ if (!runningAsCron() && !runningBootCheck())	#Run "sudo perl crontasks.pl whatev
 	#	print "******* Network setup ok *************\n";
 	#}
 	
-	#startTaraSystemsOk();	
+	startTaraSystemsOk();	
 	print "Finishing debugging code.. To run as crontasks.pl would, add \"cron\" as parameter\n";
 	exit;
 }
