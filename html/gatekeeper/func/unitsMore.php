@@ -25,7 +25,10 @@ function checkPrint(&$status, $szFld, $szLabel)
 function unitsMore()
 {
 	if (!isAdmin())
+	{
+		print "You have to login as admin to view this info.";
 		return;
+	}
 
 	$conn = getConnection();
 	
@@ -118,7 +121,7 @@ function unitsMore()
 		else
 			print '<tr><td colspan="2"><a href="index.php?f=unitsMore&id='.$_GET["id"].'&json">See full json</a></td></tr>';
 
-		if ($row["len"]+0 > 200)
+		if (isset($row["len"]) && $row["len"]+0 > 200)	//NOTE! Field is being changed to text so this test will soon be obsolete
 			print '<tr><td colspan="2"><font color="red">'.$row["len"].' characters of 255 available used for status! Consider switch to text field.</font></td></tr>';
 
 		print "<table>";

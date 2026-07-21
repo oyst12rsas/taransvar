@@ -166,7 +166,9 @@ function printServerStatus($seconds_since, $status, $nId)
 
 	//Boot required and updates
 	//$szServerStatus .= (isset($json["bootReq"])?check($json["bootReq"]):$szNotSet);
-	$szServerStatus .= check($json, "bootReq", "boot is not required", "the system requires a boot after upgrading");
+	$cTemp = array();
+	$cTemp["bootOk"] = (isset($json["bootReq"]) && ($json["bootReq"]==1) ? 0:1);
+	$szServerStatus .= check($cTemp, "bootOk", "boot is not required", "the system requires a boot after upgrading");
 
 	$szServerStatus .= "<br>";
 
