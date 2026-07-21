@@ -245,8 +245,36 @@ update setup set dbVersion = 71;
 alter table setup add blockSshThreshold tinyint not null default 0 after blockIncomingTaggedTrafficThreshold;
 update setup set dbVersion = 72;
 
+#version 73 (260721)
+alter table setup modify networkStatus text;
+alter table partnerRouter modify status text;
+create table logTotals (
+	ip int unsigned not null,
+	last_seen timestamp null,
+	iptables_last_hour int unsigned null,
+	iptables_last_day int unsigned null,
+	iptables_last_week int unsigned null,
+	iptables_last_month int unsigned null,
+	ssh_last_hour int unsigned null,
+	ssh_last_day int unsigned null,
+	ssh_last_week int unsigned null,
+	ssh_last_month int unsigned null,
+	untagged_rejects_last_hour int unsigned null,
+	untagged_rejects_last_day int unsigned null,
+	untagged_rejects_last_week int unsigned null,
+	untagged_rejects_last_month int unsigned null,
+	primary key(ip)
+);
+create table partnerRouterStatusLog (
+	ip int unsigned not null,
+	created timestamp not null default current_timestamp,
+	status text null,
+	primary key(ip, created)
+);
+update setup set dbVersion = 73;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 73;
+#update setup set dbVersion = 74;
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 
 #can import DB changes automatically based on the content of this file...

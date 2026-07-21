@@ -141,6 +141,46 @@ sub reportStatus {
 		$json{"lstUp"} = -1;
 	}
 
+	#Check log forwarding.
+	my $szIptablesLog = `sudo iptables -L -n -v --line-numbers | grep LOG`;
+	#Returns something like: 10       7  1430 LOG        0    --  *      *       0.0.0.0/0            0.0.0.0/0            limit: avg 10/min burst 20 LOG flags 0 level 4 prefix "TARASEC_squash: "
+	
+	my $szStatus = "";
+
+	if ($szIptablesLog =~ /^\s*\d+\s+\d+\s+(\d+)\s+(LOG).*?avg\s+(\d+)\/min\s+burst\s+(\d+).*?prefix\s+"([^:"]+)/)
+	{
+    	my ($bytes, $target, $avg, $burst, $prefix) = ($1, $2, $3, $4, $5);
+
+	    $szStatus = "log:1,byte:$bytes,log:$avg,burst:$burst,prefix:$prefix";
+	}
+	else
+	{
+    	$szStatus = "log:0";
+	}
+
+	my $rsyslogActive = `systemctl is-active rsyslog 2>/dev/null`;
+	chomp $rsyslogActive;
+
+	$szStatus .= ",rsyslog:$rsyslogActive";
+
+	#Alternative ways to report rsyslog setup
+	#UDP rsyslog: 	grep -R "@" /etc/rsyslog.conf /etc/rsyslog.d/
+	#TCP:			grep -R "@@" /etc/rsyslog.conf /etc/rsyslog.d/
+	#or: 			action(type="omfwd" target="192.168.1.10" port="514" protocol="udp")
+	#regardless of syntax: grep -R -E 'omfwd|target=|@' /etc/rsyslog.conf /etc/rsyslog.d/
+	#Just IPs: 		grep -RhoP 'target="\K[^"]+|(?<=@)[^:]+' /etc/rsyslog.conf /etc/rsyslog.d/
+	#Or simply the lines: grep -R -n -E 'omfwd|target=|@' /etc/rsyslog.conf /etc/rsyslog.d/
+
+	my $szRsyslogSetup = `grep -RhoP 'target="\\K[^"]+|(?<=@)[^:]+' /etc/rsyslog.conf /etc/rsyslog.d/ 2>/dev/null`;
+	chomp $szRsyslogSetup;
+	# Replace multiple destinations/newlines with commas
+	$szRsyslogSetup =~ s/\s+/,/g;
+	$szRsyslogSetup =~ s/,+$//;
+	$szStatus .= ",setup:$szRsyslogSetup";
+	$json{"rsyslog"} = $szStatus;
+
+
+	#Check log to db server status
 	#************* Assemble the json and send it to DB Servers and store it locally.
 
 	my $cJson = encode_json(\%json);
