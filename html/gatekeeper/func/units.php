@@ -45,6 +45,11 @@ function getDot($bOk)
 	return '<img src="img/'.($bOk?"green":"red").'_dot.png">';
 }
 
+function getTitledDot($bOk, $szTitleOk, $szTitleNotOk)
+{
+	return '<span title="'.($bOk?$szTitleOk:$szTitleNotOk).'"><img src="img/'.($bOk?"green":"red").'_dot.png"></span>';
+}
+
 function getDotByInterval($json, $szTag, $nOk, $nError, $szTitleOk, $szTitleWarn, $szTitleError)
 {
 //	$json = json_decode($status, true);
@@ -130,42 +135,39 @@ function printServerStatus($seconds_since, $status, $nId)
 	//if ($seconds_since+0 > 65)
 	//	return '<font color="red">Server is troubled. Better use another. Status: '.$status.'</font>';
 
-	$szNotSet = '<span title="Old version. Scripts not yet updated"><img src="img/yellow_dot.png"></span>';
+	$cTemp = array();
+	$cTemp["secSince"] = $seconds_since;
+
+	$szServerStatus = getDotByInterval($cTemp, "secSince", 65, 90, 
+					"Receiving status messages",
+					"A bit long since received status message. There may be communication problems.", 
+					"Not been sending status message for $seconds_since seconds. Please inform tech team");
 
 	$json = json_decode($status, true);
-	//$szServerStatus = (isset($status)?check($json["knl"]):$szNotSet);
-	$szServerStatus = check($json, "knl", "tarakernel is running", "tarakernel is NOT running");
 
-	//$szServerStatus .= (isset($status)?check($json["lnk"]):$szNotSet);
+	$szServerStatus .= check($json, "knl", "tarakernel is running", "tarakernel is NOT running");
+
 	$szServerStatus .= check($json, "lnk", "taralink is running", "taralink is NOT running");
 
-	//$szServerStatus .= (isset($status)?check($json["cron"]):$szNotSet);
 	$szServerStatus .= check($json, "cron", "crontask.pl (perl task) is running", "crontask.pl (perl task) is NOT running");
 
 	$szServerStatus .= getDotByInterval($json, "dmesg", 20, 90, 
 					"Receiving dmesg messages",
 					"A bit long since received dmesg. Refresh in a minute may help", 
 					"Not receiving dmesg. Please inform tech team");
-	//$nSeconds = (isset($json["dmesg"])?$json["dmesg"]:1000000);
-	//$szServerStatus .= getDot($nSeconds < 90);
 	
 	$szServerStatus .= getDotByInterval($json, "trfc", 20, 90, 
 					"Receiving traffic reports",
-					"A bit long since received traffic. Refresh in a minute may help", 
-					"Not receiving traffic reports. Please inform tech team");
-	//$nSeconds = (isset($json["trfc"])?$json["trfc"]:1000000);
-	//$szServerStatus .= getDot($nSeconds < 90);	
+					"A bit long since received traffic. If no other issue is reported, it's probably just because there's no users.", 
+					"Not receiving traffic reports. If no other issue is reported, it's probably just because there's no users.");
 
 	//Open mysql connections
 	$szServerStatus .= getDotByInterval($json, "sqlThrds", 12, 25, 
 					"Normal number of sql threads busy",
 					"A bit too many sql threads. System may be in trouble", 
 					"Too many sql threads. Please inform tech team");
-	//$nCount = (isset($json["sqlThrds"])?$json["sqlThrds"]:0);
-	//$szServerStatus .= getDot($nCount < 20);	//Current limit is 150, normal < 10
 
 	//Boot required and updates
-	//$szServerStatus .= (isset($json["bootReq"])?check($json["bootReq"]):$szNotSet);
 	$cTemp = array();
 	$cTemp["bootOk"] = (isset($json["bootReq"]) && ($json["bootReq"]==1) ? 0:1);
 	$szServerStatus .= check($cTemp, "bootOk", "boot is not required", "the system requires a boot after upgrading");
@@ -234,6 +236,7 @@ function printServerStatus($seconds_since, $status, $nId)
 	else
 		$bOldScript = 1;
 
+	//Memory usage
 	if (isset($json["mem"]))
 	{
 		$cRes = explode("/", $json["mem"]);
@@ -256,7 +259,26 @@ function printServerStatus($seconds_since, $status, $nId)
 	else
 		$bOldScript = 1;
 
+	//rsyslog activated. When set up: "log:0,rsyslog:active,setup:@100.68.181.35"
+	if (isset($json["rsyslog"]))
+	{
+		$data = [];
 
+		foreach (explode(',', $json["rsyslog"]) as $item) 
+		{
+		    [$key, $value] = explode(':', $item, 2); // limit to 2 in case value contains ':'
+	    	$data[$key] = $value;
+		}
+		$bOk = ($data["log"] == 1 && !strcmp(($data["rsyslog"] ?? ""), "active") && strlen(($data["setup"] ?? "")));
+		$szServerStatus .= getTitledDot($bOk, 
+					"rsyslog is set up: ".$data["setup"],
+					"rsyslog is not set up");
+	}
+	else
+		$bOldScript = 1;
+
+
+	//Active users
 	if (isset($json["usr"]))
 	{
 		$szServerStatus .= getDotByInterval($json, "usr", 1, 3, 

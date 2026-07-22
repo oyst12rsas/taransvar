@@ -273,8 +273,14 @@ create table partnerRouterStatusLog (
 );
 update setup set dbVersion = 73;
 
+#version 74 (260721)
+alter table setup add systemErrorSet timestamp null;
+alter table setup add systemErrorSeverity tinyint unsigned;
+alter table setup add systemError varchar(255);
+update setup set dbVersion = 74;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 74;
+#update setup set dbVersion = 75;
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 
 #can import DB changes automatically based on the content of this file...

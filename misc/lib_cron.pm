@@ -225,7 +225,7 @@ sub logDmesg {
 #	my $nDmsgLen = length($file_content); 
 #	if ($nDmsgLen < 100) {
 #	print "****** WARNING **** dmesg log is only $nDmsgLen characters:\n$file_content\n";
-#	}#asdf
+#	}#
 }
 
 sub deleteConfigUpdateTempFiles {
@@ -1301,13 +1301,161 @@ sub updateGlobalDemo {
 }
 
 
-sub startTaraKernelOk {
+sub setSystemError {
+	my ($nSeverity, $szError) = @_;
+	my $dbh = getConnection();
+	my $szSQL = "select systemErrorSet, coalesce(systemErrorSeverity,0) as systemErrorSeverity, systemError from setup limit 1";
+	#asdf
+	my $sth = $dbh->prepare($szSQL);
+	$sth->execute() or die "execution failed: $sth->errstr()";
+	if (my $row = $sth->fetchrow_hashref()) {
+		if ($row->{'systemErrorSeverity'}+0 >= $nSeverity) {
+			return;
+		}
+
+		$szSQL = "update setup set systemErrorSet = now(), systemErrorSeverity = ?, systemError = ?";
+		$sth = $dbh->prepare($szSQL);
+		$sth->execute($nSeverity, $szError) or die "execution failed: $sth->errstr()";
+	}
+}
+
+
+sub startTaraKernelOk_old_code {
 	if (!moduleRunning("tarakernel")) {
-		system ("modprobe tarakernel");
+		#system ("modprobe tarakernel");
+		my $szRes = `modprobe tarakernel`;
+
+		print "Result from modprobe: $szRes\n";
+
+		my $szErrorMsg = "FATAL: Module tarakernel not found in directory /lib/modules";							#When linux upgraede and recompile is required.
+		my $szDebugMsg = "ERROR: could not insert 'tarakernel': Unknown symbol in module, or unknown parameter";	#When deliberately deleted taransvar.ko
+
+		if ((index($szRes, $szErrorMsg) != -1) || (index($szRes, $szDebugMsg) != -1)) {
+			#Error message indicating linux version upgrade and required recompilation...
+			print "ERROR MESSAGE IDENTIFIED: $szRes\nIndicated that compilation is requried.. Trying to compile.\n";
+
+			#first find the first non-root user (has homedir at /home)
+			my $user;
+
+			open my $fh, '<', '/etc/passwd' or die "Can't open /etc/passwd: $!";
+			while (<$fh>) {
+    			chomp;
+    			my ($name, $x, $uid, $gid, $gecos, $home, $shell) = split /:/;
+    			next if $uid == 0;              # Skip root
+    			next unless $home =~ m{^/home/};
+    			$user = $name;
+    			last;
+			}
+			close $fh;
+
+			print "Assuming user owning tarasnvar git is: $user\n" if defined $user;
+			my $szMiscDir = "/home/$user/taransvar/misc";
+
+			if (-d $szMiscDir) {
+				my $szCmd = "cd $szMiscDir && perl compile.pl bg";
+				system($szCmd);
+
+				if (!moduleRunning("tarakernel")) {
+					setSystemError(9, "Tarakernel still not running after attempt to compile"); #$nSeverity = 9
+				} else {
+					setSystemError(9, "Seems like tarakernel is running after attempt to compile (tarakernel not found in /lib/modules/....)"); #$nSeverity = 9
+				}
+
+			} else {
+				setSystemError(9, "tarakernel not found in /lib/modules/uname-ver_dir. Want to compile but unable to find user that owns git. Tried: $szMiscDir"); #$nSeverity = 9
+			}
+		} else {
+			print "Failed to start tarakernel, but unknown message: $szRes\n";
+			setSystemError(9, "Unknown error when trying to start tarakernel: $szRes");
+		}
+
 		return moduleRunning("tarakernel");
 	}
 	return 1;	
 }
+
+
+
+sub startTaraKernelOk {
+	if (!moduleRunning("tarakernel")) {
+	    my $szRes = `modprobe tarakernel 2>&1`;
+    	my $nExitCode = $? >> 8;
+
+	    print "Result from modprobe: $szRes\n";
+    	print "Exit code: $nExitCode\n";
+
+    	my $szMissingModule = "Module tarakernel not found in directory /lib/modules";
+    	my $szUnknownSymbol = "could not insert 'tarakernel': Unknown symbol in module, or unknown parameter";
+
+	    if (
+    	    index($szRes, $szMissingModule) != -1 ||
+        	index($szRes, $szUnknownSymbol) != -1
+	    ) 
+		{
+    	    print "ERROR MESSAGE IDENTIFIED:\n$szRes";
+        	print "Compilation is required. Trying to compile.\n";
+
+	        # Compile here...
+
+			my $szErrorMsg = "FATAL: Module tarakernel not found in directory /lib/modules";							#When linux upgraede and recompile is required.
+			my $szDebugMsg = "ERROR: could not insert 'tarakernel': Unknown symbol in module, or unknown parameter";	#When deliberately deleted taransvar.ko
+
+			if ((index($szRes, $szErrorMsg) != -1) || (index($szRes, $szDebugMsg) != -1)) 
+			{
+				#Error message indicating linux version upgrade and required recompilation...
+				print "ERROR MESSAGE IDENTIFIED: $szRes\nIndicated that compilation is requried.. Trying to compile.\n";
+
+				#first find the first non-root user (has homedir at /home)
+				my $user;
+
+				open my $fh, '<', '/etc/passwd' or die "Can't open /etc/passwd: $!";
+				while (<$fh>) {
+    				chomp;
+	    			my ($name, $x, $uid, $gid, $gecos, $home, $shell) = split /:/;
+    				next if $uid == 0;              # Skip root
+    				next unless $home =~ m{^/home/};
+    				$user = $name;
+    				last;
+				}
+				close $fh;
+
+				print "Assuming user owning tarasnvar git is: $user\n" if defined $user;
+				my $szMiscDir = "/home/$user/taransvar/misc";
+
+				if (-d $szMiscDir) {
+					my $szCmd = "cd $szMiscDir && perl compile.pl bg";
+					system($szCmd);
+
+					if (!moduleRunning("tarakernel")) {
+						setSystemError(9, "Tarakernel still not running after attempt to compile"); #$nSeverity = 9
+					} else {
+						setSystemError(9, "Seems like tarakernel is running after attempt to compile (tarakernel not found in /lib/modules/....)"); #$nSeverity = 9
+					}
+
+				} else {
+					setSystemError(9, "tarakernel not found in /lib/modules/uname-ver_dir. Want to compile but unable to find user that owns git. Tried: $szMiscDir"); #$nSeverity = 9
+				}
+			} else {
+				print "Failed to start tarakernel, but unknown message: $szRes\n";
+				setSystemError(9, "Unknown error when trying to start tarakernel: $szRes");
+			}
+
+			return moduleRunning("tarakernel");
+	    }
+    	elsif ($nExitCode != 0) 
+		{
+        	print "Failed to start tarakernel, but unknown message:\n$szRes\n";
+    	}
+    	else {
+        	print "tarakernel started successfully.\n";
+		}
+	}
+	return 1;	
+}
+
+
+
+
 
 sub startTaraLinkOk {
 	#NOTE doesn't work without: sudo apt-get install dbus-x11

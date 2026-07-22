@@ -147,11 +147,11 @@ sub reportStatus {
 	
 	my $szStatus = "";
 
-	if ($szIptablesLog =~ /^\s*\d+\s+\d+\s+(\d+)\s+(LOG).*?avg\s+(\d+)\/min\s+burst\s+(\d+).*?prefix\s+"([^:"]+)/)
+	if ($szIptablesLog =~ /^\s*\d+\s+\d+\s+(\d+)\s+LOG\b.*?avg\s+(\d+)\/min\s+burst\s+(\d+).*?prefix\s+"([^"]+)"/m) 
 	{
-    	my ($bytes, $target, $avg, $burst, $prefix) = ($1, $2, $3, $4, $5);
-
-	    $szStatus = "log:1,byte:$bytes,log:$avg,burst:$burst,prefix:$prefix";
+	    my ($bytes, $avg, $burst, $prefix) = ($1, $2, $3, $4);
+	    $prefix =~ s/:\s*$//;
+	    $szStatus = "log:1,byte:$bytes,avg:$avg,burst:$burst,prefix:$prefix";
 	}
 	else
 	{

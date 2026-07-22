@@ -24,11 +24,11 @@ function checkPrint(&$status, $szFld, $szLabel)
 
 function unitsMore()
 {
-	if (!isAdmin())
+	/*if (!isAdmin())
 	{
 		print "You have to login as admin to view this info.";
 		return;
-	}
+	}*/
 
 	$conn = getConnection();
 	

@@ -710,10 +710,15 @@ if (!$nErrors)	#This may be a lot so don't put it on the screen if there's error
 		
 		#Add 
 		my $szWarningTxt = "";
-		if ($row->{'statusReceived'} < 6*60 && $row->{'statusReplied'} < 6*60) {
+
+		my $bReceivedLessThan = (defined $row->{statusReceived} ? $row->{statusReceived} : 100000) < 6 * 60;
+		my $bRepliedLessThan = (defined $row->{statusReplied}  ? $row->{statusReplied}  : 100000) < 6 * 60;
+
+		if ($bReceivedLessThan && $bRepliedLessThan)
+		{
 			$szWarningTxt = "Both receiving and sending status updates - THAT'S GREAT!";
 		} else {
-			if ($row->{'statusReceived'} < 6*60 || $row->{'statusReplied'} < 6*60) {
+			if ($bReceivedLessThan || $bRepliedLessThan) {
 				$szWarningTxt = "Receiving or sending status from/to partner (but not both). crontasks.pl not running on both?";
 			}
 			else {
