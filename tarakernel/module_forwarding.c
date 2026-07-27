@@ -21,7 +21,7 @@ int checkFixTagging(struct _PacketInspection *pPacket, bool bForwarding, const s
 	                      (nSenderIsInfected && nRequestedAssistance? " and":""),
 	                      (nRequestedAssistance? " receiver has requested ASSISTANCE!":"")); 
 	        
-	pr_info("tarakernel: FW - in checkFixTagging for %s->%s\n", pPacket->cSourceIp, pPacket->cDestIp);
+	//pr_info("tarakernel: FW - in checkFixTagging for %s->%s\n", pPacket->cSourceIp, pPacket->cDestIp);
 
 	if (pSetup->cShowInstructions.bits.doTagging)
 	{
@@ -116,6 +116,8 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 	//pPacket = (struct _PacketInspection *)kmalloc(sizeof(struct _PacketInspection), GFP_KERNEL);
 	//initPacket(pPacket, skb, state);
 	struct _PacketInspection *pPacket = getPacketInfo(priv, skb, state);
+
+	testing("FW", pPacket);
 
 	if (pPacket->ip_header->protocol != IPPROTO_TCP)
 		return NF_ACCEPT;	//260320 - not sure about this......

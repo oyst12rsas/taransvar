@@ -6,6 +6,9 @@
 
 # Central database server
 #DBSERVER="100.68.181.35"
+#IS_GATEWAY=0
+#LAN_INTERFACE="wg0"
+#WAN_INTERFACE="wt0"
 
 # When deploying to production, consider moving SSH from the default port (22).
 #SSH_PORT="22"
@@ -60,17 +63,32 @@ iptables -P INPUT DROP
 iptables -P FORWARD ACCEPT
 iptables -P OUTPUT ACCEPT
 
+IS_GATEWAY="${IS_GATEWAY:-0}"
+LAN_INTERFACE="${LAN_INTERFACE:-wg0}"
+WAN_INTERFACE="${WAN_INTERFACE:-wt0}"
+
+if [ "$IS_GATEWAY" = "1" ]; then
+	#Flushing only filter, not NAT, so check if exists (with -C) before adding (-A) rule
+    iptables -t nat -C POSTROUTING -o "$WAN_INTERFACE" -j MASQUERADE \
+        2>/dev/null ||
+    iptables -t nat -A POSTROUTING -o "$WAN_INTERFACE" -j MASQUERADE
+
+    iptables -A FORWARD \
+        -i "$LAN_INTERFACE" \
+        -o "$WAN_INTERFACE" \
+        -j ACCEPT
+
+    iptables -A FORWARD \
+        -i "$WAN_INTERFACE" \
+        -o "$LAN_INTERFACE" \
+        -m conntrack --ctstate ESTABLISHED,RELATED \
+        -j ACCEPT
+fi
+
 # -------------------------------------------------
 # MACHINE-SPECIFIC RULES
-# Add local gateway/forwarding/NAT rules here
+# - including local gateway/forwarding/NAT rules here
 # -------------------------------------------------
-#Uncomment below if this is a tarasec gateway between LAN and WAN VPN networks
-#iptables -t nat -A POSTROUTING -o wt0 -j MASQUERADE
-#iptables -A FORWARD -i wg0 -o wt0 -j ACCEPT
-#iptables -A FORWARD -i wt0 -o wg0 \
-#    -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-
-
 
 iptables -A INPUT -i lo -j ACCEPT
 
@@ -104,6 +122,9 @@ iptables -A INPUT \
     -j LOG \
     --log-prefix "TARASEC_${NODE}: " \
     --log-level 4
+
+
+
 
 iptables -A INPUT -j DROP
 

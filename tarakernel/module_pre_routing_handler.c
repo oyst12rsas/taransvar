@@ -195,7 +195,7 @@ void reportInboundTraffic(struct _PacketInspection *pPacket)
                 pSetup->cPendingIncomingReportArr[n].nCount = 1;
 
 				pSetup->cPendingIncomingReportArr[n].nTag = pPacket->tcp_header->urg_ptr;	//OT_Changed: 260225 - just testing if can get this through taralink to DB
-				pr_info("Traffic stored %pI4:%u - tag: %u\n", &cTraffic.sIp, cTraffic.sPort, pSetup->cPendingIncomingReportArr[n].nTag);
+				//pr_info("tarakernel: Traffic stored %pI4:%u - tag: %u\n", &cTraffic.sIp, cTraffic.sPort, pSetup->cPendingIncomingReportArr[n].nTag);
 
 				//pSetup->cPendingIncomingReportArr[n].nTag = 316;//TESTING 260225 pPacket->tcp_header->urg_ptr;	//OT_Changed: 260225 - just testing if can get this through taralink to DB
 
@@ -361,6 +361,26 @@ int handleUdp(	struct _PacketInspection *pPacket)
 }
 
 
+void testing(char *lpCalledFrom, struct _PacketInspection *pPacket)
+{
+	//If you wanna print all these and nothing else: sudo dmesg -w | grep "(testing)"
+	if (1)
+	{
+		union _TagUnion cUnion;
+		cUnion.nTag = pPacket->tcp_header->urg_ptr;
+		char cStoredInfection[200];
+		struct _Remote_infection *pInfection = initElaboratedThreatInfo(pPacket);	//module_tagging.c
+
+		if (pInfection)
+			snprintf(cStoredInfection, sizeof(cStoredInfection), "infection stored on this computer: Severity = %d", pInfection->nSeverity);
+		else
+			strcpy(cStoredInfection, "No infection store on this computer");
+
+		pr_info("tarakernel: [testing] %s: %s -> %s, tag: %d. %s", lpCalledFrom, pPacket->cSourceIp, pPacket->cDestIp, pPacket->tcp_header->urg_ptr, cStoredInfection);
+	}
+}
+
+
 static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *skb, const struct nf_hook_state *state)
 {
     int bToOrFromMe = 0;
@@ -393,6 +413,8 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 		checkFree(pPacket, false /*bLeavingPostRouting*/);
 		return NF_ACCEPT;
 	}
+
+	testing("PR", pPacket);
 
 	//ØT - 260305 - From now log everything if set to logging 
 	if (pSetup->cShowInstructions.bits.doReportTraffic)

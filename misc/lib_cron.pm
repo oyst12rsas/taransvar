@@ -184,7 +184,9 @@ sub logDmesg {
 			$stmt->finish;
 			$nMaxId = $row->{"dmesgId"};
 			if ($row->{"seconds_since"}+0 > 1000) {
-				system("pkill -f worker_read_dmesg.pl");
+				#$dbh->disconnect();	#Close and reconnect afterwards to prevent the perl script from cloning the mqsql connection...
+				#$dbh = 0;
+				#system("pkill -f worker_read_dmesg.pl");
 				print "\n\n********** WARNING *********** $name.pl was stale (no dmesg msg in 1000 sec). Tried to kill it. ps -aux | grep worker_  to see when it was (re)started.\n"
 			}
 		} else {
@@ -206,6 +208,10 @@ sub logDmesg {
 	print "Script started: $szCmd\n";
 
 	#Delete old messages. 
+	if (!$dbh) {
+		#Connection used to be closed before pkill to prevent new script from cloning mysql connection (killing stopped/disabled but can leave this here if enabled later).
+		$dbh = getConnection();
+	}
 	$stmt = $dbh->prepare("delete from dmesg where dmesgId < ?");
 	my $nDelete = $nMaxId - 1000;
 	$stmt->execute($nDelete) or die "execution failed: $dbh->errstr()";	
