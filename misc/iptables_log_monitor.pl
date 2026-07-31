@@ -1,6 +1,10 @@
 #!/usr/bin/perl
 #Reads new entris to syslog (through rsyslog) or local syslog (journalctl)
 #call with perl iptables_log_monitor.pl [local|remote]
+
+#Used to be started by crontasks.pl. Now running as service... 
+#sudo systemctl status iptables-log-monitor.service --no-pager
+
 use strict;
 use warnings;
 #use IO::Socket::INET;
@@ -14,7 +18,9 @@ use func;	#NOTE! See comment above regarding lib..
 my $b_local_syslog = 0; #rsyslog by default
 #my $b_local_syslog = 1; #syslog by default
 
-if (0) #!$ARGV[0] || $ARGV[0] eq "local") {
+#if (#!$ARGV[0] || $ARGV[0] eq "local") 
+if (0)
+{
 	$b_local_syslog = 1;
 }
 

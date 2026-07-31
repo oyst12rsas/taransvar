@@ -1,6 +1,6 @@
 <?php
 //unitsMore.php
-    print "More info about router in network.";
+    print "More info about node in network.";
 
 
 function getBitStatus($szStatus)
@@ -54,7 +54,10 @@ function unitsMore()
 	{
 		print "<table>";
 
-		$status = json_decode($row["status"], true);
+		$status = $row["status"];
+		//$status = '{"ld":"0.00 0.00 0.00","knl":"1","df":"19G 9.8G 8.6G","updates":"3;0","boot":1000000,"cron":1,"mem":"552Mi/1.9Gi","sqlThrds":"3","nett":0,"dmesg":1,"msg":null,"lnk":1,"usr":0,"rsyslog":"log:1,byte:360,log:10,burst:20,prefix:TARASEC_tomato,rsyslog:active,setup:@100.68.181.35","trfc":58,"bootReq":0,"ip":0,"lstUp":885}';
+
+		$status = json_decode($status, true);
 
 		print '<tr><td>Name</td><td>'.$row["name"].'</td></tr>';
 
@@ -103,6 +106,33 @@ function unitsMore()
 
 		print '</tr>';
 
+		//*********** rsyslog ***************** */
+		$szRsyslog = $status["rsyslog"];
+		$data = [];
+		print "<tr><td>rsyslog</td><td><table>";
+
+		foreach (explode(',', $szRsyslog) as $item) {
+    		[$key, $value] = explode(':', $item, 2); // limit to 2 in case value contains ':'
+    		$data[$key] = $value;
+			print '<tr><td>'.$key.'</td><td>'.$value.'</td></tr>';
+		}
+		print "</table></td></tr>";
+
+		unset($status["rsyslog"]);
+
+		//********** unattended updates ************/
+		$szUpdates = $status["updates"];
+		$cUpdates = explode(";", $szUpdates);
+		$szSecUpdates = ($cUpdates[1]? '<font color="red">'.$cUpdates[1].' security updates</font>':'no security update');
+		print "<tr><td>Unattended updates</td><td>$cUpdates[0] regular updates and $szSecUpdates are waiting. ";
+		print ($status["bootReq"]?"<font color=\"red\">System requires a boot after updates</font>. ":"");
+		print "Last update was ".$status["lstUp"]." seconds ago.";
+		unset($status["updates"]);
+		unset($status["bootReq"]);
+		unset($status["lstUp"]);
+
+		//************ remaining (unhandled) */
+
 		if (count($status))
 			print '<tr><td>Remaining</td><td>'.json_encode($status).'</td></tr>';
 
@@ -121,8 +151,8 @@ function unitsMore()
 		else
 			print '<tr><td colspan="2"><a href="index.php?f=unitsMore&id='.$_GET["id"].'&json">See full json</a></td></tr>';
 
-		if (isset($row["len"]) && $row["len"]+0 > 200)	//NOTE! Field is being changed to text so this test will soon be obsolete
-			print '<tr><td colspan="2"><font color="red">'.$row["len"].' characters of 255 available used for status! Consider switch to text field.</font></td></tr>';
+		//if (isset($row["len"]) && $row["len"]+0 > 200)	//NOTE! Field is being changed to text so this test will soon be obsolete
+		//	print '<tr><td colspan="2"><font color="red">'.$row["len"].' characters of 255 available used for status! Consider switch to text field.</font></td></tr>';
 
 		print "<table>";
 

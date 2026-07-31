@@ -176,6 +176,9 @@ sub reportStatus {
 	# Replace multiple destinations/newlines with commas
 	$szRsyslogSetup =~ s/\s+/,/g;
 	$szRsyslogSetup =~ s/,+$//;
+
+	$szRsyslogSetup =~ s/,/^/g;	# change , to ^because comma is field separator
+
 	$szStatus .= ",setup:$szRsyslogSetup";
 	$json{"rsyslog"} = $szStatus;
 
@@ -619,11 +622,14 @@ sub check_start_perl_bg_script
 
 sub start_iptables_monitor
 {
-	my $script     = "/root/taransvar/perl/iptables_log_monitor.pl";
-	my $pidfile    = "/root/setup/log/iptables_monitor.pid";
-	my $logfile    = "/root/setup/log/iptables_monitor.log";
+#	Used to be started by crontasks.pl. Now running as service... 
+#	sudo systemctl status iptables-log-monitor.service --no-pager
+#
+#	my $script     = "/root/taransvar/perl/iptables_log_monitor.pl";
+#	my $pidfile    = "/root/setup/log/iptables_monitor.pid";
+#	my $logfile    = "/root/setup/log/iptables_monitor.log";
 
-	check_start_perl_bg_script($script, $pidfile, $logfile);
+#	check_start_perl_bg_script($script, $pidfile, $logfile);
 }
 
 sub start_local_iptables_monitor

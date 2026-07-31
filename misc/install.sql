@@ -279,8 +279,18 @@ alter table setup add systemErrorSeverity tinyint unsigned;
 alter table setup add systemError varchar(255);
 update setup set dbVersion = 74;
 
+#version 75 (260730)
+alter table setup add iptablesAllowPing bit(1) not null default b'1' after doOther;
+alter table setup add iptablesAllowSsh bit(1) not null default b'1' after doOther;
+alter table setup add sshPort tinyint not null default 0 after doOther;
+alter table setup add whoMaySsh int unsigned default 0 after doOther;
+alter table setup add iptablesSetupChanged bit(1) not null default b'0' after doOther;
+alter table setup add aiAssessment text;
+alter table setup add aiAssessmentTime timestamp null;
+update setup set dbVersion = 75;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 75;
+#update setup set dbVersion = 76;
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 
 #can import DB changes automatically based on the content of this file...

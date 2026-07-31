@@ -105,19 +105,19 @@ function getGatewayIP()
 
 function sizeToKB(string $str): int
 {
-    if (!preg_match('/^\s*([\d.]+)\s*([KMGT]?i)?\s*$/i', $str, $m)) {
-        return 0;   // or throw an exception
+    if (!preg_match('/^\s*([\d.]+)\s*([KMGT]?I?)?\s*$/i', $str, $m)) {
+        return 0;
     }
 
     $value = (float)$m[1];
     $unit  = strtoupper($m[2] ?? '');
 
     $multiplier = match ($unit) {
-        'KI' => 1,
-        'MI' => 1000,
-        'GI' => 1000000,
-        'TI' => 1000000000,
-        default => 1,   // no unit = KB
+        'K', 'KI' => 1,
+        'M', 'MI' => 1000,
+        'G', 'GI' => 1000000,
+        'T', 'TI' => 1000000000,
+        default   => 1,
     };
 
     return (int) round($value * $multiplier);
@@ -221,17 +221,21 @@ function printServerStatus($seconds_since, $status, $nId)
 
 	if (isset($json["df"]))
 	{
-		$szDF = str_replace("G","000000", $json["df"]);	//E.g: "df":"771G 456G 277G"
-		$szDF = str_replace("M","000", $szDF);	//If given in M, also change..
-		$cRes = explode(" ", $szDF);
-		$nPercentUsed = round((($cRes[1]+0) / ($cRes[0]+0)) * 100);
+
+		$cRes = explode(" ", $json["df"]);
+		$nUsed = sizeToKB($cRes[1]);
+		$nTotal = sizeToKB($cRes[0]);
+		if ($nTotal)
+			$nPercentUsed = round(($nUsed / $nTotal) * 100);
+		else
+			$nPercentUsed = 100;
 		$cMax = array();
 		$cMax["max"] = $nPercentUsed;
 		$szServerStatus .= getDotByInterval($cMax, "max", 70, 90, 
 					$nPercentUsed."% of disk used. This is normal",
 					$nPercentUsed."% of disk used. This should be monitored",
 					$nPercentUsed."% of disk used. Consider freeing space or upgrading.");
-
+		//$szServerStatus .= "<br>Disk: $nUsed of $nTotal ($cRes[1]/$cRes[0])<br>";
 	}
 	else
 		$bOldScript = 1;
