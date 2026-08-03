@@ -21,6 +21,7 @@ use lib_net;
 
 use POSIX qw(setsid);
 use Fcntl qw(:flock);
+use LWP::UserAgent;
 
 print "Usage:\nperl crontasks.pl\tRun only debugging tasks then quit.\nperl crontasks.pl cron\t\tTo run as by cron\nperl crontasks.pl force\t\tStart even if crontasks.pl already running\n";
 
@@ -35,6 +36,19 @@ if (!$ARGV[0] || $ARGV[0] ne "force")
 }
 # keep $fh open for whole script lifetime
 print "Able to lock crontasks lock file.\n";
+
+sub checkDisableSshChange {
+#	asdfasdf 
+	my $dbh = getConnection();
+	my $sthSetup = $dbh->prepare("select iptablesAllowPing, iptablesAllowSsh, sshPort, whoMaySsh, iptablesSetupChanged from setup where iptablesSetupChanged limit 1");
+	$sthSetup->execute() or die "execution failed: $sthSetup->errstr()";
+	if (my $cSetup = $sthSetup->fetchrow_hashref()) {
+		print "ssh setup CHANGED...\n";
+	} else {
+		print "ssh setup NOT changed...\n";
+	}
+	$sthSetup->finish();
+}
 
 sub reportStatus {
 	my ($dbh) = @_;
@@ -194,10 +208,36 @@ sub reportStatus {
 		my $fieldName = "Db$i";
 		if (defined $cSetup->{$fieldName}) {
 			my $ip = $cSetup->{$fieldName};
-			my $szUrl = "http://$ip/script/statusReport.php?json=".urlencode($cJson);
-    		print "$fieldName, $szUrl\n";
-			
-			my $szReply = `wget -q -O - "$szUrl" 2>&1`;
+			my $szReply;
+
+			my $bNewVersion = 1;
+
+			if ($bNewVersion) {
+
+				my $ua = LWP::UserAgent->new(
+    				timeout => 5,
+				);
+
+				my $url = "http://$ip/script/statusReport.php";
+				
+				my $response = $ua->post(
+				    $url,
+    				"Content-Type" => "application/json",
+    				Content        => $cJson,
+				);
+
+				my $szReply = $response->decoded_content;
+
+				if (!$response->is_success) {
+    				addWarningRecord($dbh, "Status report failed for DB server $1 ($ip): "
+       				. $response->status_line. "\n".$szReply);
+				}
+			} else {
+				my $szUrl = "http://$ip/script/statusReport.php?json=".urlencode($cJson);
+    			print "$fieldName, $szUrl\n";
+				$szReply = `wget -q -O - "$szUrl" 2>&1`;
+			}
+
 			#chomp $szReply;
 			$szReply =~ s/^\s+|\s+$//g;
 			print "Reply: $szReply\n";
@@ -657,6 +697,7 @@ setCronLibDbh($dbh);
 #if (!$ARGV[0]) {
 if (!runningAsCron() && !runningBootCheck())	#Run "sudo perl crontasks.pl whatever_except_cron_and_boot" to run this section. 
 {
+	checkDisableSshChange();	#Note! Keep this early to ensure immediate action... 
 	#To debug crontasks.pl, best way is to put your code here.... 
 	saveWarning("Debugging crontasks.pl or crontab is not set to run crontasks.pl with cron as parameter.");
 	#TO DEBUG crontasks.pl, do as follows:

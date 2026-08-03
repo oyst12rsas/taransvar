@@ -688,9 +688,10 @@ struct _Remote_infection *initElaboratedThreatInfo(struct _PacketInspection *pPa
         }        
 
         char cBuf[200];
-        snprintf(cBuf, sizeof(cBuf), "%s-%08X:%u->%08X:%u", UDP_THREAT_INFO_REQUEST_PREFIX, ntohl(iph->saddr), ntohs(pPacket->tcp_header->source),ntohl(iph->daddr),ntohs(pPacket->tcp_header->dest));
+//260802 - was:        snprintf(cBuf, sizeof(cBuf), "%s-%08X:%u->%08X:%u", UDP_THREAT_INFO_REQUEST_PREFIX, ntohl(iph->saddr), ntohs(pPacket->tcp_header->source),ntohl(iph->daddr),ntohs(pPacket->tcp_header->dest));
+        snprintf(cBuf, sizeof(cBuf), "%s-%pI4:%u->%pI4:%u", UDP_THREAT_INFO_REQUEST_PREFIX, &iph->saddr, ntohs(pPacket->tcp_header->source),&iph->daddr,ntohs(pPacket->tcp_header->dest));
         send_udp_json(iph->saddr, htons(TARAKERNEL_LISTENING_TO_PORT), cBuf);
-        pr_info("tarakernel SENDING: *** Requesting threat info from sender: %s\n", cBuf);
+        pr_info("tarakernel SENDING(0802): *** Requesting threat info from sender: %s\n", cBuf);
     }
 
 	setRemoteInfection(pRemoteInfection, pPacket, 0, 0, 0, 0, 0, 0, NULL);  //Update traffic data and timestamp

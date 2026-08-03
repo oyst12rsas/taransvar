@@ -11,7 +11,6 @@
 #WAN_INTERFACE="wt0"
 
 # When deploying to production, consider moving SSH from the default port (22).
-#ALLOW_SSH=1
 #SSH_PORT="22"
 
 #For now, web is required for inter-server communication. You can disable in index.php
@@ -64,13 +63,6 @@ iptables -P INPUT DROP
 iptables -P FORWARD ACCEPT
 iptables -P OUTPUT ACCEPT
 
-iptables -N TARASEC_SSH 2>/dev/null || true
-iptables -F TARASEC_SSH
-
-# The SSH chain must be checked before ESTABLISHED,RELATED.
-iptables -C INPUT -j TARASEC_SSH 2>/dev/null ||
-    iptables -I INPUT 1 -j TARASEC_SSH
-
 IS_GATEWAY="${IS_GATEWAY:-0}"
 LAN_INTERFACE="${LAN_INTERFACE:-wg0}"
 WAN_INTERFACE="${WAN_INTERFACE:-wt0}"
@@ -100,21 +92,9 @@ fi
 
 iptables -A INPUT -i lo -j ACCEPT
 
-#SSH before ESTABLISHED,RELATED to be able to cut connections
-if [ "$ALLOW_SSH" = "1" ]; then
-    iptables -A INPUT -p tcp --dport $SSH_PORT -j ACCEPT
-else
-	iptables -A INPUT -p tcp --dport $SSH_PORT  \
-    	-m limit --limit "${MAX_LOGS_PER_MIN}/min" \
-    	--limit-burst "$MAX_BURSTS" \
-    	-j LOG --log-prefix "TARASEC_SSH_DISABLED_${NODE}: " \
-    	--log-level 4
-
-    iptables -A INPUT -p tcp --dport $SSH_PORT \
-		-j REJECT --reject-with tcp-reset
-fi
-
 iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+iptables -A INPUT -p tcp --dport "$SSH_PORT" -j ACCEPT
 
 if [ "$ALLOW_WEB" = "1" ]; then
     iptables -A INPUT -p tcp --dport 80 -j ACCEPT
@@ -141,7 +121,9 @@ iptables -A INPUT \
     --limit-burst "$MAX_BURSTS" \
     -j LOG \
     --log-prefix "TARASEC_${NODE}: " \
-    --log-level 5
+    --log-level 4
+
+
 
 
 iptables -A INPUT -j DROP

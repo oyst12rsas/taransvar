@@ -20,7 +20,7 @@ function listServerStatus()
 		print "<table><tr><td>IP</td><td>Reported</td><td>Kernel</td><td>Link</td><td>Crontask</td><td>Load<br>(1 5 15min)</td><td>Mem<br>(used tot)</td><td>Disk<br>(tot used free)</td><td>&nbsp;</td></tr>";
 		while ($row = $result->fetch_assoc()) 
 		{
-			$status = json_decode($row["status"], true);
+			$status = json_decode($row["status"] ?? "", true);
 			print '<tr><td>'.$row["ip"].'</td><td>'.$row["time"].'</td>';
 			print '<td>'.(isset($status)?sjekk($status["knl"]):"??").'</td>';
 			print '<td>'.(isset($status)?sjekk($status["lnk"]):"??").'</td>';
@@ -138,7 +138,7 @@ function printServerStatus($seconds_since, $status, $nId)
 	$cTemp = array();
 	$cTemp["secSince"] = $seconds_since;
 
-	$szServerStatus = getDotByInterval($cTemp, "secSince", 65, 90, 
+	$szServerStatus = getDotByInterval($cTemp, "secSince", 71, 130, 
 					"Receiving status messages",
 					"A bit long since received status message. There may be communication problems.", 
 					"Not been sending status message for $seconds_since seconds. Please inform tech team");
@@ -273,8 +273,14 @@ function printServerStatus($seconds_since, $status, $nId)
 		    [$key, $value] = explode(':', $item, 2); // limit to 2 in case value contains ':'
 	    	$data[$key] = $value;
 		}
-		$bOk = ($data["log"] == 1 && !strcmp(($data["rsyslog"] ?? ""), "active") && strlen(($data["setup"] ?? "")));
-		$szServerStatus .= getTitledDot($bOk, 
+		$bOk = ($data["log"] == 1 && !strcmp(($data["rsyslog"] ?? ""), "active") && strlen($data["setup"] ?? ""));
+
+		$szMainDbServer = "100.68.126.0";
+
+		if (strlen(strlen($data["setup"] ?? "")) && !strstr($data["setup"], $szMainDbServer))
+			$szServerStatus .= getTitledDot(0, "N/A", "rsyslog is set up but not to send to primary DB server: $szMainDbServer");
+		else		
+			$szServerStatus .= getTitledDot($bOk, 
 					"rsyslog is set up: ".$data["setup"],
 					"rsyslog is not set up");
 	}

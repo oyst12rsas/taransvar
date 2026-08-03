@@ -364,7 +364,8 @@ int handleUdp(	struct _PacketInspection *pPacket)
 void testing(char *lpCalledFrom, struct _PacketInspection *pPacket)
 {
 	//If you wanna print all these and nothing else: sudo dmesg -w | grep "(testing)"
-	if (1)
+	//if (1)
+	if (pPacket->tcp_header->urg_ptr)
 	{
 		union _TagUnion cUnion;
 		cUnion.nTag = pPacket->tcp_header->urg_ptr;
@@ -376,7 +377,8 @@ void testing(char *lpCalledFrom, struct _PacketInspection *pPacket)
 		else
 			strcpy(cStoredInfection, "No infection store on this computer");
 
-		pr_info("tarakernel: [testing] %s: %s -> %s, tag: %d. %s", lpCalledFrom, pPacket->cSourceIp, pPacket->cDestIp, pPacket->tcp_header->urg_ptr, cStoredInfection);
+		pr_info("tarakernel: [testing - urg_ptr found] %s: %s -> %s, urg_ptr: %d, tag: %d. %s", 
+			lpCalledFrom, pPacket->cSourceIp, pPacket->cDestIp, pPacket->tcp_header->urg_ptr, cUnion.nTag, cStoredInfection);
 	}
 }
 
