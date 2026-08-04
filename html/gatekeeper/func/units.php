@@ -287,6 +287,13 @@ function printServerStatus($seconds_since, $status, $nId)
 	else
 		$bOldScript = 1;
 
+	//Services
+	if (!isset($json["srvcNtOk"])) {
+		//$szServerStatus .= getTitledDot(false, "N/A", "Check of services not implemented. Please upgrade tarasec systems");
+		$bOldScript = 1;
+	} else {
+		$szServerStatus .= getTitledDot(strlen($json["srvcNtOk"]) == 0, "All specified services are running", "Services not running: ".$json["srvcNtOk"]);
+	}
 
 	//Active users
 	if (isset($json["usr"]))

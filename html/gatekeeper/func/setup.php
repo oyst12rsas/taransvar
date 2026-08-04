@@ -76,9 +76,12 @@ function saveSetupNew()
 	updateSetupString("dontDmesgIPs", "dmsgIPs", $cConn);	
 	updateSetupString("nickname", "nick", $cConn);	
 
-	$szSQL = "update setup set handled = b'0';"; 
-	//print "<br>SQL: $szSQL<br>";
+	getUpdateBitField("iptablesAllowSsh", 			"allowSsh", $cConn);
+	getUpdateBitField("iptablesAllowPing", 			"allowPing", $cConn);
+	
+	$szSQL = "update setup set handled = b'0', iptablesSetupChanged = b'1';"; 
 	$cConn->query($szSQL) or die ("Error in sql: $szSQL");//mysql_error());
+
 }
 
 
@@ -104,7 +107,12 @@ function setup()
 
     print "<h2>Setup</h2>";
 	$szSQL = "select adminIp, inet_ntoa(adminIp) as adminIpA, inet_ntoa(internalIP) as internalIP, inet_ntoa(nettmask) as nettmask, 
-		statusIntervalSec, if(showStatus,1,0) as showStatus, ifnull(blockIncomingTaggedTrafficThreshold,0) as threshold, ifnull(blockSshThreshold,0) as sshThreshold, showPreRoutePartner, showPreRouteNonPartner, showForwardPartner, showForwardNonPartner, showUrgentPtrUsage, showOwnerless, showOther, showNew1, showNew2, doTagging, doReportTraffic, doInspection, doBlocking, doOther, inet_ntoa(globalDb1ip) as globalDb1ip, inet_ntoa(globalDb2ip) as globalDb2ip, inet_ntoa(globalDb3ip) as globalDb3ip, background, dbVersion, uptime, workshopId, dontDmesgIPs, nickname from setup";
+		statusIntervalSec, if(showStatus,1,0) as showStatus, ifnull(blockIncomingTaggedTrafficThreshold,0) as threshold,
+		ifnull(blockSshThreshold,0) as sshThreshold, showPreRoutePartner, showPreRouteNonPartner, 
+		showForwardPartner, showForwardNonPartner, showUrgentPtrUsage, showOwnerless, showOther, showNew1, showNew2, doTagging, doReportTraffic, doInspection, doBlocking, doOther, 
+		inet_ntoa(globalDb1ip) as globalDb1ip, inet_ntoa(globalDb2ip) as globalDb2ip, inet_ntoa(globalDb3ip) as globalDb3ip, 
+		iptablesAllowSsh, iptablesAllowPing,
+		background, dbVersion, uptime, workshopId, dontDmesgIPs, nickname from setup";
 	$conn = getConnection();
 	$result = $conn->query($szSQL);
     $nCount =0;
@@ -173,6 +181,10 @@ function setup()
         	<tr><td>Do blocking</td><td><input type="checkbox" name="doblock" <?php if ($row["doBlocking"]) print "checked"; ?>></td></tr>
         	<tr><td>Do other</td><td><input type="checkbox" name="doother" <?php if ($row["doOther"]) print "checked"; ?>></td></tr>
 
+		</table>
+		<table>
+        	<tr><td>Allow ssh</td><td><input type="checkbox" name="allowSsh" <?php if ($row["iptablesAllowSsh"]) print "checked"; ?>></td></tr>
+        	<tr><td>Allow ping</td><td><input type="checkbox" name="allowPing" <?php if ($row["iptablesAllowPing"]) print "checked"; ?>></td></tr>
 		</table>
         	</td></tr>
         	<tr><td colspan="2">

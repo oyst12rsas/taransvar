@@ -5,7 +5,7 @@
 # sudo nano /etc/tarasecfw.conf
 
 # Central database server
-#DBSERVER="100.68.181.35"
+#DBSERVER="100.68.126.0"
 #IS_GATEWAY=0
 #LAN_INTERFACE="wg0"
 #WAN_INTERFACE="wt0"
@@ -45,6 +45,7 @@ fi
 source "$CONF"
 
 SSH_PORT="${SSH_PORT:-22}"
+ALLOW_SSH="${ALLOW_SSH:-1}"
 ALLOW_WEB="${ALLOW_WEB:-1}"
 TCP_PORTS="${TCP_PORTS:-}"
 UDP_PORTS="${UDP_PORTS:-5552,514}"

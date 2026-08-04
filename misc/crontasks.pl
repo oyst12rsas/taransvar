@@ -37,13 +37,103 @@ if (!$ARGV[0] || $ARGV[0] ne "force")
 # keep $fh open for whole script lifetime
 print "Able to lock crontasks lock file.\n";
 
+sub readConfig
+{
+	my $cfgFile = "/etc/tarasec.conf";
+    my %cfg;
+
+	if (! -e $cfgFile) {
+		print "Config file not found: $cfgFile\nSet list of additional services to check:\nSERVICES=comma,separated,list,of,services\n\n";
+		return \%cfg;
+	}
+
+    open(my $fh, '<', $cfgFile);# or die "Cannot open $cfgFile: $!";
+
+    while (<$fh>) {
+        chomp;
+        s/^\s+|\s+$//g;
+
+        next if /^#/;
+        next if /^$/;
+
+        my ($key, $value) = split(/\s*=\s*/, $_, 2);
+        $cfg{$key} = $value if defined $key;
+    }
+
+    close($fh);
+
+    return \%cfg;
+}
+
+
+sub checkServices {
+
+	my @services = (
+    	"worker_read_dmesg",
+	);
+
+	my $cfg = readConfig();
+	print $cfg->{SERVICES};
+
+	print "\n\nChecking services:\n";
+
+	my @errors;
+	my @configServices = grep { length } split /,/, ($cfg->{SERVICES} // '');	
+	my @merged = (@services, @configServices);
+
+	foreach my $service (@merged) {
+		my $szStatus = `sudo systemctl status $service`;
+
+		if (system("systemctl is-active --quiet $service") == 0) {
+    		print "$service is RUNNING\n";
+		} else {
+    		print "$service is NOT running\n";
+			push @errors, $service;
+		}		
+	}
+
+	if (scalar(@errors)) {
+		return join(",", @errors);
+	} else {
+		return "";
+	}
+}
+
 sub checkDisableSshChange {
-#	asdfasdf 
 	my $dbh = getConnection();
-	my $sthSetup = $dbh->prepare("select iptablesAllowPing, iptablesAllowSsh, sshPort, whoMaySsh, iptablesSetupChanged from setup where iptablesSetupChanged limit 1");
+	my $sthSetup = $dbh->prepare("select iptablesAllowPing, coalesce(CAST(iptablesAllowSsh as UNSIGNED),0) as iptablesAllowSsh, sshPort, whoMaySsh, iptablesSetupChanged from setup where iptablesSetupChanged limit 1");
 	$sthSetup->execute() or die "execution failed: $sthSetup->errstr()";
 	if (my $cSetup = $sthSetup->fetchrow_hashref()) {
 		print "ssh setup CHANGED...\n";
+
+		my $allowSsh = $cSetup->{"iptablesAllowSsh"};
+
+		my $file = "/etc/tarasecfw.conf";
+
+		open(my $in, "<", $file) or die "Cannot open $file: $!";
+
+		my @lines;
+		my $found = 0;
+
+		while (my $line = <$in>) {
+    		if ($line =~ /^ALLOW_SSH=/) {
+        		$line = "ALLOW_SSH=$allowSsh\n";
+        		$found = 1;
+    		}
+    		push @lines, $line;
+		}
+
+		close($in);
+
+		push @lines, "\nALLOW_SSH=$allowSsh\n" unless $found;
+
+		open(my $out, ">", $file) or die "Cannot write $file: $!";
+		print $out @lines;
+		close($out);		
+		print "$file changed: ALLOW_SSH=$allowSsh\n";
+		my $szFwScript = "/root/taransvar/perl/firewall.sh";
+		`bash $szFwScript`;
+		print "FW updated: bash $szFwScript\n\n";
 	} else {
 		print "ssh setup NOT changed...\n";
 	}
@@ -155,6 +245,9 @@ sub reportStatus {
 		$json{"lstUp"} = -1;
 	}
 
+	#Check running services 
+	$json{"srvcNtOk"} = checkServices();
+
 	#Check log forwarding.
 	my $szIptablesLog = `sudo iptables -L -n -v --line-numbers | grep LOG`;
 	#Returns something like: 10       7  1430 LOG        0    --  *      *       0.0.0.0/0            0.0.0.0/0            limit: avg 10/min burst 20 LOG flags 0 level 4 prefix "TARASEC_squash: "
@@ -202,13 +295,13 @@ sub reportStatus {
 
 	my $cJson = encode_json(\%json);
 	print "Status: $cJson\n";
+	my $szReply;
 
 	for my $i (1 .. 3)
 	{
 		my $fieldName = "Db$i";
 		if (defined $cSetup->{$fieldName}) {
 			my $ip = $cSetup->{$fieldName};
-			my $szReply;
 
 			my $bNewVersion = 1;
 
@@ -226,7 +319,7 @@ sub reportStatus {
     				Content        => $cJson,
 				);
 
-				my $szReply = $response->decoded_content;
+				$szReply = $response->decoded_content;
 
 				if (!$response->is_success) {
     				addWarningRecord($dbh, "Status report failed for DB server $1 ($ip): "
@@ -254,11 +347,10 @@ sub reportStatus {
 		}
 	}
 
-	print "\n\n********************** About to store status in setup table *****************\n";
 	$szSQL = "update setup set networkStatus = ?, networkStatusChecked = now()";
 	$sthSetup = $dbh->prepare($szSQL) or die "prepare statement failed: $dbh->errstr()";
 	$sthSetup->execute($cJson) or die "execution failed: $sthSetup->errstr()";
-	print "\n\nStatus stored in setup table\n";
+	print "Status stored in setup table\n";
 }
 
 sub check_dhcpEvent {
@@ -681,8 +773,6 @@ sub start_local_iptables_monitor
 	check_start_perl_bg_script($script, $pidfile, $logfile);
 }
 
-
-
 my $nSecondsToSleepBetweenIterations = 5;
 my $nNumberOfWhoIsLookupsPerIteration = 5;	#Increase if too few have owner name in traffic list in http://localhost/index.php?f=traffic
 
@@ -697,7 +787,6 @@ setCronLibDbh($dbh);
 #if (!$ARGV[0]) {
 if (!runningAsCron() && !runningBootCheck())	#Run "sudo perl crontasks.pl whatever_except_cron_and_boot" to run this section. 
 {
-	checkDisableSshChange();	#Note! Keep this early to ensure immediate action... 
 	#To debug crontasks.pl, best way is to put your code here.... 
 	saveWarning("Debugging crontasks.pl or crontab is not set to run crontasks.pl with cron as parameter.");
 	#TO DEBUG crontasks.pl, do as follows:
@@ -707,7 +796,8 @@ if (!runningAsCron() && !runningBootCheck())	#Run "sudo perl crontasks.pl whatev
 	#  That way you can check any debug code without the cron job distrubing the process.
 	#Displays a warning in dashboard so don't forget to disable this code...
 	print "********* Running debug tasks...\n";
-	#reportStatus($dbh);
+	#checkDisableSshChange();	#Note! Keep this early to ensure immediate action... 
+	reportStatus($dbh);
 	#handle_syslogThreat_table($dbh);
 	#logDmesg();		#lib_cron.pm
 
@@ -737,7 +827,7 @@ if (!runningAsCron() && !runningBootCheck())	#Run "sudo perl crontasks.pl whatev
 	#	print "******* Network setup ok *************\n";
 	#}
 	
-	startTaraSystemsOk();	
+	#startTaraSystemsOk();	
 	print "Finishing debugging code.. To run as crontasks.pl would, add \"cron\" as parameter\n";
 	exit;
 }
@@ -819,6 +909,7 @@ while (time() - $nTimeStarted < 52)
 	#Enable some warnings here so you remember to enable again...
 	#saveWarning("handleConntrack() removed from cron job");
 
+	checkDisableSshChange();
 	check_dhcpEvent($dbh);	
 	handleConntrack($dbh);	#NOTE! Import port assignments. Import dhcp leases before this..
 	checkWhoIs($dbh, $nNumberOfWhoIsLookupsPerIteration);

@@ -131,6 +131,26 @@ function unitsMore()
 		unset($status["bootReq"]);
 		unset($status["lstUp"]);
 
+		//*********** Services not running ******************/
+		print "<tr><td>Services</td><td>";
+		if (!isset($status["srvcNtOk"]))
+			print "Please upgrade to newest version of tarasec";
+		else
+		{
+			$szServices = $status["srvcNtOk"];
+			if (strlen($szServices))
+				print 'Services that are not running: <font color="red">'.$szServices.'</font>';
+			else
+				print "All listed services are running.";
+
+			print "<br>sudo nano tarasec.conf and list additional services to check: SERVICES=list,of,services";
+		}
+		print "</td><tr>";
+
+
+		unset($status["srvcNtOk"]);
+		
+
 		//************ remaining (unhandled) */
 
 		if (count($status))
