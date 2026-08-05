@@ -65,12 +65,12 @@ iptables -P INPUT DROP
 iptables -P FORWARD ACCEPT
 iptables -P OUTPUT ACCEPT
 
-iptables -N TARASEC_SSH 2>/dev/null || true
-iptables -F TARASEC_SSH
+#iptables -N TARASEC_SSH 2>/dev/null || true
+#iptables -F TARASEC_SSH
 
 # The SSH chain must be checked before ESTABLISHED,RELATED.
-iptables -C INPUT -j TARASEC_SSH 2>/dev/null ||
-    iptables -I INPUT 1 -j TARASEC_SSH
+#iptables -C INPUT -j TARASEC_SSH 2>/dev/null ||
+#    iptables -I INPUT 1 -j TARASEC_SSH
 
 IS_GATEWAY="${IS_GATEWAY:-0}"
 LAN_INTERFACE="${LAN_INTERFACE:-wg0}"

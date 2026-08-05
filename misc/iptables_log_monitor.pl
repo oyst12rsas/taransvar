@@ -26,8 +26,8 @@ if (0)
 
 sub log_monitor
 {
-	my $LOG_PREFIX = "IPTABLES_";
-	$LOG_PREFIX="TARASEC_";
+	#my $LOG_PREFIX = "IPTABLES_";
+	my $LOG_PREFIX="TARASEC_";
 
 # Better use rsyslog to transfer
 #	my $UDP_TARGET = "127.0.0.1";
@@ -90,22 +90,22 @@ sub log_monitor
 
 			next unless defined $src && defined $dst;
 
-			my $msg = sprintf(
-				"DROP %s %s:%s -> %s:%s",
-				defined $proto ? $proto : '?',
-				$src,
-				defined $spt ? $spt : '?',
-				$dst,
-				defined $dpt ? $dpt : '?'
-			);
+			#my $msg = sprintf(
+			#	"DROP %s %s:%s -> %s:%s",
+			#	defined $proto ? $proto : '?',
+			#	$src,
+			#	defined $spt ? $spt : '?',
+			#	$dst,
+			#	defined $dpt ? $dpt : '?'
+			#);
 
-			print "LOG: $msg\n";
+			#print "LOG: $msg\n";
 
 			#my $ok = $sock->send($msg);
 			#warn "UDP send failed: $!\n" unless defined $ok;
 
 			#You may insert the full (original) line instead
-			$sthSyslog->execute($src, defined $spt ? $spt : 0, $msg) or die "execution failed: $sthSyslog->errstr()";
+			$sthSyslog->execute($src, defined $spt ? $spt : 0, $line) or die "execution failed: $sthSyslog->errstr()";
 			#$sthSyslog->execute($line) or die "execution failed: $sthSyslog->errstr()";
 
 			my $id = $dbh->last_insert_id(undef, undef, undef, undef);            

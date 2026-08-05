@@ -8,6 +8,11 @@
 //#include <linux/byteorder/generic.h>
 //#include <net/checksum.h>
 
+#include <linux/inet.h>
+#include <linux/string.h>
+#include <linux/kernel.h>
+
+
 #define TCPOPT_TIMESTAMP 8
 #define TCPOLEN_TIMESTAMP 10
 
@@ -783,63 +788,214 @@ int parse_threat_tuple_hang_candidate(const char *lpStartAt, __be32 *src_ip, __b
     return 1;
 }
 
-
-int parse_threat_tuple(const char *lpStartAt, __be32 *src_ip, __be16 *src_port, __be32 *dst_ip, __be16 *dst_port);
+/*	Old version expeting 8 digit hexadecimal IPs
 int parse_threat_tuple(const char *lpStartAt, __be32 *src_ip, __be16 *src_port, __be32 *dst_ip, __be16 *dst_port)
 {
     char buf[128];
     char *p, *from_ip, *from_port, *to_ip, *to_port, *arrow;
     unsigned long sp, dp;
 
-    pr_info("tara: parse 1 start='%s'\n", lpStartAt);
+    pr_info("tarakernel SENDING: parse 1 start='%s'\n", lpStartAt);
 
     strscpy(buf, lpStartAt, sizeof(buf));
-    pr_info("tara: parse 2 buf='%s'\n", buf);
+    pr_info("tarakernel SENDING: parse 2 buf='%s'\n", buf);
 
     p = buf;
 
     from_ip = p;
     p = strchr(p, ':');
-    if (!p) { pr_info("tara: parse fail A\n"); return 0; }
+    if (!p) { pr_info("tarakernel SENDING: parse fail A\n"); return 0; }
     *p++ = '\0';
     pr_info("tara: parse 3 from_ip='%s'\n", from_ip);
 
     from_port = p;
     arrow = strstr(p, "->");
-    if (!arrow) { pr_info("tara: parse fail B\n"); return 0; }
+    if (!arrow) { pr_info("tarakernel SENDING: parse fail B\n"); return 0; }
     *arrow = '\0';
     p = arrow + 2;
-    pr_info("tara: parse 4 from_port='%s'\n", from_port);
+    pr_info("tarakernel SENDING: parse 4 from_port='%s'\n", from_port);
 
     to_ip = p;
     p = strchr(p, ':');
-    if (!p) { pr_info("tara: parse fail C\n"); return 0; }
+    if (!p) { pr_info("tarakernel SENDING: parse fail C\n"); return 0; }
     *p++ = '\0';
     to_port = p;
 
-    pr_info("tara: parse 5 to_ip='%s' to_port='%s'\n", to_ip, to_port);
+    pr_info("tarakernel SENDING: parse 5 to_ip='%s' to_port='%s'\n", to_ip, to_port);
 
     if (strlen(from_ip) != 8 || strlen(to_ip) != 8) {
-        pr_info("tara: parse fail D bad ip lengths %zu %zu\n",
+        pr_info("tarakernel SENDING: parse fail D bad ip lengths %zu %zu\n",
                strlen(from_ip), strlen(to_ip));
         return 0;
     }
 
-    pr_info("tara: parse 6 before hexstr_to_ip\n");
+    pr_info("tarakernel SENDING: parse 6 before hexstr_to_ip\n");
     *src_ip = hexstr_to_ip(from_ip);
-    pr_info("tara: parse 7 after src hexstr_to_ip\n");
+    pr_info("tarakernel SENDING: parse 7 after src hexstr_to_ip\n");
     *dst_ip = hexstr_to_ip(to_ip);
-    pr_info("tara: parse 8 after dst hexstr_to_ip\n");
+    pr_info("tarakernel SENDING: parse 8 after dst hexstr_to_ip\n");
 
     sp = simple_strtoul(from_port, NULL, 10);
     dp = simple_strtoul(to_port, NULL, 10);
-    pr_info("tara: parse 9 ports sp=%lu dp=%lu\n", sp, dp);
+    pr_info("tarakernel SENDING: parse 9 ports sp=%lu dp=%lu\n", sp, dp);
 
     *src_port = htons((u16)sp);
     *dst_port = htons((u16)dp);
 
-    pr_info("tara: parse 10 done %pI4:%u -> %pI4:%u\n",
+    pr_info("tarakernel SENDING: parse 10 done %pI4:%u -> %pI4:%u\n",
            src_ip, ntohs(*src_port), dst_ip, ntohs(*dst_port));
+    return 1;
+}
+*/
+
+
+
+static int parse_threat_tuple(
+    const char *lpStartAt,
+    __be32 *src_ip,
+    __be16 *src_port,
+    __be32 *dst_ip,
+    __be16 *dst_port)
+{
+    char buf[128];
+    char *p;
+    char *from_ip;
+    char *from_port;
+    char *to_ip;
+    char *to_port;
+    char *arrow;
+
+    const char *ip_end;
+    char *port_end;
+
+    unsigned long sp;
+    unsigned long dp;
+
+    if (!lpStartAt || !src_ip || !src_port || !dst_ip || !dst_port) {
+        pr_info("tarakernel SENDING: parse fail: NULL argument\n");
+        return 0;
+    }
+
+    //pr_info("tarakernel SENDING: parse 1 start='%s'\n", lpStartAt);
+
+    if (strscpy(buf, lpStartAt, sizeof(buf)) < 0) {
+        pr_info("tarakernel SENDING: parse fail: input too long\n");
+        return 0;
+    }
+
+    //pr_info("tarakernel SENDING: parse 2 buf='%s'\n", buf);
+
+    p = buf;
+
+    from_ip = p;
+    p = strchr(p, ':');
+
+    if (!p) {
+        pr_info("tarakernel SENDING: parse fail A\n");
+        return 0;
+    }
+
+    *p++ = '\0';
+
+    //pr_info("tarakernel SENDING: parse 3 from_ip='%s'\n", from_ip);
+
+    from_port = p;
+    arrow = strstr(p, "->");
+
+    if (!arrow) {
+        pr_info("tarakernel SENDING: parse fail B\n");
+        return 0;
+    }
+
+    *arrow = '\0';
+    p = arrow + 2;
+
+    //pr_info("tarakernel SENDING: parse 4 from_port='%s'\n", from_port);
+
+    to_ip = p;
+    p = strchr(p, ':');
+
+    if (!p) {
+        pr_info("tarakernel SENDING: parse fail C\n");
+        return 0;
+    }
+
+    *p++ = '\0';
+    to_port = p;
+
+    //pr_info("tarakernel SENDING: parse 5 to_ip='%s' to_port='%s'\n", to_ip,to_port);
+
+    /*
+     * Parse dotted IPv4 addresses directly into network byte order.
+     */
+    ip_end = NULL;
+
+    if (!in4_pton(
+            from_ip,
+            -1,
+            (u8 *)src_ip,
+            '\0',
+            &ip_end
+        ) ||
+        !ip_end ||
+        *ip_end != '\0') {
+
+        pr_info("tarakernel SENDING: invalid source IP '%s'\n",from_ip);
+
+        return 0;
+    }
+
+    ip_end = NULL;
+
+    if (!in4_pton(
+            to_ip,
+            -1,
+            (u8 *)dst_ip,
+            '\0',
+            &ip_end
+        ) ||
+        !ip_end ||
+        *ip_end != '\0') {
+
+        pr_info("tarakernel SENDING: invalid destination IP '%s'\n",to_ip);
+
+        return 0;
+    }
+
+    port_end = NULL;
+    sp = simple_strtoul(from_port, &port_end, 10);
+
+    if (!port_end ||
+        port_end == from_port ||
+        *port_end != '\0' ||
+        sp == 0 ||
+        sp > 65535) {
+
+        pr_info("tarakernel SENDING: invalid source port '%s'\n",from_port);
+        return 0;
+    }
+
+    port_end = NULL;
+    dp = simple_strtoul(to_port, &port_end, 10);
+
+    if (!port_end ||
+        port_end == to_port ||
+        *port_end != '\0' ||
+        dp == 0 ||
+        dp > 65535) {
+
+        pr_info("tarakernel SENDING: invalid destination port '%s'\n", to_port);
+        return 0;
+    }
+
+    *src_port = htons((u16)sp);
+    *dst_port = htons((u16)dp);
+
+    pr_info(
+        "tarakernel SENDING: parse done %pI4:%u -> %pI4:%u\n",
+        src_ip, ntohs(*src_port), dst_ip,ntohs(*dst_port)
+    );
+
     return 1;
 }
 
@@ -866,7 +1022,7 @@ int isRequestForThreatElaboration(char *lpPayload,  struct iphdr *iph, struct ud
         u8 proto = IPPROTO_TCP;
         struct nf_conn *ct;
 
-        pr_info("tarakernel: THREAT_INFO_REQUEST payload: %s\n", lpPayload);
+        pr_info("tarakernel SENDING: THREAT_INFO_REQUEST payload: %s\n", lpPayload);
 
         /*
         * Valid payload:
@@ -881,7 +1037,7 @@ int isRequestForThreatElaboration(char *lpPayload,  struct iphdr *iph, struct ud
 
         if (!parse_threat_tuple(lpPayload + strlen(UDP_THREAT_INFO_REQUEST_PREFIX) + 1,
                             &src_ip, &src_port, &dst_ip, &dst_port)) {
-            pr_info("tarakernel: parse_threat_tuple() failed\n");
+            pr_info("tarakernel SENDING: parse_threat_tuple() failed. Droppint packet.\n");
             return NF_DROP;
         }
 
@@ -937,14 +1093,17 @@ int isRequestForThreatElaboration(char *lpPayload,  struct iphdr *iph, struct ud
             }
             
             //Sending elaborated threat info because it's requested by receiver  (search for THREAT_INFO_EXCHANGE for find where else it's relevant)
+			//pr_info("tarakernel SENDING: About to send threat info\n");
             sendUdpThreatPackage(iph->saddr, nMyIp, ct_sport, pInfected);    //ØT 260323 - send this??
             return 1;
         }
 
-        pr_info("tarakernel: ********* ERROR ************ conntrack lookup failed for %pI4:%u -> %pI4:%u proto=%u\n",
+        pr_info("tarakernel SENDING: ********* ERROR ************ conntrack lookup failed for %pI4:%u -> %pI4:%u proto=%u\n",
         &src_ip, ntohs(src_port), &dst_ip, ntohs(dst_port), proto);
 
     }
+	else
+		pr_info("tarakernel SENDING: Not threat info request: %s\n", lpPayload);
     return 0;
 }
 

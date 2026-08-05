@@ -303,7 +303,7 @@ int handleUdp(	struct _PacketInspection *pPacket)
 
 	if  (ntohs(udph->dest) == TARAKERNEL_LISTENING_TO_PORT)
 	{
-		pr_info("tarakernel SENDING: Received: UDP %pI4:%u -> %pI4:%u\n", &pPacket->ip_header->saddr, ntohs(udph->source), &pPacket->ip_header->daddr, ntohs(udph->dest));
+		pr_info("tarakernel SENDING: Received UDP for tarakernel %pI4:%u -> %pI4:%u\n", &pPacket->ip_header->saddr, ntohs(udph->source), &pPacket->ip_header->daddr, ntohs(udph->dest));
 
 		unsigned int ihl;
 		unsigned int payload_offset;
@@ -350,6 +350,7 @@ int handleUdp(	struct _PacketInspection *pPacket)
    			return NF_DROP;
 		}*/
 
+		pr_info("tarakernel SENDING: Checking if request for elaborated threat info\n");
 		if (isRequestForThreatElaboration(buf, iph, udph))	//module_tagging.c
 			return NF_DROP;
 
@@ -364,8 +365,8 @@ int handleUdp(	struct _PacketInspection *pPacket)
 void testing(char *lpCalledFrom, struct _PacketInspection *pPacket)
 {
 	//If you wanna print all these and nothing else: sudo dmesg -w | grep "(testing)"
-	//if (1)
-	if (pPacket->tcp_header->urg_ptr)
+	if (0)
+	//if (pPacket->tcp_header->urg_ptr)
 	{
 		union _TagUnion cUnion;
 		cUnion.nTag = pPacket->tcp_header->urg_ptr;

@@ -290,6 +290,8 @@ alter table setup add aiAssessmentTime timestamp null;
 update setup set dbVersion = 75;
 
 #******** NEXT TIME ALSO add *****
+#alter table syslog add handled bit(1) not null default b'0';
+#ALTER TABLE partnerRouterStatusLog MODIFY created DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;
 #update setup set dbVersion = 76;
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 

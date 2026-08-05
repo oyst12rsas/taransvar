@@ -2,6 +2,7 @@
 
 ini_set('display_errors', '0');
 error_reporting(E_ALL);
+mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 include '../dbfunc.php';
 include 'tagged.php';
@@ -11,13 +12,15 @@ $status = file_get_contents('php://input');
 
 if ($status === false || $status === '') {
     http_response_code(400);
-    exit('Missing status report');
+    exit('Missing status report (json)');
 }
 
 if (strlen($status) > 1_000_000) {
     http_response_code(413);
-    exit('Status report too large');
+    exit('Status report (json) too large');
 }
+
+//print "In statusReport.php. Received Json: $status\n\n";
 
 json_decode($status);
 
@@ -47,9 +50,10 @@ try {
     $stmt->execute();
     $stmt->close();
 
+	//Note! created doesn't have default value by now but soon will on all computers... Include created = now() for a while
     $sql = '
-        INSERT INTO partnerRouterStatusLog (ip, status)
-        VALUES (INET_ATON(?), ?)
+        INSERT INTO partnerRouterStatusLog (ip, status, created)
+        VALUES (INET_ATON(?), ?, now())
     ';
 
     $stmt = $conn->prepare($sql);
@@ -65,19 +69,40 @@ try {
     $conn->commit();
 
     echo 'ok';
-} catch (Throwable $e) {
-    $conn->rollback();
 
-    error_log(
-        sprintf(
+} catch (Throwable $e) {
+    if (isset($conn)) {
+        $conn->rollback();
+    }
+
+    $msg =
+        "Status update failed\n"
+        . "Sender: " . $sender . "\n"
+        . "Error: " . $e->getMessage() . "\n"
+        . "File: " . $e->getFile() . "\n"
+        . "Line: " . $e->getLine() . "\n";
+
+
+	/*	Or less descriptive
+		    $msg = sprintf(
             'Status update failed: sender=%s error=%s',
             $sender,
             $e->getMessage()
-        )
-    );
+        );
+	*/
+
+
+
+    error_log($msg);
 
     http_response_code(500);
+    
+	//header('Content-Type: text/plain');
+    //echo $msg;
+
+	//Or just print:
     echo 'error';
+
 } finally {
     $conn->close();
 }

@@ -1,4 +1,7 @@
 
+#include <linux/inet.h>
+#include <linux/types.h>			
+
 /*
 	tarakernel asks the user server for configuration on what how to handle various units
 	in the network upon in- and outbound traffic. 
@@ -319,9 +322,6 @@ char *interpretSetup(char *lpBlockDescriptor, char *lpIpList)
 
 			__be32 ip_be;   // network byte order
 			//u32 ip_u32;     // host byte order
-
-			#include <linux/inet.h>
-			#include <linux/types.h>			
 			
 			if (!in4_pton(lpIpList, -1, (u8 *)&ip_be, '\0', NULL)) {
     			pr_info("tarakernel: Invalid IPv4 string when interpreting IP not to log to dmesg (dontDmesgIPs) NOTE! No space, just comma separated IPs!\n");

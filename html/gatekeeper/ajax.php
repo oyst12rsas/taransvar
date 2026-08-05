@@ -278,6 +278,11 @@ function traffic()
 
 function units()
 {
+
+	include "ajax/units_partners.php";
+	units_partners();
+	return;
+
 	//$sql = "select U.unitId, UP.created, mac, vci, inet_ntoa(UP.ipAddress), inet_ntoa(U.ipAddress), hostname from unitPort UP join unit U on U.unitId = UP.unitId where created > DATE_SUB( NOW() , INTERVAL 1 DAY ) order by U.unitId, UP.created desc;";
 
 #	$sql = "select U.unitId, description, greatest(discovered, lastSeen) as discovered, hex(mac) as mac, vci, inet_ntoa(S.ip) as ip, inet_ntoa(U.ipAddress), hostname, hex(dhcpClientId) as dhcpClientId from dhcpSession S join unit U on clientId = unitId where discovered > DATE_SUB( NOW() , INTERVAL 1 DAY ) or lastSeen > DATE_SUB( NOW() , INTERVAL 1 DAY ) order by greatest(discovered, lastSeen) desc;";

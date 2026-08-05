@@ -173,49 +173,47 @@ sub changeDemoIpAddress {	#NOTE Only used in this lib, don't export
 sub logDmesg {
 	print "\n\nEntering logDmesg()\n";
 	$dbh = getConnection();
-	my $nMaxId = 0;
-	my $name = "worker_read_dmesg";
+	#my $nMaxId = 0;
+	#my $name = "worker_read_dmesg";
 
 	#First check if stale script.. Otherwise kills newly started script.	
-	my $stmt = $dbh->prepare("select dmesgId, TIMESTAMPDIFF(SECOND, created, NOW()) AS seconds_since from dmesg order by dmesgId desc limit 1");
-	$stmt->execute() or die "execution failed: $dbh->errstr()";
-	if (my $row = $stmt->fetchrow_hashref()) {
-		if ($row->{"dmesgId"}) {
-			$stmt->finish;
-			$nMaxId = $row->{"dmesgId"};
-			if ($row->{"seconds_since"}+0 > 1000) {
-				#$dbh->disconnect();	#Close and reconnect afterwards to prevent the perl script from cloning the mqsql connection...
-				#$dbh = 0;
-				#system("pkill -f worker_read_dmesg.pl");
-				print "\n\n********** WARNING *********** $name.pl was stale (no dmesg msg in 1000 sec). Tried to kill it. ps -aux | grep worker_  to see when it was (re)started.\n"
-			}
-		} else {
-			print "**** ERROR: No dmesg records yet!\n";
-			return;
-		}
- 	} else {
-		print "**** ERROR: Unable to read dmesg records..!\n";
-		#return;	Got here on first run (no records) - and because returned, never got to start the log script...
-	}
+	#my $stmt = $dbh->prepare("select dmesgId, TIMESTAMPDIFF(SECOND, created, NOW()) AS seconds_since from dmesg order by dmesgId desc limit 1");
+	#$stmt->execute() or die "execution failed: $dbh->errstr()";
+	#if (my $row = $stmt->fetchrow_hashref()) {
+	#	if ($row->{"dmesgId"}) {
+	#		$stmt->finish;
+	#		$nMaxId = $row->{"dmesgId"};
+	#	#		if ($row->{"seconds_since"}+0 > 1000) {
+	#			#$dbh->disconnect();	#Close and reconnect afterwards to prevent the perl script from cloning the mqsql connection...
+	#			#$dbh = 0;
+	#			#system("pkill -f worker_read_dmesg.pl");
+	#			print "\n\n********** WARNING *********** $name.pl was stale (no dmesg msg in 1000 sec). Tried to kill it. ps -aux | grep worker_  to see when it was (re)started.\n"
+	#		}
+	#	} else {
+	#		print "**** ERROR: No dmesg records yet!\n";
+	#		return;
+	#	}
+ 	#} else {
+	#	print "**** ERROR: Unable to read dmesg records..!\n";
+	#	#return;	Got here on first run (no records) - and because returned, never got to start the log script...
+	#}
 
 	#Make sure dmesg reader script is running... 
-	my $script = "/root/taransvar/perl/$name.pl";
-	my $szLogFile = "/root/setup/log/$name.log";
+	#my $script = "/root/taransvar/perl/$name.pl";
+	#my $szLogFile = "/root/setup/log/$name.log";
 	# print "Starting: perl $script >> $szLogFile\n";203
 
-	my $szCmd = "nohup perl $script >> $szLogFile 2>&1 &";
-	system($szCmd);
-	print "Script started: $szCmd\n";
+	#my $szCmd = "nohup perl $script >> $szLogFile 2>&1 &";
+	#system($szCmd);
+	#print "Script started: $szCmd\n";
 
 	#Delete old messages. 
-	if (!$dbh) {
-		#Connection used to be closed before pkill to prevent new script from cloning mysql connection (killing stopped/disabled but can leave this here if enabled later).
-		$dbh = getConnection();
-	}
-	$stmt = $dbh->prepare("delete from dmesg where dmesgId < ?");
-	my $nDelete = $nMaxId - 1000;
-	$stmt->execute($nDelete) or die "execution failed: $dbh->errstr()";	
-	print "Deleted dmesg with id < $nDelete\n";
+	#$stmt = $dbh->prepare("delete from dmesg where dmesgId < ?");
+	my $stmt = $dbh->prepare("delete from dmesg where dmesgId < (select max(dmesgId) from dmesg) - 1000");
+	#my $nDelete = $nMaxId - 1000;
+	#$stmt->execute($nDelete) or die "execution failed: $dbh->errstr()";	
+	$stmt->execute() or die "execution failed: $dbh->errstr()";	
+	print "Deleted all except last 1000 records from dmesg\n";
 
 #	#************ Capture tarakernel records from dmesg and store in setup->dmesg field
 #	print "\n\n******************** Updating setup->dmesg **********************\n\n";

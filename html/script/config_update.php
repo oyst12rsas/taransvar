@@ -40,7 +40,7 @@ if (isset($_GET["f"]))
 			}
 			$nOurId = (int)$_GET["ourid"];
 			//Set hackReport -> remoteUnitId
-			$szSQL = "select reportId from hackReport where inet_aton(ip) = ? and port = ? order by reportId desc limit 1";
+			$szSQL = "select reportId, coalesce(remoteUnitId, 0) as remoteUnitId from hackReport where inet_aton(ip) = ? and port = ? order by reportId desc limit 1";
 			$conn = getConnection();
 			//print "$szSQL<br>";
 			$stmt = $conn->prepare($szSQL);
@@ -50,16 +50,20 @@ if (isset($_GET["f"]))
 			$result = $stmt->get_result(); // get the mysqli result
 			if ($result && $row = $result->fetch_assoc())
 			{
+                $nReportId = (int)$row["reportId"];
+
+				if ($row["remoteUnitId"]+0)
+		            addWarningRecord("Received confession from ".$szFromIp.", but remoteUnitId was already set to ".$row["remoteUnitId"]." for hack report ".$nReportId); 
+
                 print "Confession received regarding hack report %s (%s:%u). Setting remoteUnitId = $nOurId%s\n";
 				//print "Updating status received for ".$szFromIp.". Routerid: ".$row["routerId"]."<br>"; 
 				$szSQL = "update hackReport set remoteUnitId = ? where reportId = ?";
 	            $stmt = $conn->prepare($szSQL);
-                $nReportId = (int)$row["reportId"];
 	            $stmt->bind_param("ii", $nOurId, $nReportId); 
 	            $stmt->execute();
             }
             else
-                print "Unable to find hackReport regarding $szFromIp:$nPort\n";
+                print "Confession received from $szFromIp, but unable to find hackReport regarding $szFromIp:$nPort\n";
             
 			exit;
                         

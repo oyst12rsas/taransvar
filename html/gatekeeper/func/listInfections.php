@@ -126,7 +126,6 @@ var szUpdateRoutine = "hackReport";
 	{
 		print "No hacking attempts reported.<br>";
 	}
-	print "</table>";
 
     print "<a href=\"index.php?f=reportHack\">Register hacking attempt</a>";
 	print '<br><a href="index.php?f=addinfection">Add infection</a>';

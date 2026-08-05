@@ -21,7 +21,8 @@ use lib_net;
 
 use POSIX qw(setsid);
 use Fcntl qw(:flock);
-use LWP::UserAgent;
+use LWP::UserAgent;		#Using this for posting status to partners
+use IO::Socket::INET;	#Using this for fire and forget status to partners
 
 print "Usage:\nperl crontasks.pl\tRun only debugging tasks then quit.\nperl crontasks.pl cron\t\tTo run as by cron\nperl crontasks.pl force\t\tStart even if crontasks.pl already running\n";
 
@@ -134,6 +135,9 @@ sub checkDisableSshChange {
 		my $szFwScript = "/root/taransvar/perl/firewall.sh";
 		`bash $szFwScript`;
 		print "FW updated: bash $szFwScript\n\n";
+
+		my $sthSetup = $dbh->prepare("update setup set iptablesSetupChanged = b'0'");
+		$sthSetup->execute() or die "execution failed: $sthSetup->errstr()";
 	} else {
 		print "ssh setup NOT changed...\n";
 	}
@@ -303,32 +307,69 @@ sub reportStatus {
 		if (defined $cSetup->{$fieldName}) {
 			my $ip = $cSetup->{$fieldName};
 
-			my $bNewVersion = 1;
+			my $bFireAndForget = 0;
+			my $bUserAgentPost = 1;
+			my $bUseSimpleCurl = 0;
 
-			if ($bNewVersion) {
+			if ($bFireAndForget) {
+				my $sock = IO::Socket::INET->new(
+   					PeerAddr => $ip,
+   					PeerPort => 80,
+   					Proto    => 'tcp',
+   					Timeout  => 1,
+				);
 
+				if ($sock) {
+   					print $sock
+       					"POST /script/statusReport.php HTTP/1.0\r\n",
+       					"Host: $ip\r\n",
+       					"Content-Type: application/json\r\n",
+       					"Content-Length: " . length($cJson) . "\r\n\r\n",
+       					$cJson;
+
+				    close $sock;   # don't wait for the reply
+				}
+
+				print "Status sent to $ip (fire and forget - assuming it's ok)\n";
+				$szReply = "ok";	#We don't care about reply.. Assume it's ok
+			} 
+			
+			if ($bUserAgentPost) {
 				my $ua = LWP::UserAgent->new(
-    				timeout => 5,
+   					timeout => 1,
 				);
 
 				my $url = "http://$ip/script/statusReport.php";
 				
 				my $response = $ua->post(
-				    $url,
-    				"Content-Type" => "application/json",
-    				Content        => $cJson,
-				);
+			    		$url,
+   						"Content-Type" => "application/json",
+   						Content        => $cJson,
+					);
 
 				$szReply = $response->decoded_content;
 
 				if (!$response->is_success) {
-    				addWarningRecord($dbh, "Status report failed for DB server $1 ($ip): "
-       				. $response->status_line. "\n".$szReply);
+					my $msg = "Status report failed for DB server $1 ($ip): "
+      					. $response->status_line. "\n".$szReply;
+   					addWarningRecord($dbh, $msg);
+					print $msg;
 				}
-			} else {
-				my $szUrl = "http://$ip/script/statusReport.php?json=".urlencode($cJson);
-    			print "$fieldName, $szUrl\n";
-				$szReply = `wget -q -O - "$szUrl" 2>&1`;
+			}
+
+			if ($bUseSimpleCurl) {
+				my $szUrl = "http://$ip/script/statusReport.php";
+				$szReply = `curl -X POST -H 'Content-Type: application/json' --data-binary $cJson $szUrl`;
+				print "Reply from curl: $szReply\n\n";
+
+				#my $cUrl = "http://$ip/script/statusReport.php";
+				#curl -X POST -H 'Content-Type: application/json' --data-binary '{"nett":0,"cron":1}' \
+  				#$ip
+
+				#my $szUrl = "http://$ip/script/statusReport.php?json=".urlencode($cJson);
+    			#print "$fieldName, $szUrl\n";
+				#$szReply = `wget -q -O - "$szUrl" 2>&1`;
+				#print "Reply from wget: $szReply\n"
 			}
 
 			#chomp $szReply;
