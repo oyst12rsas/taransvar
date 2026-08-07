@@ -69,8 +69,10 @@ sub readConfig
 
 sub checkServices {
 
+	#NOTE Also implement for dhcp..
 	my @services = (
     	"worker_read_dmesg",
+		"worker_conntrack",
 		"tarasec-gateway.service",
 	);
 

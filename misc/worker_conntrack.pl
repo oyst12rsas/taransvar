@@ -18,6 +18,7 @@ use func;	#NOTE! See comment above regarding lib..
 use lib_cron;
 
 our $lastDbUse = time();
+our $dbh = getConnection();
 
 sub ensureDbConnection
 {
@@ -55,7 +56,6 @@ sub findWhatUnitHasIp {
 	return $szUnitId; 
 }
                                    
-our $dbh = getConnection();
 #my $nice_timestamp = getNiceTimestamp();
 #my $szGrabFile = getLogRoot()."conntrack/conntrack".$nice_timestamp.".txt";
 
@@ -262,7 +262,7 @@ sub	handleLine {
                		#Last use of this port was same IP... 
                     print "Port $nInternalPort recently used by same IP ($szInternalIp). Skipping saving duplicate record.\n";
 					$nFound = 1;
-					$szUnitId = $row->{'unitId'}                                
+					$szUnitId = $row->{'unitId'};                                
 					$nPortAssignmentId = $row->{'portAssignmentId'};
         	    } else {
     				print "Other ip (".$row->{'ip'}.") last used this port. Save new for ".$szInternalIp."\n"; 
@@ -373,7 +373,7 @@ open($fh, "-|", "conntrack", "-E", "-e", "NEW")
     or die "Cannot start conntrack: $!";
 
 while ($line = <$fh>) {
-	$szLine =~ s/^\s*\[NEW\]\s*//;
+	$line =~ s/^\s*\[NEW\]\s*//;
  	ensureDbConnection();
  	handleLine($line);
 }
