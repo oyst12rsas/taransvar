@@ -157,7 +157,7 @@ function demoNewFunc()
 			}
 			else
 			{
-				$szLanIp = $data["ip"];
+				$szLanIp = $data["ip"];	//NOTE! This is sometimes wrong... Maybe because conntrack data is not yet in unitPort table...
 				print "<tr>";
 				print "<td>LAN IP: </td><td>".$szLanIp."</td</tr>";
 				print "";

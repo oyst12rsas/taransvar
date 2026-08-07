@@ -71,6 +71,7 @@ sub checkServices {
 
 	my @services = (
     	"worker_read_dmesg",
+		"tarasec-gateway.service",
 	);
 
 	my $cfg = readConfig();
@@ -847,7 +848,7 @@ if (!runningAsCron() && !runningBootCheck())	#Run "sudo perl crontasks.pl whatev
 	#print (networkSetupOk()?"Network set up properly":"Failed to set up network!");
 	#checkRequests();
 	#startTaraLinkOk();
-	#handleConntrack($dbh);
+	#** Now running as service: handleConntrack($dbh);
 	#start_process_dhcpdump($pSetup->{"internalNic"});	#NOTE! Just making sure dhcp_capture.pl is running..
 	#checkDbVersion($dbh);
 	
@@ -861,6 +862,7 @@ if (!runningAsCron() && !runningBootCheck())	#Run "sudo perl crontasks.pl whatev
 	#dhcpServerStatusOk();
 	#setupPortForwarding();
 	#print "***** System ".(systemBooted()?"booted since last run.":"did NOT boot since last run.")."\n";
+	#startTaraSystemsOk();	
 	
 	#if (!networkSetupOk()) {
 	#	print "************ NETWORK SETUP NOT OK. ABORTING ************\n";
@@ -868,7 +870,6 @@ if (!runningAsCron() && !runningBootCheck())	#Run "sudo perl crontasks.pl whatev
 	#	print "******* Network setup ok *************\n";
 	#}
 	
-	#startTaraSystemsOk();	
 	print "Finishing debugging code.. To run as crontasks.pl would, add \"cron\" as parameter\n";
 	exit;
 }
@@ -913,6 +914,8 @@ workshopSetup();	#If workshopId is set in dashboard setup, it will register othe
 start_iptables_monitor();	#Check if iptables_log_monitor.pl is already running. If not, starts it
 start_local_iptables_monitor();
 logDmesg();		#Just ensuring that worker_read_dmesg.pl is running
+startTaraSystemsOk();	
+
 print "Starting start_process_dhcpdump()\n";
 if (defined $pSetup->{"internalNic"})		#NOTE! This is not tested!!!
 {
@@ -952,7 +955,7 @@ while (time() - $nTimeStarted < 52)
 
 	checkDisableSshChange();
 	check_dhcpEvent($dbh);	
-	handleConntrack($dbh);	#NOTE! Import port assignments. Import dhcp leases before this..
+	#Now running as service: handleConntrack($dbh);	#NOTE! Import port assignments. Import dhcp leases before this..
 	checkWhoIs($dbh, $nNumberOfWhoIsLookupsPerIteration);
 	sendPendingWgets();
 	handle_syslogThreat_table($dbh);	#iptables drops ++ are handled here.

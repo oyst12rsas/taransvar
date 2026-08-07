@@ -11,11 +11,6 @@ else
 
 
 
-function sjekk($field)
-{
-	return (isset($field) && $field == "1" ? '<font color="green">[Running]</font>':'<font color="red">[STOPPED]</font>');
-}
-
 function getDot($bOk)
 {
 	return '<img src="img/'.($bOk?"green":"red").'_dot.png">';

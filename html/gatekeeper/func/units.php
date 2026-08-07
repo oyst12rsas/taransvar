@@ -5,6 +5,11 @@ var szUpdateRoutine = "units";
 <?php 
 
 
+function sjekk($field)
+{
+	return (isset($field) && $field == "1" ? '<font color="green">[Running]</font>':'<font color="red">[STOPPED]</font>');
+}
+
 function listServerStatus()
 {
 	//print "About to list server status.<br>";
@@ -86,7 +91,7 @@ function vpn_demo()
 				print "<tr><td>Site</td><td>IP</td><td>Status *)</td><td>Gatekeeper</td><td>Sample bank</td><td>Honey</td></tr>";
 				print "<tr><td>Me (".$setupRow["name"].")</td><td>&nbsp;</td></div><td><div id=\"s0\">";
 
-				print "&ngsp";
+				print "&nbsp";
 
 				print "</div></td><td>&nbsp;</td><td><a href=\"../samplebank/index.php\">[go to]</a></td><td><a href=\"../honeypot/index.php\">[go to]</a></td></tr>";
 			}

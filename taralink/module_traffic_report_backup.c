@@ -1,5 +1,5 @@
 //module_traffic_report.c
-#include <inttypes.h>
+
 
 static int test_stmt_error(MYSQL_STMT * stmt, int status)
 {
@@ -164,9 +164,6 @@ void tagChanged(char *lpFromIpHex, char *lpFromPortHex, char *lpToIpHex, char *l
 	printf("***** It's discovered that tag info for 0x%s:0x%s is %d, while it used to be: %d\n", lpFromIpHex, lpFromPortHex, nNewTag, nFromTag);
 }*/
 
-
-
-
 void handleTrafficReportFromKernel(char *lpPayload, int nDataLength)
 {
     //ØT 260305 - Here's where receiving (new version)...
@@ -236,256 +233,6 @@ void handleTrafficReportFromKernel(char *lpPayload, int nDataLength)
 	int nInserts = 0;
 	int nUpdates = 0;
 
-unsigned long ip_from;
-unsigned int  port_from;
-unsigned long ip_to;
-unsigned int  port_to;
-unsigned long count;
-unsigned long tag;
-
-/*Init internalInfections select*/
-MYSQL_STMT *stmtSelectInternalInfection;
-
-MYSQL_BIND bindInternalInfectionSelectParam[1];
-const char *sqlSelectInternalInfection = "select infectionId from internalInfections where ip = ? order by lastSeen desc limit 1";
-
-stmtSelectInternalInfection = mysql_stmt_init(conn);
-if (!stmtSelectInternalInfection) {
-    fprintf(stderr, "mysql_stmt_init failed\n");
-    return;
-}
-
-if (mysql_stmt_prepare(stmtSelectInternalInfection, sqlSelectInternalInfection, strlen(sqlSelectInternalInfection)) != 0) {
-    fprintf(stderr, "Prepare failed: %s\n", mysql_stmt_error(stmtSelectInternalInfection));
-    mysql_stmt_close(stmtSelectInternalInfection);
-    return;
-}
-
-printf(
-    "Internal infection parameter count: %lu\n",
-    mysql_stmt_param_count(stmtSelectInternalInfection)
-);
-
-
-memset(bindInternalInfectionSelectParam, 0, sizeof(bindInternalInfectionSelectParam));
-
-bindInternalInfectionSelectParam[0].buffer_type = MYSQL_TYPE_LONG;
-bindInternalInfectionSelectParam[0].buffer      = &ip_from;
-bindInternalInfectionSelectParam[0].is_unsigned = 1;
-bindInternalInfectionSelectParam[0].is_null     = NULL;
-bindInternalInfectionSelectParam[0].length      = NULL;
-
-if (mysql_stmt_bind_param(
-        stmtSelectInternalInfection,
-        bindInternalInfectionSelectParam
-    ) != 0) {
-
-    fprintf(
-        stderr,
-        "Internal infection bind failed: %s\n",
-        mysql_stmt_error(stmtSelectInternalInfection)
-    );
-
-    mysql_stmt_close(stmtSelectInternalInfection);
-    return;
-}
-
-
-
-
-/*
-bindInternalInfectionSelectParam[1].buffer_type = MYSQL_TYPE_LONG;
-bindInternalInfectionSelectParam[1].buffer      = &port_from;
-bindInternalInfectionSelectParam[1].is_unsigned = 1;
-*/
-
-uint32_t selectedInfectionId;
-
-MYSQL_BIND bindInfectionSelectResult[3];
-my_bool infectionResultIsNull[3];
-my_bool infectionResultError[3];
-unsigned long infectionResultLength[3];
-
-memset(bindInfectionSelectResult, 0, sizeof(bindInfectionSelectResult));
-memset(infectionResultIsNull,      0, sizeof(infectionResultIsNull));
-memset(infectionResultError,       0, sizeof(infectionResultError));
-memset(infectionResultLength,      0, sizeof(infectionResultLength));
-
-bindInfectionSelectResult[0].buffer_type = MYSQL_TYPE_LONG;
-bindInfectionSelectResult[0].buffer      = &selectedInfectionId;
-bindInfectionSelectResult[0].is_unsigned = 1;
-bindInfectionSelectResult[0].is_null     = &infectionResultIsNull[0];
-bindInfectionSelectResult[0].error       = &infectionResultError[0];
-bindInfectionSelectResult[0].length      = &infectionResultLength[0];
-
-if (mysql_stmt_bind_result(stmtSelectInternalInfection, bindInfectionSelectResult) != 0) {
-    fprintf(
-        stderr,
-        "SELECT result bind failed: %s\n",
-        mysql_stmt_error(stmtSelectInternalInfection)
-    );
-
-    mysql_stmt_close(stmtSelectInternalInfection);
-    return;
-}
-
-
-
-
-
-
-
-/*Init Traffic select*/
-
-MYSQL_STMT *stmtSelect;
-MYSQL_BIND bindSelectParam[6];
-const char *sqlSelect =
-	"select trafficId, count, tag from traffic where "
-		"ipFrom = ? and portFrom = ? and "
-		"ipTo = ? and portTo = ? and "
-		"(lastSeen is null or lastSeen > NOW() - INTERVAL 1 MINUTE) "
-		"order by coalesce(lastSeen, created) desc limit 1";
-
-stmtSelect = mysql_stmt_init(conn);
-if (!stmtSelect) {
-    fprintf(stderr, "mysql_stmt_init failed\n");
-    return;
-}
-
-if (mysql_stmt_prepare(stmtSelect, sqlSelect, strlen(sqlSelect)) != 0) {
-    fprintf(stderr, "Prepare failed: %s\n", mysql_stmt_error(stmtSelect));
-    mysql_stmt_close(stmtSelect);
-    return;
-}
-
-memset(bindSelectParam, 0, sizeof(bindSelectParam));
-
-bindSelectParam[0].buffer_type = MYSQL_TYPE_LONG;
-bindSelectParam[0].buffer      = &ip_from;
-bindSelectParam[0].is_unsigned = 1;
-
-bindSelectParam[1].buffer_type = MYSQL_TYPE_LONG;
-bindSelectParam[1].buffer      = &port_from;
-bindSelectParam[1].is_unsigned = 1;
-
-bindSelectParam[2].buffer_type = MYSQL_TYPE_LONG;
-bindSelectParam[2].buffer      = &ip_to;
-bindSelectParam[2].is_unsigned = 1;
-
-bindSelectParam[3].buffer_type = MYSQL_TYPE_LONG;
-bindSelectParam[3].buffer      = &port_to;
-bindSelectParam[3].is_unsigned = 1;
-
-if (mysql_stmt_bind_param(stmtSelect, bindSelectParam) != 0) {
-    fprintf(
-        stderr,
-        "SELECT parameter bind failed: %s\n",
-        mysql_stmt_error(stmtSelect)
-    );
-
-    mysql_stmt_close(stmtSelect);
-    return;
-}
-
-
-MYSQL_STMT *stmtInsert;
-MYSQL_BIND bindInsert[6];
-const char *sqlInsert =
-    "INSERT INTO traffic "
-    "(ipFrom, portFrom, ipTo, portTo, count, tag, lastSeen) "
-    "VALUES (?, ?, ?, ?, ?, ?, NOW())";
-
-stmtInsert = mysql_stmt_init(conn);
-if (!stmtInsert) {
-    fprintf(stderr, "mysql_stmt_init failed\n");
-    return;
-}
-
-if (mysql_stmt_prepare(stmtInsert, sqlInsert, strlen(sqlInsert)) != 0) {
-    fprintf(stderr, "Prepare failed: %s\n", mysql_stmt_error(stmtInsert));
-    mysql_stmt_close(stmtInsert);
-    return;
-}
-
-memset(bindInsert, 0, sizeof(bindInsert));
-
-bindInsert[0].buffer_type = MYSQL_TYPE_LONG;
-bindInsert[0].buffer = &ip_from;
-bindInsert[0].is_unsigned = 1;
-
-bindInsert[1].buffer_type = MYSQL_TYPE_LONG;
-bindInsert[1].buffer = &port_from;
-bindInsert[1].is_unsigned = 1;
-
-bindInsert[2].buffer_type = MYSQL_TYPE_LONG;
-bindInsert[2].buffer = &ip_to;
-bindInsert[2].is_unsigned = 1;
-
-bindInsert[3].buffer_type = MYSQL_TYPE_LONG;
-bindInsert[3].buffer = &port_to;
-bindInsert[3].is_unsigned = 1;
-
-bindInsert[4].buffer_type = MYSQL_TYPE_LONG;
-bindInsert[4].buffer = &count;
-bindInsert[4].is_unsigned = 1;
-
-bindInsert[5].buffer_type = MYSQL_TYPE_LONG;
-bindInsert[5].buffer = &tag;
-bindInsert[5].is_unsigned = 1;
-
-if (mysql_stmt_bind_param(stmtInsert, bindInsert) != 0) {
-    fprintf(stderr, "Insert bind failed: %s\n", mysql_stmt_error(stmtInsert));
-}
-
-
-uint32_t selectedTrafficId;
-uint32_t selectedCount;
-uint32_t selectedTag;
-
-MYSQL_BIND bindSelectResult[3];
-my_bool resultIsNull[3];
-my_bool resultError[3];
-unsigned long resultLength[3];
-
-memset(bindSelectResult, 0, sizeof(bindSelectResult));
-memset(resultIsNull,      0, sizeof(resultIsNull));
-memset(resultError,       0, sizeof(resultError));
-memset(resultLength,      0, sizeof(resultLength));
-
-bindSelectResult[0].buffer_type = MYSQL_TYPE_LONG;
-bindSelectResult[0].buffer      = &selectedTrafficId;
-bindSelectResult[0].is_unsigned = 1;
-bindSelectResult[0].is_null     = &resultIsNull[0];
-bindSelectResult[0].error       = &resultError[0];
-bindSelectResult[0].length      = &resultLength[0];
-
-bindSelectResult[1].buffer_type = MYSQL_TYPE_LONG;
-bindSelectResult[1].buffer      = &selectedCount;
-bindSelectResult[1].is_unsigned = 1;
-bindSelectResult[1].is_null     = &resultIsNull[1];
-bindSelectResult[1].error       = &resultError[1];
-bindSelectResult[1].length      = &resultLength[1];
-
-bindSelectResult[2].buffer_type = MYSQL_TYPE_LONG;
-bindSelectResult[2].buffer      = &selectedTag;
-bindSelectResult[2].is_unsigned = 1;
-bindSelectResult[2].is_null     = &resultIsNull[2];
-bindSelectResult[2].error       = &resultError[2];
-bindSelectResult[2].length      = &resultLength[2];
-
-if (mysql_stmt_bind_result(stmtSelect, bindSelectResult) != 0) {
-    fprintf(
-        stderr,
-        "SELECT result bind failed: %s\n",
-        mysql_stmt_error(stmtSelect)
-    );
-
-    mysql_stmt_close(stmtSelect);
-    return;
-}
-
-
-
 	for (int j = 0; j < nRecordCount; j++)
 	{
 		//printf("Traffic found: %s\n", cRecord[j]);
@@ -512,106 +259,17 @@ if (mysql_stmt_bind_result(stmtSelect, bindSelectResult) != 0) {
 		}
 		else
 		{
-			char *end;
-
-			ip_from = strtoul(cFields[0], &end, 16);
-			if (*cFields[0] == '\0' || *end != '\0') {
-				printf("******** ERROR when receiving traffic: invalid hexadecimal value\n");
-			}
-
-			port_from = (unsigned int)strtoul(cFields[1], &end, 16);
-			if (*cFields[1] == '\0' || *end != '\0' || port_from > 65535) {
-				printf("******** ERROR when receiving traffic: invalid port value\n");
-			}
-
-			ip_to = strtoul(cFields[2], &end, 16);
-			if (*cFields[2] == '\0' || *end != '\0') {
-				printf("******** ERROR when receiving traffic: invalid hexadecimal value\n");
-			}
-
-			port_to = (unsigned int)strtoul(cFields[3], &end, 16);
-			if (*cFields[3] == '\0' || *end != '\0' || port_from > 65535) {
-				printf("******** ERROR when receiving traffic: invalid port value\n");
-			}
-
-			count = strtoul(cFields[4], &end, 16);
-			if (*cFields[4] == '\0' || *end != '\0') {
-				printf("******** ERROR when receiving traffic: invalid hexadecimal value\n");
-			}
-
-			tag = (unsigned int)strtoul(cFields[5], &end, 16);
-			if (*cFields[5] == '\0' || *end != '\0' || port_from > 65535) {
-				printf("******** ERROR when receiving traffic: invalid port value\n");
-			}
-
-
+           	char cSql[400];
 			//First check if there's a recent traffic report we can update.
+
 			//Making new version checking if tag is changed from the most recent stored in the table.. If so check it and maybe change hackReport table...
-//			sprintf(cSql, "select trafficId, count, tag from traffic where ipFrom = 0x%s and portFrom = 0x%s and ipTo = 0x%s and portTo = 0x%s and (lastSeen is null or lastSeen > NOW() - INTERVAL 1 MINUTE) order by coalesce(lastSeen, created) limit 1",
-//					cFields[0], cFields[1], cFields[2], cFields[3]);
+			//sprintf(cSql, "select trafficId, count from traffic where ipFrom = 0x%s and portFrom = 0x%s and ipTo = 0x%s and portTo = 0x%s and tag = 0x%s and (lastSeen is null or lastSeen > NOW() - INTERVAL 1 MINUTE) limit 1",
+			//		cFields[0], cFields[1], cFields[2], cFields[3], cFields[5]);
 
-			//int nUpdateTrafficId = 0;
+			sprintf(cSql, "select trafficId, count, tag from traffic where ipFrom = 0x%s and portFrom = 0x%s and ipTo = 0x%s and portTo = 0x%s and (lastSeen is null or lastSeen > NOW() - INTERVAL 1 MINUTE) order by coalesce(lastSeen, created) limit 1",
+					cFields[0], cFields[1], cFields[2], cFields[3]);
 
-			uint32_t nUpdateTrafficId = 0;
-
-			if (mysql_stmt_execute(stmtSelect) != 0) {
-				fprintf(
-        			stderr,
-        			"SELECT traffic execute failed: %s\n",
-        			mysql_stmt_error(stmtSelect)
-    			);
-			}
-			else {
-    			/*
-     			* Buffer the result so the statement is ready to be reused
-     			* cleanly on the next loop iteration.
-     			*/
-    			if (mysql_stmt_store_result(stmtSelect) != 0) {
-			        fprintf(
-            			stderr,
-			            "SELECT store_result failed: %s\n",
-			            mysql_stmt_error(stmtSelect)
-        			);
-    			}
-    			else {
-        			int fetchStatus = mysql_stmt_fetch(stmtSelect);
-
-			        if (fetchStatus == 0 ||
-			            fetchStatus == MYSQL_DATA_TRUNCATED) {
-
-			            if (!resultIsNull[0] &&
-			                !resultIsNull[2]) {
-
-            			    if (selectedTag == tag) {
-			                    nUpdateTrafficId = selectedTrafficId;
-            			    }
-			                else {
-            			        printf(
-                        			"Tag changed from %u to %lu; "
-			                        "creating a new traffic row\n",
-            			            selectedTag,
-			                        tag
-                    			);
-			                }
-			            }
-        			}
-        			else if (fetchStatus == MYSQL_NO_DATA) {
-            			/* No recent matching row. Insert a new one. */
-        			}
-			        else {
-			            fprintf(
-			                stderr,
-            			    "SELECT fetch failed: %s\n",
-                			mysql_stmt_error(stmtSelect)
-            			);
-        			}
-
-        			mysql_stmt_free_result(stmtSelect);
-    			}
-			}
-
-
-/*
+			int nUpdateTrafficId = 0;
 			if (mysql_query(conn, cSql) == 0)
 			{
 				MYSQL_RES *res;
@@ -630,131 +288,46 @@ if (mysql_stmt_bind_result(stmtSelect, bindSelectResult) != 0) {
 							nUpdateTrafficId = atoi(row[0]);
 						else
 							printf("\n**********Tag was changed, so creating new traffic record\n");						
+
+						/*	tagChanged(cFields[0], cFields[1], cFields[2], cFields[3], nTag, nNewTag);
+						else
+						{
+							printf("Tag unchanged for 0x%s:0x%s - tag %d\n", cFields[0], cFields[1], nTag);
+						}*/
 					}
 
 					mysql_free_result(res);
 				}
 			}
-*/
+
 			if (nUpdateTrafficId)
 			{
-				char cSql[400];
 				sprintf(cSql, "update traffic set count = count + 0x%s, lastSeen = now() where trafficId = %d", 
 						cFields[4], nUpdateTrafficId);
 				nUpdates++;
-
-				if (!mysql_query(conn, cSql)){
-					//According to manual, mysql_query() is supposed to return true if ok... But apparently not on all computers 
-        	        //printf("******************************** ABLE TO INSERT ***********\n");
-            	}
-	            else
-					fprintf(stderr, "MySQL error inserting/updating traffic record: %s\nSQL: %s\n", mysql_error(conn), cSql);
-					//printf("******** ERROR inserting/updating traffic record.\n");
-
 			}
 			else
 			{
-				if (mysql_stmt_execute(stmtInsert) != 0) {
-    				fprintf(stderr, "Execute failed: %s\n", mysql_stmt_error(stmtInsert));
-				} else {
-    				nInserts++;
-				}				
-
-				/*
+				//printf("Record decoded: %s %s %s %s %s %s\n", cFields[0], cFields[1], cFields[2], cFields[3], cFields[4], cFields[5]);
+				//OT_Changed: 260225 - Now also saving the tag...
 				sprintf(cSql, "insert into traffic (ipFrom, portFrom, ipTo, portTo, count, tag, lastSeen) values (0x%s, 0x%s, 0x%s ,0x%s, 0x%s, 0x%s, now())", 
 						cFields[0], cFields[1], cFields[2], cFields[3], cFields[4], cFields[5]);
 				nInserts++;
-
-				if (!mysql_query(conn, cSql)){
-					//According to manual, mysql_query() is supposed to return true if ok... But apparently not on all computers 
-        	        //printf("******************************** ABLE TO INSERT ***********\n");
-            	}
-	            else
-					fprintf(stderr, "MySQL error inserting/updating traffic record: %s\nSQL: %s\n", mysql_error(conn), cSql);
-					//printf("******** ERROR inserting/updating traffic record.\n");
-				*/
 			}
             
 			//printf ("%s\n", cSql);
+			if (!mysql_query(conn, cSql)){
+				//According to manual, mysql_query() is supposed to return true if ok... But apparently not on all computers 
+                //printf("******************************** ABLE TO INSERT ***********\n");
+            }
+            else
+				fprintf(stderr, "MySQL error inserting/updating traffic record: %s\nSQL: %s\n", mysql_error(conn), cSql);
+				//printf("******** ERROR inserting/updating traffic record.\n");
 
 			checkUpdateHackReport(conn, cFields[0], cFields[1], cFields[5]);
-
-			/************************** Update lastSeen in internalInfections - if found there...************ */
-
-			if (mysql_stmt_execute(stmtSelectInternalInfection) != 0) {
-				fprintf(
-      				stderr,
-      				"SELECT internal infection execute failed: %s\n",
-      				mysql_stmt_error(stmtSelectInternalInfection)
-  				);
-			}
-			else {
-				if (mysql_stmt_store_result(stmtSelectInternalInfection) != 0) {
-	        		fprintf(
-         				stderr,
-		            	"SELECT store_result failed: %s\n",
-		            	mysql_stmt_error(stmtSelectInternalInfection)
-    				);
-    			}
-    			else {
-   					int fetchStatus = mysql_stmt_fetch(stmtSelectInternalInfection);
-
-					if (fetchStatus == 0 || fetchStatus == MYSQL_DATA_TRUNCATED) 
-					{
-
-		    	        if (!infectionResultIsNull[0]) {
-
-							printf("Infection found: %u\n", selectedInfectionId);
-
-							//****** Update lastSeen */
-							char cSQL[400];
-							sprintf(cSQL, "update internalInfections set lastSeen = now() where infectionId = %u", selectedInfectionId);
-							printf("SQL: %s\n", cSQL);
-							//asdfasdf
-
-							if (!mysql_query(conn, cSQL)){
-                                   //printf("******************************** ABLE TO UPDATE lastSeen ***********\n");
-                        	}
-                        	else
-                         			printf("******** ERROR updateing internalInfections.lastSeen *****\n%s", cSQL);
-
-       					    /*if (selectedTag == tag) {
-	        		            nUpdateTrafficId = selectedTrafficId;
-       					    }
-	                		else {
-       			        		printf(
-                      				"Tag changed from %u to %lu; "
-	                        		"creating a new traffic row\n",
-	          			            selectedTag,
-		                        tag
-        	         			);
-		    	            }*/
-		        	    }
-    				}
-	    			else
-					{ 
-						if (fetchStatus == MYSQL_NO_DATA) {
-    	   					/* No recent matching row. Insert a new one. */
-    					}
-	        			else {
-	            		fprintf(
-	                		stderr,
-          			    	"SELECT fetch failed: %s\n",
-	              			mysql_stmt_error(stmtSelectInternalInfection)
-    	   					);
-    					}
-					}
-					mysql_stmt_free_result(stmtSelectInternalInfection);
-				}
-			}
-
 		}
 	}
 	printf("%d records inserted, %d updated in traffic table.\n", nInserts, nUpdates);
-
-	mysql_stmt_close(stmtSelect);
-	mysql_stmt_close(stmtInsert);
-	mysql_stmt_close(stmtSelectInternalInfection);
 
 	mysql_close(conn);
 	//mysql_close(update);

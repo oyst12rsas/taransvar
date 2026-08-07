@@ -44,7 +44,7 @@ function tagStatus()
 		while ($row = $result->fetch_assoc())
 		{
 			if (!$nInfectionsCount)
-				print "<h2>Registered infections on [name]:</h2><table>";
+				print "<h2>Registered infections on this server:</h2><table>";
 
 			switch ($row["active"])
 			{
