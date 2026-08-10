@@ -84,6 +84,7 @@ if (isset($_GET["f"]))
                     $szFromIp = '127.0.0.1';
                 }
 
+				$szCode = (!isset($_GET["code"]) || !strlen($_GET["code"]) ? "other" : $_GET["code"]);
 				$szWhat = (isset($_GET["wt"])?$_GET["wt"]: "hack");
 				$conn = getConnection();
 
@@ -97,9 +98,9 @@ if (isset($_GET["f"]))
 				$fromPort = (int)$nFromPort;
 				logMsg("Hackreport: $ip:$port, $what");
 
-                $szSQL = "select reportId, TIMESTAMPDIFF(SECOND, coalesce(lastSeen, created), NOW()) AS seconds_since from hackReport where ip = inet_aton(?) and port = ? and why = ? order by coalesce(lastSeen, created) desc limit 1";
+                $szSQL = "select reportId, TIMESTAMPDIFF(SECOND, coalesce(lastSeen, created), NOW()) AS seconds_since from hackReport where ip = inet_aton(?) and port = ? and code = ? and why = ? order by coalesce(lastSeen, created) desc limit 1";
             	$stmt = $conn->prepare($szSQL);
-	            $stmt->bind_param("sis", $ip, $port, $what);
+	            $stmt->bind_param("sis", $ip, $port, $code, $what);
 	            $stmt->execute();
 	            $result = $stmt->get_result(); // get the mysqli result
                 $nSeconds = 1000;
@@ -129,8 +130,8 @@ if (isset($_GET["f"]))
 					logMsg("Inserting..");
 
 	                $szSQL = "insert into hackReport
-						(ip, port, partnerIp, partnerPort, why, sentByIp, ipOwnerId)
-						values (inet_aton(?), ?, inet_aton(?), ?, ?, inet_aton(?), ?)";
+						(ip, port, partnerIp, partnerPort, code, why, sentByIp, ipOwnerId)
+						values (inet_aton(?), ?, inet_aton(?), ?, ?, ?, inet_aton(?), ?)";
 
 					$stmt = $conn->prepare($szSQL);
 					$stmt->bind_param(
@@ -139,6 +140,7 @@ if (isset($_GET["f"]))
 						$port,
 						$szFromIp,
                 	    $fromPort,
+						$code,
                     	$what,
 	                    $szFromIp,
     	                $ourid
@@ -315,7 +317,7 @@ if (isset($_GET["f"]))
 			$szIp = $_GET["ip"];
 			$nPort = $_GET["port"];
 			$conn = getConnection();
-			$szSQL = "select inet_ntoa(ipAddress) as ip, TIMESTAMPDIFF(SECOND, lastSeen, NOW()) AS seconds_since, unitId, nickname from unitPort join setup where port = ? limit 1";
+			$szSQL = "select inet_ntoa(ipAddress) as ip, TIMESTAMPDIFF(SECOND, lastSeen, NOW()) AS seconds_since, unitId, nickname from unitPort join setup where port = ? order by lastSeen desc limit 1";
 			//print "$szSQL<br>";
 			$stmt = $conn->prepare($szSQL);
 			$stmt->bind_param("d", $nPort);//, $szMe); 
@@ -332,6 +334,7 @@ if (isset($_GET["f"]))
 			{
 				$data["error"] = "1";
 				$data["found"] = "-1";
+				$data["message"] = "Searched for $nPort";
 
 				//Check if recent data exist
 				$szSQL = "select TIMESTAMPDIFF(SECOND, lastSeen, NOW()) AS seconds_since from unitPort order by lastSeen desc limit 1;";

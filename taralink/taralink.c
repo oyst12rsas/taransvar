@@ -98,7 +98,7 @@ void handleTrafficReportFromKernel(char *lpPayload, int nDataLength);
 void init_background_infecton_change_partner_notification(unsigned int ip, unsigned int nett, char *lpActive, unsigned int nStatus, unsigned int nInfectionId, unsigned int nSeverity, unsigned int nBotnetId, char *lpInfo);
 unsigned int inet__aton(char *lpIp);
 int send_to_kernel(int fd, const void *data, size_t len);
-void insertHackReport(MYSQL *conn, uint32_t ip, unsigned short port, uint32_t nSenderIp, char *cInfo, unsigned int nInfectionId, unsigned int nSeverity, unsigned int nBotnetId);
+void insertHackReport(MYSQL *conn, uint32_t ip, unsigned short port, uint32_t nSenderIp, char *cInfo, unsigned int nRemoteUnitId, unsigned int nInfectionId, unsigned int nSeverity, unsigned int nBotnetId);
 static int test_stmt_error(MYSQL_STMT * stmt, int status);  //Defined in module_traffic_report.c for now
 void urlencode(const char *src, char *dst, size_t dstsize);
 
@@ -481,6 +481,17 @@ void registerRemoteInfection(u_int32_t nSenderIp, char *lpMessage)
     unsigned short port = sPort;
     //unsigned int sentByIp = ip;
 
+	//260807 - Save to hackReport here??
+	uint32_t ip;
+	unsigned short port;
+	uint32_t nSenderIp;
+	char *cInfo
+	unsigned int nRemoteUnitId;
+	unsigned int nInfectionId;
+	unsigned int nSeverity;
+	unsigned int nBotnetId;
+
+	insertHackReport(0 /*MYSQL *conn*/, ip, port, nSenderIp, cInfo, nRemoteUnitId, nInfectionId, nSeverity, nBotnetId);
 
 }
 

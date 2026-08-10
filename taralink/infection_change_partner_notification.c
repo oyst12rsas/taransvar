@@ -390,27 +390,29 @@ void *worker(void *arg) {
 
 	//*** Read internal- and external IP Address from setup */
 	char *lpSQL = "select adminIp, internalIP, inet_ntoa(adminIp), inet_ntoa(internalIP), nettmask from setup";
-	printf("About to read setup\n");
+	//printf("About to read setup\n");
 	conn = getConnection();
-	printf("Connection opened\n");
+	//printf("Connection opened\n");
 		
 	if (mysql_query(conn, lpSQL)) {
 		fprintf(stderr, "taralink: %s\n", mysql_error(conn));
-			reportErrorReadin("setup");
+		reportErrorReadin("setup");
+		mysql_close(conn);
         return NULL;
 	}
 	printf("Query executed\n");
 
 	res = mysql_use_result(conn);
-	printf("mysql_use_result called\n");
+	//printf("mysql_use_result called\n");
 		
 	if ((row = mysql_fetch_row(res)) == NULL)
 	{
 		printf("*********** ERROR ********** Reading IP addresses from setup");
+		mysql_close(conn);
         return NULL;
 	}
 	
-	printf("Setup row fetched\n");
+	//printf("Setup row fetched\n");
 
 	char cInternalIp[100];
 	char cExternalIp[100];
@@ -419,6 +421,13 @@ void *worker(void *arg) {
     u_int32_t nNettmask = (row[4]?atoi(row[4]):0);
     u_int32_t nAdminIp = (row[0]?atoi(row[0]):0);
     u_int32_t nInternalIp = (row[1]?atoi(row[1]):0);
+
+	if (!nInternalIp)
+	{
+		printf("Aborting sending internal infections notification on non-router\n");
+
+		return NULL;
+	}
 
 
     char bMeOrMine = (nAdminIp & nNettmask) == (addr.s_addr & nNettmask);
@@ -433,6 +442,7 @@ void *worker(void *arg) {
     sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
         perror("socket");
+		mysql_close(conn);
         return NULL;
     }
 
@@ -441,6 +451,7 @@ void *worker(void *arg) {
 
 	if (!fp) {
 		perror("popen");
+		mysql_close(conn);
 		return NULL;
     }
 
@@ -649,6 +660,7 @@ void *worker(void *arg) {
 		if (mysql_stmt_execute(stmt) != 0) {
     		printf("execute failed: %s\n", mysql_stmt_error(stmt));
     		mysql_stmt_close(stmt);
+			mysql_close(conn);
     		return NULL;
 		}
 
@@ -660,6 +672,7 @@ void *worker(void *arg) {
 		if (mysql_stmt_bind_result(stmt, result) != 0) {
     		printf("bind_result failed: %s\n", mysql_stmt_error(stmt));
     		mysql_stmt_close(stmt);
+			mysql_close(conn);
     		return NULL;
 		}
 
@@ -720,7 +733,7 @@ void *worker(void *arg) {
 		free(pFound);
 	}
 
-    printf("Cleaning up\n");
+    //printf("Cleaning up\n");
 
 
 	//Clean up
@@ -730,14 +743,13 @@ void *worker(void *arg) {
 	mysql_stmt_close(stmt);
 	mysql_close(conn);
     close(sock);
-
-
     return NULL;
 }
 
 void init_background_infecton_change_partner_notification(unsigned int ip, unsigned int nett, char *lpActive, unsigned int nStatus, unsigned int nInfectionId, unsigned int nSeverity, unsigned int nBotnetId, char *lpInfo)
 {
-    printf("\n\n*********** ABOUT TO SCHEDULING NEW THREAD ******************\n\n");
+    //printf("\n\n*********** ABOUT TO SCHEDULING NEW THREAD ******************\n\n");
+	printf("Sending elaborated threat info (from background thread)\n");
 	struct _InfectionSpecification  *pInfection = malloc(sizeof(struct _InfectionSpecification));
 	memset(pInfection, sizeof(struct _InfectionSpecification), 0);
 	pInfection->ipAddress = ip;
@@ -753,6 +765,6 @@ void init_background_infecton_change_partner_notification(unsigned int ip, unsig
     pthread_create(&t, NULL, worker, pInfection);
     pthread_join(t, NULL);
 
-    printf("\n\n*********** SCHEDULING NEW THREAD ******************\n\n");
+    //printf("\n\n*********** SCHEDULING NEW THREAD ******************\n\n");
 
 }

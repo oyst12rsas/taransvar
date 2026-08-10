@@ -2,25 +2,27 @@
 
 function reportHack()
 {
-        if (isset($_GET["submit"]))
-        {
-                print "Should save......";
-                $szSQL = "insert into hackReport (ip, port, partnerIp, partnerPort, status) values (inet_aton('".$_GET["ip"]."'), ".$_GET["port"].",inet_aton('".$_GET["partnerIp"]."'), ".$_GET["partnerPort"].",'".$_GET["status"]."')";
+    if (isset($_GET["submit"]))
+	{
+		print "Can't save... Make it prepared statement..";	//Too risky...
+		return;
+    	print "Should save......";
+    	$szSQL = "insert into hackReport (ip, port, partnerIp, partnerPort, status) values (inet_aton('".$_GET["ip"]."'), ".$_GET["port"].",inet_aton('".$_GET["partnerIp"]."'), ".$_GET["partnerPort"].",'".$_GET["status"]."')";
 		$cConn = getConnection();
 		print "<br>SQL: $szSQL<br>";
 		$cConn->query($szSQL) or die (mysql_error());
 		print 'Setup should have been saved..<br><br><a href="index.php?f=infections">See it..</a>';
 		return;
-        }
-        print "<h2>Setup</h2>";
+    }
+    print "<h2>Setup</h2>";
 	$szSQL = "select adminIp, inet_ntoa(adminIp) as adminIpA from setup";
 	$conn = getConnection();
 	$result = $conn->query($szSQL);
-        $nCount =0;
+	$nCount =0;
 
 	if($result->num_rows > 0 && $row = $result->fetch_assoc()) 
 	{
-	        $szPartnerName = $row["adminIpA"];
+		$szPartnerName = $row["adminIpA"];
         ?>
         <table>
                 <form action="index.php">
@@ -34,7 +36,7 @@ function reportHack()
         </table>  <?php
         }
         else
-                print "Error reading setup!";
+            print "Error reading setup!";
 }
 
 ?>

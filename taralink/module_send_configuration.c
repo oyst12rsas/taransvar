@@ -76,9 +76,61 @@ void reportErrorReadin(char *lpWhat)
 
 bool getSetupStringNewOk(MYSQL *conn, MYSQL *updateConn, char *cSetupString, int nBuffSize, bool bReadChangesOnly)
 {
-	MYSQL_RES *res;
-	MYSQL_ROW row;
-	*cSetupString = 0;
+	return 1;
+}//getSetupStringNewOk()
+
+
+
+//int sentConfiguration(struct _SocketData *pSockData, int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
+int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
+{
+	//This is a request for configuration setup...
+	//Format:	<batch number>|<what's next>|<ip-address>:<port>-<action>^<next.....>|<what's next>
+	//Where where <what's next> is [MORE|EOF|SERVERS|INFECTIONS|BLACKLIST|WHITELIST|INSPECT|DROP]
+
+	//Below, the setup is read from database, but configuration sent to kernel is hard coded
+
+        //printf("About to check setup\n");
+
+	/*if (!bReadChangesOnly)
+		if (fileConfigurationSent(nSequenceNumber, bIsInbound))
+			return 0;*/
+
+
+	MYSQL *conn, *updateConn;
+
+		conn = getConnection();
+		updateConn = getConnection();
+
+
+
+		if (!bReadChangesOnly)
+		{
+			/*It's a challenge when there's too many infections, white/black lists, port forwards and more... 
+			Before, it was thought to be handled with batches... But maybe it's better to use the handled 
+			field in the data. Set them all as not handled at the first sending of config. Then send the next ones on timer. 
+			Then can read as many as we went and leave the others for the next batch (we may need a separate field "sentTarakernel" but can try without).
+			*/
+
+			if (mysql_query(conn, "update internalInfections set handled = b'0'")
+				|| mysql_query(conn, "update colorListings set handled = b'0'")
+				|| mysql_query(conn, "update honeyport set handled = b'0'")
+				|| mysql_query(conn, "update inspection set handled = b'0'")
+				|| mysql_query(conn, "update internalServers set handled = b'0'")
+				|| mysql_query(conn, "update partnerRouter set handled = b'0'")
+				) {
+			    fprintf(stderr, "%s\n", mysql_error(conn));
+			    reportErrorReadin("servers");
+		    	return 0;
+			}
+			printf("********** WARNING ******* Testing using handled field to assemble batches of settings. Initiated now.\n");
+		}
+
+
+
+
+	MYSQL_RES *setupRes;
+	MYSQL_ROW setupRow;
 
 	char *lpSQL = "select adminIp, \
 			internalIP, \
@@ -112,108 +164,14 @@ bool getSetupStringNewOk(MYSQL *conn, MYSQL *updateConn, char *cSetupString, int
 		return 0;
 	}
 
-	res = mysql_use_result(conn);
+	setupRes = mysql_use_result(conn);
 	//res = mysql_store_result(conn);		
-	if (!res) {
+	if (!setupRes) {
 	   	fprintf(stderr, "mysql_store_result failed: %s\n", mysql_error(conn));
 		return 0;
 	}		
 
-	if ((row = mysql_fetch_row(res)) != NULL)
-	{
-		//printf("Found setup row...\n");
-		if (!bReadChangesOnly || !atoi(row[3]))
-		{
-			//printf("processing it...\n");
-			union _showStatusBitsUnion cShowStatusBits;
-			cShowStatusBits.nValues = 0; //Initialize the whole union / structure
-			//cShowStatusBits.bits.nDummy = 0;
-			int nField = 6;
-			//printf("reading bit fields...\n");
-			cShowStatusBits.bits.doingNAT  = (row[nField]?*row[nField]:0);	nField++;
-			cShowStatusBits.bits.showStatus  = (row[nField]?*row[nField]:0);	nField++;
-			cShowStatusBits.bits.showPreRoutePartner  = (row[nField]?*row[nField]:0);	nField++;
-			cShowStatusBits.bits.showPreRouteNonPartner  = (row[nField]?*row[nField]:0);	nField++;
-			cShowStatusBits.bits.showForwardPartner  = (row[nField]?*row[nField]:0);	nField++;
-			cShowStatusBits.bits.showForwardNonPartner  = (row[nField]?*row[nField]:0);	nField++;
-			cShowStatusBits.bits.showUrgentPtrUsage  = (row[nField]?*row[nField]:0);	nField++;
-			cShowStatusBits.bits.showOwnerless  = (row[nField]?*row[nField]:0);	nField++;
-			cShowStatusBits.bits.showOther  = (row[nField]?*row[nField]:0);	nField++;
-			cShowStatusBits.bits.showNew1  = (row[nField]?*row[nField]:0);	nField++;
-			cShowStatusBits.bits.showNew2  = (row[nField]?*row[nField]:0);	nField++;
-			cShowStatusBits.bits.doTagging  = (row[nField]?*row[nField]:0);	nField++;
-			cShowStatusBits.bits.doReportTraffic = (row[nField]?*row[nField]:0);	nField++;
-			cShowStatusBits.bits.doInspection  = (row[nField]?*row[nField]:0);	nField++;
-			cShowStatusBits.bits.doBlocking  = (row[nField]?*row[nField]:0);	nField++;
-			cShowStatusBits.bits.doOther  = (row[nField]?*row[nField]:0);	nField++;
-
-			//printf("after reading bit fields...\n");
-
-			printf("This server is %sdoing NAT\n", (cShowStatusBits.bits.doingNAT?"":"NOT "));
-
-			#define N_MAX_DONT_DMSG_IPs 150
-			int nDontMsgFldNo = nField++;	
-			char szDontDmesgIPs[N_MAX_DONT_DMSG_IPs];
-			szDontDmesgIPs[0] = 0;
-//			uint32_t ip_numeric = 0;
-
-			//if (row[nDontMsgFldNo] && *row[nDontMsgFldNo])	//260406 asdf
-			if (row[nDontMsgFldNo] != NULL && *row[nDontMsgFldNo])
-			{
-				//printf("DontSendTo: %s\n", row[nDontMsgFldNo]);
-				//strcpy(szDontDmesgIPs, row[nDontMsgFldNo]);
-
-				snprintf(szDontDmesgIPs, sizeof(szDontDmesgIPs), "%s", row[nDontMsgFldNo]);					
-				if (strlen(szDontDmesgIPs) > N_MAX_DONT_DMSG_IPs - 50)
-					printf("************ WARNING **** Consider increasing buffer for IPs not to log to dmesg from %u (currently in use: %zu)\n", N_MAX_DONT_DMSG_IPs, strlen(szDontDmesgIPs));
-
-				//NOTE! For now only handles one IP address
-//				if (strlen(szDontDmesgIPs))
-//					ip_numeric = inet_addr(szDontDmesgIPs);
-
-				if (strchr(szDontDmesgIPs, '^') || strchr(szDontDmesgIPs, '\\') || strchr(szDontDmesgIPs, '\''))
-				{
-					printf("********* ERROR ********** List of IP addresses not to log to dmsg can only contain IP addresses separated by comma\n");
-					strcpy(szDontDmesgIPs, "0");
-				}
-			}
-			else
-			{
-				printf("No IP not to send dmesg set (fld no: %d)..\n", nDontMsgFldNo);
-				strcpy(szDontDmesgIPs, "0");
-			}
-
-			//printf("Converting ips\n");				
-			uint32_t adminIP = (uint32_t)strtoul(row[0]?row[0]:"0", NULL, 10);
-			uint32_t internalIP = (uint32_t)strtoul(row[1]?row[1]:"0", NULL, 10);
-			uint32_t nettmask = (uint32_t)strtoul(row[2]?row[2]:"0", NULL, 10);
-
-			unsigned int  nBlockingThreshold = atoi(row[4]);
-			unsigned int  nBlockSshThreshold = atoi(row[5]);
-
-			snprintf(cSetupString, nBuffSize, "SETUP|%08X^%08X^%08X^%01X^%01X^%02X^%s^", adminIP, internalIP, nettmask, nBlockingThreshold, nBlockSshThreshold, cShowStatusBits.nValues, szDontDmesgIPs);
-				//strcpy(cReply+strlen(cReply), "SETUP|");
-				//strcpy(cReply+strlen(cReply), row[0]);
-				//strcpy(cReply+strlen(cReply), "|");
-
-			printf("Setup added now : %s^%s^%s\n", (row[0]?row[0]:"N/A"), (row[1]?row[1]:"N/A"), (row[2]?row[2]:"N/A"));
-			if (!atoi(row[3]?row[3]:"0")) {
-				//printf("Setting setup as handled..\n");
-				if (mysql_query(updateConn, "update setup set handled = b'1'")) {
-					fprintf(stderr, "%s\n", mysql_error(updateConn));
-					addWarningRecord("****** ERROR Error updating setup handled field (meaning it will read again)");
-			    	mysql_free_result(res);
-					return 0;
-				}
-		  	}
-			else
-				printf("setup was handled.. not setting\n");
-					//printf("Finished processing it...\n");
-		}  
-		else
-			printf("Not adding setup.. handled was: %s\n", row[3]);
-	}
-	else
+	if ((setupRow = mysql_fetch_row(setupRes)) == NULL)
 	{
 		//Used to report failure to read setup to global DB server, but we no longer have that server
    	    //unsigned long nMinutes = minutesSincePing(); 
@@ -229,32 +187,25 @@ bool getSetupStringNewOk(MYSQL *conn, MYSQL *updateConn, char *cSetupString, int
        	    */
 		//}
         //printf("Minutes: %lu (%s)\n", nMinutes, szWgetBuff);
-		//printf("************ ERROR! Unable to read the setup\n");
+		printf("************ ERROR! Unable to read the setup. Aborting\n");
+		return 0;
 	}	
-   	mysql_free_result(res);
-	return 1;
-}//getSetupStringNewOk()
+
+	uint32_t adminIP = (uint32_t)strtoul(setupRow[0]?setupRow[0]:"0", NULL, 10);
+	uint32_t internalIP = (uint32_t)strtoul(setupRow[1]?setupRow[1]:"0", NULL, 10);
+
+	int nSetupHandled = (setupRow[3] && *setupRow[3]);
+
+	//printf("Setup handled: %d\n", nSetupHandled);
 
 
 
-//int sentConfiguration(struct _SocketData *pSockData, int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
-int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
-{
-	//This is a request for configuration setup...
-	//Format:	<batch number>|<what's next>|<ip-address>:<port>-<action>^<next.....>|<what's next>
-	//Where where <what's next> is [MORE|EOF|SERVERS|INFECTIONS|BLACKLIST|WHITELIST|INSPECT|DROP]
 
-	//Below, the setup is read from database, but configuration sent to kernel is hard coded
 
-        //printf("About to check setup\n");
 
-	/*if (!bReadChangesOnly)
-		if (fileConfigurationSent(nSequenceNumber, bIsInbound))
-			return 0;*/
 
-	MYSQL *conn, *updateConn;
-	MYSQL_RES *res;
-	MYSQL_ROW row;
+	MYSQL_RES *res = 0;
+	MYSQL_ROW row = 0;
 	char cReply[C_BUFF_SIZE];	//4090 probably
 	*cReply = 0;
 	int bFoundData = 0;
@@ -265,32 +216,8 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 	{
 	    char szSQL[400];	//NOTE! 256 is now too small for internalInfections SQL
 	    char *lpHandledWhere;
-		conn = getConnection();
-		updateConn = getConnection();
 		//printf("Reading configuration.....\n");
 		sprintf(cReply, "CONFIG %d|", nSequenceNumber);
-		
-		if (!bReadChangesOnly)
-		{
-			/*It's a challenge when there's too many infections, white/black lists, port forwards and more... 
-			Before, it was thought to be handled with batches... But maybe it's better to use the handled 
-			field in the data. Set them all as not handled at the first sending of config. Then send the next ones on timer. 
-			Then can read as many as we went and leave the others for the next batch (we may need a separate field "sentTarakernel" but can try without).
-			*/
-
-			if (mysql_query(conn, "update internalInfections set handled = b'0'")
-				|| mysql_query(conn, "update colorListings set handled = b'0'")
-				|| mysql_query(conn, "update honeyport set handled = b'0'")
-				|| mysql_query(conn, "update inspection set handled = b'0'")
-				|| mysql_query(conn, "update internalServers set handled = b'0'")
-				|| mysql_query(conn, "update partnerRouter set handled = b'0'")
-				) {
-			    fprintf(stderr, "%s\n", mysql_error(conn));
-			    reportErrorReadin("servers");
-		    	return 0;
-			}
-			printf("********** WARNING ******* Testing using handled field to assemble batches of settings. Initiated now.\n");
-		}
 
 		//ØT 260617 - moved here (to avoid setup from ending in later batch if lots of other info)
 //#ifdef SETUP_SETUP
@@ -298,8 +225,12 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 		//printf("Reading setup...\n");
 		bool bReadSetup = 1;
 
+
+/*   No longer needed because setup is already read			
+
 		if (bReadChangesOnly)
 		{
+
 			//Thought there was problem reading lots of fields (but the problem was memory leak elsewhere).. so implemented this check to see if handled is true or false
 			char *lpSQL = "select dmesgUpdated from setup where coalesce(handled, b'0') = b'1' limit 1";
 
@@ -327,33 +258,141 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 	    	mysql_free_result(res);
 			res = NULL;
 		}
+			*/
 	
 		if (bReadSetup)
 		{
-			//char cSetupString[1000];
+			char cSetupString[1000];
 			//20k memory leak per minute before due to long mysql query.. Old method saved in getSetupStringOk() function...
-			char cSetupStringNew[1000];
-			if (//!getSetupStringOk(conn, updateConn, cSetupString, sizeof(cSetupString), bReadChangesOnly) ||
-				!getSetupStringNewOk(conn, updateConn, cSetupStringNew, sizeof(cSetupStringNew), bReadChangesOnly))
-				return 0;
+			//char cSetupStringNew[1000];
+			//if (//!getSetupStringOk(conn, updateConn, cSetupString, sizeof(cSetupString), bReadChangesOnly) ||
+			//	!getSetupStringNewOk(conn, updateConn, cSetupStringNew, sizeof(cSetupStringNew), bReadChangesOnly))
+			//	return 0;
 
-			/*if (strcmp(cSetupString, cSetupStringNew))
-				printf("********** WARNING ********* Setting strings differ: (old/new)\n%s\n%s\n", cSetupString, cSetupStringNew);
-			else
-				printf("New and old setup routines agree: %s\n", cSetupString);
-				*/
-			int nPosLeft = sizeof(cReply)-strlen(cReply)-1;
-			if (nPosLeft > 0)
-				snprintf(cReply+strlen(cReply), nPosLeft, "%s|", cSetupStringNew);	//ØT added "|"" 
-			else
-				nCharsTruncated += strlen(cSetupStringNew);
 
-		    bFoundData = 1;
+
+
+			//printf("Found setup row...\n");
+			if (!bReadChangesOnly || !nSetupHandled)
+			{
+				//printf("processing it...\n");
+				union _showStatusBitsUnion cShowStatusBits;
+				cShowStatusBits.nValues = 0; //Initialize the whole union / structure
+				//cShowStatusBits.bits.nDummy = 0;
+				int nField = 6;
+				//printf("reading bit fields...\n");
+				cShowStatusBits.bits.doingNAT  = (setupRow[nField]?*setupRow[nField]:0);	nField++;
+				cShowStatusBits.bits.showStatus  = (setupRow[nField]?*setupRow[nField]:0);	nField++;
+				cShowStatusBits.bits.showPreRoutePartner  = (setupRow[nField]?*setupRow[nField]:0);	nField++;
+				cShowStatusBits.bits.showPreRouteNonPartner  = (setupRow[nField]?*setupRow[nField]:0);	nField++;
+				cShowStatusBits.bits.showForwardPartner  = (setupRow[nField]?*setupRow[nField]:0);	nField++;
+				cShowStatusBits.bits.showForwardNonPartner  = (setupRow[nField]?*setupRow[nField]:0);	nField++;
+				cShowStatusBits.bits.showUrgentPtrUsage  = (setupRow[nField]?*setupRow[nField]:0);	nField++;
+				cShowStatusBits.bits.showOwnerless  = (setupRow[nField]?*setupRow[nField]:0);	nField++;
+				cShowStatusBits.bits.showOther  = (setupRow[nField]?*setupRow[nField]:0);	nField++;
+				cShowStatusBits.bits.showNew1  = (setupRow[nField]?*setupRow[nField]:0);	nField++;
+				cShowStatusBits.bits.showNew2  = (setupRow[nField]?*setupRow[nField]:0);	nField++;
+				cShowStatusBits.bits.doTagging  = (setupRow[nField]?*setupRow[nField]:0);	nField++;
+				cShowStatusBits.bits.doReportTraffic = (setupRow[nField]?*setupRow[nField]:0);	nField++;
+				cShowStatusBits.bits.doInspection  = (setupRow[nField]?*setupRow[nField]:0);	nField++;
+				cShowStatusBits.bits.doBlocking  = (setupRow[nField]?*setupRow[nField]:0);	nField++;
+				cShowStatusBits.bits.doOther  = (setupRow[nField]?*setupRow[nField]:0);	nField++;
+
+				//printf("after reading bit fields...\n");
+
+				printf("This server is %sdoing NAT\n", (cShowStatusBits.bits.doingNAT?"":"NOT "));
+
+				#define N_MAX_DONT_DMSG_IPs 150
+				int nDontMsgFldNo = nField++;	
+				char szDontDmesgIPs[N_MAX_DONT_DMSG_IPs];
+				szDontDmesgIPs[0] = 0;
+//				uint32_t ip_numeric = 0;
+
+				//if (row[nDontMsgFldNo] && *row[nDontMsgFldNo])	//260406 asdf
+				if (setupRow[nDontMsgFldNo] != NULL && *setupRow[nDontMsgFldNo])
+				{
+					//printf("DontSendTo: %s\n", row[nDontMsgFldNo]);
+					//strcpy(szDontDmesgIPs, row[nDontMsgFldNo]);
+
+					snprintf(szDontDmesgIPs, sizeof(szDontDmesgIPs), "%s", setupRow[nDontMsgFldNo]);					
+					if (strlen(szDontDmesgIPs) > N_MAX_DONT_DMSG_IPs - 50)
+						printf("************ WARNING **** Consider increasing buffer for IPs not to log to dmesg from %u (currently in use: %zu)\n", N_MAX_DONT_DMSG_IPs, strlen(szDontDmesgIPs));
+
+					//NOTE! For now only handles one IP address
+//					if (strlen(szDontDmesgIPs))
+//						ip_numeric = inet_addr(szDontDmesgIPs);
+
+					if (strchr(szDontDmesgIPs, '^') || strchr(szDontDmesgIPs, '\\') || strchr(szDontDmesgIPs, '\''))
+					{
+						printf("********* ERROR ********** List of IP addresses not to log to dmsg can only contain IP addresses separated by comma\n");
+						strcpy(szDontDmesgIPs, "0");
+					}
+				}
+				else
+				{
+					printf("No IP not to send dmesg set (fld no: %d)..\n", nDontMsgFldNo);
+					strcpy(szDontDmesgIPs, "0");
+				}
+
+				//printf("Converting ips\n");				
+				uint32_t nettmask = (uint32_t)strtoul(setupRow[2]?setupRow[2]:"0", NULL, 10);
+
+				unsigned int  nBlockingThreshold = atoi(setupRow[4]);
+				unsigned int  nBlockSshThreshold = atoi(setupRow[5]);
+
+				snprintf(cSetupString, sizeof(cSetupString), "SETUP|%08X^%08X^%08X^%01X^%01X^%02X^%s^", adminIP, internalIP, nettmask, nBlockingThreshold, nBlockSshThreshold, cShowStatusBits.nValues, szDontDmesgIPs);
+					//strcpy(cReply+strlen(cReply), "SETUP|");
+					//strcpy(cReply+strlen(cReply), row[0]);
+					//strcpy(cReply+strlen(cReply), "|");
+
+				printf("Setup added now : %s^%s^%s\n", (setupRow[0]?setupRow[0]:"N/A"), (setupRow[1]?setupRow[1]:"N/A"), (setupRow[2]?setupRow[2]:"N/A"));
+
+				if (!nSetupHandled) {
+					//printf("Setting setup as handled..\n");
+					if (mysql_query(updateConn, "update setup set handled = b'1'")) {
+						fprintf(stderr, "%s\n", mysql_error(updateConn));
+						addWarningRecord("****** ERROR Error updating setup handled field (meaning it will read again)");
+				    	mysql_free_result(setupRes);
+						return 0;
+					}
+			  	}
+				else
+					printf("setup was handled.. not setting\n");
+						//printf("Finished processing it...\n");
+
+
+				/*if (strcmp(cSetupString, cSetupStringNew))
+					printf("********** WARNING ********* Setting strings differ: (old/new)\n%s\n%s\n", cSetupString, cSetupStringNew);
+				else
+					printf("New and old setup routines agree: %s\n", cSetupString);
+					*/
+				int nPosLeft = sizeof(cReply)-strlen(cReply)-1;
+				if (nPosLeft > 0)
+					snprintf(cReply+strlen(cReply), nPosLeft, "%s|", cSetupString);	//ØT added "|"" 
+				else
+					nCharsTruncated += strlen(cSetupString);
+
+		    	bFoundData = 1;
+
+
+			}  
+//			else
+//				printf("Not adding setup.. handled was: %s\n", nSetupHandled);
+
+
+
+
+
+
+
 		}
 		//else	
 		//	printf("Skipping reading (already handled)\n");
 			
 		//printf("Freeing up connections\n");
+	   	mysql_free_result(setupRes);
+		setupRes = 0;
+
 //#endif //#ifdef SETUP_SETUP
 
 
@@ -498,87 +537,95 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 
 //#ifdef SETUP_INTERNAL_INFECTIONS
 
-		//*************************Send info on internal infections (in the network) ****************
-		//printf("Reading internal unit infections...\n");
+		if (internalIP)
+		{
+			//Probably set up as a router..
+
+			//*************************Send info on internal infections (in the network) ****************
+			//printf("Reading internal unit infections...\n");
 		
-		if (bReadChangesOnly)
-			lpHandledWhere = "WHERE COALESCE(handled, b'0') = b'0'";
-	    else
-
-	        lpHandledWhere = ""; //Now send severity = 1 if deactivated... Before: "where active = b'1'";
-
-		sprintf(szSQL, "select inet_ntoa(ip) as ip, inet_ntoa(nettmask) as nettmask, coalesce(status,'NULL'), \
-			infectionId, handled, coalesce(CAST(active AS UNSIGNED),0) as active, coalesce(infoSharePartners,'NULL'), \
-			coalesce(unitId,0), coalesce(severity,0), coalesce(botnetId,0), ip, nettmask from internalInfections %s limit %d", lpHandledWhere, MAX_INFECTIONS);
-		//printf("SQL: %s\n", szSQL);
-
-		if (mysql_query(conn, szSQL)) {
-		    fprintf(stderr, "%s\n", mysql_error(conn));
- 		    reportErrorReadin("internal infections");
-		    return 0;
-		}
-		res = mysql_use_result(conn);
-
-		nFound =0;
-
-		while ((row = mysql_fetch_row(res)) != NULL)
-		{
-    		bFoundData = 1;
-
-			if (!nFound)
-				sprintf(cReply+strlen(cReply), "INFECTION|");
-
-			char *lpSendInfectionInfo = row[6];
-			char *lpSendSeverity = row[8];
-
-			int nActive = atoi(row[5]);
-			if (!nActive)
-			{
-				lpSendInfectionInfo = "N/A";
-				lpSendSeverity = "1";	//Send severity = 1 if inactive to let receiver block ssh and/other important ports.
-				nActive = 1;			//If active = 0 is sent, then tarakernel will remove it from the list....
-				printf("Sending severity 1 for deactivated infection\n");
-			}
-
-			printf("****** Active: %d (%s), info: %s, severity: %s. After: %s/%s\n", nActive, row[5], row[6], row[8], lpSendInfectionInfo, lpSendSeverity);
-
-			//printf("taralink: Infection found : %s-%s-%s-%s\n", row[0], row[1], row[5], row[2]);
-			//															ip		nett	active status  infID   severity botnetId info
-			int nPosLeft = sizeof(cReply)-strlen(cReply)-1;
-			if (nPosLeft > PACKET_LEN_SAFETY_BUFFER)
-				snprintf(cReply+strlen(cReply), nPosLeft, "%s:%s-%d-%s-%s-%s-%s-%s^", 
-							row[0], row[1], nActive, row[2], row[3], lpSendSeverity, row[9], lpSendInfectionInfo);
-			else
-			{
-				nCharsTruncated += 70;
-				printf("WARNING! Breaking on buffer almost full when reading internal infections");
-				break;
-			}
-
-			//	ip				nett	active status  infID   severity botnetId info
-/*INFECTION|	100.100.100.100:255.255.255.255-1-(null)-       -1503633950-        -1503633942-0-(null)^
-			100.100.100.100:255.255.255.255-1-(null)--1503633950--1503633942-0-(null)^
-			100.100.100.100:255.255.255.255-1-(null)--1503633950--1503633942-0-(null)^
-*/
-			if (!row[4] || !atoi(row[4])) 
-				updateHandled(updateConn, "internalInfections", "infectionId", row[3]);
-
 			if (bReadChangesOnly)
-				init_background_infecton_change_partner_notification(atol(row[10]), atol(row[11]), row[5], atol(row[2]), atol(row[3]), atol(lpSendSeverity), atol(row[9]), lpSendInfectionInfo);	//ip		nett	active status  infID   severity botnetId info
+				lpHandledWhere = "WHERE COALESCE(handled, b'0') = b'0'";
+	    	else
 
-			nFound++;
+	        	lpHandledWhere = ""; //Now send severity = 1 if deactivated... Before: "where active = b'1'";
+
+			sprintf(szSQL, "select inet_ntoa(ip) as ip, inet_ntoa(nettmask) as nettmask, coalesce(status,'NULL'), \
+				infectionId, handled, coalesce(CAST(active AS UNSIGNED),0) as active, coalesce(infoSharePartners,'NULL'), \
+				coalesce(unitId,0), coalesce(severity,0), coalesce(botnetId,0), ip, nettmask from internalInfections %s limit %d", lpHandledWhere, MAX_INFECTIONS);
+			//printf("SQL: %s\n", szSQL);
+
+			if (mysql_query(conn, szSQL)) {
+			    fprintf(stderr, "%s\n", mysql_error(conn));
+ 			    reportErrorReadin("internal infections");
+		    	return 0;
+			}
+			res = mysql_use_result(conn);
+
+			nFound =0;
+
+			while ((row = mysql_fetch_row(res)) != NULL)
+			{
+    			bFoundData = 1;
+
+				if (!nFound)
+					sprintf(cReply+strlen(cReply), "INFECTION|");
+
+				char *lpSendInfectionInfo = row[6];
+				char *lpSendSeverity = row[8];
+
+				int nActive = atoi(row[5]);
+				if (!nActive)
+				{
+					lpSendInfectionInfo = "N/A";
+					lpSendSeverity = "1";	//Send severity = 1 if inactive to let receiver block ssh and/other important ports.
+					nActive = 1;			//If active = 0 is sent, then tarakernel will remove it from the list....
+					printf("Sending severity 1 for deactivated infection\n");
+				}
+
+				printf("****** Active: %d (%s), info: %s, severity: %s. After: %s/%s\n", nActive, row[5], row[6], row[8], lpSendInfectionInfo, lpSendSeverity);
+
+				//printf("taralink: Infection found : %s-%s-%s-%s\n", row[0], row[1], row[5], row[2]);
+				//															ip		nett	active status  infID   severity botnetId info
+				int nPosLeft = sizeof(cReply)-strlen(cReply)-1;
+				if (nPosLeft > PACKET_LEN_SAFETY_BUFFER)
+					snprintf(cReply+strlen(cReply), nPosLeft, "%s:%s-%d-%s-%s-%s-%s-%s^", 
+							row[0], row[1], nActive, row[2], row[3], lpSendSeverity, row[9], lpSendInfectionInfo);
+				else
+				{
+					nCharsTruncated += 70;
+					printf("WARNING! Breaking on buffer almost full when reading internal infections");
+					break;
+				}
+
+				//	ip				nett	active status  infID   severity botnetId info
+	/*INFECTION|	100.100.100.100:255.255.255.255-1-(null)-       -1503633950-        -1503633942-0-(null)^
+				100.100.100.100:255.255.255.255-1-(null)--1503633950--1503633942-0-(null)^
+				100.100.100.100:255.255.255.255-1-(null)--1503633950--1503633942-0-(null)^
+	*/
+				if (!row[4] || !atoi(row[4])) 
+					updateHandled(updateConn, "internalInfections", "infectionId", row[3]);
+
+				if (bReadChangesOnly)
+					init_background_infecton_change_partner_notification(atol(row[10]), atol(row[11]), row[5], atol(row[2]), atol(row[3]), atol(lpSendSeverity), atol(row[9]), lpSendInfectionInfo);	//ip		nett	active status  infID   severity botnetId info
+
+				nFound++;
+			}
+
+			mysql_free_result(res);
+
+			if (nFound == MAX_INFECTIONS)
+			{
+				printf("\n\n\n********** WARNING ********** Stopped at %u infections. You should clean up or increase the limit if it's safe...\n\n", MAX_INFECTIONS);
+			}
+
+
+			if (nFound)
+				strcpy(cReply+strlen(cReply), "|");
 		}
-
-		mysql_free_result(res);
-
-		if (nFound == MAX_INFECTIONS)
-		{
-			printf("\n\n\n********** WARNING ********** Stopped at %u infections. You should clean up or increase the limit if it's safe...\n\n", MAX_INFECTIONS);
-		}
-
-
-		if (nFound)
-			strcpy(cReply+strlen(cReply), "|");
+		else
+			if (!bReadChangesOnly)
+				printf ("No internal IP (not a router) so skipping sending internal infections\n");
 
 //#endif //#ifdef SETUP_INTERNAL_INFECTIONS
 		//asdf - 260405 - testing...
@@ -829,6 +876,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 			nCharsTruncated += 3;
 
 		/* close connection */
+
 		mysql_close(conn);
 		mysql_close(updateConn);
 
@@ -857,6 +905,8 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 		printf("\n************* WARNING **************************\n\nLacking estimated at least %d char buffer space to send setup!\n\n*************************************************\n", nCharsTruncated);
 	//else	
 	//	printf("Setup: %lu chars, buffer size: %lu\n", strlen(cReply), sizeof(cReply));
+
+
 
 	return 0;
 }

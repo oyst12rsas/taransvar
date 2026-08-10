@@ -190,10 +190,8 @@ static unsigned int sendUdpThreatPackage(__be32 destIp, __be32 sourceIp, __be16 
             pInfection->lpInfo);
 
     /* send UDP immediately */
-    pr_info("tarakernel SENDING: Sending UDP threat info to %pI4:%d, msg: %s - severity: %u, owner: %u, infId: %u, botnet: %u, info: %s\n", &destIp, 
-					TARALINK_LISTENING_TO_PORT, cUdpTagString, 
-					pInfection->nSeverity, pInfection->cTag.owners_id, pInfection->nInfectionId, pInfection->nBotnetId, pInfection->lpInfo);
-    //pr_info("tarakernel: Format: ELABORATED_THREAT_INFO IP:PORT^VERSION^TAG_PRESUMED_INFECTED^TAG_OWNER_ID^INFECTION_ID^SEVERITY^BOTNET_ID^INFO\n");
+    pr_info("tarakernel SENDING: New session. Sending UDP with threat info to receiver (%pI4:%d): %s.\n", &destIp, TARALINK_LISTENING_TO_PORT, cUdpTagString);
+    pr_info("tarakernel: Format: ELABORATED_THREAT_INFO IP:PORT^VERSION^TAG_PRESUMED_INFECTED^TAG_OWNER_ID^INFECTION_ID^SEVERITY^BOTNET_ID^INFO\n");
     return send_udp_json(destIp, htons(TARALINK_LISTENING_TO_PORT), cUdpTagString);
 }
 

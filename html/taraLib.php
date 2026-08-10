@@ -189,7 +189,7 @@ function reportHacking($szMsg)
 	$szSQL = "insert into hackReport (ip, port, sentByIp, status, why) 
 		values (inet_aton(?), ?, inet_aton('127.0.0.1'), 'www', ?)";
 	$stmt = $conn->prepare($szSQL);
-	$stmt->bind_param("sis", $szSenderIp, $nFromPort, $szmsg);
+	$stmt->bind_param("sis", $szSenderIp, $nFromPort, $szMsg);
 	$stmt->execute();
 }
 

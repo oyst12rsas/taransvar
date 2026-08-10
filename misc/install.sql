@@ -289,10 +289,14 @@ alter table setup add aiAssessment text;
 alter table setup add aiAssessmentTime timestamp null;
 update setup set dbVersion = 75;
 
+#version 76 (260810)
+alter table hackReport add hrCategory enum ('login_fail','tagged_traffic','from_dbserver', 'from_partner', 'ssh_fail', 'ssh_when_blocked', 'iptables', 'attack_severity_1', 'attack_severity_3', 'attack_severity_7', 'other');
+alter table syslog add handled bit(1) not null default b'0';
+ALTER TABLE partnerRouterStatusLog MODIFY created DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;
+update setup set dbVersion = 76;
+
 #******** NEXT TIME ALSO add *****
-#alter table syslog add handled bit(1) not null default b'0';
-#ALTER TABLE partnerRouterStatusLog MODIFY created DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;
-#update setup set dbVersion = 76;
+#update setup set dbVersion = 77;
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 
 #can import DB changes automatically based on the content of this file...
