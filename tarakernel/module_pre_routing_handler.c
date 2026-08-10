@@ -152,7 +152,7 @@ void reportInboundTraffic(struct _PacketInspection *pPacket)
 	cTraffic.dIp = pPacket->ip_header->daddr;
 	cTraffic.dPort = pPacket->dPort;
 
-	if (!pSetup->bDoingNAT)	//260629
+	if (0)//260810 - what matters is if sending partner is doing nat... Can't read that from setup...  !pSetup->bDoingNAT)	//260629
 	{
 		if (cTraffic.sIp != pSetup->nMyIp && isMeOrMine(cTraffic.sIp)) 	//From my subnet but not my IP address (forwarded but NOT NAT) Set to 0 to indicate that applies to all traffic from this IP
 			cTraffic.sPort = 0;

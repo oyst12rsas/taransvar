@@ -17,6 +17,9 @@ function meOrMine($nIp, $szIp)
 		$nCount=0;
 		if($row = $result->fetch_assoc()) 
 		{
+			if (!$row["internalIP"] || !$row["internalIP"])
+				return 0;
+
 			$nNettmask = (int)$row["nettmask"];
 			if ($nIp == 0)
 				$nIp = (int) $row["CheckIp"];
@@ -42,7 +45,13 @@ function tagStatus()
 
 	$tagStatus = "Unknown tag status<br>IP: ".$szSenderIp;
 
-	if (meOrMine(0, $szSenderIp))
+	$bMeOrMine = meOrMine(0, $szSenderIp);
+
+//	$tagStatus = "MeOrmine: $bMeOrMine. IP: ".$szSenderIp;
+//	CXmlCommand::setInnerHTML("tagStatus", "", $tagStatus);//, $cMoreParamsArr = array())
+//	return;
+
+	if ($bMeOrMine)
 	{
 		//One of my units... Read status from internalInfections table
 		//READ THIS FROM TAGDATA INSTEAD:
