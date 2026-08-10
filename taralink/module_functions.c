@@ -465,7 +465,7 @@ int addPendingWgetOk(et_wgetCategories eCategory, char *lpUrl, int nRegardingId)
 }
 
 
-void insertHackReport(MYSQL *conn, uint32_t ip, unsigned short port, uint32_t nSenderIp, char *cInfo, unsigned int nInfectionId, unsigned int nSeverity, unsigned int nBotnetId)
+void insertHackReport(MYSQL *conn, uint32_t ip, unsigned short port, uint32_t nSenderIp, char *cCategory, char *cInfo, unsigned int nRemoteUnitId, unsigned int nInfectionId, unsigned int nSeverity, unsigned int nBotnetId)
 {
     //MYSQL *conn;
     bool bPrivateConnection;
@@ -476,10 +476,10 @@ void insertHackReport(MYSQL *conn, uint32_t ip, unsigned short port, uint32_t nS
     }
 
     MYSQL_STMT *stmt = mysql_stmt_init(conn);
-    MYSQL_BIND param[7];
+    MYSQL_BIND param[9];
     memset(param, 0, sizeof(param));
 
-    const char *sql = "insert into hackReport (ip, port, sentByIp, why, handledTime, infectionId, severity, botnetId) values (?, ?, ?, ?, NULL, ?, ?, ?)";
+    const char *sql = "insert into hackReport (ip, port, sentByIp, hrCategory, why, foreignUnitId, infectionId, severity, botnetId) values (?, ?, ?, 'other', ?, ?, ?, ?, ?)";
 
     if (mysql_stmt_prepare(stmt, sql, strlen(sql)) != 0) {
         printf("prepare failed: %s\n", mysql_stmt_error(stmt));
@@ -500,10 +500,16 @@ void insertHackReport(MYSQL *conn, uint32_t ip, unsigned short port, uint32_t nS
     if (!cInfo)
         cInfo = "";
 
-    char szInfo[200];
+    char szInfo[300];
     strncpy(szInfo, cInfo, sizeof(szInfo));
-
     unsigned long cInfoLen = strlen(szInfo);
+
+    if (!cCategory)
+        cCategory = "";
+
+    char szCategory[40];
+    strncpy(szCategory, cCategory, sizeof(szCategory));
+    unsigned long cCategoryLen = strlen(szCategory);
 
     //printf("Setting up params\n");
 
@@ -521,21 +527,30 @@ void insertHackReport(MYSQL *conn, uint32_t ip, unsigned short port, uint32_t nS
     param[2].is_unsigned = 1;
 
     param[3].buffer_type   = MYSQL_TYPE_STRING;
-    param[3].buffer        = szInfo;
-    param[3].buffer_length = cInfoLen;
-    param[3].length        = &cInfoLen;
+    param[3].buffer        = cCategory;
+    param[3].buffer_length = cCategoryLen;
+    param[3].length        = &cCategoryLen;
 
-    param[4].buffer_type = MYSQL_TYPE_LONG;
-    param[4].buffer = &nInfectionId;
-    param[4].is_unsigned = 1;
+    param[4].buffer_type   = MYSQL_TYPE_STRING;
+    param[4].buffer        = szInfo;
+    param[4].buffer_length = cInfoLen;
+    param[4].length        = &cInfoLen;
 
     param[5].buffer_type = MYSQL_TYPE_LONG;
-    param[5].buffer = &nSeverity;
+    param[5].buffer = &nRemoteUnitId;
     param[5].is_unsigned = 1;
 
     param[6].buffer_type = MYSQL_TYPE_LONG;
-    param[6].buffer = &nBotnetId;
+    param[6].buffer = &nInfectionId;
     param[6].is_unsigned = 1;
+
+    param[7].buffer_type = MYSQL_TYPE_LONG;
+    param[7].buffer = &nSeverity;
+    param[7].is_unsigned = 1;
+
+    param[8].buffer_type = MYSQL_TYPE_LONG;
+    param[8].buffer = &nBotnetId;
+    param[8].is_unsigned = 1;
 
     //printf("Binding params\n");
 
@@ -557,7 +572,6 @@ void insertHackReport(MYSQL *conn, uint32_t ip, unsigned short port, uint32_t nS
     }   
 
     //printf("Closing\n");
-
 
     mysql_stmt_close(stmt);
     if (bPrivateConnection)

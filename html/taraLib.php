@@ -121,7 +121,7 @@ function logMsg($szMsg)
 	$stmt->execute();
 }
 
-function reportHacking($szMsg)
+function reportHacking($szCode, $szMsg)
 {
 	require_once "../script/getUrl.php";
 	require_once "../script/getSenderIp.php";
@@ -132,6 +132,7 @@ function reportHacking($szMsg)
 					    "f"    => "report",
     					"ip"   => $szSenderIp,
     					"port" => $nFromPort,
+						"code" => $szCode,
     					"wt"   => $szMsg,
 					];
 

@@ -98,7 +98,7 @@ void handleTrafficReportFromKernel(char *lpPayload, int nDataLength);
 void init_background_infecton_change_partner_notification(unsigned int ip, unsigned int nett, char *lpActive, unsigned int nStatus, unsigned int nInfectionId, unsigned int nSeverity, unsigned int nBotnetId, char *lpInfo);
 unsigned int inet__aton(char *lpIp);
 int send_to_kernel(int fd, const void *data, size_t len);
-void insertHackReport(MYSQL *conn, uint32_t ip, unsigned short port, uint32_t nSenderIp, char *cInfo, unsigned int nRemoteUnitId, unsigned int nInfectionId, unsigned int nSeverity, unsigned int nBotnetId);
+void insertHackReport(MYSQL *conn, uint32_t ip, unsigned short port, uint32_t nSenderIp, char *cCategory, char *cInfo, unsigned int nRemoteUnitId, unsigned int nInfectionId, unsigned int nSeverity, unsigned int nBotnetId);
 static int test_stmt_error(MYSQL_STMT * stmt, int status);  //Defined in module_traffic_report.c for now
 void urlencode(const char *src, char *dst, size_t dstsize);
 
@@ -435,10 +435,10 @@ void registerRemoteInfection(u_int32_t nSenderIp, char *lpMessage)
 
     char cPrefix[100], cSourceIp[100], cInfo[255];
     unsigned int sPort, dVersion, dInfected, dOwners_id, nInfectionId, nSeverity, nBotnetId; 
-    unsigned int nVersion,  nPresumeInfected, nOnersId;
+    unsigned int nVersion,  nPresumeInfected, nOwnersId;
 
     int nFlds = sscanf(lpMessage, "%99[^ ] %99[^:]:%u^%u^%u^%u^%u^%u^%u^%255[^\n]", 
-        cPrefix, cSourceIp, &sPort, &nVersion, &nPresumeInfected, &nOnersId, &nInfectionId, &nSeverity, &nBotnetId, cInfo);
+        cPrefix, cSourceIp, &sPort, &nVersion, &nPresumeInfected, &nOwnersId, &nInfectionId, &nSeverity, &nBotnetId, cInfo);
 
     if (nFlds == 10)
     {   
@@ -481,18 +481,8 @@ void registerRemoteInfection(u_int32_t nSenderIp, char *lpMessage)
     unsigned short port = sPort;
     //unsigned int sentByIp = ip;
 
-	//260807 - Save to hackReport here??
-	uint32_t ip;
-	unsigned short port;
-	uint32_t nSenderIp;
-	char *cInfo
-	unsigned int nRemoteUnitId;
-	unsigned int nInfectionId;
-	unsigned int nSeverity;
-	unsigned int nBotnetId;
-
-	insertHackReport(0 /*MYSQL *conn*/, ip, port, nSenderIp, cInfo, nRemoteUnitId, nInfectionId, nSeverity, nBotnetId);
-
+	//260807 - Save to hackReport here
+	insertHackReport(0 /*MYSQL *conn*/, ip, sPort, nSenderIp, "other", cInfo, nOwnersId, nInfectionId, nSeverity, nBotnetId);
 }
 
 void handle_udp(int udp_fd)

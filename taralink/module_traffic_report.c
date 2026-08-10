@@ -128,7 +128,7 @@ void checkUpdateHackReport(MYSQL *conn, char *lpIpHex, char *lpPortHex, char *lp
 			{
 				bInsertHackReport = true;
 				//printf("\n************ HackReport found but it disagrees with traffic.. Insert new hack report: Traffic tag: %s, hack report severity: %d\n", lpTagHex, severity);
-				bInsertHackReport = false;
+				//bInsertHackReport = false;
 				printf("\n************ HackReport found but it disagrees with traffic.. Used to insert new hack report: Traffic tag: %s, hack report severity: %d (but now dropping inserting b'coz created lots of records - doesn't find the newly inserted record above so always makes new one.)\n", lpTagHex, severity);
 	    		//printf("\n************ HackReport for 0x%s:0x%s. Tag: 0x%s - ID: %u, severity: %d\n\n", lpIpHex, lpPortHex, lpTagHex, nReportId, severity);
 			}
@@ -151,7 +151,7 @@ void checkUpdateHackReport(MYSQL *conn, char *lpIpHex, char *lpPortHex, char *lp
 		//unsigned int nSeverity = (nTag > 10? 7 : 0);
 		//260623 - NOTE! FIND CORRECT SEVERITY AT LEAST...
 
-		insertHackReport(conn, nIp, nPort, 0 /*nSenderIp*/, lpInfo, cUnion.cTag.owners_id /*nInfectionId*/, nSeverity, 0 /*nBotnetId*/);
+		insertHackReport(conn, nIp, nPort, 0 /*nSenderIp*/, "tagged_traffic", lpInfo, cUnion.cTag.owners_id, 0 /*nInfectionId*/, nSeverity, 0 /*nBotnetId*/);
 	}
 
 
@@ -704,7 +704,7 @@ if (mysql_stmt_bind_result(stmtSelect, bindSelectResult) != 0) {
 
 		    	        if (!infectionResultIsNull[0]) {
 
-							printf("Infection found: %u\n", selectedInfectionId);
+							//printf("Infection found: %u\n", selectedInfectionId);
 
 							//****** Update lastSeen */
 							char cSQL[400];

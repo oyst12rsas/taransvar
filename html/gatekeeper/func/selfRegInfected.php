@@ -33,7 +33,7 @@ What happens technically:
 </ul>
 
 
-Are you sure you want to register yourself as infected? <a href="index.php?f=selfRegInfected&conf=1">I so, click here</a>
+Are you sure you want to register yourself as infected? <a href="index.php?f=selfRegInfected&conf=1">If so, then click here</a>
 
 <?php
 }
