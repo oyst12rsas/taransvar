@@ -118,6 +118,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 				|| mysql_query(conn, "update inspection set handled = b'0'")
 				|| mysql_query(conn, "update internalServers set handled = b'0'")
 				|| mysql_query(conn, "update partnerRouter set handled = b'0'")
+				|| mysql_query(conn, "update assistanceRequest set handled = b'0'")
 				) {
 			    fprintf(stderr, "%s\n", mysql_error(conn));
 			    reportErrorReadin("servers");
@@ -819,8 +820,9 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 		    lpHandledWhere = " and handled is null";
 		else
 		    lpHandledWhere = " and active = b'1'";
-		        
-		snprintf(szSQL, sizeof(szSQL), "select requestId, hex(ip), port, requestQuality, CAST(wantSpoofed AS UNSIGNED) as wantSpoofed, handled, CAST(active AS UNSIGNED) as active from assistanceRequest where purpose = 'fromPartner' %s order by ip", lpHandledWhere);
+		
+		//260811: Removed from sql:  where purpose = 'fromPartner' ... not sure why put there but prevented manual registrations on this gateway from being included. 
+		snprintf(szSQL, sizeof(szSQL), "select requestId, hex(ip), port, requestQuality, CAST(wantSpoofed AS UNSIGNED) as wantSpoofed, handled, CAST(active AS UNSIGNED) as active from assistanceRequest where 1 = 1 %s order by ip", lpHandledWhere);
 		//printf("Assist requests: %s\n", szSQL);
 		
 		if (mysql_query(conn, szSQL)) {
@@ -840,7 +842,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 				
 			nActive = (atoi(row[6])? 1 : 0);
 
-            //printf("Assistance request: %s:%s-%s-%s-%d\n", row[1], row[2], row[3], row[4], nActive);
+            printf("Found %s assistance request: %s:%s-%s-%s-%d\n", (nActive?"active":"inactive (informing tarakernel to lift filtering)"), row[1], row[2], row[3], row[4], nActive);
 			int nPosLeft = sizeof(cReply)-strlen(cReply)-1;
 			if (nPosLeft > PACKET_LEN_SAFETY_BUFFER)
 				snprintf(cReply+strlen(cReply), nPosLeft, "%s:%s-%s-%s-%d^", row[1], (row[2]?row[2]:"0"), row[3], row[4], nActive);
@@ -854,6 +856,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 			updateHandled(updateConn, "assistanceRequest", "requestId", row[0]);
 		}
 		mysql_free_result(res);
+		printf("After assistance request..\n");
 
 		if (nFound) {
 		    bFoundData = 1;

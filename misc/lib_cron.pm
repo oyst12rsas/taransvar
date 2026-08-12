@@ -9,6 +9,7 @@ package lib_cron;
 use strict;
 use warnings;
 use Exporter;
+use HTTP::Tiny;
 
 our @ISA= qw( Exporter );
 
@@ -434,20 +435,67 @@ sub sendPendingWgets {
 	$sth->execute() or die "execution failed: $sth->errstr()";
 	my $dbhUpdate = 0;
 	print "\nProcessing pending wgets:\n";
-	
-	while (my $row = $sth->fetchrow_hashref()) {
-		my $szLogFile = getLogRoot()."wget.txt";
-		system("wget ".$row->{"url"}." > ".$szLogFile);
-		my $szLog = getFileContents($szLogFile);
-		print "url: ".$row->{"url"}."\n\nReturned: ".$szLog."\n";
+
+
+#	while (my $row = $sth->fetchrow_hashref()) {
+#		my $szLogFile = getLogRoot()."wget.txt";
+#		system("wget ".$row->{"url"}." > ".$szLogFile);
+#		my $szLog = getFileContents($szLogFile);
+#		print "url: ".$row->{"url"}."\n\nReturned: ".$szLog."\n";
 		
-		if (!$dbhUpdate) {
-			$dbhUpdate = getConnection();
-		}
-		my $szSQL = "update pendingWget set handled = now() where wgetId = ".$row->{"wgetId"};
-	        my $sth = $dbhUpdate->prepare($szSQL) or die "prepare statement failed: $dbh->errstr()";
-		$sth->execute() or die "execution failed: $sth->errstr()";
-        }
+#		if (!$dbhUpdate) {
+#			$dbhUpdate = getConnection();
+#		}
+#		my $szSQL = "update pendingWget set handled = now() where wgetId = ".$row->{"wgetId"};
+#	        my $sth = $dbhUpdate->prepare($szSQL) or die "prepare statement failed: $dbh->errstr()";
+#		$sth->execute() or die "execution failed: $sth->errstr()";
+#       }
+
+
+my $http = HTTP::Tiny->new(
+    timeout => 20,
+);
+
+while (my $row = $sth->fetchrow_hashref()) {
+
+    my $url    = $row->{url};
+    my $wgetId = $row->{wgetId};
+
+    my $response = $http->get($url);
+
+    my $reply;
+
+    if ($response->{success}) {
+        $reply = $response->{content};
+        print "url: $url\n\nReturned: $reply\n";
+    }
+    else {
+        $reply = "HTTP error $response->{status}: $response->{reason}";
+        print "url: $url\n\nError: $reply\n";
+    }
+
+    if (!$dbhUpdate) {
+        $dbhUpdate = getConnection();
+    }
+
+    my $sql = q{
+        UPDATE pendingWget
+        SET handled = NOW(),
+            reply   = ?
+        WHERE wgetId = ?
+    };
+
+    my $sthUpdate = $dbhUpdate->prepare($sql)
+        or die "prepare statement failed: " . $dbhUpdate->errstr;
+
+    $sthUpdate->execute($reply, $wgetId)
+        or die "execution failed: " . $sthUpdate->errstr;
+}
+
+
+
+
+
 	if ($dbhUpdate) {
 		$dbhUpdate->disconnect;
 	}

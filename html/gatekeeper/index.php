@@ -300,7 +300,7 @@ var cJsonParam = new Object;
 </head>
 <body onload="pageLoader()">
 <div id="targetTime" style="display:none;"><?php print $szTargetTime; ?></div>
-<table class="center"><tr><td bgcolor="#AAB396">
+<table class="center"><tr><td bgcolor="#AAB396" style="position: relative;">
 <?php
 
 function requiresLogin($f)
@@ -308,9 +308,8 @@ function requiresLogin($f)
 	if (!isset($f))
 		return true;
 
-	return !in_array($f, array("submitLogin", 'demo','listLog','infections','traffic','about','units', 'unitsMore','tagStatus'));
+	return !in_array($f, array("submitLogin", 'demo','listLog','infections','traffic','about','units', 'unitsMore','tagStatus','selfRegInfected'));
 }
-
 
 function printMenuChoice($szFunc, $szPrint)
 {
@@ -320,17 +319,15 @@ function printMenuChoice($szFunc, $szPrint)
 		print '<a href="index.php?f='.$szFunc.'">'.$szPrint.'</a>';
 }
 
-
-
-
 function showMenu()
 { 
 global $setupRow;
 ?>
-<h1 style="position:relative;"><?php printTitle(); ?>
-	 <div id="tagStatus" style="position:absolute; right:0; top:0; font-size:12px;" onclick="tagStatusClicked()">&nbsp;</div>
+<div id="tagStatus" style="position:absolute; right:20px; top:20px; font-size:12px; z-index:9999;" onclick="tagStatusClicked()">&nbsp;</div>
+
+<h1 style="position:relative;"><?php printTitle(); ?></h1>
 	 <div id="tagStatusExtra" style="display:none;">&nbsp</div>
-</h1>
+
 <table>
 <tr>
 <td bgcolor="white"><?php printMenuChoice("main", "Home"); ?></td>
@@ -599,7 +596,8 @@ function getCloseWarningLink($nId)
 
 showMenu();
 
-if (isset($_SESSION["userid"]) && isset($_GET["f"]) &&  in_array($_GET["f"], array("setup", 'servers', "partners", "domains", "colorListings", "inspections", "workshop", "honey", "listrouters","addpartner","addServer","adddomain","addColorListing","addInspection","addHoney","partner","delRouter")))
+if (isset($_SESSION["userid"]) && isset($_GET["f"]) &&  in_array($_GET["f"], array("setup", 'servers', "partners", "domains", "colorListings", "inspections", 
+		"workshop", "honey", "listrouters","addpartner","addServer","adddomain","addColorListing","addInspection","addHoney","partner","delRouter")))
 {
 	setupMenu();
 }

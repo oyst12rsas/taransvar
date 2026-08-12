@@ -261,12 +261,6 @@ if (mysql_stmt_prepare(stmtSelectInternalInfection, sqlSelectInternalInfection, 
     return;
 }
 
-printf(
-    "Internal infection parameter count: %lu\n",
-    mysql_stmt_param_count(stmtSelectInternalInfection)
-);
-
-
 memset(bindInternalInfectionSelectParam, 0, sizeof(bindInternalInfectionSelectParam));
 
 bindInternalInfectionSelectParam[0].buffer_type = MYSQL_TYPE_LONG;
@@ -709,7 +703,7 @@ if (mysql_stmt_bind_result(stmtSelect, bindSelectResult) != 0) {
 							//****** Update lastSeen */
 							char cSQL[400];
 							sprintf(cSQL, "update internalInfections set lastSeen = now() where infectionId = %u", selectedInfectionId);
-							printf("SQL: %s\n", cSQL);
+							//printf("SQL: %s\n", cSQL);
 							//asdfasdf
 
 							if (!mysql_query(conn, cSQL)){

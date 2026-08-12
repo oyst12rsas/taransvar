@@ -841,7 +841,7 @@ if (!runningAsCron() && !runningBootCheck())	#Run "sudo perl crontasks.pl whatev
 	#Displays a warning in dashboard so don't forget to disable this code...
 	print "********* Running debug tasks...\n";
 	#checkDisableSshChange();	#Note! Keep this early to ensure immediate action... 
-	reportStatus($dbh);
+	#reportStatus($dbh);
 	#handle_syslogThreat_table($dbh);
 	#logDmesg();		#lib_cron.pm
 

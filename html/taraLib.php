@@ -373,6 +373,17 @@ function getTagData()
 	return $retval;
 }
 
+function age($nSeconds)
+{
+	if ($nSeconds < 110)
+		return "$nSeconds sec";
+	if ($nSeconds < 110*60)
+		return round($nSeconds/60)." min";
+	if ($nSeconds < 45 * 60*60)
+		return round($nSeconds / (60*60)). " hours";
+
+	return (round($nSeconds/(60*60*24))). "days";
+}
 
 
 ?>

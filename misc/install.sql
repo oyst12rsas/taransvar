@@ -295,8 +295,20 @@ alter table syslog add handled bit(1) not null default b'0';
 ALTER TABLE partnerRouterStatusLog MODIFY created DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;
 update setup set dbVersion = 76;
 
+#version 77 (260811)
+alter table pendingWget modify reply text;
+update setup set dbVersion = 77;
+
+#version 78 (260811)
+alter table pendingWget modify reply text;
+update setup set dbVersion = 78;
+
+#version 79 (260811)
+alter table assistanceRequest add sentPartners bit(1) not null default b'0' after handled;
+update setup set dbVersion = 79;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 77;
+#update setup set dbVersion = 80;
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 
 #can import DB changes automatically based on the content of this file...

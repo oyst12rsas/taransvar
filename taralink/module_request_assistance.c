@@ -114,7 +114,7 @@ void checkRequestAssistance()
 	//printf("Checking requests for assistance.....\n");
 
         //Select unhandled (handled is null) assistance requests  
-	char *szSQL = "select hex(ip) as ip, port, category, comment, coalesce(requestQuality,0) as requestQuality, wantSpoofed, requestId, senderIp, hex(senderIp) as senderIpHex, purpose from assistanceRequest where handled is null";
+	char *szSQL = "select hex(ip) as ip, port, category, comment, coalesce(requestQuality,0) as requestQuality, wantSpoofed, requestId, senderIp, hex(senderIp) as senderIpHex, purpose from assistanceRequest where sentPartners = b'0'";
 
 	//printf("About to loop..... %s\n", szSQL);
 
@@ -182,7 +182,7 @@ void checkRequestAssistance()
 					sprintf(szUrl, "http://%s/script/requestAssistance.php?f=request&ip=%s&port=%d&cat=%s&qual=%s&sp=%d",
 					setupRow[n], lpMyIp, nPort, row[2], row[4], nWantSpoofed);
 
-					printf("Sending request for assistance (changed): %s\n", szUrl);
+					printf("Placing request for request for assistance in queue (pending Wget table): %s\n", szUrl);
                     //MYSQL *handleConn = getConnection();
 			                //updateHandled(handleConn, "assistanceRequest", "requestId", lpRequestId);
   	  			        //mysql_close(handleConn);
@@ -207,6 +207,7 @@ void checkRequestAssistance()
 				MYSQL *partnerConn;
 				MYSQL_RES *partnerRes;
 				MYSQL_ROW partnerRow;
+				printf("Unhandled assistanceRequest for distribution found\n");
 				//This is a request from partner to relieve ddos or brute force attack. Distribute to all partners...
 				partnerConn = getConnection();
 				if (mysql_query(partnerConn, "select inet_ntoa(ip) as ip from partnerRouter")) {	
@@ -220,30 +221,32 @@ void checkRequestAssistance()
 	        	        
 	        	while (partnerRow = mysql_fetch_row(partnerRes))
 	        	{
-		        	        //select hex(ip) as ip, port, category, comment, requestQuality, wantSpoofed, requestId, senderIp, hex(senderIp) as senderIpHex from assistanceRequest where handled is null
-	        	                char cUrl[256];
+					//select hex(ip) as ip, port, category, comment, requestQuality, wantSpoofed, requestId, senderIp, hex(senderIp) as senderIpHex from assistanceRequest where handled is null
+					char cUrl[256];
 					char *lpRequesterIp = (row[0]?row[0]:row[8]); //Use assistanceRequest->ip if set, otherwise senderIpHex 
-	                       	        int nPort = (row[1]?atoi(row[1]):0);
-	                       	        char *lpCategory = (row[2]?row[2]:"other");
-	                       	        short nQuality = (row[4]?atoi(row[4]):0);
-	                       	        short nWantSpoofed = (row[5]?atoi(row[5]):0);
+					int nPort = (row[1]?atoi(row[1]):0);
+					char *lpCategory = (row[2]?row[2]:"other");
+					short nQuality = (row[4]?atoi(row[4]):0);
+					short nWantSpoofed = (row[5]?atoi(row[5]):0);
 					sprintf(cUrl, "http://%s/script/partnerRequest.php?f=assistance&ip=%s&port=%d&cat=%s&qual=%d&sp=%d", 
 						    partnerRow[0], lpRequesterIp, nPort, lpCategory, nQuality, nWantSpoofed);
 
-                                        //NOTE! after calling wget never gets back here... So do whatever we need to do before calling.
-                                  	//MYSQL *handleConn = getConnection();
-			                //updateHandled(handleConn, "assistanceRequest", "requestId", lpRequestId);
-  	  			        //mysql_close(handleConn);
+					//NOTE! after calling wget never gets back here... So do whatever we need to do before calling.
+					//MYSQL *handleConn = getConnection();
+					//updateHandled(handleConn, "assistanceRequest", "requestId", lpRequestId);
+					//mysql_close(handleConn);
 			                
-			                //No longer calling wget here so no need to clean up
-	                  	        //mysql_free_result(partnerRes);
-	  			        //mysql_close(partnerConn);
+					//No longer calling wget here so no need to clean up
+					//mysql_free_result(partnerRes);
+					//mysql_close(partnerConn);
 
-	                  	        //printf("******** WARNING ********* Can't do wget in while loop because never returns...: %s\n", cUrl);
+					//printf("******** WARNING ********* Can't do wget in while loop because never returns...: %s\n", cUrl);
+					printf("Adding to pendingWget: %s\n", cUrl);
+					
 	                bHandled = addPendingWgetOk(e_wget_assistanceRequest, cUrl, atoi(lpRequestId));
-	                                //wget(cUrl, szWgetBuff, sizeof(szWgetBuff));
-              		                //printf("***** ERROR ********* NEVER GETS HERE... wget() never returns...\n");
-	                        //return; 
+					//wget(cUrl, szWgetBuff, sizeof(szWgetBuff));
+					//printf("***** ERROR ********* NEVER GETS HERE... wget() never returns...\n");
+					//return; 
 	            }
 			
 	          	mysql_free_result(partnerRes);
@@ -266,7 +269,16 @@ void checkRequestAssistance()
         {
 			//This is a request from partner to relieve ddos or brute force attack. Distribute to all partners...
 			MYSQL *conn = getConnection();
-			updateHandled(conn, "assistanceRequest", "requestId", lpRequestId);
+
+			//updateHandled(conn, "assistanceRequest", "requestId", lpRequestId);
+
+			char cSQL[300];
+			snprintf(cSQL, sizeof(cSQL), "update assistanceRequest set sentPartners = b'1', senttime = now() where requestId = %s", lpRequestId);
+ 			//printf("Updating: %s\n", cSQL);
+			if (mysql_query(conn, cSQL)) {
+	    		fprintf(stderr, "%s\n", mysql_error(conn));
+	    		addWarningRecord("*********** ERROR *********** Taralink couldn't update handled fields.");
+			}
 			mysql_close(conn);
 		} 
 		else
