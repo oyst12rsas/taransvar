@@ -48,7 +48,8 @@ function attack()
 			if ($row["senttime"])
 				$szComment = $szFont.$row["comment"].$szFontEnd;
 			else
-				$szComment = '<font color="red"><b>NOTE! Request for assistance is not yet sent (by DB server?). This is meant to happen immediately!</b></font>';
+				if (strcmp($row["purpose"], "fromPartner"))
+					$szComment = '<font color="red"><b>NOTE! Request for assistance is not yet sent (by DB server?). This is meant to happen immediately!</b></font>';
 
 	    	print "<tr><td>".$szFont.$row["purpose"].$szFontEnd."</td><td>".$szFont.age($row["seconds_since"]).$szFontEnd."</td><td>".$szFont.$row["ip"].":".$row["port"].$szFontEnd."</td><td>".$szFont.$row["category"].$szFontEnd."</td><td>".$szComment."</td><td>".$szFont.$szStatus.$szFontEnd."</td><td>".$szActionUrl."</td></tr>";
 			$nCount++;
