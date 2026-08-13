@@ -90,8 +90,14 @@ void checkFree(struct _PacketInspection *pPacket, bool bLeavingPostRouting)
 
 int isMeOrMine(unsigned int nIp)
 {
+	if (nIp == pSetup->nMyIp)
+		return 1;
+
+	if (!pSetup->nInternalIp || pSetup->nNettmask)
+		return 0;
+
     //Is this one of my IP addresses or one in my subnet?
-	if (nIp == pSetup->nMyIp || nIp == pSetup->nInternalIp)
+	if (nIp == pSetup->nInternalIp)
 		return 1;
 	
 	if ((nIp & pSetup->nNettmask) == (pSetup->nInternalIp & pSetup->nNettmask))
@@ -102,6 +108,10 @@ int isMeOrMine(unsigned int nIp)
 
 int isSubNet(unsigned int nIp)
 {
+	//Note! Is this good enough? May have to call conntrack to distinguish between me and subnet...  (On the other hand may have to pick up in INPUT?? After NAT)
+	if (!pSetup->nNettmask)
+		return false;
+
 	return ((nIp & pSetup->nNettmask) == (pSetup->nInternalIp & pSetup->nNettmask));
 }
 
@@ -490,9 +500,9 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 
 	if (bFromMeOrMine && bToMeOrMine)
 	{
+		//Internal traffic between me and subnet
 		char szInfectionInfo[200];
 		*szInfectionInfo = 0;
-		//Internal traffic between me and subnet
 		if (pPacket->ip_header->daddr == pSetup->nInternalIp || pPacket->ip_header->daddr == pSetup->nMyIp)		//asdfasdf
 		{
 			if (pInfected)
@@ -520,7 +530,7 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
                     probably not because it has to be run through the NAT first to see where the packages are heading. 
                     Meaning the matching will be in module_forwarding.c
         */
-        bToOrFromMe = 1;
+		bToOrFromMe = 1;
 		u32 nPartnerIp = isPartner(pPacket->ip_header->saddr);
               
 		if (nPartnerIp) 	

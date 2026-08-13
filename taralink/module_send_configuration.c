@@ -856,7 +856,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 			updateHandled(updateConn, "assistanceRequest", "requestId", row[0]);
 		}
 		mysql_free_result(res);
-		printf("After assistance request..\n");
+	//	printf("After assistance request..\n");
 
 		if (nFound) {
 		    bFoundData = 1;

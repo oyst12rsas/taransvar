@@ -479,7 +479,7 @@ void insertHackReport(MYSQL *conn, uint32_t ip, unsigned short port, uint32_t nS
     MYSQL_BIND param[9];
     memset(param, 0, sizeof(param));
 
-    const char *sql = "insert into hackReport (ip, port, sentByIp, hrCategory, why, foreignUnitId, infectionId, severity, botnetId) values (?, ?, ?, 'other', ?, ?, ?, ?, ?)";
+    const char *sql = "insert into hackReport (ip, port, sentByIp, hrCategory, why, remoteUnitId, infectionId, severity, botnetId) values (?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
     if (mysql_stmt_prepare(stmt, sql, strlen(sql)) != 0) {
         printf("prepare failed: %s\n", mysql_stmt_error(stmt));
@@ -505,7 +505,7 @@ void insertHackReport(MYSQL *conn, uint32_t ip, unsigned short port, uint32_t nS
     unsigned long cInfoLen = strlen(szInfo);
 
     if (!cCategory)
-        cCategory = "";
+        cCategory = "other";
 
     char szCategory[40];
     strncpy(szCategory, cCategory, sizeof(szCategory));

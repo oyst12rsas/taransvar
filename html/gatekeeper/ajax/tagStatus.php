@@ -47,9 +47,9 @@ function tagStatus()
 
 	$bMeOrMine = meOrMine(0, $szSenderIp);
 
-//	$tagStatus = "MeOrmine: $bMeOrMine. IP: ".$szSenderIp;
-//	CXmlCommand::setInnerHTML("tagStatus", "", $tagStatus);//, $cMoreParamsArr = array())
-//	return;
+	//$tagStatus = "MeOrmine: $bMeOrMine. IP: ".$szSenderIp;
+	//CXmlCommand::setInnerHTML("tagStatus", "", $tagStatus);//, $cMoreParamsArr = array())
+	//return;
 
 	if ($bMeOrMine)
 	{
@@ -73,16 +73,10 @@ function tagStatus()
 			}
 		}
 		else
-		{
 			$tagStatus = '<font color="green">You are clean<br>(not listed)</font>';
-
-		}
-
 	}
 	else
 	{
-
-
 		//READ THIS FROM TAGDATA INSTEAD:
 
 		$conn = getConnection();
@@ -103,17 +97,19 @@ function tagStatus()
 		$result = $stmt->get_result(); // get the mysqli result
 		$nTagStatusBasedOnHackReport = 0;
 		$nHackSeverity = 0;
+		$nHackFound = 0;
 		$nSeverity = 0;
 
 		if ($result->num_rows > 0) 
 		{
 			if($row = $result->fetch_assoc()) 
 			{
+				$nHackFound = 1;
 				$nHackSeverity = (int)$row["severity"];
 				if ($nHackSeverity > 1)
 				{
 					$nTagStatusBasedOnHackReport = 1;
-					$tagStatus = '<br><font color="red">YOU ARE TAGGED</font></b><br>Severity (hackReport): '.$nHackSeverity."<br>Contact provider";
+					$tagStatus = '<br><font color="red">YOU ARE TAGGED</font></b><br>Severity (hackReport): '.$nHackSeverity."<br>Contact ISP";
 				}
 				else
 					$tagStatus = '<font color="green">You are clean</font>';
@@ -157,7 +153,7 @@ function tagStatus()
 		} 
 
 		//if ($nTagStatusBasedOnTraffic != $nTagStatusBasedOnHackReport)
-		if ($nTrafficSeverity != $nHackSeverity)
+		if ($nHackFound && ($nTrafficSeverity != $nHackSeverity))
 		{
 			$tagStatus = "Hack: $nHackSeverity<br>Traffic: $nTrafficSeverity<br>";
 			
@@ -173,6 +169,7 @@ function tagStatus()
 		}
 		else
 		{
+			//Use traffic
 			//if ($nTagStatusBasedOnTraffic)
 			if ($nTrafficSeverity > 1)
 				$tagStatus = '<br><font color="red">YOU ARE TAGGED</font></b><br>Severity: '.$nTrafficSeverity."<br>Contact provider";

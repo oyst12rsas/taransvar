@@ -99,14 +99,16 @@ var szUpdateRoutine = "hackReport";
 	$sql = "SELECT reportId, inet_ntoa(ip) as ip, port, inet_ntoa(partnerIp) as partnerIp, partnerPort, status, h.created, h.lastSeen, h.unitId, hostname, description, why, severity from hackReport h left outer join unit u on u.unitId = h.unitId order by h.created desc limit 25";
 	$result = $conn->query($sql);
 
+	print "<h2>Hacking attempts reported by partners and fans:</h2><table id=\"hackReportTbl\"><tr><th>Last seen</th><th>Attacker</th><th>Who</th><th>Severity</th><th>Status</th><th>Why</th></tr>";
+
+
 	if ($result) 
 	{
 		// output data of each row  
 		$nCount=0;
 		while($row = $result->fetch_assoc()) 
 		{       
-			if (++$nCount == 1)
-				print "<h2>Hacking attempts reported by partners and fans:</h2><table id=\"hackReportTbl\"><tr><th>Last seen</th><th>Attacker</th><th>Who</th><th>Severity</th><th>Status</th><th>Why</th></tr>";
+			++$nCount;
 
 			if ($row["unitId"])
 	        	$szWhom = ($row["description"] && strlen($row["description"])?$row["description"]:$row["hostname"]);
@@ -119,13 +121,13 @@ var szUpdateRoutine = "hackReport";
 	  	}
 		if (!$nCount)
 			print "No hacking attempts reported.<br>";
-		else
-			print "</table>";
 	} 
 	else 
 	{
 		print "No hacking attempts reported.<br>";
 	}
+
+	print "</table>";
 
     print "<a href=\"index.php?f=reportHack\">Register hacking attempt</a>";
 	print '<br><a href="index.php?f=addinfection">Add infection</a>';

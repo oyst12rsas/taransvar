@@ -37,29 +37,38 @@ while (my $line = <$fh>) {
 
     my $inserted = 0;
 
-	for my $attempt (1 .. 2) {
-    	my $ok = eval {
-        	$sth->execute($szTxt);
-	        1;
-    	};
+    for my $attempt (1 .. 2) {
+        my $ok = eval {
+            # Detect a stale connection before executing.
+            if (!$dbh->ping()) {
+                die "Database ping failed";
+            }
 
-	    if ($ok) {
-    	    $inserted = 1;
-        	last;
-	    }
+            $sth->execute($szTxt);
+            1;
+        };
 
-    	my $err = $@;
-	    warn "execution failed: $err";
+        if ($ok) {
+            $inserted = 1;
+            last;
+        }
 
-    	# No point reconnecting after the final failed attempt
-    	last if $attempt == 2;
+        my $error = $@ || $dbh->errstr || "Unknown database error";
+        warn "Database insert failed, attempt $attempt: $error\n";
 
-    	eval {
-        	$dbh->disconnect() if $dbh;
-    	};
+        eval { $sth->finish() if $sth };
+        eval { $dbh->disconnect() if $dbh };
 
-    	($dbh, $sth) = connect_db();
-	}
+        sleep 2;
+
+        eval {
+            ($dbh, $sth) = connect_db();
+            1;
+        } or do {
+            warn "Database reconnect failed: $@\n";
+            sleep 5;
+        };
+    }
 
     warn "Could not store dmesg line after reconnect\n"
         unless $inserted;
