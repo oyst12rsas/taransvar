@@ -4,7 +4,17 @@ error_reporting(E_ALL);
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 include "../dbfunc.php";
-require_once "getSenderIp.php";
+
+function controlPeerIp()
+{
+    $ip = isset($_SERVER['REMOTE_ADDR']) ? trim((string)$_SERVER['REMOTE_ADDR']) : '';
+
+    if (strncasecmp($ip, '::ffff:', 7) === 0) {
+        $ip = substr($ip, 7);
+    }
+
+    return $ip;
+}
 
 function hex_to_ipv4($hex)
 {
@@ -67,7 +77,7 @@ if ($category === "" || strlen($category) > 64) {
 
 $requestQuality = isset($_GET["qual"]) ? intval($_GET["qual"]) : 0;
 $wantSpoofed = isset($_GET["sp"]) ? intval($_GET["sp"]) : 0;
-$senderIp = getSenderIp();
+$senderIp = controlPeerIp();
 $senderPort = isset($_SERVER['REMOTE_PORT']) ? intval($_SERVER['REMOTE_PORT']) : 0;
 
 if (!filter_var($senderIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
@@ -78,8 +88,8 @@ if (!filter_var($senderIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
 $conn = getConnection();
 
 try {
-    // This is a control endpoint. Only the global DB servers configured locally
-    // may distribute Request for Assistance messages to this router.
+    // Only global DB servers configured locally may distribute this control message.
+    // Never trust client-supplied forwarding headers for that identity.
     if (!senderIsConfiguredGlobalDb($conn, $senderIp)) {
         http_response_code(403);
         exit("unregistered global DB");
