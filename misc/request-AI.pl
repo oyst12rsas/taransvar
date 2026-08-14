@@ -1,43 +1,51 @@
 #!/usr/bin/perl
 use lib ('/root/taransvar/perl');
 #use lib ('.');
-		
+
 use strict;
 use warnings;
 use autodie;
 use DBI;
-use func;	#NOTE! See comment above regarding lib..
+use func;    # NOTE! See comment above regarding lib..
 use LWP::UserAgent;
 use JSON;
+use Time::HiRes qw(time);
 
-my $nDaysChecked = 30;
+my $nDaysChecked       = 30;
 my $nMinimumIpsVisited = 5;
 our $chatflowId = "1ae066cd-055b-4f53-b53f-778453daec78";
 our $szAiUrl = "http://100.68.163.145:3000/api/v1/prediction/$chatflowId";
 
-sub sendRequest {
-	my ($logs) = @_;
+sub sendRequest
+{
+    my ($logs) = @_;
 
-	my %request = (
-    	question => $logs,
-	);
+    my %request = (
+        question => $logs,
+    );
 
-	open(my $out, ">", "/tmp/flowise-request.json") or die;
-	print $out encode_json(\%request);
-	close($out);
+    my $json = encode_json(\%request);
 
-	my $ua = LWP::UserAgent->new;
+    # Useful when debugging exactly what was sent to Flowise.
+    open(my $out, ">", "/tmp/flowise-request.json");
+    print $out $json;
+    close($out);
 
+    my $ua = LWP::UserAgent->new(
+        timeout => 60,
+        agent   => 'TaraSec-AI/1.0',
+    );
 
-	my $response = $ua->post(
-    	$szAiUrl,
-    	"Content-Type" => "application/json",
-    	Content => encode_json(\%request),
-	);
+    my $response = $ua->post(
+        $szAiUrl,
+        "Content-Type" => "application/json",
+        Content        => $json,
+    );
 
-	die $response->status_line unless $response->is_success;
+    die "Flowise request failed: ".$response->status_line."\n"
+        unless $response->is_success;
 
-	return $response;
+    return $response;
 }
 
 sub csv_value
@@ -56,88 +64,136 @@ sub csv_value
     return $value;
 }
 
-sub requestAssessment {
+sub decodeAiResponse
+{
+    my ($raw) = @_;
 
-	#my $bIncoming = 1;
-	#my $nPort = 0;
-	#my $nUnitId = 5;
+    my $outer = eval { decode_json($raw) };
+    die "Invalid Flowise response JSON: $@\n" if $@ || ref($outer) ne 'HASH';
 
+    my $json = $outer->{text};
+    die "Flowise response did not contain a text field.\n"
+        unless defined $json && length $json;
 
-	my $threat_events = "";
-	my $infection_data = "";
-	my $dbh = getConnection();
+    # Flowise commonly returns the model JSON inside a Markdown code fence.
+    $json =~ s/^\s*```(?:json)?\s*//i;
+    $json =~ s/\s*```\s*$//;
 
-	#***************** Number of IPs targeted per source IP ******************
-	# Count distinct destination IPs for each source IP in the selected period.
+    my $decoded = eval { decode_json($json) };
+    die "Invalid AI assessment JSON: $@\nAI text was:\n$json\n"
+        if $@ || ref($decoded) ne 'HASH';
 
-	my $sql = "select inet_ntoa(src_ip) as src_ip, count(distinct dst_ip) as counted from syslogThreat where unix_timestamp(coalesce(lastSeen, created)) > unix_timestamp(now()) - ($nDaysChecked * 60 * 60 * 24) group by src_ip";
-	my $sth = $dbh->prepare($sql) or die "prepare statement failed: $dbh->errstr()";
-	$sth->execute() or die "execution failed: $sth->errstr()";
-
-	my $rows = "";
-
-	my $logs = "RECORDS: number of different target IPs per sender IP last $nDaysChecked days(source, count)\n";
-
-	while (my $row = $sth->fetchrow_hashref()) {
-	    $logs .= join(",",
-    	    csv_value($row->{src_ip}),
-        	csv_value($row->{counted})
-    	) . "\n";
-	}
-
-	$sth->finish();
-
-	my %request = (
-    	question => $logs,
-	);
-
-# How many src_ip have checked each target IP
-# select dst_ip, inet_ntoa(dst_ip), count(distinct src_ip) from syslogThreat group by src_ip;
-
-	#sendMessage($bIncoming, $nPort, $nUnitId);
-	my $response = sendRequest($logs);
-	print "\nDecoded response:\n".$response->decoded_content."\n\n";
-
-	return $response;
+    return $decoded;
 }
 
-sub interpret {
-	my ($logs) = @_;
+sub requestAssessment
+{
+    my $dbh = getConnection();
+    my $cutoff = $nDaysChecked * 60 * 60 * 24;
 
+    my $logs =
+        "TARASEC SECURITY TELEMETRY\n".
+        "Period: last $nDaysChecked days.\n".
+        "Interpret IP addresses as observations, not permanent device identities.\n\n";
+
+    # ******** Number of distinct destination IPs targeted per source IP ********
+    my $sql =
+        "select inet_ntoa(src_ip) as src_ip, ".
+        "count(distinct dst_ip) as distinct_targets, ".
+        "count(*) as threat_records, ".
+        "sum(`count`) as occurrences, ".
+        "max(coalesce(severity, 0)) as max_severity ".
+        "from syslogThreat ".
+        "where unix_timestamp(coalesce(lastSeen, created)) > unix_timestamp(now()) - ? ".
+        "group by src_ip ".
+        "having count(distinct dst_ip) >= ? ".
+        "order by distinct_targets desc";
+
+    my $sth = $dbh->prepare($sql)
+        or die "prepare statement failed: ".$dbh->errstr."\n";
+    $sth->execute($cutoff, $nMinimumIpsVisited)
+        or die "execution failed: ".$sth->errstr."\n";
+
+    $logs .=
+        "RECORDS: source IPs that contacted at least $nMinimumIpsVisited different target IPs\n".
+        "source_ip,distinct_targets,threat_records,occurrences,max_severity\n";
+
+    while (my $row = $sth->fetchrow_hashref()) {
+        $logs .= join(",",
+            csv_value($row->{src_ip}),
+            csv_value($row->{distinct_targets}),
+            csv_value($row->{threat_records}),
+            csv_value($row->{occurrences}),
+            csv_value($row->{max_severity})
+        ) . "\n";
+    }
+    $sth->finish();
+
+    # ******** Activity grouped by TaraSec's existing owner/unit identity ********
+    # confirmed_unit_id is preferred when available; otherwise unit_id is used.
+    $sql =
+        "select owner_id, coalesce(confirmed_unit_id, unit_id) as effective_unit_id, ".
+        "count(distinct src_ip) as distinct_source_ips, ".
+        "count(distinct dst_ip) as distinct_targets, ".
+        "count(*) as threat_records, ".
+        "sum(`count`) as occurrences, ".
+        "max(coalesce(severity, 0)) as max_severity ".
+        "from syslogThreat ".
+        "where unix_timestamp(coalesce(lastSeen, created)) > unix_timestamp(now()) - ? ".
+        "and owner_id is not null ".
+        "and coalesce(confirmed_unit_id, unit_id) is not null ".
+        "group by owner_id, coalesce(confirmed_unit_id, unit_id) ".
+        "order by occurrences desc";
+
+    $sth = $dbh->prepare($sql)
+        or die "prepare statement failed: ".$dbh->errstr."\n";
+    $sth->execute($cutoff)
+        or die "execution failed: ".$sth->errstr."\n";
+
+    $logs .=
+        "\nRECORDS: activity grouped by known TaraSec owner/unit identity\n".
+        "The effective unit ID is confirmed_unit_id when present, otherwise unit_id.\n".
+        "owner_id,unit_id,distinct_source_ips,distinct_targets,threat_records,occurrences,max_severity\n";
+
+    while (my $row = $sth->fetchrow_hashref()) {
+        $logs .= join(",",
+            csv_value($row->{owner_id}),
+            csv_value($row->{effective_unit_id}),
+            csv_value($row->{distinct_source_ips}),
+            csv_value($row->{distinct_targets}),
+            csv_value($row->{threat_records}),
+            csv_value($row->{occurrences}),
+            csv_value($row->{max_severity})
+        ) . "\n";
+    }
+    $sth->finish();
+    $dbh->disconnect();
+
+    my $started = time();
+    my $response = sendRequest($logs);
+    my $elapsed = time() - $started;
+
+    print "\nDecoded response:\n".$response->decoded_content."\n\n";
+
+    return ($response, $elapsed);
 }
 
-#my $szAI_response = '{"text":"```json\n{\n  \"event_severity\": 4,\n  \"category\": \"port_scan\",\n  \"confidence\": 90,\n  \"summary\": \"High number of distinct target IPs detected from multiple sources in recent timeframe.\",\n  \"signals\": [\n    \"High volume of different target IPs from sender 10.10.10.254\",\n    \"High volume of different target IPs from sender 100.68.10.7\",\n    \"Zero source address reported\"\n  ],\n  \"reasoning\": \"The event indicates possible reconnaissance activity based on the unusually high number of unique target IPs being accessed from specific senders, suggesting an organization may be scanning for vulnerabilities.\",\n  \"recommended_presumed_infected\": 2,\n  \"owners_id_action\": \"none\",\n  \"recommended_action\": \"watch\",\n  \"block_ssh\": false,\n  \"signals\": \"\"\n}\n```","question":"RECORDS: number of different target IPs per sender IP last month(source, count)\n10.10.10.11,28\n10.10.10.254,147\n100.68.25.154,6\n100.68.10.7,292\n100.68.163.145,3\n100.68.25.154,6\n100.68.10.7,97\n100.68.25.154,8\n100.68.194.129,12\n192.168.122.143,23\n192.168.122.42,4\n0.0.0.0,1';
-my $response = requestAssessment();
+my ($response, $elapsed) = requestAssessment();
+my $rawResponse = $response->decoded_content;
+my $flowise_response = decodeAiResponse($rawResponse);
 
-my $outer = decode_json($response->decoded_content);
-
-my $json = $outer->{text};
-
-$json =~ s/^\s*```json\s*//i;
-$json =~ s/\s*```\s*$//;
-
-$json =~ tr/“”/""/;
-
-my $flowise_response = decode_json($json);
-
-print "\nSummary: ".$flowise_response->{summary}."\n";
-print "Reasoning: ".$flowise_response->{reasoning}."\n";
-
-my $szAI_response =
-    "Summary: ".$flowise_response->{summary}."\n".
-    "Reasoning: ".$flowise_response->{reasoning};
+print "\nSummary: ".($flowise_response->{summary} // "(none)")."\n";
+print "Reasoning: ".($flowise_response->{reasoning} // "(none)")."\n";
 
 my $dbh = getConnection();
-
-#my $sql = "update setup set aiAssessment = ?, aiAssessmentTime = now()";
 my $sql = "insert into aiResponse (seconds, response) values (?,?)";
-my $sth = $dbh->prepare($sql)  or die "prepare statement failed: ".$dbh->errstr;
+my $sth = $dbh->prepare($sql)
+    or die "prepare statement failed: ".$dbh->errstr."\n";
 
-my $nSeconds = 0;
-
-#$sth->execute($szAI_response)
-$sth->execute($nSeconds, $response->decoded_content)
-    or die "execution failed: ".$sth->errstr;
+# aiResponse.seconds is currently an integer column, so store rounded seconds.
+my $nSeconds = int($elapsed + 0.5);
+$sth->execute($nSeconds, $rawResponse)
+    or die "execution failed: ".$sth->errstr."\n";
 
 $sth->finish();
 $dbh->disconnect();
