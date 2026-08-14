@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" role="img" aria-labelledby="title desc">
+  <title id="title">How TaraSec works</title>
+  <desc id="desc">A flow showing detection, incident reporting, persistent unit identification, AI assessment, traffic signalling, local action and anonymous recovery.</desc>
+  <style>
+    .bg{fill:#f7fafc}.box{fill:#fff;stroke:#244a73;stroke-width:2}.green{fill:#eef8f3;stroke:#13804b;stroke-width:2}.blue{fill:#eef5fb;stroke:#1c67a8;stroke-width:2}.red{fill:#fff3f3;stroke:#c53b3b;stroke-width:2}.t{font:700 22px Arial,sans-serif;fill:#082b55}.s{font:16px Arial,sans-serif;fill:#334155}.n{font:700 18px Arial,sans-serif;fill:#fff}.arrow{stroke:#0f3d71;stroke-width:5;fill:none;marker-end:url(#a)}.garrow{stroke:#13804b;stroke-width:5;fill:none;marker-end:url(#g)}.label{font:700 18px Arial,sans-serif;fill:#0f3d71}.small{font:14px Arial,sans-serif;fill:#475569}.step{fill:#13804b}.steptext{font:700 16px Arial,sans-serif;fill:#082b55}.flow{font:14px Arial,sans-serif;fill:#475569}
+  </style>
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0f3d71"/></marker><marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#13804b"/></marker></defs>
+  <rect width="1200" height="700" rx="28" class="bg"/>
+  <text x="600" y="48" text-anchor="middle" class="t" style="font-size:34px">How TaraSec Works</text>
+  <text x="600" y="78" text-anchor="middle" class="s">Observe → Report → Identify → Assess → Signal → Act → Recover / Reassess</text>
+
+  <rect x="55" y="120" width="260" height="95" rx="18" class="red"/><text x="185" y="153" text-anchor="middle" class="t">1. Incident detected</text><text x="185" y="180" text-anchor="middle" class="s">Firewall / IDS / honeypot</text><text x="185" y="202" text-anchor="middle" class="small">Malicious behaviour observed</text>
+  <rect x="470" y="120" width="260" height="95" rx="18" class="blue"/><text x="600" y="153" text-anchor="middle" class="t">2. Report + identify</text><text x="600" y="180" text-anchor="middle" class="s">Originating network links event</text><text x="600" y="202" text-anchor="middle" class="small">to a persistent unit ID, not just IP + port</text>
+  <rect x="885" y="120" width="260" height="95" rx="18" class="green"/><text x="1015" y="153" text-anchor="middle" class="t">3. AI assessment</text><text x="1015" y="180" text-anchor="middle" class="s">History + multiple observations</text><text x="1015" y="202" text-anchor="middle" class="small">severity, recency, confidence, provenance</text>
+  <path d="M315 168H470" class="arrow"/><path d="M730 168H885" class="arrow"/>
+
+  <rect x="55" y="285" width="260" height="105" rx="18" class="blue"/><text x="185" y="320" text-anchor="middle" class="t">4. Traffic signalling</text><text x="185" y="348" text-anchor="middle" class="s">Subsequent traffic can carry</text><text x="185" y="370" text-anchor="middle" class="small">unit-level security context</text>
+  <rect x="470" y="285" width="260" height="105" rx="18" class="green"/><text x="600" y="320" text-anchor="middle" class="t">5. Local action</text><text x="600" y="348" text-anchor="middle" class="s">Each network chooses its policy</text><text x="600" y="370" text-anchor="middle" class="small">log • monitor • stronger auth • limit • block</text>
+  <rect x="885" y="285" width="260" height="105" rx="18" class="green"/><text x="1015" y="316" text-anchor="middle" class="t">Request for Assistance</text><text x="1015" y="344" text-anchor="middle" class="s">Under attack or high load:</text><text x="1015" y="366" text-anchor="middle" class="small">ask participants to send only traffic</text><text x="1015" y="384" text-anchor="middle" class="small">from units they consider sufficiently clean</text>
+  <path d="M1015 215V250H185V285" class="arrow"/><path d="M315 338H470" class="arrow"/><path d="M730 338H885" class="garrow"/>
+
+  <rect x="240" y="455" width="720" height="95" rx="18" class="box"/><text x="600" y="490" text-anchor="middle" class="t">6. Recovery and reassessment</text><text x="600" y="518" text-anchor="middle" class="s">Users can sign out their unit and get anonymous help cleaning it.</text><text x="600" y="540" text-anchor="middle" class="small">After remediation and clean behaviour, the unit's risk can be reduced or cleared.</text>
+  <path d="M600 390V455" class="arrow"/>
+
+  <rect x="70" y="600" width="1060" height="65" rx="18" class="green"/><text x="600" y="628" text-anchor="middle" class="label">TaraSec provides information, not commands.</text><text x="600" y="652" text-anchor="middle" class="s">Zero Trust, firewalls, SIEM/SOC, AI security and other systems can use the signal; each participant keeps local control.</text>
+</svg>
