@@ -1,5 +1,7 @@
 <?php
 
+require_once("../taraLib.php");
+
 function printStatistics($szSQL)
 {
 	$conn = getConnection();
@@ -99,7 +101,7 @@ function db_syslog()
     // Header row from field names
     print "<tr>";
 	print "<th>ID</th>";
-	print "<th>#sec</th>";
+	print "<th>Age</th>";
 	print "<th>raw message</th>";
     print "</tr>";
 
@@ -107,7 +109,7 @@ function db_syslog()
     while ($row = $result->fetch_assoc()) {
         print "<tr>";
 		print '<td><a href="index.php?f=syslogRec&id='.$row["syslogId"].'">'.$row["syslogId"].'</td>';
-		print '<td>'.$row["seconds_ago"].'</td>';
+		print '<td>'.age($row["seconds_ago"]).'</td>';
 		print '<td>'.$row["rawmessage"].'</td>';
         print "</tr>";
         $nCount++;

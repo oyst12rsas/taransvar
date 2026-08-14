@@ -307,8 +307,18 @@ update setup set dbVersion = 78;
 alter table assistanceRequest add sentPartners bit(1) not null default b'0' after handled;
 update setup set dbVersion = 79;
 
+#version 80 (260813)
+create table aiResponse (
+    aiResponseId BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+	created timestamp not null default current_timestamp,
+	seconds int null,
+	response text null,
+	primary key (aiResponseId)
+);
+update setup set dbVersion = 80;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 80;
+#update setup set dbVersion = 81;
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 
 #can import DB changes automatically based on the content of this file...

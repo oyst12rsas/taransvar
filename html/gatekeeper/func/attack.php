@@ -18,7 +18,8 @@ function attack()
 		$nCount=0;
 		while($row = $result->fetch_assoc()) 
 		{
-			if (!strcmp($row["purpose"], "forDistribution"))
+/*			Need to also be able to disable "forDistribution" because the request is not only sent to global DB server but also to router (where you typically want to deactivate it..)
+			if (!strcmp($row["purpose"] && "", "forDistribution"))
 			{
 				$szFont = $szFontEnd = "";
 				$szAction = "";
@@ -27,6 +28,7 @@ function attack()
 			}
 			else
 			{
+	*/
 				if ($row["active"]) 
 				{
 					$szFont = $szFontEnd = "";
@@ -42,7 +44,7 @@ function attack()
 				}
 
 				$szActionUrl = "<a href=\"index.php?f=delAttack&id=".$row["requestId"]."&action=".$szAction."\">[".$szAction."]</a>".$szExtraAction;
-			}			
+	//		}			
 
 			$szStatus = ($row["active"]+0?"Active":"Inactive");//"??";
 			if ($row["senttime"])
@@ -50,8 +52,10 @@ function attack()
 			else
 				if (strcmp($row["purpose"], "fromPartner"))
 					$szComment = '<font color="red"><b>NOTE! Request for assistance is not yet sent (by DB server?). This is meant to happen immediately!</b></font>';
+				else
+					$szComment = "&nbsp;";
 
-	    	print "<tr><td>".$szFont.$row["purpose"].$szFontEnd."</td><td>".$szFont.age($row["seconds_since"]).$szFontEnd."</td><td>".$szFont.$row["ip"].":".$row["port"].$szFontEnd."</td><td>".$szFont.$row["category"].$szFontEnd."</td><td>".$szComment."</td><td>".$szFont.$szStatus.$szFontEnd."</td><td>".$szActionUrl."</td></tr>";
+			print "<tr><td>".$szFont.$row["purpose"].$szFontEnd."</td><td>".$szFont.age($row["seconds_since"]).$szFontEnd."</td><td>".$szFont.$row["ip"].":".$row["port"].$szFontEnd."</td><td>".$szFont.$row["category"].$szFontEnd."</td><td>".$szComment."</td><td>".$szFont.$szStatus.$szFontEnd."</td><td>".$szActionUrl."</td></tr>";
 			$nCount++;
 	  	}
 		print "</table>";
