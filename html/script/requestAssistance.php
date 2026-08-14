@@ -4,7 +4,18 @@ error_reporting(E_ALL);
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 include "../dbfunc.php";
-require_once "getSenderIp.php";
+
+function controlPeerIp()
+{
+    $ip = isset($_SERVER['REMOTE_ADDR']) ? trim((string)$_SERVER['REMOTE_ADDR']) : '';
+
+    // Normalize IPv4-mapped IPv6 addresses when PHP/webserver supplies them this way.
+    if (strncasecmp($ip, '::ffff:', 7) === 0) {
+        $ip = substr($ip, 7);
+    }
+
+    return $ip;
+}
 
 function hex_to_ip($hex)
 {
@@ -62,7 +73,7 @@ if ($category === "" || strlen($category) > 64) {
 
 $requestQuality = isset($_GET["qual"]) ? intval($_GET["qual"]) : 0;
 $wantSpoofed = isset($_GET["sp"]) ? intval($_GET["sp"]) : 0;
-$senderIp = getSenderIp();
+$senderIp = controlPeerIp();
 $senderPort = isset($_SERVER['REMOTE_PORT']) ? intval($_SERVER['REMOTE_PORT']) : 0;
 
 if (!filter_var($senderIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
@@ -74,7 +85,7 @@ $conn = getConnection();
 
 try {
     // Control messages are accepted only from routers already registered with this global DB.
-    // Do not trust HTTP_CLIENT_IP / X-Forwarded-For for this identity; getSenderIp() uses REMOTE_ADDR.
+    // Identity comes from the actual TCP peer, never HTTP_CLIENT_IP/X-Forwarded-For.
     if (!senderIsRegisteredPartner($conn, $senderIp)) {
         http_response_code(403);
         exit("unregistered partner");
