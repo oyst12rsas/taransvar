@@ -68,17 +68,15 @@ sub requestAssessment {
 	my $dbh = getConnection();
 
 	#***************** Number of IPs targeted per source IP ******************
-	# select inet_ntoa(src_ip) as src_ip, count(syslogThreatId) as counted from syslogThreat group by dst_ip;
+	# Count distinct destination IPs for each source IP in the selected period.
 
-#select inet_ntoa(src_ip) as src_ip, unix_timestamp(lastSeen) as seen, unix_timestamp(now()) - ($nDaysChecked * 60 * 60 * 24 as monthAgo
-
-	my $sql = "select inet_ntoa(src_ip) as src_ip, count(syslogThreatId) as counted from syslogThreat where unix_timestamp(coalesce(lastSeen, created)) > unix_timestamp(now()) - ($nDaysChecked * 60 * 60 * 24) group by dst_ip";
+	my $sql = "select inet_ntoa(src_ip) as src_ip, count(distinct dst_ip) as counted from syslogThreat where unix_timestamp(coalesce(lastSeen, created)) > unix_timestamp(now()) - ($nDaysChecked * 60 * 60 * 24) group by src_ip";
 	my $sth = $dbh->prepare($sql) or die "prepare statement failed: $dbh->errstr()";
 	$sth->execute() or die "execution failed: $sth->errstr()";
 
 	my $rows = "";
 
-	my $logs = "RECORDS: number of different target IPs per sender IP last month(source, count)\n";
+	my $logs = "RECORDS: number of different target IPs per sender IP last $nDaysChecked days(source, count)\n";
 
 	while (my $row = $sth->fetchrow_hashref()) {
 	    $logs .= join(",",
