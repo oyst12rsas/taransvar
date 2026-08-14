@@ -93,7 +93,7 @@ int isMeOrMine(unsigned int nIp)
 	if (nIp == pSetup->nMyIp)
 		return 1;
 
-	if (!pSetup->nInternalIp || pSetup->nNettmask)
+	if (!pSetup->nInternalIp || !pSetup->nNettmask)
 		return 0;
 
     //Is this one of my IP addresses or one in my subnet?
@@ -288,7 +288,6 @@ struct _PacketInspection *getPacketInfo(void *priv, struct sk_buff *skb, const s
 				//pr_info("tarakernel: ******** skb->mark was set and is being used..\n");
 				return pPacket; //NOTE! ct->mark is 1-based because 0 means not set...
 			}
-		}
 	}
 	else
 	{
@@ -866,4 +865,3 @@ static unsigned int module_ip4_post_routing_handler(void *priv, struct sk_buff *
 	checkFree(pPacket, true);	//Now leaving POST_ROUTING - so kfree the memory
     return NF_ACCEPT;
 }
-
