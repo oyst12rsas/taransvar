@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="TaraSec is a collaborative cybersecurity approach that links malicious traffic to accountable network-side identities and shares actionable security signals between participants.">
+  <title>TaraSec — Collaborative Internet Security</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap nav">
+      <a class="brand" href="#top">TaraSec</a>
+      <nav aria-label="Main navigation">
+        <a href="#problem">Problem</a>
+        <a href="#approach">Approach</a>
+        <a href="#identity">Identity</a>
+        <a href="#participate">Participate</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="wrap hero-grid">
+        <div>
+          <p class="eyebrow">COLLABORATIVE CYBERSECURITY</p>
+          <h1>Make malicious traffic accountable.</h1>
+          <p class="lead">TaraSec is designed to help network owners and service providers cooperate around a simple idea: identify the originating unit more reliably than by IP address alone, share trusted security signals, and act before abuse becomes profitable at scale.</p>
+          <div class="actions">
+            <a class="button primary" href="#approach">How it works</a>
+            <a class="button secondary" href="#participate">Participate</a>
+          </div>
+        </div>
+        <aside class="hero-card" aria-label="TaraSec model summary">
+          <span>Observed traffic</span>
+          <strong>→</strong>
+          <span>Owner + unit identity</span>
+          <strong>→</strong>
+          <span>Shared security signal</span>
+          <strong>→</strong>
+          <span>Local action</span>
+        </aside>
+      </div>
+    </section>
+
+    <section id="problem" class="section">
+      <div class="wrap two-col">
+        <div>
+          <p class="eyebrow">THE PROBLEM</p>
+          <h2>IP addresses tell only part of the story.</h2>
+        </div>
+        <div>
+          <p>Security systems often see suspicious traffic but cannot reliably identify the actual device or local network responsible for it. Addresses change, users sit behind gateways, and different organisations each hold only part of the information needed to respond.</p>
+          <p>TaraSec aims to connect those pieces without requiring every participant to surrender control of its own network.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="approach" class="section alt">
+      <div class="wrap">
+        <p class="eyebrow">THE APPROACH</p>
+        <h2>Cooperate on attribution. Keep enforcement local.</h2>
+        <div class="cards">
+          <article>
+            <span class="number">01</span>
+            <h3>Observe</h3>
+            <p>Participants detect traffic and security events using their own systems and policies.</p>
+          </article>
+          <article>
+            <span class="number">02</span>
+            <h3>Identify</h3>
+            <p>Where available, the network owner supplies an owner identity and owner-generated unit identity instead of relying only on IP and port inference.</p>
+          </article>
+          <article>
+            <span class="number">03</span>
+            <h3>Signal</h3>
+            <p>Relevant security information can be shared across cooperating networks with context about the originating unit.</p>
+          </article>
+          <article>
+            <span class="number">04</span>
+            <h3>Act</h3>
+            <p>Each participant decides how to use the signal: investigate, rate-limit, block, notify, or take no action.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="identity" class="section">
+      <div class="wrap two-col">
+        <div>
+          <p class="eyebrow">IDENTITY MODEL</p>
+          <h2>From guessing by IP and port to an owner-declared unit.</h2>
+        </div>
+        <div class="code-card">
+          <div><span>ownerId</span><b>Network or service owner</b></div>
+          <div><span>owner_generated_unit_id</span><b>Owner-defined local unit identity</b></div>
+          <div><span>IP + port</span><b>Observed network attributes</b></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section statement">
+      <div class="wrap narrow">
+        <p class="eyebrow">THE GOAL</p>
+        <h2>Reduce the economic viability of cybercrime through cooperation.</h2>
+        <p>TaraSec does not assume that one central system can decide what is malicious for everyone. The goal is to make useful attribution and security signals available to participants so that abuse becomes easier to identify, contain and respond to across network boundaries.</p>
+      </div>
+    </section>
+
+    <section id="participate" class="section dark">
+      <div class="wrap two-col">
+        <div>
+          <p class="eyebrow">PARTICIPATE</p>
+          <h2>For network owners, ISPs and security partners.</h2>
+        </div>
+        <div>
+          <p>TaraSec is being developed as an open collaboration model for organisations that operate networks, protect systems or can contribute trustworthy attribution and security signals.</p>
+          <p class="muted">Technical documentation, participation details and contact information will be published here as the platform develops.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap footer-row">
+      <span>© TaraSec</span>
+      <span>A Taransvar initiative</span>
+    </div>
+  </footer>
+</body>
+</html>
