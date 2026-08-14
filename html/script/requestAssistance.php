@@ -1,91 +1,112 @@
 <?php
-print "Hi from requestAssistance..";
-ini_set('display_errors','1');
-ini_set('display_startup_errors','1');
+ini_set('display_errors', '0');
 error_reporting(E_ALL);
-//config_update.php
-//Takes report from partners... 
-//config_update.php?ip=<hexip>:<port>&f=hack
+mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
-
-//Put this directly into database and process later... e.g in 10 minutes when dhsp leases and conntrack is loaded.... 
-//
 include "../dbfunc.php";
 
-function getSenderIp()
+function controlPeerIp()
 {
-if (!empty($_SERVER['HTTP_CLIENT_IP'])) {
-    $ip = $_SERVER['HTTP_CLIENT_IP'];
-} elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-    $ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
-} else {
-    $ip = $_SERVER['REMOTE_ADDR'];
-    return $ip;
- }
-} 
+    $ip = isset($_SERVER['REMOTE_ADDR']) ? trim((string)$_SERVER['REMOTE_ADDR']) : '';
 
-/*function hex_to_ip($hex) {
-    // Remove potential '0x' prefix
-    $hex = str_replace('0x', '', $hex);
-
-    // Convert the hex string to a binary string
-    // 'H*' unpacks a hex string, 'a*' packs as a string
-    $binary = pack('H*', $hex);
-
-    // Convert the binary string to a human-readable IP address
-    $ip = inet_ntop($binary);
+    // Normalize IPv4-mapped IPv6 addresses when PHP/webserver supplies them this way.
+    if (strncasecmp($ip, '::ffff:', 7) === 0) {
+        $ip = substr($ip, 7);
+    }
 
     return $ip;
-}*/
+}
 
-function hex_to_ip($hex) {
-    $hex = preg_replace('/^0x/i', '', trim($hex));
+function hex_to_ip($hex)
+{
+    $hex = preg_replace('/^0x/i', '', trim((string)$hex));
+
+    if (!preg_match('/^[0-9a-fA-F]{1,8}$/', $hex)) {
+        return false;
+    }
+
     $hex = str_pad($hex, 8, '0', STR_PAD_LEFT);
-
     $binary = pack('H*', $hex);
     return inet_ntop($binary);
 }
 
-// Example for IPv4 (C0A80101 is 192.168.1.1)
-
-$szFromIp = getSenderIp();
-$nFromPort = $_SERVER['REMOTE_PORT'];
- 
-if (isset($_GET["f"]) && $_GET["f"]=="request")
+function senderIsRegisteredPartner($conn, $senderIp)
 {
-        if (!isset($_GET["ip"]) || !isset($_GET["port"]) || strlen($_GET["ip"])<6) {
-                echo "(missing params)";
-                exit;
-        }
-
-        $ipv4_hex = $_GET["ip"];
-        $aIp = hex_to_ip($ipv4_hex); // Output: IPv4: 192.168.1.1
-        print "  Reported IP converted: ".$ipv4_hex." -> ".$aIp."<br>";
-
-        if(!filter_var($aIp, FILTER_VALIDATE_IP)){
-                echo '(invalid ip: '.$aIp.')';
-                exit;
-        }
-        if(!filter_var($szFromIp, FILTER_VALIDATE_IP) || $szFromIp == '::1'){
-                $szFromIp = '127.0.0.1';
-        }
-        $conn = getConnection();
-        $szQual = intval($_GET["qual"]);
-        $szSpoofed = intval($_GET["sp"]);
-	//$sql = "insert into assistanceRequest (purpose, ip, port, senderIp, senderPort, category, requestQuality, wantSpoofed) values ('forDistribution', inet_aton('".$_GET["ip"]."'), ".$_GET["port"].", inet_aton('".$szFromIp."'), ".$nFromPort.",'".$_GET["cat"]."', $szQual, $szSpoofed)";
-	$sql = "insert into assistanceRequest (purpose, ip, port, senderIp, senderPort, category, requestQuality, wantSpoofed) values ('forDistribution', inet_aton(?), ?, inet_aton(?), ?, ?, ?, ?)";
-	print "<br>$sql<br>";
-        $stmt = $conn->prepare($sql);
-	$stmt->bind_param("sisisii", $aIp, $_GET["port"], $szFromIp, $nFromPort, $_GET["cat"], $szQual, $szSpoofed); //$_GET["ip"], 
-	$stmt->execute();
-	//$result = $conn->query($sql) or die("(error storing)");
-	print "ok";
-	exit;
+    $stmt = $conn->prepare("select 1 from partnerRouter where ip = inet_aton(?) limit 1");
+    $stmt->bind_param("s", $senderIp);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $registered = ($result && $result->fetch_row());
+    $stmt->close();
+    return (bool)$registered;
 }
 
-print "(error in parameters)";
+if (!isset($_GET["f"]) || $_GET["f"] !== "request") {
+    http_response_code(400);
+    exit("error in parameters");
+}
 
-// print "<br>Your ip is: ".$ip.", port: ".$nPort."<br>";
+if (!isset($_GET["ip"], $_GET["port"])) {
+    http_response_code(400);
+    exit("missing params");
+}
+
+$reportedIp = hex_to_ip($_GET["ip"]);
+if ($reportedIp === false || !filter_var($reportedIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+    http_response_code(400);
+    exit("invalid ip");
+}
+
+$port = filter_var($_GET["port"], FILTER_VALIDATE_INT, array(
+    "options" => array("min_range" => 0, "max_range" => 65535)
+));
+if ($port === false) {
+    http_response_code(400);
+    exit("invalid port");
+}
+
+$category = isset($_GET["cat"]) ? trim((string)$_GET["cat"]) : "other";
+if ($category === "" || strlen($category) > 64) {
+    http_response_code(400);
+    exit("invalid category");
+}
+
+$requestQuality = isset($_GET["qual"]) ? intval($_GET["qual"]) : 0;
+$wantSpoofed = isset($_GET["sp"]) ? intval($_GET["sp"]) : 0;
+$senderIp = controlPeerIp();
+$senderPort = isset($_SERVER['REMOTE_PORT']) ? intval($_SERVER['REMOTE_PORT']) : 0;
+
+if (!filter_var($senderIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+    http_response_code(403);
+    exit("untrusted sender");
+}
+
+$conn = getConnection();
+
+try {
+    // Control messages are accepted only from routers already registered with this global DB.
+    // Identity comes from the actual TCP peer, never HTTP_CLIENT_IP/X-Forwarded-For.
+    if (!senderIsRegisteredPartner($conn, $senderIp)) {
+        http_response_code(403);
+        exit("unregistered partner");
+    }
+
+    $sql = "insert into assistanceRequest "
+         . "(purpose, ip, port, senderIp, senderPort, category, requestQuality, wantSpoofed) "
+         . "values ('forDistribution', inet_aton(?), ?, inet_aton(?), ?, ?, ?, ?)";
+
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("sisisii", $reportedIp, $port, $senderIp, $senderPort, $category, $requestQuality, $wantSpoofed);
+    $stmt->execute();
+    $stmt->close();
+
+    header('Content-Type: text/plain; charset=utf-8');
+    echo "ok";
+} catch (Throwable $e) {
+    error_log("requestAssistance failed: sender=" . $senderIp . " error=" . $e->getMessage());
+    http_response_code(500);
+    echo "error";
+} finally {
+    $conn->close();
+}
 ?>
-
-

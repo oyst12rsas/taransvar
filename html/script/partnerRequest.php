@@ -1,71 +1,116 @@
 <?php
-ini_set('display_errors','1');
-ini_set('display_startup_errors','1');
+ini_set('display_errors', '0');
 error_reporting(E_ALL);
-//partnerRequest.php
-//Runs at router and takes requests from central DB... 
-//config_update.php?ip=<hexip>:<port>&f=hack
-//partnerRequest.php?f=assistance&ip=7F000001&port=0&cat=bruteForce&qual=0&sp=0
-//print "Hi from partnerRequest..";
+mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
-//Put this directly into database and process later... e.g in 10 minutes when dhsp leases and conntrack is loaded.... 
-//
 include "../dbfunc.php";
 
-function getSenderIp()
+function controlPeerIp()
 {
-if (!empty($_SERVER['HTTP_CLIENT_IP'])) {
-    $ip = $_SERVER['HTTP_CLIENT_IP'];
-} elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-    $ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
-} else {
-    $ip = $_SERVER['REMOTE_ADDR'];
+    $ip = isset($_SERVER['REMOTE_ADDR']) ? trim((string)$_SERVER['REMOTE_ADDR']) : '';
+
+    if (strncasecmp($ip, '::ffff:', 7) === 0) {
+        $ip = substr($ip, 7);
+    }
+
     return $ip;
- }
-} 
-
-//NOTE! Should check if sender is a global DB (they are registered in the setup)
-$szFromIp = getSenderIp();
-$nFromPort = $_SERVER['REMOTE_PORT'];
- 
-if (isset($_GET["f"]) && $_GET["f"]=="assistance")
-{
-        if (!isset($_GET["ip"]) || !isset($_GET["port"]) || strlen($_GET["ip"])<7) {
-                echo "(missing params)";
-                exit;
-        }
-
-	$ip = long2ip(hexdec($_GET["ip"]));
-
-	if(!filter_var($ip, FILTER_VALIDATE_IP)){
-                echo '(invalid ip: '.$ip.' ('.$_GET["ip"].')';
-                exit;
-        }
-        if(!filter_var($szFromIp, FILTER_VALIDATE_IP) || $szFromIp == '::1'){
-                $szFromIp = '127.0.0.1';
-        }
-        $conn = getConnection();
-        $szQual = $_GET["qual"]+0;
-        $szSpoofed = $_GET["sp"]+0;
-	//$sql = "insert into assistanceRequest (purpose, ip, port, senderIp, senderPort, category, requestQuality, wantSpoofed, comment, fromOther, handled) values ('fromPartner', CONV('".$_GET["ip"]."', 16, 10), ".$_GET["port"].", inet_aton('".$szFromIp."'), ".$nFromPort.",'".$_GET["cat"]."', $szQual, $szSpoofed, 'From DB server', b'1', b'1')";
-	//print "<br>$sql<br>";
-	//$result = $conn->query($sql) or die("(error storing)");
-
-	$sql = "insert into assistanceRequest (purpose, ip, port, senderIp, senderPort, category, requestQuality, wantSpoofed, comment, fromOther, handled) values ('fromPartner', CONV(?, 16, 10), ?, inet_aton(?), ?,?,?,?, 'From DB server', b'1', b'1')";
-	//print "<br>$sql<br>";
-	$stmt = $conn->prepare($sql);
-	$stmt->bind_param("sdsdsdd", $_GET["ip"], $_GET["port"], $szFromIp, $nFromPort, $_GET["cat"], $szQual,  $szSpoofed); 
-        $stmt->execute();
-
-	print "ok";
-	exit;
 }
 
+function hex_to_ipv4($hex)
+{
+    $hex = preg_replace('/^0x/i', '', trim((string)$hex));
 
+    if (!preg_match('/^[0-9a-fA-F]{1,8}$/', $hex)) {
+        return false;
+    }
 
-print "(error in parameters)";
+    $hex = str_pad($hex, 8, '0', STR_PAD_LEFT);
+    $binary = pack('H*', $hex);
+    return inet_ntop($binary);
+}
 
-// print "<br>Your ip is: ".$ip.", port: ".$nPort."<br>";
+function senderIsConfiguredGlobalDb($conn, $senderIp)
+{
+    $sql = "select 1 from setup "
+         . "where globalDb1ip = inet_aton(?) "
+         . "or globalDb2ip = inet_aton(?) "
+         . "or globalDb3ip = inet_aton(?) limit 1";
+
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("sss", $senderIp, $senderIp, $senderIp);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $registered = ($result && $result->fetch_row());
+    $stmt->close();
+    return (bool)$registered;
+}
+
+if (!isset($_GET["f"]) || $_GET["f"] !== "assistance") {
+    http_response_code(400);
+    exit("error in parameters");
+}
+
+if (!isset($_GET["ip"], $_GET["port"])) {
+    http_response_code(400);
+    exit("missing params");
+}
+
+$requestedIp = hex_to_ipv4($_GET["ip"]);
+if ($requestedIp === false || !filter_var($requestedIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+    http_response_code(400);
+    exit("invalid ip");
+}
+
+$port = filter_var($_GET["port"], FILTER_VALIDATE_INT, array(
+    "options" => array("min_range" => 0, "max_range" => 65535)
+));
+if ($port === false) {
+    http_response_code(400);
+    exit("invalid port");
+}
+
+$category = isset($_GET["cat"]) ? trim((string)$_GET["cat"]) : "other";
+if ($category === "" || strlen($category) > 64) {
+    http_response_code(400);
+    exit("invalid category");
+}
+
+$requestQuality = isset($_GET["qual"]) ? intval($_GET["qual"]) : 0;
+$wantSpoofed = isset($_GET["sp"]) ? intval($_GET["sp"]) : 0;
+$senderIp = controlPeerIp();
+$senderPort = isset($_SERVER['REMOTE_PORT']) ? intval($_SERVER['REMOTE_PORT']) : 0;
+
+if (!filter_var($senderIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+    http_response_code(403);
+    exit("untrusted sender");
+}
+
+$conn = getConnection();
+
+try {
+    // Only global DB servers configured locally may distribute this control message.
+    // Never trust client-supplied forwarding headers for that identity.
+    if (!senderIsConfiguredGlobalDb($conn, $senderIp)) {
+        http_response_code(403);
+        exit("unregistered global DB");
+    }
+
+    $sql = "insert into assistanceRequest "
+         . "(purpose, ip, port, senderIp, senderPort, category, requestQuality, wantSpoofed, comment, fromOther, handled) "
+         . "values ('fromPartner', inet_aton(?), ?, inet_aton(?), ?, ?, ?, ?, 'From DB server', b'1', b'1')";
+
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("sisisii", $requestedIp, $port, $senderIp, $senderPort, $category, $requestQuality, $wantSpoofed);
+    $stmt->execute();
+    $stmt->close();
+
+    header('Content-Type: text/plain; charset=utf-8');
+    echo "ok";
+} catch (Throwable $e) {
+    error_log("partnerRequest failed: sender=" . $senderIp . " error=" . $e->getMessage());
+    http_response_code(500);
+    echo "error";
+} finally {
+    $conn->close();
+}
 ?>
-
-
