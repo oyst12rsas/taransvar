@@ -14,7 +14,9 @@
 
     <section id="problem" class="section"><div class="wrap two-col"><div><p class="eyebrow">THE PROBLEM</p><h2>IP addresses tell only part of the story.</h2></div><div><p>Security systems often see suspicious traffic but cannot reliably identify the actual device or local network responsible for it. Addresses change, users sit behind gateways, and different organisations each hold only part of the information needed to respond.</p><p>TaraSec aims to connect those pieces without requiring every participant to surrender control of its own network.</p></div></div></section>
 
-    <section id="approach" class="section alt"><div class="wrap"><p class="eyebrow">HOW IT WORKS</p><h2>Turn isolated security incidents into shared, accountable context.</h2><div class="cards">
+    <section id="approach" class="section alt"><div class="wrap"><p class="eyebrow">HOW IT WORKS</p><h2>Turn isolated security incidents into shared, accountable context.</h2>
+      <div style="margin:30px 0 38px;overflow:hidden;border-radius:22px;border:1px solid #d7e0e8;background:#f7fafc"><img src="how-it-works.svg" alt="TaraSec flow from incident detection and reporting through persistent unit identification, AI assessment, traffic signalling, local action, Request for Assistance and anonymous recovery" style="display:block;width:100%;height:auto"></div>
+      <div class="cards">
       <article><span class="number">01</span><h3>An incident is observed</h3><p>A firewall, honeypot, IDS/IPS or another security system detects suspicious or malicious traffic from a unit on another participating network.</p></article>
       <article><span class="number">02</span><h3>The incident is reported</h3><p>The receiving network reports the observation back through TaraSec with provenance and the technical information needed to associate it with the originating network.</p></article>
       <article><span class="number">03</span><h3>The originating unit is identified</h3><p>The responsible ISP or network can associate the traffic with its persistent technical unit ID. TaraSec does not need the subscriber's personal identity.</p></article>
