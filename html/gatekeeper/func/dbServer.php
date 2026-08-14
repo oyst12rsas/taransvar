@@ -1,23 +1,25 @@
 <?php
 
-
 function dbServerMenu()
-{ ?>
-<table>
-<tr>
-<td bgcolor="white"><a href="index.php?f=db_syslog">syslog</a></td>
-<td bgcolor="white"><a href="index.php?f=db_ai">AI</a></td>
-</tr>
-</table>
+{
+?>
+<div class="gk-local-menu">
+    <div class="gk-dropdown">
+        <button type="button" class="gk-dropdown-button" aria-haspopup="true" aria-expanded="false">DB server ▾</button>
+        <div class="gk-dropdown-content">
+            <a href="index.php?f=db_syslog">Syslog</a>
+            <a href="index.php?f=db_ai">AI</a>
+        </div>
+    </div>
+</div>
 <?php
 }
 
-
 function dbServer()
 {
-	dbServerMenu();
+    dbServerMenu();
 
-	print "<h1>DB server</h1>";
+    print "<h1>DB server</h1>";
 }
 
 ?>
