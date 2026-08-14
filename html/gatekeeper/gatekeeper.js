@@ -137,3 +137,133 @@ function tagStatusClicked()
 }
 
 
+/*
+ * Gatekeeper navigation
+ *
+ * Keep the old PHP URLs intact, but present submenus as dropdowns instead of
+ * rendering another menu table below the main navigation.
+ */
+function initGatekeeperMenus()
+{
+    if (!document.getElementById("gatekeeper-menu-style"))
+    {
+        const style = document.createElement("style");
+        style.id = "gatekeeper-menu-style";
+        style.textContent = `
+            .gk-dropdown { position: relative; display: inline-block; }
+            .gk-dropdown-button {
+                background: transparent;
+                border: 0;
+                padding: 0;
+                margin: 0;
+                font: inherit;
+                color: inherit;
+                cursor: pointer;
+                text-decoration: underline;
+            }
+            .gk-dropdown-content {
+                display: none;
+                position: absolute;
+                left: 0;
+                top: calc(100% + 8px);
+                min-width: 190px;
+                background: white;
+                border: 1px solid #7a3f3f;
+                box-shadow: 0 6px 18px rgba(0,0,0,.20);
+                z-index: 10000;
+                text-align: left;
+            }
+            .gk-dropdown-content a {
+                display: block;
+                padding: 9px 12px;
+                color: #111;
+                text-decoration: none;
+                white-space: nowrap;
+            }
+            .gk-dropdown-content a:hover,
+            .gk-dropdown-content a:focus {
+                background: #e8f1f7;
+            }
+            .gk-dropdown.open > .gk-dropdown-content,
+            .gk-dropdown:hover > .gk-dropdown-content,
+            .gk-dropdown:focus-within > .gk-dropdown-content {
+                display: block;
+            }
+            .gk-local-menu {
+                position: relative;
+                display: inline-block;
+                margin: 8px 0 14px 0;
+            }
+            .gk-local-menu .gk-dropdown-button {
+                background: white;
+                border: 1px solid #7a3f3f;
+                padding: 8px 12px;
+                text-decoration: none;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    const setupLink = document.querySelector('a[href="index.php?f=setupMenu"]');
+    if (setupLink && !setupLink.closest(".gk-dropdown"))
+    {
+        const holder = document.createElement("div");
+        holder.className = "gk-dropdown";
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "gk-dropdown-button";
+        button.textContent = "Setup ▾";
+        button.setAttribute("aria-haspopup", "true");
+        button.setAttribute("aria-expanded", "false");
+
+        const menu = document.createElement("div");
+        menu.className = "gk-dropdown-content";
+        menu.innerHTML = `
+            <a href="index.php?f=partners">Partners</a>
+            <a href="index.php?f=servers">Servers</a>
+            <a href="index.php?f=domains">Domains</a>
+            <a href="index.php?f=colorListings">W/B list</a>
+            <a href="index.php?f=inspections">Inspections</a>
+            <a href="index.php?f=assistance">Assistance</a>
+            <a href="index.php?f=honey">Honey</a>
+            <a href="index.php?f=setup">Setup</a>
+            ${document.querySelector('a[href="index.php?f=users"]') ? '' : '<a href="index.php?f=users">Users</a>'}
+        `;
+
+        setupLink.replaceWith(holder);
+        holder.appendChild(button);
+        holder.appendChild(menu);
+
+        button.addEventListener("click", function (event) {
+            event.stopPropagation();
+            const open = holder.classList.toggle("open");
+            button.setAttribute("aria-expanded", open ? "true" : "false");
+        });
+    }
+
+    document.querySelectorAll(".gk-local-menu .gk-dropdown-button").forEach(function(button) {
+        if (button.dataset.gkBound)
+            return;
+        button.dataset.gkBound = "1";
+        button.addEventListener("click", function(event) {
+            event.stopPropagation();
+            const holder = button.closest(".gk-dropdown");
+            if (!holder)
+                return;
+            const open = holder.classList.toggle("open");
+            button.setAttribute("aria-expanded", open ? "true" : "false");
+        });
+    });
+
+    document.addEventListener("click", function() {
+        document.querySelectorAll(".gk-dropdown.open").forEach(function(menu) {
+            menu.classList.remove("open");
+            const button = menu.querySelector(".gk-dropdown-button");
+            if (button)
+                button.setAttribute("aria-expanded", "false");
+        });
+    });
+}
+
+document.addEventListener("DOMContentLoaded", initGatekeeperMenus);
