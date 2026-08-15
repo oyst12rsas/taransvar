@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="site-header"><div class="wrap nav"><a class="brand" href="#top">TaraSec</a><nav aria-label="Main navigation"><a href="#problem">Problem</a><a href="#approach">How it works</a><a href="#core">Core elements</a><a href="#trust">Trust &amp; Privacy</a><a href="student/">Students</a><a href="#participate">Participate</a></nav></div></header>
+  <header class="site-header"><div class="wrap nav"><a class="brand" href="#top">TaraSec</a><nav aria-label="Main navigation"><a href="#problem">Problem</a><a href="#approach">How it works</a><a href="#core">Core elements</a><a href="#factsheets">Fact sheets</a><a href="#trust">Trust &amp; Privacy</a><a href="student/">Students</a><a href="#participate">Participate</a></nav></div></header>
   <main id="top">
     <section class="hero"><div class="wrap hero-grid"><div><p class="eyebrow">COLLABORATIVE CYBERSECURITY</p><h1>Make malicious traffic accountable.</h1><p class="lead">TaraSec is designed to help network owners and service providers cooperate around a simple idea: identify the originating unit more reliably than by IP address alone, share trusted security signals, and act before abuse becomes profitable at scale.</p><div class="actions"><a class="button primary" href="#approach">How it works</a><a class="button secondary" href="#trust">Trust &amp; privacy</a></div></div><aside class="hero-card" aria-label="TaraSec model summary"><span>Observe</span><strong>→</strong><span>Report &amp; identify</span><strong>→</strong><span>Assess &amp; signal</span><strong>→</strong><span>Act</span><strong>→</strong><span>Recover &amp; reassess</span></aside></div></section>
 
@@ -34,6 +34,11 @@
       <article><h3>Local security freedom</h3><p>TaraSec is a framework, not the participant's firewall policy. Zero Trust, SIEM/SOC, IDS/IPS, access control, AI security and conventional network controls can all use TaraSec information as an additional input.</p></article>
       <article><h3>Accountable reporting</h3><p>Reports need provenance and history so false reports, compromised participants and conflicting evidence can be challenged and assessed. TaraSec should not become an anonymous global blacklist.</p></article>
       <article><h3>Recovery instead of permanent stigma</h3><p>Users should have a practical path to investigate and clean compromised units anonymously. Reassessment after remediation makes the system about reducing infection and abuse, not permanently labelling devices or people.</p></article>
+    </div></div></section>
+
+    <section id="factsheets" class="section alt"><div class="wrap"><p class="eyebrow">FACT SHEETS</p><h2>Explore two core TaraSec mechanisms.</h2><div class="cards">
+      <article><h3>Traffic Tagging</h3><p>How accountable threat information can follow a persistent technical unit instead of forcing every destination to rediscover the same malicious source.</p><p><a href="factsheets/tagging.html"><strong>Read fact sheet →</strong></a><br><a href="factsheets/tarasec-tagging-fact-sheet.pdf">Download PDF</a></p></article>
+      <article><h3>Assistance Request</h3><p>How a target can ask the network that controls harmful traffic to help stop brute force, DDoS and other abuse closer to its source — and turn isolated incidents into shared threat intelligence.</p><p><a href="factsheets/assistance-request.html"><strong>Read fact sheet →</strong></a><br><a href="factsheets/tarasec-assistance-request-fact-sheet.pdf">Download PDF</a></p></article>
     </div></div></section>
 
     <section id="identity" class="section alt"><div class="wrap two-col"><div><p class="eyebrow">IDENTITY MODEL</p><h2>From guessing by IP and port to an owner-declared unit.</h2></div><div class="code-card"><div><span>ownerId</span><b>Network or service owner</b></div><div><span>owner_generated_unit_id</span><b>Owner-defined technical unit identity</b></div><div><span>IP + port</span><b>Observed network attributes, not the long-term identity</b></div></div></div></section>
