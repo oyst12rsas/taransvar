@@ -423,7 +423,7 @@ void checkHackReports()
 		char *lpIp = (row[3]?row[3]:"(null)");
 		u_int32_t nInternaIpFromUnitPort = 0;
 
-		if (isMeOrMine(nNumericIp, nInternalIp, nNettmask))	//260223 - Changed from nMyIP (adminIP) to nInternalIp for determining if isMeOrMine()
+		if (nNumericIp == nMyIp || isMeOrMine(nNumericIp, nInternalIp, nNettmask))	//Own public/NAT IP or a unit on my internal subnet
 		{
 			strcpy(cWhat, "Me or my unit. ");
 			printf("Me or my unit caused hackReport to be filed..\n");
@@ -603,7 +603,7 @@ void checkHackReports()
 				
 			//*************** Send message to global DB servers that one of our units reported infected 
 			char szParams[200];
-			sprintf(szParams, "config_update.php?f=confession&ip=%s&port=%s&ourid=%d", row[3], row[2], nUnitId);
+			sprintf(szParams, "f=confession&ip=%s&port=%s&ourid=%d", row[3], row[2], nUnitId);
 			sendToGlogalDbServers(&cGlobalDb, szParams, nMyIp, cMyIp);
 
 			sprintf(cSQL, "update hackReport set sentGlobalDB = now(), status = concat(status, '(confessed)') where reportId = %d", atoi(row[0]));
@@ -628,9 +628,12 @@ void checkHackReports()
 			snprintf(szParams, sizeof(szParams), "ip=%s&port=%s&wt=%s&code=from_partner",
                      row[3]?row[3]:"", row[2]?row[2]:"", czCodedWhat);
 
-            int deliveryFailed = 0;
-            char deliveryError[600];
-            *deliveryError = 0;
+            int partnerDeliveryFailed = 0;
+            int globalDeliveryFailed = 0;
+            char partnerError[500];
+            char globalError[500];
+            *partnerError = 0;
+            *globalError = 0;
 
 			if (nRouterIp)
 			{
@@ -648,8 +651,8 @@ void checkHackReports()
 					printf("Sending ISP: %s\n", szUrl);
 
                     if (!reportHttpGetOk(szUrl, reply, sizeof(reply))) {
-                        deliveryFailed = 1;
-                        snprintf(deliveryError, sizeof(deliveryError),
+                        partnerDeliveryFailed = 1;
+                        snprintf(partnerError, sizeof(partnerError),
                                  "partner %s rejected report: %.350s", szRouterIp, reply);
                     }
 				}
@@ -657,22 +660,31 @@ void checkHackReports()
 			else
 				printf("Not belonging to other router. Sending to global DB servers\n");
 
-            char globalError[500];
             if (!sendReportToGlobalDbServersVerified(&cGlobalDb, szParams, cMyIp,
-                                                     globalError, sizeof(globalError))) {
-                deliveryFailed = 1;
-                snprintf(deliveryError, sizeof(deliveryError), "%s", globalError);
-            }
+                                                     globalError, sizeof(globalError)))
+                globalDeliveryFailed = 1;
 
-            if (deliveryFailed) {
+            if (partnerDeliveryFailed || globalDeliveryFailed) {
                 char systemError[700];
-                snprintf(systemError, sizeof(systemError),
-                         "Hack report delivery failed: %s:%s - %.450s",
-                         row[3]?row[3]:"?", row[2]?row[2]:"?", deliveryError);
+                if (partnerDeliveryFailed && globalDeliveryFailed)
+                    snprintf(systemError, sizeof(systemError),
+                             "Hack report delivery failed: %s:%s - %s; %s",
+                             row[3]?row[3]:"?", row[2]?row[2]:"?", partnerError, globalError);
+                else
+                    snprintf(systemError, sizeof(systemError),
+                             "Hack report delivery failed: %s:%s - %s",
+                             row[3]?row[3]:"?", row[2]?row[2]:"?",
+                             partnerDeliveryFailed ? partnerError : globalError);
+
                 setTaralinkSystemError(systemError, 7);
                 addWarningRecord(systemError);
-                increaseSendAttemptCount(atoi(row[0]));
-                bUpdateHandled = 0;
+
+                //Retry the original report only when the responsible partner failed,
+                //or when no partner exists and global DB delivery is the only route.
+                if (partnerDeliveryFailed || (!nRouterIp && globalDeliveryFailed)) {
+                    increaseSendAttemptCount(atoi(row[0]));
+                    bUpdateHandled = 0;
+                }
             } else {
                 clearHackReportDeliverySystemError();
             }
