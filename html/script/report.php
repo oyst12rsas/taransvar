@@ -62,6 +62,37 @@ $fromPort = isset($_SERVER['REMOTE_PORT']) ? (int)$_SERVER['REMOTE_PORT'] : 0;
 try {
     $conn = getConnection();
 
+    // A hack report is a control-plane message. Accept it only from a known
+    // partner router or one of this node's configured global DB servers.
+    $sql = "SELECT 1
+            FROM partnerRouter
+            WHERE ip = INET_ATON(?)
+            LIMIT 1";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param('s', $sender);
+    $stmt->execute();
+    $trustedSender = (bool)$stmt->get_result()->fetch_row();
+    $stmt->close();
+
+    if (!$trustedSender) {
+        $sql = "SELECT 1
+                FROM setup
+                WHERE globalDb1ip = INET_ATON(?)
+                   OR globalDb2ip = INET_ATON(?)
+                   OR globalDb3ip = INET_ATON(?)
+                LIMIT 1";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('sss', $sender, $sender, $sender);
+        $stmt->execute();
+        $trustedSender = (bool)$stmt->get_result()->fetch_row();
+        $stmt->close();
+    }
+
+    if (!$trustedSender) {
+        $conn->close();
+        reportFail(403, 'untrusted sender');
+    }
+
     $sql = "SELECT reportId,
                    TIMESTAMPDIFF(SECOND, COALESCE(lastSeen, created), NOW()) AS seconds_since
             FROM hackReport
