@@ -19,7 +19,6 @@ $sender = getSenderIp();
 if (strncasecmp($sender, '::ffff:', 7) === 0) {
     $sender = substr($sender, 7);
 }
-
 if (!filter_var($sender, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
     confessionFail(403, 'invalid sender');
 }
@@ -31,6 +30,10 @@ $ip = trim((string)$_GET['ip']);
 if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
     confessionFail(400, 'invalid ip');
 }
+if ($sender !== $ip) {
+    confessionFail(403, 'confession sender does not match reported source');
+}
+
 $port = filter_var($_GET['port'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 0, 'max_range' => 65535]]);
 $unitId = filter_var($_GET['ourid'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 if ($port === false || $unitId === false) {
@@ -39,18 +42,6 @@ if ($port === false || $unitId === false) {
 
 try {
     $conn = getConnection();
-
-    // A confession is authoritative only when it comes from the network that
-    // owns the reported address. At minimum require a configured partner router.
-    $stmt = $conn->prepare('SELECT 1 FROM partnerRouter WHERE ip = INET_ATON(?) LIMIT 1');
-    $stmt->bind_param('s', $sender);
-    $stmt->execute();
-    $trustedSender = (bool)$stmt->get_result()->fetch_row();
-    $stmt->close();
-    if (!$trustedSender) {
-        $conn->close();
-        confessionFail(403, 'untrusted owner');
-    }
 
     // The victim report should normally already exist. Match only a very recent
     // report so an ephemeral source port cannot attach a confession to old traffic.
@@ -84,7 +75,7 @@ try {
 
     // Confession won the network race. Preserve it for five seconds so report.php
     // can complete this same row when the victim report arrives instead of creating
-    // a duplicate. remoteUnitId itself is the persisted owner-confirmation marker.
+    // a duplicate. A non-NULL remoteUnitId is the persisted owner-confirmation flag.
     $sql = "INSERT INTO hackReport (ip, port, remoteUnitId, status)
             VALUES (INET_ATON(?), ?, ?, 'Awaiting victim report - owner confirmed')";
     $stmt = $conn->prepare($sql);
