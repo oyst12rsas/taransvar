@@ -155,6 +155,9 @@ void increaseSendAttemptCount(int nHackReportId)
 
 int isMeOrMine(uint32_t nIp, uint32_t nMyIp, uint32_t nNettmask)
 {
+	if (!nMyIp || !nNettmask)
+		return 0;
+
 	return ((nIp & nNettmask) == (nMyIp & nNettmask));
 }
 
@@ -523,6 +526,5 @@ void checkHackReports()
 	mysql_free_result(res);
 	mysql_close(conn);
 }
-
 
 
