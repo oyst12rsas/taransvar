@@ -5,6 +5,179 @@ typedef struct  {
 } _GlobalServers;
 
 #include <arpa/inet.h>
+#include <curl/curl.h>
+#include <ctype.h>
+
+typedef struct {
+    char *buf;
+    size_t capacity;
+    size_t used;
+} _ReportHttpBuffer;
+
+static size_t reportHttpWriteCallback(char *ptr, size_t size, size_t nmemb, void *userdata)
+{
+    size_t bytes = size * nmemb;
+    _ReportHttpBuffer *target = (_ReportHttpBuffer *)userdata;
+
+    if (!target || !target->buf || target->capacity == 0)
+        return bytes;
+
+    size_t available = target->capacity - 1 - target->used;
+    size_t copyBytes = (bytes < available ? bytes : available);
+
+    if (copyBytes > 0) {
+        memcpy(target->buf + target->used, ptr, copyBytes);
+        target->used += copyBytes;
+        target->buf[target->used] = 0;
+    }
+
+    return bytes;
+}
+
+static void trimHttpReply(char *reply)
+{
+    if (!reply)
+        return;
+
+    char *start = reply;
+    while (*start && isspace((unsigned char)*start))
+        start++;
+
+    if (start != reply)
+        memmove(reply, start, strlen(start) + 1);
+
+    size_t len = strlen(reply);
+    while (len > 0 && isspace((unsigned char)reply[len - 1]))
+        reply[--len] = 0;
+}
+
+static int reportHttpGetOk(const char *url, char *reply, size_t replySize)
+{
+    if (!url || !reply || replySize == 0)
+        return 0;
+
+    reply[0] = 0;
+    _ReportHttpBuffer target = { reply, replySize, 0 };
+
+    curl_global_init(CURL_GLOBAL_DEFAULT);
+    CURL *curl = curl_easy_init();
+    if (!curl) {
+        snprintf(reply, replySize, "curl init failed");
+        return 0;
+    }
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, reportHttpWriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &target);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+    CURLcode result = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_cleanup(curl);
+
+    trimHttpReply(reply);
+
+    if (result != CURLE_OK) {
+        snprintf(reply, replySize, "curl error: %s", curl_easy_strerror(result));
+        return 0;
+    }
+
+    if (httpCode < 200 || httpCode >= 300) {
+        char body[300];
+        snprintf(body, sizeof(body), "%s", *reply ? reply : "no response body");
+        snprintf(reply, replySize, "HTTP %ld: %.220s", httpCode, body);
+        return 0;
+    }
+
+    if (strcmp(reply, "ok")) {
+        char body[300];
+        snprintf(body, sizeof(body), "%s", *reply ? reply : "empty response");
+        snprintf(reply, replySize, "unexpected reply: %.220s", body);
+        return 0;
+    }
+
+    return 1;
+}
+
+static void setTaralinkSystemError(const char *message, unsigned int severity)
+{
+    if (!message)
+        return;
+
+    MYSQL *errorConn = getConnection();
+    if (!errorConn)
+        return;
+
+    char shortened[251];
+    snprintf(shortened, sizeof(shortened), "%.250s", message);
+
+    char escaped[520];
+    mysql_real_escape_string(errorConn, escaped, shortened, strlen(shortened));
+
+    char sql[800];
+    snprintf(sql, sizeof(sql),
+             "update setup set systemError='%s', systemErrorSeverity=%u, systemErrorSet=now()",
+             escaped, severity);
+
+    if (mysql_query(errorConn, sql))
+        fprintf(stderr, "Unable to store systemError: %s\n", mysql_error(errorConn));
+
+    mysql_close(errorConn);
+}
+
+static void clearHackReportDeliverySystemError(void)
+{
+    MYSQL *errorConn = getConnection();
+    if (!errorConn)
+        return;
+
+    const char *sql =
+        "update setup set systemError=null, systemErrorSeverity=null, systemErrorSet=null "
+        "where systemError like 'Hack report delivery failed:%'";
+
+    if (mysql_query(errorConn, sql))
+        fprintf(stderr, "Unable to clear hack-report systemError: %s\n", mysql_error(errorConn));
+
+    mysql_close(errorConn);
+}
+
+static int sendReportToGlobalDbServersVerified(
+    _GlobalServers *cGlobalDb,
+    const char *szParams,
+    const char *cMyIp,
+    char *errorBuf,
+    size_t errorBufSize)
+{
+    int allOk = 1;
+
+    if (errorBuf && errorBufSize)
+        errorBuf[0] = 0;
+
+    for (int n = 0; n < 3; n++) {
+        const char *globalIp = cGlobalDb->ip[n];
+        if (!globalIp || !*globalIp || strlen(globalIp) < 7)
+            continue;
+
+        if (cMyIp && !strcmp(globalIp, cMyIp))
+            continue;
+
+        char url[700];
+        snprintf(url, sizeof(url), "http://%s/script/report.php?%s", globalIp, szParams);
+
+        char reply[500];
+        if (!reportHttpGetOk(url, reply, sizeof(reply))) {
+            allOk = 0;
+            if (errorBuf && errorBufSize)
+                snprintf(errorBuf, errorBufSize,
+                         "global DB %s rejected report: %.300s", globalIp, reply);
+        }
+    }
+
+    return allOk;
+}
 
 uint32_t getIpOfRegisteredPartnerRouter(
     MYSQL *conn,
@@ -97,7 +270,7 @@ void sendToGlogalDbServers(_GlobalServers *cGlobalDb, char *szParams, uint32_t n
 	    		// success
 			} else {
     			// invalid IP
-				nGlobalDbIp = 0;
+    			nGlobalDbIp = 0;
 				printf("************************* Invalid ip: %s (skipping)\n", lpGlobalDbIp);
 			}
 
@@ -444,24 +617,24 @@ void checkHackReports()
 		else
 		{
 			printf("Hack attempt from none of my units. Report back to ISP and global DB servers\n");
-			//260608 Ends here when fails to log in to gatekeeper too many times (7 within a minute?) 
-			///*	Probably always ends here when no NAT... Just skip this for now.
 
-			//Check if from unit belonging to partner. report?
 			char szRouterIp[50];
 			if (!lookupConn)
 				lookupConn = getConnection();
 
 			uint32_t nRouterIp = getIpOfRegisteredPartnerRouter(lookupConn, nNumericIp, szRouterIp, sizeof(szRouterIp));
 			char szParams[400], czCodedWhat[255];
-			//For any reason, send it to the global DB servers.
 			urlencode(row[8]?row[8]:"", czCodedWhat, sizeof(czCodedWhat));
-			snprintf(szParams, sizeof(szParams), "f=report&ip=%s&port=%s&wt=%s", row[3]?row[3]:"", row[2]?row[2]:"", czCodedWhat);
+			snprintf(szParams, sizeof(szParams), "ip=%s&port=%s&wt=%s&code=from_partner",
+                     row[3]?row[3]:"", row[2]?row[2]:"", czCodedWhat);
+
+            int deliveryFailed = 0;
+            char deliveryError[600];
+            *deliveryError = 0;
 
 			if (nRouterIp)
 			{
 				printf("Found ISP: %s\n", szRouterIp);
-				//Send message to router and globalDBpartners
 
 				if (!strcmp(lpIp, szRouterIp) && (row[8] && !strcmp(row[8], "From traffic report.")))
 				{
@@ -469,41 +642,40 @@ void checkHackReports()
 				}
 				else
 				{
-					printf("\n****** Not expected to send this... %s - %s, what: %s\n", lpIp, szRouterIp, row[8]);
-
-					char szUrl[500];
-					char szWgetBuff[2000];
-					snprintf(szUrl, sizeof(szUrl), "http://%s/script/config_update.php?%s", szRouterIp, szParams);
-					*szWgetBuff = 0;
+					char szUrl[700];
+                    char reply[500];
+					snprintf(szUrl, sizeof(szUrl), "http://%s/script/report.php?%s", szRouterIp, szParams);
 					printf("Sending ISP: %s\n", szUrl);
-					wget(szUrl, szWgetBuff, sizeof(szWgetBuff));  //Using global static buffers because reply doesn't come immediately.
+
+                    if (!reportHttpGetOk(szUrl, reply, sizeof(reply))) {
+                        deliveryFailed = 1;
+                        snprintf(deliveryError, sizeof(deliveryError),
+                                 "partner %s rejected report: %.350s", szRouterIp, reply);
+                    }
 				}
    			}
 			else
-				printf("Not belonging to other router. Sending to global DB servers");
-			
-			//For any reason, send it to the global DB servers.
-			sendToGlogalDbServers(&cGlobalDb, szParams, nMyIp, cMyIp);			
+				printf("Not belonging to other router. Sending to global DB servers\n");
 
-			/*Old code probably causing lots of insertions in hackReport table... hopefully better with code above
-			if (!nNettmask)
-				printf("This is not a router.\n");
-			int nSecondeAgo = atoi(row[5]);
-			//Not mine.... 
-			char szBuffer[1000];
-			sprintf(szBuffer, "** WARNING ** : Hackreport %s port %s: No matching port assignment found. None of mine: (IP: %d, %d, nett:%d)\n", row[4], row[2], nNumericIp, nMyIp, nNettmask);
-			if (nSecondeAgo < 5)
-			{
-				sprintf(szBuffer+strlen(szBuffer), ", but just received (%d seconds ago).. So waiting before setting to handled...\n", nSecondeAgo);
-				bUpdateHandled = 0;   //Don't set at handled yet.. Waiting for port assignments to be imported by misc/conntrack.pl and/or process_dhcpdump.pl (hopefully running as cron job)
-			}
-			else
-				sprintf(szBuffer+strlen(szBuffer), "****** ERROR ******* And %d seconds since received.. So setting to handled...\n", nSecondeAgo);
-                 	                
-			printf("%s",szBuffer);
-			addWarningRecord(szBuffer);
-			*/
-			
+            char globalError[500];
+            if (!sendReportToGlobalDbServersVerified(&cGlobalDb, szParams, cMyIp,
+                                                     globalError, sizeof(globalError))) {
+                deliveryFailed = 1;
+                snprintf(deliveryError, sizeof(deliveryError), "%s", globalError);
+            }
+
+            if (deliveryFailed) {
+                char systemError[700];
+                snprintf(systemError, sizeof(systemError),
+                         "Hack report delivery failed: %s:%s - %.450s",
+                         row[3]?row[3]:"?", row[2]?row[2]:"?", deliveryError);
+                setTaralinkSystemError(systemError, 7);
+                addWarningRecord(systemError);
+                increaseSendAttemptCount(atoi(row[0]));
+                bUpdateHandled = 0;
+            } else {
+                clearHackReportDeliverySystemError();
+            }
 		}
 
 		if (bUpdateHandled) {
@@ -526,5 +698,4 @@ void checkHackReports()
 	mysql_free_result(res);
 	mysql_close(conn);
 }
-
 
