@@ -1,5 +1,20 @@
 <?php
 
+// Backward compatibility for older TaraSec/Taralink nodes.  Keep the historic
+// config_update.php URLs working, but let the current validated endpoints do
+// the actual work.  Dispatch before loading this file's libraries because the
+// endpoints load their own dependencies and terminate the request themselves.
+if (isset($_GET["f"])) {
+    if ($_GET["f"] === "report") {
+        require __DIR__ . "/report.php";
+        exit;
+    }
+    if ($_GET["f"] === "confession") {
+        require __DIR__ . "/confession.php";
+        exit;
+    }
+}
+
 ini_set('display_errors','1');
 ini_set('display_startup_errors','1');
 error_reporting(E_ALL);
@@ -31,23 +46,20 @@ if (isset($_GET["f"]))
 	switch ($_GET["f"])
 	{
 		case "confession":
-			//Routers send this to global DB servers when they're notified that one of their units attacked others...
-			//http://192.168.100.15/config_update.php?f=confession&ip=192.168.100.10&port=57612&ourid=2
-
+			//Legacy implementation retained below for reference/backward source compatibility.
+			//Runtime requests are dispatched to confession.php at the top of this file.
 			if (!isset($_GET["ourid"])){
 				echo "(missing params)";
 				exit;
 			}
 			$nOurId = (int)$_GET["ourid"];
-			//Set hackReport -> remoteUnitId
 			$szSQL = "select reportId, coalesce(remoteUnitId, 0) as remoteUnitId from hackReport where inet_aton(ip) = ? and port = ? order by reportId desc limit 1";
 			$conn = getConnection();
-			//print "$szSQL<br>";
 			$stmt = $conn->prepare($szSQL);
             $nPort = (int)$_GET["port"];
             $stmt->bind_param("si", $szFromIp, $nPort); 
             $stmt->execute();
-			$result = $stmt->get_result(); // get the mysqli result
+			$result = $stmt->get_result();
 			if ($result && $row = $result->fetch_assoc())
 			{
                 $nReportId = (int)$row["reportId"];
@@ -56,7 +68,6 @@ if (isset($_GET["f"]))
 		            addWarningRecord("Received confession from ".$szFromIp.", but remoteUnitId was already set to ".$row["remoteUnitId"]." for hack report ".$nReportId); 
 
                 print "Confession received regarding hack report %s (%s:%u). Setting remoteUnitId = $nOurId%s\n";
-				//print "Updating status received for ".$szFromIp.". Routerid: ".$row["routerId"]."<br>"; 
 				$szSQL = "update hackReport set remoteUnitId = ? where reportId = ?";
 	            $stmt = $conn->prepare($szSQL);
 	            $stmt->bind_param("ii", $nOurId, $nReportId); 
@@ -68,7 +79,8 @@ if (isset($_GET["f"]))
 			exit;
                         
         case "report":
-			//E.g: config_update.php?f=report&ip=10.47.20.1&port=0&wt=sinkhole
+			//Legacy implementation retained below for reference/backward source compatibility.
+			//Runtime requests are dispatched to report.php at the top of this file.
     		{
 				if (!isset($_GET["ip"]) || !isset($_GET["port"]) || (strlen($_GET["ip"]) < 7 && strcmp($_GET["ip"],"::1"))){
 					echo "(missing params)";
@@ -88,9 +100,6 @@ if (isset($_GET["f"]))
 				$szWhat = (isset($_GET["wt"])?$_GET["wt"]: "hack");
 				$conn = getConnection();
 
-                //print "$sql";
-                //print "Port: -".$_GET["port"]."-";
-
 				$ip       = $_GET["ip"];
 				$port     = (int)$_GET["port"];
 				$what     = isset($_GET["wt"]) ? $_GET["wt"] : "hack";
@@ -102,7 +111,7 @@ if (isset($_GET["f"]))
             	$stmt = $conn->prepare($szSQL);
 	            $stmt->bind_param("sis", $ip, $port, $code, $what);
 	            $stmt->execute();
-	            $result = $stmt->get_result(); // get the mysqli result
+	            $result = $stmt->get_result();
                 $nSeconds = 1000;
 
             	if ($result) 
@@ -149,14 +158,12 @@ if (isset($_GET["f"]))
 					logMsg("Inserted..");
 				}
 
-				//$result = $conn->query($sql) or die("(error storing)");
                 print "ok";
 				exit;
 			}
 
         case "ping":
         	{
-                //Taralink sends status to global DB server every 15 minutes.
                 if (isset($_GET["status"]))
                     $szStatus = $_GET["status"];
                 else
@@ -169,7 +176,6 @@ if (isset($_GET["f"]))
 
                 $conn = getConnection();
                 $sql = "insert into ping (ip, info, nickName) values (inet_aton(?), ?, ?)";
-				//print "$sql";
                 $stmt = $conn->prepare($sql);
                 $stmt->bind_param("sss", $szFromIp, $szStatus, $szNick); 
                 $stmt->execute();
@@ -201,7 +207,6 @@ if (isset($_GET["f"]))
                         
                 $conn = getConnection();
 			$szSQL = "update demo set botHostStatus = ? where ipBotHost = inet_aton(?) and activeDemo = b'1';";
-			//print "$szSQL<br>";
                         $stmt = $conn->prepare($szSQL);
                        	$stmt->bind_param("ss", $szStatus, $szFromIp); 
                        	$stmt->execute();
@@ -227,7 +232,6 @@ if (isset($_GET["f"]))
             {
                 $sql = "insert into requestDmesg(ip) values(inet_aton(?))"; 
 	        	$conn = getConnection();
-	            //print "$sql";
 	            $stmt = $conn->prepare($sql);
                 $szGetIp = $_GET["ip"];
                 $stmt->bind_param("s", $szGetIp); 
@@ -250,19 +254,16 @@ if (isset($_GET["f"]))
             //Check if this is registered partner..
             $conn = getConnection();
 			$szSQL = "select routerId from partnerRouter where ip = inet_aton(?);";
-			//print "$szSQL<br>";
             $stmt = $conn->prepare($szSQL);
             $stmt->bind_param("s", $szFromIp); 
             $stmt->execute();
-			$result = $stmt->get_result(); // get the mysqli result
+			$result = $stmt->get_result();
 			if ($result && $row = $result->fetch_assoc())
 			{
-				//print "Updating status received for ".$szFromIp.". Routerid: ".$row["routerId"]."<br>"; 
 				$szSQL = "update partnerRouter set partnerStatusReceived = now() where routerId = ?";
 	            $stmt = $conn->prepare($szSQL);
 	            $stmt->bind_param("d", $row["routerId"]); 
 	            $stmt->execute();
-	            //addWarningRecord("Partner status updated for $szFromIp"); 
 			}
 			else 
 			{
@@ -280,21 +281,16 @@ if (isset($_GET["f"]))
             $szMe = $_GET["me"];
             $szWorkshopId = $_GET["id"]+0;
             $szRole = $_GET["role"];
-			//print "Workshop: $szWorkshopId<br>"; 
-			//Register as workshop member...
 			$szSQL = "insert into workshop (workshopId, ip, publicIp, role) values (?, inet_aton(?), inet_aton(?), ?) on duplicate key update role = ?, lastseen = now();";
             $stmt = $conn->prepare($szSQL);
             $stmt->bind_param("dssss", $szWorkshopId, $szMe, $szFromIp, $szRole, $szRole); 
             $stmt->execute();
 
-
-			//Check if this is registered partner..
-			$szSQL = "select inet_ntoa(publicIp) as publicIp, inet_ntoa(ip) as ip, role from workshop where workshopId = ? and ip <> inet_aton(?) and date(lastseen) = date(now())";// and inet_atona(ip) <> ?";
-			//print "$szSQL<br>";
+			$szSQL = "select inet_ntoa(publicIp) as publicIp, inet_ntoa(ip) as ip, role from workshop where workshopId = ? and ip <> inet_aton(?) and date(lastseen) = date(now())";
             $stmt = $conn->prepare($szSQL);
-            $stmt->bind_param("ds", $szWorkshopId, $szMe);//, $szMe); 
+            $stmt->bind_param("ds", $szWorkshopId, $szMe);
             $stmt->execute();
-			$result = $stmt->get_result(); // get the mysqli result
+			$result = $stmt->get_result();
 			$nFound = 0;
 			while ($result && $row = $result->fetch_assoc())
 			{
@@ -318,11 +314,10 @@ if (isset($_GET["f"]))
 			$nPort = $_GET["port"];
 			$conn = getConnection();
 			$szSQL = "select inet_ntoa(ipAddress) as ip, TIMESTAMPDIFF(SECOND, lastSeen, NOW()) AS seconds_since, unitId, nickname from unitPort join setup where port = ? order by lastSeen desc limit 1";
-			//print "$szSQL<br>";
 			$stmt = $conn->prepare($szSQL);
-			$stmt->bind_param("d", $nPort);//, $szMe); 
+			$stmt->bind_param("d", $nPort);
 			$stmt->execute();
-			$result = $stmt->get_result(); // get the mysqli result
+			$result = $stmt->get_result();
 			$data = [];
 			if ($result && $row = $result->fetch_assoc())
 			{
@@ -336,11 +331,10 @@ if (isset($_GET["f"]))
 				$data["found"] = "-1";
 				$data["message"] = "Searched for $nPort";
 
-				//Check if recent data exist
 				$szSQL = "select TIMESTAMPDIFF(SECOND, lastSeen, NOW()) AS seconds_since from unitPort order by lastSeen desc limit 1;";
 				$stmt = $conn->prepare($szSQL);
 				$stmt->execute();
-				$result = $stmt->get_result(); // get the mysqli result
+				$result = $stmt->get_result();
 				if ($result && $row = $result->fetch_assoc())
 				{
 					if ($row["seconds_since"]+0 < 90)
