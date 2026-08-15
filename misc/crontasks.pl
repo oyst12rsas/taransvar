@@ -153,7 +153,7 @@ sub reportStatus {
 
 	my %json;
 
-	my $sthSetup = $dbh->prepare("select adminIP as nAdminIp, LPAD(HEX(adminIP), 8, '0') as adminIP, nettmask as aNettmask, LPAD(HEX(nettmask), 8, '0') as nettmask, secondsSinceBoot, TIMESTAMPDIFF(SECOND, dmesgUpdated, NOW()) AS dmesg, inet_ntoa(globalDb1ip) as Db1, inet_ntoa(globalDb2ip) as Db2, inet_ntoa(globalDb3ip) as Db3 from setup") or die "prepare statement failed: $dbh->errstr()";
+	my $sthSetup = $dbh->prepare("select adminIP as nAdminIp, LPAD(HEX(adminIP), 8, '0') as adminIP, nettmask as aNettmask, LPAD(HEX(nettmask), 8, '0') as nettmask, secondsSinceBoot, TIMESTAMPDIFF(SECOND, dmesgUpdated, NOW()) AS dmesg, inet_ntoa(globalDb1ip) as Db1, inet_ntoa(globalDb2ip) as Db2, inet_ntoa(globalDb3ip) as Db3, systemError, coalesce(systemErrorSeverity,0) as systemErrorSeverity, TIMESTAMPDIFF(SECOND, systemErrorSet, NOW()) AS systemErrorAge from setup") or die "prepare statement failed: $dbh->errstr()";
 	$sthSetup->execute() or die "execution failed: $sthSetup->errstr()";
 	my $cSetup = $sthSetup->fetchrow_hashref();
 	$sthSetup->finish();
@@ -162,6 +162,9 @@ sub reportStatus {
 	$json{"nett"} = (defined $cSetup->{"nNettmask"}?$cSetup->{"nNettmask"}:0);
 	$json{"boot"} = $cSetup->{"secondsSinceBoot"}+0;
 	$json{"msg"} = $cSetup->{"dmesg"};
+	$json{"err"} = (defined $cSetup->{"systemError"}?$cSetup->{"systemError"}:"");
+	$json{"errSev"} = (defined $cSetup->{"systemErrorSeverity"}?$cSetup->{"systemErrorSeverity"}+0:0);
+	$json{"errAge"} = (defined $cSetup->{"systemErrorAge"}?$cSetup->{"systemErrorAge"}+0:-1);
 
 	$json{"knl"} = (moduleRunning("tarakernel")?"1":0);
 	if (!$json{"knl"}) {
@@ -978,4 +981,3 @@ if ($nCount < 5 && $nSecondsToSleepBetweenIterations > 0) {
 } else {
 	print "\n$nice_timestamp: Finished! Managed $nCount iterations.\n\n\n";
 }
-
