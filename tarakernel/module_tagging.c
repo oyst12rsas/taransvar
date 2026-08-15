@@ -724,7 +724,9 @@ static struct nf_conn *tara_ct_lookup_v4(__be32 saddr, __be16 sport,
     tuple.src.u3.ip = saddr;
 
     tuple.dst.protonum = protonum;
-    tuple.dst.dir = IP_CT_DIR_ORIGINAL;
+    /* The request contains the NAT-visible outgoing tuple. Reversing its
+     * endpoints gives the sender router's conntrack reply tuple. */
+    tuple.dst.dir = IP_CT_DIR_REPLY;
     tuple.dst.u3.ip = daddr;
 
     switch (protonum) {
@@ -1048,11 +1050,12 @@ int isRequestForThreatElaboration(char *lpPayload,  struct iphdr *iph, struct ud
 
 //        if (!ct)
 
-            ct = tara_ct_lookup_v4(dst_ip, dst_port, src_ip, src_port, proto);
+        ct = tara_ct_lookup_v4(dst_ip, dst_port, src_ip, src_port, proto);
 
         if (ct) {
             const struct nf_conntrack_tuple *t;
             __be16 ct_sport = 0, ct_dport = 0;
+            __be32 nClientIp;
 
             t = &ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple;
 
@@ -1064,25 +1067,15 @@ int isRequestForThreatElaboration(char *lpPayload,  struct iphdr *iph, struct ud
                 ct_dport = t->dst.u.udp.port;
             }
 
-            pr_info("tarakernel: conntrack returned: %pI4:%u -> %pI4:%u proto=%u (** WARNING ** - Not yet sending this to receiver..)\n",
+            pr_info("tarakernel: conntrack returned: %pI4:%u -> %pI4:%u proto=%u\n",
                &t->src.u3.ip, ntohs(ct_sport),
                &t->dst.u3.ip, ntohs(ct_dport),
                t->dst.protonum);
 
+            /* t points into ct, so copy what we need before dropping our
+             * conntrack reference. */
+            nClientIp = t->src.u3.ip;
             nf_ct_put(ct);
-
-            //ØT 260323 - Sending reply to request for thread info (at least did here before)... 
-           // char cReply[200];
-//Orginal(sent from elsewhere)            snprintf(cReply, sizeof(cReply), "Maybe nonsense: %s-%08X:%u->%08X:%u", UDP_THREAT_INFO_REQUEST_PREFIX, ntohl(iph->saddr), ntohs(udph->source),ntohl(iph->daddr),ntohs(iph->dest));
-//            snprintf(cReply, sizeof(cReply), "Maybe nonsense: %s-%08X:%u->%08X:%u", UDP_THREAT_INFO_REQUEST_PREFIX, ntohl(iph->daddr), ntohs(udph->source),ntohl(iph->daddr),ntohs(iph->dest));
-//            pr_info("tarakernel SENDING: Used to send this: %s\n", cReply);
-
-            //send_udp_json(iph->saddr, htons(TARAKERNEL_LISTENING_TO_PORT), cReply);
-            //struct _InfectionSpecification cThreat;
-
-            __be32 nClientIp = t->src.u3.ip;    //This is local IP (e.g 192.168.50.100)
-            __be32 nMyIp = iph->daddr;          //This is my address (receiver of the request)
-            //__be16 nClientPort = ct_sport;
 
             struct _InfectionSpecification *pInfected = isInfected(nClientIp);  
 
@@ -1092,9 +1085,10 @@ int isRequestForThreatElaboration(char *lpPayload,  struct iphdr *iph, struct ud
                 return 1;
             }
             
-            //Sending elaborated threat info because it's requested by receiver  (search for THREAT_INFO_EXCHANGE for find where else it's relevant)
-			//pr_info("tarakernel SENDING: About to send threat info\n");
-            sendUdpThreatPackage(iph->saddr, nMyIp, ct_sport, pInfected);    //ØT 260323 - send this??
+            /* The receiver cached this threat under the NAT-visible tuple it
+             * sent in the request. Reply using that public source IP/port,
+             * while pInfected comes from the conntrack-resolved LAN unit. */
+            sendUdpThreatPackage(iph->saddr, src_ip, src_port, pInfected);
             return 1;
         }
 
