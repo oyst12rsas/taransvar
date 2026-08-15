@@ -1,5 +1,20 @@
 <?php
 
+// Backward compatibility for older TaraSec/Taralink nodes. Keep the historic
+// URLs working while using the current validated, race-safe handlers.
+// Dispatch before loading this file's libraries because the endpoints load
+// their own dependencies and terminate the request themselves.
+if (isset($_GET["f"])) {
+    if ($_GET["f"] === "report") {
+        require __DIR__ . "/report.php";
+        exit;
+    }
+    if ($_GET["f"] === "confession") {
+        require __DIR__ . "/confession.php";
+        exit;
+    }
+}
+
 ini_set('display_errors','1');
 ini_set('display_startup_errors','1');
 error_reporting(E_ALL);
