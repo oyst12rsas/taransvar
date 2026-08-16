@@ -1,4 +1,3 @@
-
 #version 42 (250226)
 alter table setup add hotspot bit(1) not null default b'1' after doOther;
 alter table setup add isGlobalDbServer bit(1) not null default b'0' after hotspot;
@@ -317,10 +316,13 @@ create table aiResponse (
 );
 update setup set dbVersion = 80;
 
+#version 81 (260816)
+alter table hackReport add ownerConfirmedTime timestamp null after remoteUnitId;
+update setup set dbVersion = 81;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 81;
+#update setup set dbVersion = 82;
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 
 #can import DB changes automatically based on the content of this file...
 #So just go to programming/misc and: sudo perl system_diag.pl
-
