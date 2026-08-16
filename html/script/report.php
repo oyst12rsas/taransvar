@@ -92,11 +92,13 @@ try {
     // First resolve the race where the owner confession reached the global DB
     // before the victim's report. A confession-created row is deliberately
     // incomplete (sentByIp is NULL) and is only eligible for five seconds.
+    // ownerConfirmedTime, rather than remoteUnitId, is the authoritative marker:
+    // the owner may have confirmed responsibility before resolving the exact unit.
     $sql = "SELECT reportId
             FROM hackReport
             WHERE ip = INET_ATON(?)
               AND port = ?
-              AND remoteUnitId IS NOT NULL
+              AND ownerConfirmedTime IS NOT NULL
               AND sentByIp IS NULL
               AND created >= NOW() - INTERVAL 5 SECOND
             ORDER BY created DESC
@@ -118,7 +120,8 @@ try {
         $stmt->execute();
         $stmt->close();
         $conn->close();
-        echo 'ok matched-confession reportId=' . $reportId;
+        error_log('Hack report completed confession-first reportId=' . $reportId . ' sender=' . $sender);
+        echo 'ok';
         exit;
     }
 
@@ -157,7 +160,8 @@ try {
     }
 
     $conn->close();
-    echo 'ok reportId=' . $reportId;
+    error_log('Hack report accepted reportId=' . $reportId . ' sender=' . $sender . ' source=' . $ip . ':' . $port);
+    echo 'ok';
 } catch (Throwable $e) {
     error_log('Hack report endpoint failed. Sender=' . $sender . ' IP=' . $ip . ':' . $port . ' Error=' . $e->getMessage());
     reportFail(500, 'database failure');

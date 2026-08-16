@@ -86,7 +86,8 @@ try {
         $stmt->execute();
         $stmt->close();
         $conn->close();
-        echo 'ok matched reportId=' . $reportId . ' ownerConfirmed=1 unitId=' . ($unitId ?? 'unknown');
+        error_log('Confession matched reportId=' . $reportId . ' sender=' . $sender . ' unitId=' . ($unitId ?? 'unknown'));
+        echo 'ok';
         exit;
     }
 
@@ -109,7 +110,8 @@ try {
     $reportId = (int)$conn->insert_id;
     $stmt->close();
     $conn->close();
-    echo 'ok created reportId=' . $reportId . ' ownerConfirmed=1 unitId=' . ($unitId ?? 'unknown');
+    error_log('Confession created reportId=' . $reportId . ' sender=' . $sender . ' unitId=' . ($unitId ?? 'unknown'));
+    echo 'ok';
 } catch (Throwable $e) {
     error_log('Confession endpoint failed. Sender=' . $sender . ' IP=' . $ip . ':' . $port . ' Error=' . $e->getMessage());
     confessionFail(500, 'database failure');
