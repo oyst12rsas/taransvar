@@ -44,7 +44,7 @@ try {
 
     /*
      * Resolve the unit behind this connection using the same unitPort data
-     * used by config_update.php?f=unitIp.  The port is especially useful when
+     * used by config_update.php?f=unitIp. The port is especially useful when
      * several units share the gateway/NAT address.
      */
     $unitId = 0;
@@ -73,11 +73,17 @@ try {
     }
 
     /*
-     * referenceId is the transport/API correlation value.  For the current
+     * referenceId is the transport/API correlation value. For the current
      * implementation it may be derived from the local infectionId, but the
      * database key itself is deliberately not exposed as infectionId.
+     *
+     * Prefer unitId when the infection row already carries it. Older/current
+     * infection rows may still only be correlated by IP, so fall back to the
+     * unit IP resolved from unitPort, and finally to the directly observed IP.
      */
     $referenceId = 0;
+    $infectionRow = null;
+
     if ($unitId > 0) {
         $sql = "SELECT infectionId
                 FROM internalInfections
@@ -86,7 +92,25 @@ try {
                 LIMIT 1";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param('i', $unitId);
-    } else {
+        $stmt->execute();
+        $infectionRow = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+    }
+
+    if (!$infectionRow && filter_var($unitIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+        $sql = "SELECT infectionId
+                FROM internalInfections
+                WHERE ip = inet_aton(?)
+                ORDER BY infectionId DESC
+                LIMIT 1";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('s', $unitIp);
+        $stmt->execute();
+        $infectionRow = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+    }
+
+    if (!$infectionRow) {
         $sql = "SELECT infectionId
                 FROM internalInfections
                 WHERE ip = inet_aton(?)
@@ -94,40 +118,61 @@ try {
                 LIMIT 1";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param('s', $sender);
+        $stmt->execute();
+        $infectionRow = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
     }
-    $stmt->execute();
-    $infectionRow = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
+
     if ($infectionRow) {
         $referenceId = (int)($infectionRow['infectionId'] ?? 0);
     }
 
     $cleared = 0;
     if ($action === 'clear') {
-        // Clear only the unit resolved from this connection.  Fall back to the
-        // directly observed sender IP when no recent unitPort mapping exists.
+        /*
+         * Prefer the resolved unitId, but do not assume every existing
+         * internalInfections row has already been populated with unitId.
+         * If nothing was cleared, fall back to the resolved unit IP and then
+         * to the directly observed sender IP.
+         */
         if ($unitId > 0) {
             $sql = "UPDATE internalInfections
                     SET active = b'0', lastSeen = NOW()
                     WHERE unitId = ? AND active = b'1'";
             $stmt = $conn->prepare($sql);
             $stmt->bind_param('i', $unitId);
-        } else {
+            $stmt->execute();
+            $cleared = $stmt->affected_rows;
+            $stmt->close();
+        }
+
+        if ($cleared === 0 && filter_var($unitIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            $sql = "UPDATE internalInfections
+                    SET active = b'0', lastSeen = NOW()
+                    WHERE ip = inet_aton(?) AND active = b'1'";
+            $stmt = $conn->prepare($sql);
+            $stmt->bind_param('s', $unitIp);
+            $stmt->execute();
+            $cleared = $stmt->affected_rows;
+            $stmt->close();
+        }
+
+        if ($cleared === 0 && $unitIp !== $sender) {
             $sql = "UPDATE internalInfections
                     SET active = b'0', lastSeen = NOW()
                     WHERE ip = inet_aton(?) AND active = b'1'";
             $stmt = $conn->prepare($sql);
             $stmt->bind_param('s', $sender);
+            $stmt->execute();
+            $cleared = $stmt->affected_rows;
+            $stmt->close();
         }
-        $stmt->execute();
-        $cleared = $stmt->affected_rows;
-        $stmt->close();
     }
 
     $conn->close();
 
     /*
-     * getTagData() remains the canonical TaraSec assessment routine.  Tagged
+     * getTagData() remains the canonical TaraSec assessment routine. Tagged
      * traffic can arrive a little after the HTTP request, so for a status
      * request give it a short chance to appear before returning the fallback
      * hackReport/internalInfections assessment.
