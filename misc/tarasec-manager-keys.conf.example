@@ -1,0 +1,10 @@
+# TaraSec manager/owner keys
+# Install as /etc/tarasec-manager-keys.conf and restrict permissions.
+#
+# Format:
+#   label:key
+# or simply:
+#   key
+#
+# Example only - generate your own secret and DO NOT commit the real key.
+# gateway-owner:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
