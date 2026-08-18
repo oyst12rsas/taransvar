@@ -20,40 +20,13 @@ function startManagerSession(): void
     if (session_status() === PHP_SESSION_ACTIVE) return;
     $secure = !empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off';
     session_set_cookie_params([
-        'lifetime' => 0, 'path' => '/', 'secure' => $secure,
-        'httponly' => true, 'samesite' => 'Strict'
+        'lifetime' => 0,
+        'path' => '/',
+        'secure' => $secure,
+        'httponly' => true,
+        'samesite' => 'Strict'
     ]);
     session_start();
-}
-
-/* Temporary bootstrap while B8 is under test. This will become DB version 82
- * in install.sql before B8 is considered deployment-ready. */
-function ensureManagerTable(mysqli $conn): void
-{
-    $conn->query("CREATE TABLE IF NOT EXISTS managerRequest (
-        managerRequestId INT UNSIGNED NOT NULL AUTO_INCREMENT,
-        created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        email VARCHAR(255) NOT NULL,
-        requestTokenHash CHAR(64) NOT NULL,
-        credentialPlain VARCHAR(128) NULL,
-        credentialHash CHAR(64) NULL,
-        credentialCreatedTime TIMESTAMP NULL,
-        credentialClaimedTime TIMESTAMP NULL,
-        emailVerifyTokenPlain VARCHAR(128) NULL,
-        emailVerifyTokenHash CHAR(64) NULL,
-        emailSentTime TIMESTAMP NULL,
-        emailVerifiedTime TIMESTAMP NULL,
-        gatewayApprovedTime TIMESTAMP NULL,
-        approvedByUserId INT UNSIGNED NULL,
-        rejectedTime TIMESTAMP NULL,
-        active BIT(1) NOT NULL DEFAULT b'0',
-        lastUsedTime TIMESTAMP NULL,
-        expires TIMESTAMP NULL,
-        PRIMARY KEY(managerRequestId),
-        KEY idx_manager_email(email),
-        KEY idx_manager_credential(credentialHash),
-        KEY idx_manager_email_token(emailVerifyTokenHash)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 }
 
 function requestState(array $row): array
@@ -90,21 +63,26 @@ if ($action === 'session') {
 }
 
 if ($action === 'logout') {
-    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') managerReply(405, ['ok'=>false,'error'=>'logout_requires_post']);
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+        managerReply(405, ['ok' => false, 'error' => 'logout_requires_post']);
+    }
     startManagerSession();
     $_SESSION = [];
     session_destroy();
-    managerReply(200, ['ok'=>true,'authenticated'=>false]);
+    managerReply(200, ['ok' => true, 'authenticated' => false]);
 }
 
 try {
     $conn = getConnection();
-    ensureManagerTable($conn);
 
     if ($action === 'request') {
-        if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') managerReply(405, ['ok'=>false,'error'=>'request_requires_post']);
+        if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+            managerReply(405, ['ok' => false, 'error' => 'request_requires_post']);
+        }
         $email = strtolower(trim((string)($_POST['email'] ?? '')));
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) managerReply(400, ['ok'=>false,'error'=>'invalid_email']);
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            managerReply(400, ['ok' => false, 'error' => 'invalid_email']);
+        }
 
         $requestToken = bin2hex(random_bytes(32));
         $requestTokenHash = hash('sha256', $requestToken);
@@ -115,34 +93,45 @@ try {
         $stmt->close();
         $conn->close();
         managerReply(201, [
-            'ok'=>true, 'requestId'=>$requestId, 'requestToken'=>$requestToken,
-            'email'=>$email, 'credentialReady'=>false, 'emailVerified'=>false,
-            'gatewayApproved'=>false, 'active'=>false,
+            'ok' => true,
+            'requestId' => $requestId,
+            'requestToken' => $requestToken,
+            'email' => $email,
+            'credentialReady' => false,
+            'emailVerified' => false,
+            'gatewayApproved' => false,
+            'active' => false,
         ]);
     }
 
     if ($action === 'status') {
         $requestId = (int)($_REQUEST['requestId'] ?? 0);
         $requestToken = trim((string)($_REQUEST['requestToken'] ?? ''));
-        if ($requestId <= 0 || $requestToken === '') managerReply(400, ['ok'=>false,'error'=>'missing_request']);
+        if ($requestId <= 0 || $requestToken === '') {
+            managerReply(400, ['ok' => false, 'error' => 'missing_request']);
+        }
         $tokenHash = hash('sha256', $requestToken);
         $stmt = $conn->prepare("SELECT * FROM managerRequest WHERE managerRequestId=? AND requestTokenHash=? AND (expires IS NULL OR expires>NOW()) LIMIT 1");
         $stmt->bind_param('is', $requestId, $tokenHash);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if (!$row) managerReply(404, ['ok'=>false,'error'=>'request_not_found']);
+        if (!$row) {
+            managerReply(404, ['ok' => false, 'error' => 'request_not_found']);
+        }
         $state = requestState($row);
         if (!empty($row['credentialPlain']) && empty($row['credentialClaimedTime'])) {
             $state['credential'] = (string)$row['credentialPlain'];
         }
         $conn->close();
-        managerReply(200, array_merge(['ok'=>true], $state));
+        managerReply(200, array_merge(['ok' => true], $state));
     }
 
     if ($action === 'verify_email') {
         $token = trim((string)($_REQUEST['token'] ?? ''));
-        if ($token === '') managerReply(400, ['ok'=>false,'error'=>'missing_token']);
+        if ($token === '') {
+            managerReply(400, ['ok' => false, 'error' => 'missing_token']);
+        }
         $hash = hash('sha256', $token);
         $stmt = $conn->prepare("UPDATE managerRequest SET emailVerifiedTime=COALESCE(emailVerifiedTime,NOW()), active=IF(gatewayApprovedTime IS NOT NULL AND credentialHash IS NOT NULL,b'1',active) WHERE emailVerifyTokenHash=? AND rejectedTime IS NULL AND (expires IS NULL OR expires>NOW())");
         $stmt->bind_param('s', $hash);
@@ -150,21 +139,29 @@ try {
         $changed = $stmt->affected_rows;
         $stmt->close();
         $conn->close();
-        if ($changed < 1) managerReply(404, ['ok'=>false,'error'=>'verification_not_found']);
-        managerReply(200, ['ok'=>true,'emailVerified'=>true]);
+        if ($changed < 1) {
+            managerReply(404, ['ok' => false, 'error' => 'verification_not_found']);
+        }
+        managerReply(200, ['ok' => true, 'emailVerified' => true]);
     }
 
     if ($action === 'login') {
-        if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') managerReply(405, ['ok'=>false,'error'=>'login_requires_post']);
+        if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+            managerReply(405, ['ok' => false, 'error' => 'login_requires_post']);
+        }
         $key = trim((string)($_POST['key'] ?? ''));
-        if ($key === '') managerReply(400, ['ok'=>false,'error'=>'missing_key']);
+        if ($key === '') {
+            managerReply(400, ['ok' => false, 'error' => 'missing_key']);
+        }
         $hash = hash('sha256', $key);
         $stmt = $conn->prepare("SELECT managerRequestId,email FROM managerRequest WHERE credentialHash=? AND active=b'1' AND rejectedTime IS NULL AND (expires IS NULL OR expires>NOW()) LIMIT 1");
         $stmt->bind_param('s', $hash);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if (!$row) managerReply(401, ['ok'=>false,'error'=>'manager_not_approved']);
+        if (!$row) {
+            managerReply(401, ['ok' => false, 'error' => 'manager_not_approved']);
+        }
         $requestId = (int)$row['managerRequestId'];
         $stmt = $conn->prepare("UPDATE managerRequest SET lastUsedTime=NOW(), credentialClaimedTime=COALESCE(credentialClaimedTime,NOW()), credentialPlain=NULL WHERE managerRequestId=?");
         $stmt->bind_param('i', $requestId);
@@ -178,15 +175,20 @@ try {
         $_SESSION['tarasec_manager_email'] = (string)$row['email'];
         $_SESSION['tarasec_manager_request_id'] = $requestId;
         $_SESSION['tarasec_manager_authenticated_at'] = gmdate('c');
-        managerReply(200, ['ok'=>true,'authenticated'=>true,'manager'=>[
-            'email'=>(string)$row['email'], 'requestId'=>$requestId,
-            'authenticated_at'=>$_SESSION['tarasec_manager_authenticated_at']
-        ]]);
+        managerReply(200, [
+            'ok' => true,
+            'authenticated' => true,
+            'manager' => [
+                'email' => (string)$row['email'],
+                'requestId' => $requestId,
+                'authenticated_at' => $_SESSION['tarasec_manager_authenticated_at']
+            ]
+        ]);
     }
 
     $conn->close();
-    managerReply(400, ['ok'=>false,'error'=>'invalid_action']);
+    managerReply(400, ['ok' => false, 'error' => 'invalid_action']);
 } catch (Throwable $e) {
-    error_log('managerAuth.php: '.$e->getMessage());
-    managerReply(503, ['ok'=>false,'error'=>'manager_auth_unavailable']);
+    error_log('managerAuth.php: ' . $e->getMessage());
+    managerReply(503, ['ok' => false, 'error' => 'manager_auth_unavailable']);
 }
