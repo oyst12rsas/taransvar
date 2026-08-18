@@ -7,28 +7,6 @@ function managerApprovals()
     }
 
     $conn = getConnection();
-    $conn->query("CREATE TABLE IF NOT EXISTS managerRequest (
-        managerRequestId INT UNSIGNED NOT NULL AUTO_INCREMENT,
-        created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        email VARCHAR(255) NOT NULL,
-        requestTokenHash CHAR(64) NOT NULL,
-        credentialPlain VARCHAR(128) NULL,
-        credentialHash CHAR(64) NULL,
-        credentialCreatedTime TIMESTAMP NULL,
-        credentialClaimedTime TIMESTAMP NULL,
-        emailVerifyTokenPlain VARCHAR(128) NULL,
-        emailVerifyTokenHash CHAR(64) NULL,
-        emailSentTime TIMESTAMP NULL,
-        emailVerifiedTime TIMESTAMP NULL,
-        gatewayApprovedTime TIMESTAMP NULL,
-        approvedByUserId INT UNSIGNED NULL,
-        rejectedTime TIMESTAMP NULL,
-        active BIT(1) NOT NULL DEFAULT b'0',
-        lastUsedTime TIMESTAMP NULL,
-        expires TIMESTAMP NULL,
-        PRIMARY KEY(managerRequestId),
-        KEY idx_manager_email(email)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
     if (empty($_SESSION['managerApprovalCsrf'])) {
         $_SESSION['managerApprovalCsrf'] = bin2hex(random_bytes(24));
