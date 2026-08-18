@@ -115,11 +115,11 @@ create table syslogThreat(
     is_attack smallint unsigned null,
     action char(32),
 	src_ip int unsigned not null, 
-    src_port smallint unsigned not null,
+	src_port smallint unsigned not null,
 	dst_ip int unsigned not null, 
-    dst_port int unsigned not null,
-    protocol varchar(16),
-    device varchar(128),
+	dst_port int unsigned not null,
+	protocol varchar(16),
+	device varchar(128),
 	botnetId int unsigned null,
 	severity int unsigned null, 
 	handled bit(1),
@@ -320,8 +320,35 @@ update setup set dbVersion = 80;
 alter table hackReport add ownerConfirmedTime timestamp null after remoteUnitId;
 update setup set dbVersion = 81;
 
+#version 82 (260818)
+create table managerRequest (
+	managerRequestId int unsigned not null auto_increment,
+	created timestamp not null default current_timestamp,
+	email varchar(255) not null,
+	requestTokenHash char(64) not null,
+	credentialPlain varchar(128) null,
+	credentialHash char(64) null,
+	credentialCreatedTime timestamp null,
+	credentialClaimedTime timestamp null,
+	emailVerifyTokenPlain varchar(128) null,
+	emailVerifyTokenHash char(64) null,
+	emailSentTime timestamp null,
+	emailVerifiedTime timestamp null,
+	gatewayApprovedTime timestamp null,
+	approvedByUserId int unsigned null,
+	rejectedTime timestamp null,
+	active bit(1) not null default b'0',
+	lastUsedTime timestamp null,
+	expires timestamp null,
+	primary key(managerRequestId),
+	key idx_manager_email(email),
+	key idx_manager_credential(credentialHash),
+	key idx_manager_email_token(emailVerifyTokenHash)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+update setup set dbVersion = 82;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 82;
+#update setup set dbVersion = 83;
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 
 #can import DB changes automatically based on the content of this file...
