@@ -929,6 +929,20 @@ if (defined $pSetup->{"internalNic"})		#NOTE! This is not tested!!!
 {
 	print "No internal nic. Dropping dhcp_dump.\n";
 }
+
+#Process pending manager/app registration requests.
+my $rc = system("/usr/bin/perl", "/root/taransvar/perl/manager_requests.pl");
+
+if ($rc == -1) {
+    saveWarning("manager_requests.pl failed to start: $!");
+}
+elsif ($rc & 127) {
+    saveWarning("manager_requests.pl terminated by signal " . ($rc & 127));
+}
+elsif (($rc >> 8) != 0) {
+    saveWarning("manager_requests.pl exited with code " . ($rc >> 8));
+}
+
 reportStatus($dbh);
 
 #handleRequestsForDmsg();
