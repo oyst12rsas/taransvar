@@ -26,6 +26,36 @@ function startManagerSession(): void
     session_start();
 }
 
+/* Temporary bootstrap while B8 is under test. This will become DB version 82
+ * in install.sql before B8 is considered deployment-ready. */
+function ensureManagerTable(mysqli $conn): void
+{
+    $conn->query("CREATE TABLE IF NOT EXISTS managerRequest (
+        managerRequestId INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        email VARCHAR(255) NOT NULL,
+        requestTokenHash CHAR(64) NOT NULL,
+        credentialPlain VARCHAR(128) NULL,
+        credentialHash CHAR(64) NULL,
+        credentialCreatedTime TIMESTAMP NULL,
+        credentialClaimedTime TIMESTAMP NULL,
+        emailVerifyTokenPlain VARCHAR(128) NULL,
+        emailVerifyTokenHash CHAR(64) NULL,
+        emailSentTime TIMESTAMP NULL,
+        emailVerifiedTime TIMESTAMP NULL,
+        gatewayApprovedTime TIMESTAMP NULL,
+        approvedByUserId INT UNSIGNED NULL,
+        rejectedTime TIMESTAMP NULL,
+        active BIT(1) NOT NULL DEFAULT b'0',
+        lastUsedTime TIMESTAMP NULL,
+        expires TIMESTAMP NULL,
+        PRIMARY KEY(managerRequestId),
+        KEY idx_manager_email(email),
+        KEY idx_manager_credential(credentialHash),
+        KEY idx_manager_email_token(emailVerifyTokenHash)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+}
+
 function requestState(array $row): array
 {
     $emailVerified = !empty($row['emailVerifiedTime']);
@@ -33,7 +63,6 @@ function requestState(array $row): array
     $credentialReady = !empty($row['credentialHash']);
     $rejected = !empty($row['rejectedTime']);
     $active = !$rejected && $emailVerified && $gatewayApproved && $credentialReady;
-
     return [
         'requestId' => (int)$row['managerRequestId'],
         'email' => (string)$row['email'],
@@ -70,6 +99,7 @@ if ($action === 'logout') {
 
 try {
     $conn = getConnection();
+    ensureManagerTable($conn);
 
     if ($action === 'request') {
         if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') managerReply(405, ['ok'=>false,'error'=>'request_requires_post']);
@@ -84,16 +114,10 @@ try {
         $requestId = $stmt->insert_id;
         $stmt->close();
         $conn->close();
-
         managerReply(201, [
-            'ok'=>true,
-            'requestId'=>$requestId,
-            'requestToken'=>$requestToken,
-            'email'=>$email,
-            'credentialReady'=>false,
-            'emailVerified'=>false,
-            'gatewayApproved'=>false,
-            'active'=>false,
+            'ok'=>true, 'requestId'=>$requestId, 'requestToken'=>$requestToken,
+            'email'=>$email, 'credentialReady'=>false, 'emailVerified'=>false,
+            'gatewayApproved'=>false, 'active'=>false,
         ]);
     }
 
@@ -108,10 +132,7 @@ try {
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$row) managerReply(404, ['ok'=>false,'error'=>'request_not_found']);
-
         $state = requestState($row);
-        // The generated credential is available only to possession of the
-        // high-entropy request token. It remains retrievable until first login.
         if (!empty($row['credentialPlain']) && empty($row['credentialClaimedTime'])) {
             $state['credential'] = (string)$row['credentialPlain'];
         }
@@ -144,7 +165,6 @@ try {
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$row) managerReply(401, ['ok'=>false,'error'=>'manager_not_approved']);
-
         $requestId = (int)$row['managerRequestId'];
         $stmt = $conn->prepare("UPDATE managerRequest SET lastUsedTime=NOW(), credentialClaimedTime=COALESCE(credentialClaimedTime,NOW()), credentialPlain=NULL WHERE managerRequestId=?");
         $stmt->bind_param('i', $requestId);
