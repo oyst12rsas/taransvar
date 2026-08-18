@@ -9,10 +9,10 @@ include '../taraLib.php';
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
-function appInfectionFail(int $status, string $message): never
+function appInfectionFail(int $status, string $message, array $extra = []): never
 {
     http_response_code($status);
-    echo json_encode(['ok' => false, 'error' => $message], JSON_UNESCAPED_SLASHES);
+    echo json_encode(array_merge(['ok' => false, 'error' => $message], $extra), JSON_UNESCAPED_SLASHES);
     exit;
 }
 
@@ -22,6 +22,19 @@ function normaliseIpv4(string $ip): string
         $ip = substr($ip, 7);
     }
     return $ip;
+}
+
+function appCpuCount(): int
+{
+    $count = 0;
+    if (is_readable('/proc/cpuinfo')) {
+        $cpuInfo = @file_get_contents('/proc/cpuinfo');
+        if ($cpuInfo !== false) {
+            preg_match_all('/^processor\s*:/m', $cpuInfo, $matches);
+            $count = count($matches[0]);
+        }
+    }
+    return max(1, $count);
 }
 
 $sender = normaliseIpv4(getSenderIp());
@@ -37,6 +50,27 @@ if (!in_array($action, ['status', 'clear'], true)) {
 }
 if ($action === 'clear' && ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     appInfectionFail(405, 'Clear requires POST');
+}
+
+// Automatic polling is intentionally lightweight and may be rejected early
+// when the gateway is already saturated. Manual status/clear operations are
+// still allowed so an owner can recover/manage the unit under load.
+$polling = $action === 'status' && ((string)($_REQUEST['poll'] ?? '0') === '1');
+if ($polling) {
+    $loads = sys_getloadavg();
+    $load1 = isset($loads[0]) ? (float)$loads[0] : 0.0;
+    $cpus = appCpuCount();
+    $normalisedLoad = $load1 / $cpus;
+
+    if ($normalisedLoad > 1.0) {
+        appInfectionFail(503, 'gateway_busy', [
+            'message' => 'Gateway is temporarily busy',
+            'load1' => round($load1, 2),
+            'cpus' => $cpus,
+            'normalised_load' => round($normalisedLoad, 2),
+            'retry_after_ms' => 2000
+        ]);
+    }
 }
 
 try {
@@ -172,13 +206,12 @@ try {
     $conn->close();
 
     /*
-     * getTagData() remains the canonical TaraSec assessment routine. Tagged
-     * traffic can arrive a little after the HTTP request, so for a status
-     * request give it a short chance to appear before returning the fallback
-     * hackReport/internalInfections assessment.
+     * getTagData() remains the canonical TaraSec assessment routine. Manual
+     * status checks may briefly wait for the traffic/tag record to arrive.
+     * Automatic polling never waits: it returns what TaraSec knows right now.
      */
     $tagData = [];
-    $attempts = ($action === 'status') ? 6 : 1;
+    $attempts = ($action === 'status' && !$polling) ? 6 : 1;
     for ($attempt = 0; $attempt < $attempts; $attempt++) {
         $tagData = getTagData();
         if ((int)($tagData['trafficSecondsSince'] ?? -1) >= 0) {
@@ -222,6 +255,7 @@ try {
         'infectionSeverity' => $infectionSeverity,
         'infectionDisabled' => (int)($tagData['infectionDisabled'] ?? 0),
         'cleared' => $cleared,
+        'polling' => $polling,
         'server_time' => gmdate('c')
     ], JSON_UNESCAPED_SLASHES);
 } catch (Throwable $e) {
