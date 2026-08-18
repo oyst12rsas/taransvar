@@ -1,6 +1,6 @@
 <?php
 session_start();
-$nRequiredDbVersion=81;	//NOTE! Make sure this line is always number 3 in the file because that's claimed below.
+$nRequiredDbVersion=82;	//NOTE! Make sure this line is always number 3 in the file because that's claimed below.
 
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
@@ -224,7 +224,7 @@ body {
 
 h1 {
 	color: white;
-  	text-align: center;
+ 	text-align: center;
 }
 
 table {
@@ -417,11 +417,11 @@ function listPartners()
 		$nCount=0;
 		while($row = $result->fetch_assoc()) 
 		{
-	    		print "<tr><td>".$row["partnerId"]. "</td><td><a href=\"index.php?f=partner&id=".$row["partnerId"]."\">".$row["name"]."</a></td>";
-	    		//print '<td><a href="index.php?f=delpartner&ip='.$row["partnerId"].'">[Delete]</a></td>';
-	    		print "</tr>";
+	   		print "<tr><td>".$row["partnerId"]. "</td><td><a href=\"index.php?f=partner&id=".$row["partnerId"]."\">".$row["name"]."</a></td>";
+	   		//print '<td><a href="index.php?f=delpartner&ip='.$row["partnerId"].'">[Delete]</a></td>';
+	   		print "</tr>";
 			$nCount++;
-	  	}
+	 	}
 		if (!$nCount)
 			print "<tr><td colspan=\"2\">No registrations found!<br></td></tr>";
 		print "</table>";
@@ -470,11 +470,11 @@ function editDescription()
 		$stmt->bind_param("si", $_GET["desc"], $_GET["id"]); 
 	    $stmt->execute();
 		$conn->close();	//260717
-               	
-       	//print "$szSQL<br>";
+              	
+      	//print "$szSQL<br>";
         //$result = $conn->query($szSQL);
-    	print "<a href=\"index.php?f=units\">Go back to units</a>";
-    	return;
+   	print "<a href=\"index.php?f=units\">Go back to units</a>";
+   	return;
 	}
     ?>
     <h2>Register new description</h2>
@@ -500,13 +500,13 @@ function addAssistanceRequest()
 			$conn = getConnection();
 			$stmt = $conn->prepare($szSQL);
 			$stmt->bind_param("sii", $_GET["ip"],$_GET["port"], $nThreshold); //$_GET["ip"], 
-	        $stmt->execute();
-        	print "I think it's registered...".$_GET["ip"].":".$_GET["port"]."<br><br><a href=\"index.php?f=attack\">See list</a>";
+	       $stmt->execute();
+       	print "I think it's registered...".$_GET["ip"].":".$_GET["port"]."<br><br><a href=\"index.php?f=attack\">See list</a>";
 			$conn->close();//260717
-        	return;
+       	return;
         }
         else
-        	print '<font color="red">Error in IP adderss: '.$_GET["ip"].'</font>';
+       	print '<font color="red">Error in IP adderss: '.$_GET["ip"].'</font>';
 	}
 	?>
         <h2>New assistance request</h2>
@@ -554,13 +554,13 @@ function printDemoForm($row, $szAction)
 	switch($row["iAm"])	//Field type: enum('targetHost','botHost','bot')
 	{
  		case "botHost":
- 			$szSelectedBotHost = 'selected="selected"';
- 			break;
+			$szSelectedBotHost = 'selected="selected"';
+			break;
  		case "botHost":
- 			$szSelectedTargetHost = 'selected="selected"';
- 			break;
- 		default:
- 			$szSelectedBot = 'selected="selected"';
+			$szSelectedTargetHost = 'selected="selected"';
+			break;
+		default:
+			$szSelectedBot = 'selected="selected"';
 	}
 
 	print "<h2>Information about demo:</h2><table>
@@ -570,7 +570,7 @@ function printDemoForm($row, $szAction)
 	        <tr><td>Sidekick IP (\"target-host\")</td><td><input name=\"targethostip\" value=\"".($row?$row["ipBotHost"]:"")."\"></td></tr>
 	        <tr><td>Bot IP (\"interntal\")</td><td><input name=\"botip\" value=\"".($row?$row["ipBot"]:"")."\"></td></tr>
 	        <tr><td>I am</td><td><select name=\"iam\"><option value=\"targetHost\" ".$szSelectedTargetHost.">Target host</option>
-	        		<option value=\"botHost\"".$szSelectedBotHost.">Bot host</option><option value=\"bot\"".$szSelectedBot.">Bot</option></select></td></tr>
+	       		<option value=\"botHost\"".$szSelectedBotHost.">Bot host</option><option value=\"bot\"".$szSelectedBot.">Bot</option></select></td></tr>
         <tr><td>&nbsp;</td><td><input type=\"submit\" name=\"submit\"><input type=\"hidden\" name=\"f\" value=\"".$szAction."\"></td></tr>
         </table>
         </form>";
@@ -646,10 +646,10 @@ if (isset($_GET['f']))
 			//case 'traffic':
 			//	traffic();
 			//	break;
-   		case 'partners':
-   		case 'delpartner':
-       		listPartners();
-       		break;
+  		case 'partners':
+  		case 'delpartner':
+      		listPartners();
+      		break;
 		case 'delserver':
 		case 'servers':
 			include_once "func/listServers.php";
@@ -663,8 +663,8 @@ if (isset($_GET['f']))
 			listDomains();
 			break;
 		case 'edtDesc':
-	    	editDescription();
-	    	break;
+	   	editDescription();
+	   	break;
 		case 'addassreq':	//Probably in one of the files as well
 			addAssistanceRequest();
 			break;
