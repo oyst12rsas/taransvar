@@ -1,0 +1,12 @@
+[Unit]
+Description=Run TaraSec gateway-local AI assessment hourly
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=1h
+Persistent=true
+RandomizedDelaySec=5min
+Unit=tarasec-gateway-ai.service
+
+[Install]
+WantedBy=timers.target

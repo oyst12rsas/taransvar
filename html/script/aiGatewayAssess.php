@@ -22,10 +22,18 @@ function peerIp(): string
     return $ip;
 }
 
+function taraSecConfig(): array
+{
+    $file = '/etc/tarasec.conf';
+    if (!is_readable($file)) return [];
+    $cfg = parse_ini_file($file, false, INI_SCANNER_RAW);
+    return is_array($cfg) ? $cfg : [];
+}
+
 function getSponsoredPolicy(mysqli $conn, string $ip): ?array
 {
     $stmt = $conn->prepare(
-        "SELECT p.dailyCallLimit, p.taraSecFundedTest+0 funded, p.fundedUntil " .
+        "SELECT p.dailyCallLimit,p.taraSecFundedTest+0 funded,p.fundedUntil " .
         "FROM partnerRouter r JOIN aiGatewayPolicy p ON p.gatewayIp=r.ip " .
         "WHERE r.ip=INET_ATON(?) LIMIT 1"
     );
@@ -50,7 +58,9 @@ function callsToday(mysqli $conn, string $ip): int
 }
 
 try {
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST') replyJson(405, ['ok'=>false,'error'=>'post_required']);
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+        replyJson(405, ['ok'=>false,'error'=>'post_required']);
+    }
 
     $ip = peerIp();
     if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
@@ -58,7 +68,9 @@ try {
     }
 
     $body = file_get_contents('php://input');
-    if ($body === false || strlen($body) > 250000) replyJson(413, ['ok'=>false,'error'=>'request_too_large']);
+    if ($body === false || strlen($body) > 250000) {
+        replyJson(413, ['ok'=>false,'error'=>'request_too_large']);
+    }
     $input = json_decode($body, true);
     if (!is_array($input)) replyJson(400, ['ok'=>false,'error'=>'invalid_json']);
     $question = trim((string)($input['question'] ?? ''));
@@ -79,14 +91,23 @@ try {
         replyJson(429, ['ok'=>false,'error'=>'daily_quota_exhausted','used'=>$used,'limit'=>$limit]);
     }
 
-    $flowiseUrl = getenv('TARASEC_FLOWISE_URL') ?: 'http://100.68.163.145:3000/api/v1/prediction/1ae066cd-055b-4f53-b53f-778453daec78';
-    $payload = json_encode(['question'=>$question], JSON_UNESCAPED_SLASHES);
+    $cfg = taraSecConfig();
+    $flowiseUrl = trim((string)($cfg['TARASEC_FLOWISE_URL'] ?? $cfg['FLOWISE_URL'] ?? ''));
+    $flowiseKey = trim((string)($cfg['TARASEC_FLOWISE_API_KEY'] ?? $cfg['FLOWISE_API_KEY'] ?? ''));
+    if ($flowiseUrl === '' || $flowiseKey === '') {
+        $conn->close();
+        replyJson(503, ['ok'=>false,'error'=>'ai_provider_not_configured']);
+    }
 
+    $payload = json_encode(['question'=>$question], JSON_UNESCAPED_SLASHES);
     $ch = curl_init($flowiseUrl);
     curl_setopt_array($ch, [
         CURLOPT_POST => true,
         CURLOPT_POSTFIELDS => $payload,
-        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_HTTPHEADER => [
+            'Content-Type: application/json',
+            'Authorization: Bearer ' . $flowiseKey,
+        ],
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_CONNECTTIMEOUT => 5,
         CURLOPT_TIMEOUT => 90,
@@ -116,6 +137,12 @@ try {
         replyJson(502, ['ok'=>false,'error'=>'invalid_ai_assessment_json']);
     }
 
+    foreach (['unit_assessments','node_assessments','ip_observations','botnet_clusters'] as $requiredArray) {
+        if (!isset($assessment[$requiredArray]) || !is_array($assessment[$requiredArray])) {
+            $assessment[$requiredArray] = [];
+        }
+    }
+
     $assessmentJson = json_encode($assessment, JSON_UNESCAPED_SLASHES);
     $stmt = $conn->prepare(
         "INSERT INTO aiGatewayAssessment (gatewayIp,fundingMode,assessmentJson,reportedBack) " .
@@ -123,13 +150,22 @@ try {
     );
     $stmt->bind_param('ss', $ip, $assessmentJson);
     $stmt->execute();
-    $assessmentId = $stmt->insert_id;
+    $assessmentId = (int)$stmt->insert_id;
+    $stmt->close();
+
+    $gatewayAssessmentId = 'central:' . $assessmentId;
+    $stmt = $conn->prepare(
+        "UPDATE aiGatewayAssessment SET gatewayAssessmentId=? WHERE aiGatewayAssessmentId=?"
+    );
+    $stmt->bind_param('si', $gatewayAssessmentId, $assessmentId);
+    $stmt->execute();
     $stmt->close();
     $conn->close();
 
     replyJson(200, [
         'ok'=>true,
         'assessmentId'=>$assessmentId,
+        'gatewayAssessmentId'=>$gatewayAssessmentId,
         'fundingMode'=>'tarasec_test',
         'quota'=>['used'=>$used+1,'limit'=>$limit],
         'assessment'=>$assessment

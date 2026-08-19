@@ -1,0 +1,17 @@
+[Unit]
+Description=TaraSec gateway-local AI assessment
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/taransvar/perl
+ExecStart=/bin/sh -c '/usr/bin/flock -n /run/tarasec-gateway-ai.lock /usr/bin/perl /root/taransvar/perl/gateway_ai_assess.pl || test $? -eq 1'
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+TimeoutStartSec=240
+
+[Install]
+WantedBy=multi-user.target

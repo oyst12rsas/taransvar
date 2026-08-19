@@ -13,8 +13,30 @@ use Time::HiRes qw(time);
 my $nDaysChecked       = 30;
 my $nMinimumIpsVisited = 5;
 my $nMaxRowsPerSection = 500;
-our $chatflowId = "1ae066cd-055b-4f53-b53f-778453daec78";
-our $szAiUrl = "http://100.68.163.145:3000/api/v1/prediction/$chatflowId";
+
+sub read_tarasec_config {
+    my %cfg;
+    my $file = '/etc/tarasec.conf';
+    return \%cfg unless -r $file;
+    open(my $fh, '<', $file) or return \%cfg;
+    while (my $line = <$fh>) {
+        chomp $line;
+        $line =~ s/^\s+|\s+$//g;
+        next if $line eq '' || $line =~ /^#/;
+        my ($key,$value) = split(/\s*=\s*/, $line, 2);
+        next unless defined $key && defined $value;
+        $value =~ s/^(["'])(.*)\1$/$2/;
+        $cfg{$key} = $value;
+    }
+    close($fh);
+    return \%cfg;
+}
+
+my $aiCfg = read_tarasec_config();
+our $szAiUrl = $aiCfg->{TARASEC_FLOWISE_URL} // $aiCfg->{FLOWISE_URL} // '';
+our $szAiKey = $aiCfg->{TARASEC_FLOWISE_API_KEY} // $aiCfg->{FLOWISE_API_KEY} // '';
+die "TARASEC_FLOWISE_URL is not configured in /etc/tarasec.conf\n" unless length $szAiUrl;
+die "TARASEC_FLOWISE_API_KEY is not configured in /etc/tarasec.conf\n" unless length $szAiKey;
 
 sub sendRequest {
     my ($logs) = @_;
@@ -22,8 +44,13 @@ sub sendRequest {
     open(my $out, '>', '/tmp/flowise-request.json');
     print $out $json;
     close($out);
-    my $ua = LWP::UserAgent->new(timeout => 60, agent => 'TaraSec-AI/1.2');
-    my $response = $ua->post($szAiUrl, 'Content-Type' => 'application/json', Content => $json);
+    my $ua = LWP::UserAgent->new(timeout => 60, agent => 'TaraSec-AI/1.3');
+    my $response = $ua->post(
+        $szAiUrl,
+        'Content-Type' => 'application/json',
+        'Authorization' => "Bearer $szAiKey",
+        Content => $json
+    );
     die "Flowise request failed: ".$response->status_line."\n" unless $response->is_success;
     return $response;
 }
