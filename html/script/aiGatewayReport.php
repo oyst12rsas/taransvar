@@ -23,7 +23,9 @@ function reportPeerIp(): string
 }
 
 try {
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST') reportReply(405, ['ok'=>false,'error'=>'post_required']);
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+        reportReply(405, ['ok'=>false,'error'=>'post_required']);
+    }
 
     $ip = reportPeerIp();
     if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
@@ -31,7 +33,9 @@ try {
     }
 
     $body = file_get_contents('php://input');
-    if ($body === false || strlen($body) > 500000) reportReply(413, ['ok'=>false,'error'=>'request_too_large']);
+    if ($body === false || strlen($body) > 500000) {
+        reportReply(413, ['ok'=>false,'error'=>'request_too_large']);
+    }
     $data = json_decode($body, true);
     if (!is_array($data)) reportReply(400, ['ok'=>false,'error'=>'invalid_json']);
 
@@ -46,6 +50,9 @@ try {
     $gatewayAssessmentId = trim((string)($data['gatewayAssessmentId'] ?? ''));
     if ($gatewayAssessmentId !== '' && strlen($gatewayAssessmentId) > 128) {
         reportReply(400, ['ok'=>false,'error'=>'assessment_id_too_long']);
+    }
+    if ($fundingMode === 'tarasec_test' && !preg_match('/^central:[1-9][0-9]*$/', $gatewayAssessmentId)) {
+        reportReply(400, ['ok'=>false,'error'=>'central_assessment_id_required']);
     }
 
     $evidenceSummary = $data['evidenceSummary'] ?? null;
@@ -63,25 +70,46 @@ try {
         reportReply(403, ['ok'=>false,'error'=>'unregistered_gateway']);
     }
 
+    if ($fundingMode === 'tarasec_test') {
+        // A TaraSec-funded result must update the exact central proxy record that
+        // consumed quota and produced the assessment. It may not create a new one.
+        $stmt = $conn->prepare(
+            "UPDATE aiGatewayAssessment SET assessmentJson=?,evidenceSummaryJson=?,reportedBack=b'1' " .
+            "WHERE gatewayIp=INET_ATON(?) AND gatewayAssessmentId=? AND fundingMode='tarasec_test'"
+        );
+        $stmt->bind_param('ssss', $assessmentJson, $evidenceJson, $ip, $gatewayAssessmentId);
+        $stmt->execute();
+        $updated = $stmt->affected_rows;
+        $stmt->close();
+        if ($updated < 1) {
+            $conn->close();
+            reportReply(409, ['ok'=>false,'error'=>'central_assessment_not_found']);
+        }
+        $conn->close();
+        reportReply(202, ['ok'=>true,'accepted'=>true,'gatewayAssessmentId'=>$gatewayAssessmentId]);
+    }
+
+    // Owner-funded assessments originate on the gateway. Their locally generated
+    // ID is optional, but when supplied it makes retry/report-back idempotent.
     if ($gatewayAssessmentId === '') {
         $stmt = $conn->prepare(
             "INSERT INTO aiGatewayAssessment " .
             "(gatewayIp,fundingMode,gatewayAssessmentId,assessmentJson,evidenceSummaryJson,reportedBack) " .
-            "VALUES (INET_ATON(?),?,NULL,?,?,b'1')"
+            "VALUES (INET_ATON(?),'owner_funded',NULL,?,?,b'1')"
         );
-        $stmt->bind_param('ssss', $ip, $fundingMode, $assessmentJson, $evidenceJson);
+        $stmt->bind_param('sss', $ip, $assessmentJson, $evidenceJson);
     } else {
         $stmt = $conn->prepare(
             "INSERT INTO aiGatewayAssessment " .
             "(gatewayIp,fundingMode,gatewayAssessmentId,assessmentJson,evidenceSummaryJson,reportedBack) " .
-            "VALUES (INET_ATON(?),?,?,?,?,b'1') " .
-            "ON DUPLICATE KEY UPDATE fundingMode=VALUES(fundingMode),assessmentJson=VALUES(assessmentJson)," .
+            "VALUES (INET_ATON(?),'owner_funded',?,?,?,b'1') " .
+            "ON DUPLICATE KEY UPDATE assessmentJson=VALUES(assessmentJson)," .
             "evidenceSummaryJson=VALUES(evidenceSummaryJson),reportedBack=b'1'"
         );
-        $stmt->bind_param('sssss', $ip, $fundingMode, $gatewayAssessmentId, $assessmentJson, $evidenceJson);
+        $stmt->bind_param('ssss', $ip, $gatewayAssessmentId, $assessmentJson, $evidenceJson);
     }
     $stmt->execute();
-    $id = $stmt->insert_id;
+    $id = (int)$stmt->insert_id;
     $stmt->close();
     $conn->close();
 
