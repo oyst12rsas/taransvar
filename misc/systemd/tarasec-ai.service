@@ -10,6 +10,7 @@ WorkingDirectory=/root/taransvar/perl
 # Do not let a timer/manual trigger create overlapping Flowise requests.
 # A held lock means another assessment is already running, which is a successful no-op.
 ExecStart=/bin/sh -c '/usr/bin/flock -n /run/tarasec-ai.lock /usr/bin/perl /root/taransvar/perl/request-AI.pl || test $? -eq 1'
+ExecStartPost=/usr/bin/perl /root/taransvar/perl/persist_ai_candidates.pl
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=6
