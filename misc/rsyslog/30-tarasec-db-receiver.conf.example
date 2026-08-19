@@ -1,0 +1,19 @@
+# TaraSec DB server reliable TCP receiver.
+# Install as /etc/rsyslog.d/30-tarasec-db-receiver.conf.
+# Remote gateways send TCP/5514 here. rsyslog then relays locally to taralink UDP/514.
+# Do NOT also configure taralink to listen on TCP/5514; this keeps one semantic parser.
+
+module(load="imtcp")
+module(load="omfwd")
+
+input(type="imtcp" port="5514" ruleset="tarasecRemote")
+
+ruleset(name="tarasecRemote") {
+    action(
+        type="omfwd"
+        target="127.0.0.1"
+        port="514"
+        protocol="udp"
+        template="RSYSLOG_ForwardFormat"
+    )
+}
