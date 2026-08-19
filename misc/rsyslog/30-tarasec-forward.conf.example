@@ -1,0 +1,45 @@
+# TaraSec gateway/sensor -> DB server security telemetry forwarding.
+# Install as /etc/rsyslog.d/30-tarasec-forward.conf and replace DB_SERVER.
+#
+# Two paths are intentional for now:
+#   TCP/5514 = reliable provenance-preserving archive on the DB server.
+#   UDP/514  = current taralink semantic parser for TARASEC_ firewall events.
+#
+# Once taralink's sender provenance handling is fixed, TCP/5514 can become the
+# only transport and the DB receiver can relay locally without losing sensor identity.
+
+module(load="omfwd")
+
+template(name="TaraSecForwardFormat" type="string"
+         string="<%pri%>1 %timestamp:::date-rfc3339% %hostname% %programname% - - %msg%\n")
+
+# Reliable copy of selected security telemetry. Disk queue survives DB-server outages.
+if ($msg contains "TARASEC_" or
+    $programname == "sshd" or
+    $programname == "cowrie") then {
+    action(
+        type="omfwd"
+        target="DB_SERVER"
+        port="5514"
+        protocol="tcp"
+        template="TaraSecForwardFormat"
+        action.resumeRetryCount="-1"
+        queue.type="LinkedList"
+        queue.filename="tarasec_forward"
+        queue.spoolDirectory="/var/spool/rsyslog"
+        queue.saveOnShutdown="on"
+        queue.maxDiskSpace="256m"
+    )
+}
+
+# Preserve the existing taralink semantic path for TaraSec firewall records.
+# Do not send all sshd/cowrie records here until taralink parses wrapped syslog payloads consistently.
+if ($msg contains "TARASEC_") then {
+    action(
+        type="omfwd"
+        target="DB_SERVER"
+        port="514"
+        protocol="udp"
+        template="TaraSecForwardFormat"
+    )
+}

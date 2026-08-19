@@ -1,0 +1,19 @@
+[Unit]
+Description=TaraSec AI assessment
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/taransvar/perl
+# Do not let a timer/manual trigger create overlapping Flowise requests.
+# A held lock means another assessment is already running, which is a successful no-op.
+ExecStart=/bin/sh -c '/usr/bin/flock -n /run/tarasec-ai.lock /usr/bin/perl /root/taransvar/perl/request-AI.pl || test $? -eq 1'
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target
