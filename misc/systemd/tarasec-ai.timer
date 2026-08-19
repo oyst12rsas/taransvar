@@ -1,0 +1,13 @@
+[Unit]
+Description=Schedule TaraSec AI assessments
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+AccuracySec=1min
+Persistent=true
+RandomizedDelaySec=45
+Unit=tarasec-ai.service
+
+[Install]
+WantedBy=timers.target
