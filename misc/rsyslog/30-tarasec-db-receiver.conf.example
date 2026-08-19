@@ -2,12 +2,14 @@
 # Install as /etc/rsyslog.d/30-tarasec-db-receiver.conf.
 # Remote gateways send TCP/5514 here.
 #
+# NOTE: imtcp is expected to be loaded globally by the host rsyslog setup.
+# Do not load it again here, because duplicate module(load="imtcp") directives
+# cause rsyslog validation to fail on systems that already enable TCP input.
+#
 # This path is deliberately an archive for now. It preserves the actual TCP peer
 # in TARASEC_SENSOR_IP and does not relay to local UDP/514, because current taralink
 # would otherwise see localhost as the sender. Existing direct UDP/514 remains the
 # semantic parsing path until taralink provenance is corrected.
-
-module(load="imtcp")
 
 template(name="TaraSecRemoteArchive" type="string"
          string="%timestamp:::date-rfc3339% TARASEC_SENSOR_IP=%fromhost-ip% HOST=%hostname% PROGRAM=%programname% MSG=%msg%\n")
