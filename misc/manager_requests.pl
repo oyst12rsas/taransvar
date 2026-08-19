@@ -5,7 +5,7 @@ use lib ('/root/taransvar/perl');
 use DBI;
 use Digest::SHA qw(sha256_hex);
 use HTTP::Tiny;
-use JSON::PP qw(encode_json);
+use JSON::PP qw(encode_json decode_json);
 use func;
 
 # Generates manager credentials/tokens locally. If MAIL_SERVICE_URL is set in
@@ -109,7 +109,7 @@ if ($mail_url ne '') {
             template => 'manager_activation',
             to => $row->{email},
             variables => {
-                name => $row->{email},
+                name => '',
                 router_name => $nickname,
                 router_owner => $owner,
                 activation_code => $row->{emailVerifyTokenPlain},
@@ -119,13 +119,24 @@ if ($mail_url ne '') {
             headers => {'content-type' => 'application/json'},
             content => $payload,
         });
-        if ($res->{success}) {
+
+        my $body = $res->{content} // '';
+        my $reply = eval { decode_json($body) };
+        my $accepted = $res->{success}
+            && ($res->{status} // 0) == 202
+            && ref($reply) eq 'HASH'
+            && $reply->{ok}
+            && $reply->{queued};
+
+        if ($accepted) {
             $mark->execute($row->{managerRequestId});
-            print "Queued manager verification email for request $row->{managerRequestId}.\n";
+            print "Mail service accepted manager verification email for request $row->{managerRequestId} (HTTP 202 queued).\n";
         } else {
             my $status = $res->{status} // 0;
             my $reason = $res->{reason} // 'unknown error';
-            warn "Mail service failed for manager request $row->{managerRequestId}: HTTP $status $reason\n";
+            my $error = ref($reply) eq 'HASH' ? ($reply->{error} // '') : '';
+            my $detail = $error ne '' ? " service_error=$error" : " body=$body";
+            warn "Mail service failed for manager request $row->{managerRequestId}: HTTP $status $reason$detail\n";
         }
     }
     $mark->finish();
