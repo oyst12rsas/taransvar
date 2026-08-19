@@ -1,6 +1,7 @@
 #!/usr/bin/perl
 use strict;
 use warnings;
+use DBI;
 use JSON qw(decode_json);
 use Fcntl qw(SEEK_END);
 use lib ('/root/taransvar/perl');

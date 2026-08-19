@@ -2,6 +2,7 @@
 use strict;
 use warnings;
 use lib ('/root/taransvar/perl');
+use DBI;
 use JSON::PP qw(decode_json encode_json);
 use Scalar::Util qw(looks_like_number);
 use func;
@@ -49,9 +50,6 @@ sub array_values_for {
 
 my $dbh = getConnection();
 
-# These tables deliberately store AI candidates, not confirmed infection state.
-# CREATE IF NOT EXISTS keeps older gateways/backoffice installs able to adopt the
-# normalized layer before the schema is folded into the next normal DB version.
 $dbh->do(q{
     CREATE TABLE IF NOT EXISTS aiUnitAssessment (
         aiUnitAssessmentId BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
