@@ -56,18 +56,59 @@ try {
         aiReply(403, ['ok'=>false,'error'=>'manager_access_no_longer_active']);
     }
 
-    $gatewayAssessment = null;
-    $gatewayAssessmentTime = null;
-    $result = $conn->query('SELECT aiAssessment,aiAssessmentTime FROM setup LIMIT 1');
-    if ($result && ($row = $result->fetch_assoc())) {
-        $gatewayAssessmentTime = $row['aiAssessmentTime'];
-        $gatewayAssessment = decodeJsonField($row['aiAssessment']);
+    // Gateway-local assessments are kept in aiResponse as a history.  The
+    // source marker is inside the JSON envelope so this works with the existing
+    // aiResponse schema and does not require a DB-version bump.
+    $gatewayHistory = [];
+    if (tableExists($conn, 'aiResponse')) {
+        $result = $conn->query('SELECT aiResponseId,created,seconds,response FROM aiResponse ORDER BY aiResponseId DESC LIMIT 100');
+        while ($row = $result->fetch_assoc()) {
+            $decoded = decodeJsonField($row['response']);
+            if (!is_array($decoded) || ($decoded['source'] ?? '') !== 'gateway_local') continue;
+            $gatewayHistory[] = [
+                'aiResponseId'=>(int)$row['aiResponseId'],
+                'created'=>$row['created'],
+                'seconds'=>$row['seconds']===null?null:(int)$row['seconds'],
+                'fundingMode'=>$decoded['fundingMode'] ?? null,
+                'gatewayAssessmentId'=>$decoded['gatewayAssessmentId'] ?? null,
+                'quota'=>$decoded['quota'] ?? null,
+                'assessment'=>$decoded['assessment'] ?? null
+            ];
+        }
+        $result->free();
     }
-    if ($result) $result->free();
 
-    // Keep the central-candidate view available on DB-server installations for
-    // Gatekeeper/back-office compatibility, but the App-facing primary result is
-    // the gateway-local assessment above.
+    $gatewayAssessment = count($gatewayHistory) ? $gatewayHistory[0]['assessment'] : null;
+    $gatewayAssessmentTime = count($gatewayHistory) ? $gatewayHistory[0]['created'] : null;
+    $gatewayAssessmentMeta = count($gatewayHistory) ? [
+        'aiResponseId'=>$gatewayHistory[0]['aiResponseId'],
+        'fundingMode'=>$gatewayHistory[0]['fundingMode'],
+        'gatewayAssessmentId'=>$gatewayHistory[0]['gatewayAssessmentId'],
+        'quota'=>$gatewayHistory[0]['quota']
+    ] : null;
+
+    // Backward-compatible fallback for gateways which have not yet run B27.
+    if ($gatewayAssessment === null) {
+        $result = $conn->query('SELECT aiAssessment,aiAssessmentTime FROM setup LIMIT 1');
+        if ($result && ($row = $result->fetch_assoc())) {
+            $legacy = decodeJsonField($row['aiAssessment']);
+            $gatewayAssessmentTime = $row['aiAssessmentTime'];
+            if (is_array($legacy) && isset($legacy['assessment'])) {
+                $gatewayAssessment = $legacy['assessment'];
+                $gatewayAssessmentMeta = [
+                    'fundingMode'=>$legacy['fundingMode'] ?? null,
+                    'gatewayAssessmentId'=>$legacy['gatewayAssessmentId'] ?? null,
+                    'quota'=>$legacy['quota'] ?? null,
+                    'legacySetupMirror'=>true
+                ];
+            } else {
+                $gatewayAssessment = $legacy;
+            }
+        }
+        if ($result) $result->free();
+    }
+
+    // Keep central normalized candidates available on DB-server installations.
     $units = [];
     if (tableExists($conn, 'aiUnitAssessment')) {
         $sql = "SELECT a.aiUnitAssessmentId,a.aiResponseId,a.created,a.ownerId,a.unitId,a.confidence,a.severity,a.category,a.summary,a.evidenceJson " .
@@ -123,6 +164,8 @@ try {
         'manager'=>['email'=>(string)$manager['email'],'requestId'=>(int)$manager['managerRequestId']],
         'gatewayAssessment'=>$gatewayAssessment,
         'gatewayAssessmentTime'=>$gatewayAssessmentTime,
+        'gatewayAssessmentMeta'=>$gatewayAssessmentMeta,
+        'gatewayAssessmentHistory'=>$gatewayHistory,
         'units'=>$units,
         'botnets'=>$botnets,
         'warning'=>'AI assessments are supporting evidence, not confirmed infection state.'
