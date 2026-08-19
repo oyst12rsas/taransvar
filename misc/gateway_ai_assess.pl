@@ -5,6 +5,7 @@ use lib ('/root/taransvar/perl');
 use DBI;
 use HTTP::Tiny;
 use JSON::PP qw(encode_json decode_json);
+use Time::HiRes qw(time);
 use func;
 
 sub read_tarasec_config {
@@ -23,6 +24,14 @@ sub read_tarasec_config {
     }
     close($fh);
     return \%cfg;
+}
+
+sub response_detail {
+    my ($res) = @_;
+    my $body = $res->{content} // '';
+    $body =~ s/\s+/ /g;
+    $body = substr($body, 0, 1000) if length($body) > 1000;
+    return 'HTTP '.($res->{status}//0).' '.($res->{reason}//'').($body ne '' ? " response=$body" : '');
 }
 
 sub post_json {
@@ -81,9 +90,9 @@ $base =~ s{/+$}{};
 $base = "http://$dbIp/script" if $base eq '' && $dbIp ne '';
 die "No global DB AI endpoint configured. Set TARASEC_GLOBAL_AI_BASE_URL or globalDb1ip.\n" if $base eq '';
 
-my $http = HTTP::Tiny->new(timeout=>100, agent=>'TaraSec-Gateway-AI/1.0');
+my $http = HTTP::Tiny->new(timeout=>100, agent=>'TaraSec-Gateway-AI/1.1');
 my ($policyRes,$policy) = get_json($http, "$base/gatewayAiPolicy.php");
-die "AI policy request failed: HTTP ".($policyRes->{status}//0)." ".($policyRes->{reason}//'')."\n"
+die "AI policy request failed: ".response_detail($policyRes)."\n"
     unless $policyRes->{success} && ref($policy) eq 'HASH' && $policy->{ok};
 
 my $mode = $policy->{mode} // 'owner_funded';
@@ -160,21 +169,33 @@ $question .= "\nREQUIRED OUTPUT CONTRACT:\n".
              "ip_observations are never units. node_assessments are for known TaraSec/network infrastructure only.\n".
              "botnet_clusters must distinguish member identity classes explicitly.\n";
 
+my $started = time();
 my $assessRes = post_json($http, "$base/aiGatewayAssess.php", {question=>$question});
-die "Sponsored gateway AI call failed: HTTP ".($assessRes->{status}//0)." ".($assessRes->{reason}//'')."\n"
+die "Sponsored gateway AI call failed: ".response_detail($assessRes)."\n"
     unless $assessRes->{success};
 my $reply = eval { decode_json($assessRes->{content}//'') };
-die "Invalid sponsored AI response JSON.\n" if $@ || ref($reply) ne 'HASH' || !$reply->{ok};
+die "Invalid sponsored AI response JSON: ".response_detail($assessRes)."\n"
+    if $@ || ref($reply) ne 'HASH' || !$reply->{ok};
 my $assessment = $reply->{assessment};
 die "Sponsored AI response contained no assessment.\n" unless ref($assessment) eq 'HASH';
+my $elapsed = int(time() - $started + 0.5);
 
 my $localEnvelope = {
+    source => 'gateway_local',
     fundingMode => 'tarasec_test',
     gatewayAssessmentId => ($reply->{gatewayAssessmentId}//''),
     quota => $reply->{quota},
     assessment => $assessment,
 };
 my $localJson = encode_json($localEnvelope);
+
+# aiResponse is the authoritative local history. setup.aiAssessment is retained
+# only as a compatibility mirror for older Gatekeeper/App code.
+$sth = $dbh->prepare('INSERT INTO aiResponse (seconds,response) VALUES (?,?)');
+$sth->execute($elapsed,$localJson);
+my $localResponseId = $dbh->{mysql_insertid};
+$sth->finish();
+
 $sth = $dbh->prepare('UPDATE setup SET aiAssessment=?, aiAssessmentTime=NOW()');
 $sth->execute($localJson);
 $sth->finish();
@@ -187,9 +208,9 @@ my $reportRes = post_json($http, "$base/aiGatewayReport.php", {
     evidenceSummary => \%evidence,
 });
 if (!$reportRes->{success}) {
-    warn "AI assessment stored locally, but report-back failed: HTTP ".($reportRes->{status}//0)." ".($reportRes->{reason}//'')."\n";
+    warn "AI assessment saved as local aiResponse #$localResponseId, but report-back failed: ".response_detail($reportRes)."\n";
     exit 2;
 }
 
-print "Gateway AI assessment complete; stored locally and reported to DB server.\n";
+print "Gateway AI assessment complete; saved as aiResponse #$localResponseId and reported to DB server.\n";
 print "Quota: ".encode_json($reply->{quota}//{})."\n";
