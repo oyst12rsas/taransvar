@@ -1,0 +1,15 @@
+[Unit]
+Description=TaraSec reliable remote telemetry normalizer
+After=network-online.target mysql.service rsyslog.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/taransvar/perl
+ExecStart=/usr/bin/perl /root/taransvar/perl/remote_syslog_normalizer.pl
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
