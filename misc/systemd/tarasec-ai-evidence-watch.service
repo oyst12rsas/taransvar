@@ -1,0 +1,11 @@
+[Unit]
+Description=TaraSec high-value AI evidence watcher
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/taransvar/perl
+ExecStart=/usr/bin/flock -n /run/tarasec-ai-evidence-watch.lock /usr/bin/perl /root/taransvar/perl/ai_evidence_watch.pl
+Nice=10
