@@ -1,5 +1,6 @@
--- TaraSec DB schema version 83: normalized AI candidates.
--- Temporary standalone migration until folded into install.sql/compile.pl deployment flow.
+-- TaraSec normalized AI candidate tables.
+-- Temporary standalone helper until these statements are folded into the next
+-- install.sql schema version. Intentionally does NOT change setup.dbVersion.
 
 CREATE TABLE IF NOT EXISTS aiUnitAssessment (
     aiUnitAssessmentId BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -33,5 +34,3 @@ CREATE TABLE IF NOT EXISTS aiBotnetCandidate (
     UNIQUE KEY uq_ai_botnet_response (aiResponseId, candidateKey),
     KEY idx_ai_botnet_confidence (confidence)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-UPDATE setup SET dbVersion = 83;
