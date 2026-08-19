@@ -1,126 +1,87 @@
 #!/usr/bin/perl
-#Reads new entris to syslog (through rsyslog) or local syslog (journalctl)
-#call with perl iptables_log_monitor.pl [local|remote]
-
-#Used to be started by crontasks.pl. Now running as service... 
-#sudo systemctl status iptables-log-monitor.service --no-pager
+# Monitor local TaraSec firewall messages already written to the local journal/syslog.
+# Remote security telemetry should arrive through rsyslog TCP/5514 on the DB server
+# and be relayed to taralink UDP/514 for semantic parsing.
 
 use strict;
 use warnings;
-#use IO::Socket::INET;
-
 use lib ('/root/taransvar/perl');
-#use lib ('.');
-		
 use DBI;
-use func;	#NOTE! See comment above regarding lib..
+use func;
 
-my $b_local_syslog = 0; #rsyslog by default
-#my $b_local_syslog = 1; #syslog by default
-
-#if (#!$ARGV[0] || $ARGV[0] eq "local") 
-if (0)
-{
-	$b_local_syslog = 1;
-}
+my $b_local_syslog = ($ARGV[0] && $ARGV[0] eq 'local') ? 1 : 0;
+my $LOG_PREFIX = 'TARASEC_';
+my $LOCAL_COLLECTOR_IP = '127.0.0.1';
 
 sub log_monitor
 {
-	#my $LOG_PREFIX = "IPTABLES_";
-	my $LOG_PREFIX="TARASEC_";
+    $| = 1;
+    print "Starting local TaraSec iptables log monitor...\n";
 
-# Better use rsyslog to transfer
-#	my $UDP_TARGET = "127.0.0.1";
-#	my $UDP_PORT   = 5551;
-#	my $sock = IO::Socket::INET->new(
-#		PeerAddr => $UDP_TARGET,
-#		PeerPort => $UDP_PORT,
-#		Proto    => 'udp'
-#	) or die "Could not create UDP socket: $!";
-
-	$| = 1;   # autoflush STDOUT
-
-	print "Starting iptables log monitor...\n";
-
-	while (1)
-	{
-		my $fh;
-
-		if ($b_local_syslog)  {
-			print "Opening journalctl...\n";
-			open($fh, "-|", "journalctl", "-kf")
-				or do {
-					warn "Cannot read journal: $!\n";
-					sleep 5;
-					next;
-				};
-
+    while (1)
+    {
+        my $fh;
+        if ($b_local_syslog) {
+            print "Opening journalctl...\n";
+            open($fh, '-|', 'journalctl', '-kf') or do {
+                warn "Cannot read journal: $!\n";
+                sleep 5;
+                next;
+            };
         } else {
-			#Read rsyslog entries.
-			print "Reading /var/log/syslog...\n";
-			open($fh, "-|", "tail", "-F", "/var/log/syslog")
-				or do {
-				warn "Cannot read syslog: $!\n";
-				sleep 5;
-				next;
-				};            
-			open($fh, "-|", "tail", "-F", "/var/log/syslog");
-		}
-
-		print "Listening for iptables drops...\n";
-
-		my $dbh = getConnection();
-		my $szSQL = "insert into syslog (senderIp, senderPort, rawmessage) values (inet_aton(?),?,?)";
-		my $sthSyslog = $dbh->prepare($szSQL);
-
-		$szSQL = "insert into syslogThreat (syslogId, src_ip, src_port, dst_ip, dst_port, protocol) values (?, inet_aton(?), ?, inet_aton(?), ?, ?)";
-		my $sthSyslogThreat = $dbh->prepare($szSQL);
-
-		while (my $line = <$fh>)
-		{
-			chomp $line;
-
-			next unless $line =~ /\Q$LOG_PREFIX\E/;
-
-			my ($src)   = $line =~ /SRC=([0-9.]+)/;
-			my ($dst)   = $line =~ /DST=([0-9.]+)/;
-			my ($spt)   = $line =~ /SPT=(\d+)/;
-			my ($dpt)   = $line =~ /DPT=(\d+)/;
-			my ($proto) = $line =~ /PROTO=(\w+)/;
-
-			next unless defined $src && defined $dst;
-
-			#my $msg = sprintf(
-			#	"DROP %s %s:%s -> %s:%s",
-			#	defined $proto ? $proto : '?',
-			#	$src,
-			#	defined $spt ? $spt : '?',
-			#	$dst,
-			#	defined $dpt ? $dpt : '?'
-			#);
-
-			#print "LOG: $msg\n";
-
-			#my $ok = $sock->send($msg);
-			#warn "UDP send failed: $!\n" unless defined $ok;
-
-			#You may insert the full (original) line instead
-			$sthSyslog->execute($src, defined $spt ? $spt : 0, $line) or die "execution failed: $sthSyslog->errstr()";
-			#$sthSyslog->execute($line) or die "execution failed: $sthSyslog->errstr()";
-
-			my $id = $dbh->last_insert_id(undef, undef, undef, undef);            
-
-			$sthSyslogThreat->execute($id, $src, defined $spt ? $spt : 0, $dst, defined $dpt ? $dpt : 0, defined $proto ? $proto : '?');
-			print "Record added in syslog and syslogThreat\n";
+            print "Reading /var/log/syslog...\n";
+            open($fh, '-|', 'tail', '-F', '/var/log/syslog') or do {
+                warn "Cannot read syslog: $!\n";
+                sleep 5;
+                next;
+            };
         }
 
-		$sthSyslog->finish;
-		$sthSyslogThreat->finish;
-		$dbh->disconnect;
+        my $dbh = getConnection();
+        my $sthSyslog = $dbh->prepare(
+            "insert into syslog (senderIp, senderPort, rawmessage) values (inet_aton(?),0,?)"
+        );
+        my $sthThreat = $dbh->prepare(
+            "insert into syslogThreat (syslogId, src_ip, src_port, dst_ip, dst_port, protocol, service) " .
+            "values (?, inet_aton(?), ?, inet_aton(?), ?, ?, 'iptables')"
+        );
 
-		close($fh);
-		warn "journalctl ended; retrying in 2 seconds...\n";
-		sleep 2;
+        while (my $line = <$fh>)
+        {
+            chomp $line;
+            next unless $line =~ /\Q$LOG_PREFIX\E/;
+
+            my ($src)   = $line =~ /SRC=([0-9.]+)/;
+            my ($dst)   = $line =~ /DST=([0-9.]+)/;
+            my ($spt)   = $line =~ /SPT=(\d+)/;
+            my ($dpt)   = $line =~ /DPT=(\d+)/;
+            my ($proto) = $line =~ /PROTO=(\w+)/;
+            next unless defined $src && defined $dst;
+
+            # senderIp means the system/sensor that supplied the log record.
+            # Do not put SRC= here: SRC= is the network actor and belongs in syslogThreat.src_ip.
+            $sthSyslog->execute($LOCAL_COLLECTOR_IP, $line)
+                or die "execution failed: ".$sthSyslog->errstr()."\n";
+            my $id = $dbh->last_insert_id(undef, undef, undef, undef);
+
+            $sthThreat->execute(
+                $id,
+                $src,
+                defined $spt ? $spt : 0,
+                $dst,
+                defined $dpt ? $dpt : 0,
+                defined $proto ? $proto : '?'
+            ) or die "execution failed: ".$sthThreat->errstr()."\n";
+
+            print "Local TaraSec event added to syslog/syslogThreat\n";
+        }
+
+        $sthSyslog->finish;
+        $sthThreat->finish;
+        $dbh->disconnect;
+        close($fh);
+        warn "Log stream ended; retrying in 2 seconds...\n";
+        sleep 2;
     }
 }
 
