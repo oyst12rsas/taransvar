@@ -48,44 +48,24 @@ sub array_values_for {
     return @items;
 }
 
+sub require_table {
+    my ($dbh, $name) = @_;
+    my $sth = $dbh->prepare(q{
+        SELECT COUNT(*) AS n
+          FROM information_schema.tables
+         WHERE table_schema = DATABASE()
+           AND table_name = ?
+    });
+    $sth->execute($name);
+    my ($n) = $sth->fetchrow_array();
+    $sth->finish();
+    die "Required table '$name' is missing. Apply TaraSec DB schema version 83 before running AI candidate persistence.\n"
+        unless $n;
+}
+
 my $dbh = getConnection();
-
-$dbh->do(q{
-    CREATE TABLE IF NOT EXISTS aiUnitAssessment (
-        aiUnitAssessmentId BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-        aiResponseId BIGINT UNSIGNED NOT NULL,
-        created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        ownerId INT UNSIGNED NOT NULL,
-        unitId INT UNSIGNED NOT NULL,
-        confidence DECIMAL(6,5) NULL,
-        severity TINYINT UNSIGNED NULL,
-        category VARCHAR(100) NULL,
-        summary TEXT NULL,
-        evidenceJson TEXT NULL,
-        rawJson TEXT NOT NULL,
-        PRIMARY KEY (aiUnitAssessmentId),
-        UNIQUE KEY uq_ai_unit_response (aiResponseId, ownerId, unitId),
-        KEY idx_ai_unit (ownerId, unitId),
-        KEY idx_ai_unit_confidence (confidence)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-});
-
-$dbh->do(q{
-    CREATE TABLE IF NOT EXISTS aiBotnetCandidate (
-        aiBotnetCandidateId BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-        aiResponseId BIGINT UNSIGNED NOT NULL,
-        created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        candidateKey VARCHAR(128) NOT NULL,
-        confidence DECIMAL(6,5) NULL,
-        summary TEXT NULL,
-        membersJson TEXT NULL,
-        evidenceJson TEXT NULL,
-        rawJson TEXT NOT NULL,
-        PRIMARY KEY (aiBotnetCandidateId),
-        UNIQUE KEY uq_ai_botnet_response (aiResponseId, candidateKey),
-        KEY idx_ai_botnet_confidence (confidence)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-});
+require_table($dbh, 'aiUnitAssessment');
+require_table($dbh, 'aiBotnetCandidate');
 
 my $latest = $dbh->prepare('SELECT aiResponseId,response FROM aiResponse ORDER BY aiResponseId DESC LIMIT 1');
 $latest->execute();
