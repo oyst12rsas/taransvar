@@ -1,0 +1,12 @@
+[Unit]
+Description=Check TaraSec evidence for early AI reassessment
+
+[Timer]
+OnBootSec=90s
+OnUnitActiveSec=60s
+AccuracySec=10s
+Persistent=true
+Unit=tarasec-ai-evidence-watch.service
+
+[Install]
+WantedBy=timers.target
