@@ -18,18 +18,18 @@ function main()
 		dbServer();
 	}
 
-	// Administrators can see the latest non-hidden manager requests on Home,
-	// including completed requests, so approval results remain visible.
+	// Administrators can see recent manager requests on Home, including
+	// completed requests, so approval results remain visible.
 	if (isAdmin())
 	{
 		$conn = getConnection();
-		$result = $conn->query("SELECT COUNT(*) AS visible FROM managerRequest WHERE hidden=b'0'");
+		$result = $conn->query("SELECT COUNT(*) AS total FROM managerRequest");
 		$row = $result ? $result->fetch_assoc() : null;
-		$visible = $row ? (int)$row['visible'] : 0;
+		$total = $row ? (int)$row['total'] : 0;
 		if ($result) $result->free();
 		$conn->close();
 
-		if ($visible > 0)
+		if ($total > 0)
 		{
 			require_once("func/managerApprovals.php");
 			managerApprovals();
