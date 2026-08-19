@@ -1,0 +1,9 @@
+[Unit]
+Description=Dispatch queued TaraSec AI assessment
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/taransvar/perl
+ExecStart=/usr/bin/perl /root/taransvar/perl/dispatch_ai_assessment.pl
