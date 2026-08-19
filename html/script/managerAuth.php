@@ -5,13 +5,35 @@ mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 include '../dbfunc.php';
 
-header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
 function managerReply(int $status, array $data): never
 {
     http_response_code($status);
+    header('Content-Type: application/json; charset=utf-8');
     echo json_encode($data, JSON_UNESCAPED_SLASHES);
+    exit;
+}
+
+function managerHtmlReply(int $status, string $title, string $message, bool $success = false): never
+{
+    http_response_code($status);
+    header('Content-Type: text/html; charset=utf-8');
+    $safeTitle = htmlspecialchars($title, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $safeMessage = htmlspecialchars($message, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $accent = $success ? '#16784b' : '#9b2c2c';
+    echo '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+       . '<meta name="viewport" content="width=device-width,initial-scale=1">'
+       . '<title>' . $safeTitle . '</title>'
+       . '<style>body{margin:0;background:#f5f7f8;color:#172126;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}'
+       . '.card{max-width:620px;margin:10vh auto;padding:32px;border-radius:14px;background:#fff;box-shadow:0 8px 30px rgba(0,0,0,.08)}'
+       . 'h1{margin:0 0 18px;color:' . $accent . ';font-size:1.8rem}p{line-height:1.55}.brand{font-weight:700;margin-bottom:22px}</style>'
+       . '</head><body><main class="card"><div class="brand">TaraSec</div><h1>' . $safeTitle . '</h1><p>' . $safeMessage . '</p>';
+    if ($success) {
+        echo '<p>A gateway administrator must still approve the request before manager access becomes active.</p>'
+           . '<p>You can now return to the TaraSec app and refresh the approval status.</p>';
+    }
+    echo '</main></body></html>';
     exit;
 }
 
@@ -130,19 +152,28 @@ try {
     if ($action === 'verify_email') {
         $token = trim((string)($_REQUEST['token'] ?? ''));
         if ($token === '') {
-            managerReply(400, ['ok' => false, 'error' => 'missing_token']);
+            $conn->close();
+            managerHtmlReply(400, 'Verification link is incomplete', 'The email verification token is missing. Please use the complete link from your TaraSec email.');
         }
         $hash = hash('sha256', $token);
-        $stmt = $conn->prepare("UPDATE managerRequest SET emailVerifiedTime=COALESCE(emailVerifiedTime,NOW()), active=IF(gatewayApprovedTime IS NOT NULL AND credentialHash IS NOT NULL,b'1',active) WHERE emailVerifyTokenHash=? AND rejectedTime IS NULL AND (expires IS NULL OR expires>NOW())");
+        $stmt = $conn->prepare("SELECT managerRequestId,email,emailVerifiedTime FROM managerRequest WHERE emailVerifyTokenHash=? AND rejectedTime IS NULL AND (expires IS NULL OR expires>NOW()) LIMIT 1");
         $stmt->bind_param('s', $hash);
         $stmt->execute();
-        $changed = $stmt->affected_rows;
+        $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        $conn->close();
-        if ($changed < 1) {
-            managerReply(404, ['ok' => false, 'error' => 'verification_not_found']);
+        if (!$row) {
+            $conn->close();
+            managerHtmlReply(404, 'Verification link is no longer valid', 'This verification link was not found, has expired, or belongs to a rejected request.');
         }
-        managerReply(200, ['ok' => true, 'emailVerified' => true]);
+        if (empty($row['emailVerifiedTime'])) {
+            $stmt = $conn->prepare("UPDATE managerRequest SET emailVerifiedTime=NOW(), active=IF(gatewayApprovedTime IS NOT NULL AND credentialHash IS NOT NULL,b'1',active) WHERE managerRequestId=?");
+            $requestId = (int)$row['managerRequestId'];
+            $stmt->bind_param('i', $requestId);
+            $stmt->execute();
+            $stmt->close();
+        }
+        $conn->close();
+        managerHtmlReply(200, 'Email address confirmed', 'Your email address has been successfully verified for TaraSec manager access.', true);
     }
 
     if ($action === 'login') {
@@ -190,5 +221,8 @@ try {
     managerReply(400, ['ok' => false, 'error' => 'invalid_action']);
 } catch (Throwable $e) {
     error_log('managerAuth.php: ' . $e->getMessage());
+    if ($action === 'verify_email') {
+        managerHtmlReply(503, 'Verification temporarily unavailable', 'The gateway could not complete email verification right now. Please try the link again shortly.');
+    }
     managerReply(503, ['ok' => false, 'error' => 'manager_auth_unavailable']);
 }
