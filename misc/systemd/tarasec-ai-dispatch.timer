@@ -1,0 +1,12 @@
+[Unit]
+Description=Check for queued TaraSec AI assessments
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=10s
+Persistent=true
+Unit=tarasec-ai-dispatch.service
+
+[Install]
+WantedBy=timers.target
