@@ -27,6 +27,12 @@ install_unit() {
     install -m 0644 "$SCRIPT_DIR/systemd/$name" "/etc/systemd/system/$name"
 }
 
+install_ai_worker() {
+    local name="$1"
+    install -d -m 0755 /root/taransvar/perl
+    install -m 0755 "$SCRIPT_DIR/$name" "/root/taransvar/perl/$name"
+}
+
 case "$ROLE" in
     db)
         install -d -m 0750 /var/log/tarasec
@@ -34,6 +40,15 @@ case "$ROLE" in
         install_rsyslog_conf \
             "$SCRIPT_DIR/rsyslog/30-tarasec-db-receiver.conf.example" \
             "/etc/rsyslog.d/30-tarasec-db-receiver.conf"
+
+        # systemd runs the deployed copies below /root/taransvar/perl, not the
+        # source checkout in ~/taransvar/misc. Keep those worker copies current.
+        install_ai_worker request-AI.pl
+        install_ai_worker persist_ai_candidates.pl
+        install_ai_worker remote_syslog_normalizer.pl
+        install_ai_worker queue_ai_assessment.pl
+        install_ai_worker dispatch_ai_assessment.pl
+        install_ai_worker ai_evidence_watch.pl
 
         install_unit tarasec-ai.service
         install_unit tarasec-ai.timer
@@ -49,7 +64,7 @@ case "$ROLE" in
         systemctl enable --now tarasec-remote-normalizer.service
         systemctl enable --now tarasec-ai-evidence-watch.timer
 
-        echo "Installed DB-server reliable telemetry receiver, normalizer and AI services."
+        echo "Installed DB-server reliable telemetry receiver, AI workers and services."
         echo "TCP/5514 archive: /var/log/tarasec/remote.log"
         echo "Check: systemctl status rsyslog tarasec-remote-normalizer.service tarasec-ai.timer tarasec-ai-dispatch.timer tarasec-ai-evidence-watch.timer --no-pager"
         echo "Timers: systemctl list-timers 'tarasec-ai*' --no-pager"
