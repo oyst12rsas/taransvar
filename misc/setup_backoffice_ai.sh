@@ -30,6 +30,7 @@ install_unit() {
 case "$ROLE" in
     db)
         install -d -m 0750 /var/log/tarasec
+        install -d -m 0750 /var/lib/tarasec
         install_rsyslog_conf \
             "$SCRIPT_DIR/rsyslog/30-tarasec-db-receiver.conf.example" \
             "/etc/rsyslog.d/30-tarasec-db-receiver.conf"
@@ -39,15 +40,18 @@ case "$ROLE" in
         install_unit tarasec-ai-dispatch.service
         install_unit tarasec-ai-dispatch.timer
         install_unit tarasec-remote-normalizer.service
+        install_unit tarasec-ai-evidence-watch.service
+        install_unit tarasec-ai-evidence-watch.timer
 
         systemctl daemon-reload
         systemctl enable --now tarasec-ai.timer
         systemctl enable --now tarasec-ai-dispatch.timer
         systemctl enable --now tarasec-remote-normalizer.service
+        systemctl enable --now tarasec-ai-evidence-watch.timer
 
         echo "Installed DB-server reliable telemetry receiver, normalizer and AI services."
         echo "TCP/5514 archive: /var/log/tarasec/remote.log"
-        echo "Check: systemctl status rsyslog tarasec-remote-normalizer.service tarasec-ai.timer tarasec-ai-dispatch.timer --no-pager"
+        echo "Check: systemctl status rsyslog tarasec-remote-normalizer.service tarasec-ai.timer tarasec-ai-dispatch.timer tarasec-ai-evidence-watch.timer --no-pager"
         echo "Timers: systemctl list-timers 'tarasec-ai*' --no-pager"
         ;;
 
