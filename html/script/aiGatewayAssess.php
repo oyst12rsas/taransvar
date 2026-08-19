@@ -25,7 +25,7 @@ function peerIp(): string
 function getSponsoredPolicy(mysqli $conn, string $ip): ?array
 {
     $stmt = $conn->prepare(
-        "SELECT p.dailyCallLimit, p.enabled, p.taraSecFundedTest " .
+        "SELECT p.dailyCallLimit, p.taraSecFundedTest+0 funded, p.fundedUntil " .
         "FROM partnerRouter r JOIN aiGatewayPolicy p ON p.gatewayIp=r.ip " .
         "WHERE r.ip=INET_ATON(?) LIMIT 1"
     );
@@ -66,7 +66,8 @@ try {
 
     $conn = getConnection();
     $policy = getSponsoredPolicy($conn, $ip);
-    if (!$policy || !(int)$policy['enabled'] || !(int)$policy['taraSecFundedTest']) {
+    $stillValid = $policy && ($policy['fundedUntil'] === null || strtotime((string)$policy['fundedUntil']) > time());
+    if (!$policy || !(int)$policy['funded'] || !$stillValid) {
         $conn->close();
         replyJson(403, ['ok'=>false,'error'=>'gateway_not_sponsored']);
     }
