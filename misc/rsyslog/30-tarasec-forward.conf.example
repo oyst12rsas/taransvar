@@ -1,0 +1,27 @@
+# TaraSec gateway/sensor -> DB server reliable security telemetry forwarding.
+# Install as /etc/rsyslog.d/30-tarasec-forward.conf and replace DB_SERVER.
+# TCP is intentional; the linked-list queue keeps messages on disk if the DB server is unavailable.
+
+module(load="omfwd")
+
+template(name="TaraSecForwardFormat" type="string"
+         string="<%pri%>%timestamp:::date-rfc3339% %hostname% %syslogtag%%msg%\n")
+
+if ($msg contains "TARASEC_" or
+    $programname == "sshd" or
+    $programname == "kernel" or
+    $programname == "cowrie") then {
+    action(
+        type="omfwd"
+        target="DB_SERVER"
+        port="5514"
+        protocol="tcp"
+        template="TaraSecForwardFormat"
+        action.resumeRetryCount="-1"
+        queue.type="LinkedList"
+        queue.filename="tarasec_forward"
+        queue.spoolDirectory="/var/spool/rsyslog"
+        queue.saveOnShutdown="on"
+        queue.maxDiskSpace="256m"
+    )
+}
