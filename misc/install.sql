@@ -347,8 +347,15 @@ create table managerRequest (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 update setup set dbVersion = 82;
 
+#version 83 (260820)
+#Assistance delivery is acknowledged only when the remote endpoint replies exactly "ok".
+#For AssistanceRequest queue rows, keep failed HTTP/application replies unhandled so
+#the existing sendPendingWgets() loop retries them instead of losing the request.
+CREATE TRIGGER pendingWget_assistance_retry BEFORE UPDATE ON pendingWget FOR EACH ROW SET NEW.handled = IF(NEW.category = 'AssistanceRequest' AND NEW.reply IS NOT NULL AND TRIM(NEW.reply) <> 'ok', NULL, NEW.handled);
+update setup set dbVersion = 83;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 83;
+#update setup set dbVersion = 84;
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 
 #can import DB changes automatically based on the content of this file...
