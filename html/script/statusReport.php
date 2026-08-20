@@ -68,6 +68,8 @@ try {
     }
 
     if ($partialStatus) {
+        // Subsystem updates (currently mail health) enrich the latest status JSON,
+        // but they are not proof that the normal server heartbeat is running.
         $incoming = array_replace_recursive($current, $incoming);
     } else {
         // Mail health is refreshed independently by manager_requests.pl. Preserve
@@ -84,26 +86,41 @@ try {
         throw new RuntimeException('Unable to encode merged status JSON');
     }
 
-    $sql = '
-        UPDATE partnerRouter
-        SET status = ?, partnerStatusReceived = NOW()
-        WHERE ip = INET_ATON(?)
-    ';
+    if ($partialStatus) {
+        // Do not advance partnerStatusReceived for partial subsystem reports. The
+        // timestamp must continue to mean "last complete crontasks.pl heartbeat".
+        $sql = '
+            UPDATE partnerRouter
+            SET status = ?
+            WHERE ip = INET_ATON(?)
+        ';
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('ss', $status, $sender);
+        $stmt->execute();
+        $stmt->close();
+    } else {
+        $sql = '
+            UPDATE partnerRouter
+            SET status = ?, partnerStatusReceived = NOW()
+            WHERE ip = INET_ATON(?)
+        ';
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('ss', $status, $sender);
+        $stmt->execute();
+        $stmt->close();
 
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param('ss', $status, $sender);
-    $stmt->execute();
-    $stmt->close();
-
-    $sql = '
-        INSERT INTO partnerRouterStatusLog (ip, status, created)
-        VALUES (INET_ATON(?), ?, now())
-    ';
-
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param('ss', $sender, $status);
-    $stmt->execute();
-    $stmt->close();
+        // partnerRouterStatusLog is the history of complete server heartbeats.
+        // Partial subsystem updates are already retained in partnerRouter.status
+        // and have their own timestamps (for example mailChecked).
+        $sql = '
+            INSERT INTO partnerRouterStatusLog (ip, status, created)
+            VALUES (INET_ATON(?), ?, now())
+        ';
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('ss', $sender, $status);
+        $stmt->execute();
+        $stmt->close();
+    }
 
     $conn->commit();
     header('Content-Type: text/plain; charset=utf-8');
