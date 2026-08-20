@@ -21,8 +21,6 @@ function managerApprovals()
             $decision = (string)($_POST['decision'] ?? '');
             $userId = (int)($_SESSION['userid'] ?? 0);
             if ($id > 0 && $decision === 'approve') {
-                // Email ownership must be confirmed before the gateway can
-                // grant manager authority.
                 $stmt = $conn->prepare("UPDATE managerRequest SET gatewayApprovedTime=COALESCE(gatewayApprovedTime,NOW()), approvedByUserId=?, rejectedTime=NULL, active=IF(credentialHash IS NOT NULL,b'1',active) WHERE managerRequestId=? AND emailVerifiedTime IS NOT NULL AND rejectedTime IS NULL");
                 $stmt->bind_param('ii', $userId, $id);
                 $stmt->execute();
@@ -44,6 +42,28 @@ function managerApprovals()
 
     print '<h2>Manager access approvals</h2>';
     print '<p>An app becomes an active manager only after both the email address and a gateway administrator have confirmed the request.</p>';
+
+    $mailStatusFile = '/run/tarasec-mail-relay-status.json';
+    $mailStatus = null;
+    if (is_readable($mailStatusFile)) {
+        $decoded = json_decode((string)file_get_contents($mailStatusFile), true);
+        if (is_array($decoded)) $mailStatus = $decoded;
+    }
+    if ($mailStatus === null) {
+        print '<p><b>Email sending:</b> <font color="orange">No health check has run yet.</font> Run manager_requests.pl or wait for its scheduled run.</p>';
+    } else {
+        $configured = !empty($mailStatus['configured']);
+        $relay = !empty($mailStatus['relayReachable']);
+        $sender = !empty($mailStatus['sendingService']);
+        $checked = htmlspecialchars((string)($mailStatus['checkedAt'] ?? 'unknown'));
+        print '<p><b>Email sending status:</b> ';
+        print 'Configuration: '.($configured ? '<font color="green">OK</font>' : '<font color="red">missing</font>').' &nbsp; ';
+        print 'Mail relay: '.($relay ? '<font color="green">UP</font>' : '<font color="red">DOWN</font>').' &nbsp; ';
+        print 'Sending service: '.($sender ? '<font color="green">UP</font>' : '<font color="red">DOWN</font>');
+        print ' <small>(checked '.$checked.')</small>';
+        if (!empty($mailStatus['error'])) print '<br><small>'.htmlspecialchars((string)$mailStatus['error']).'</small>';
+        print '</p>';
+    }
 
     $sql = "SELECT managerRequestId,created,email,credentialCreatedTime,emailVerifiedTime,gatewayApprovedTime,rejectedTime,CAST(active AS UNSIGNED) active,lastUsedTime,expires FROM managerRequest ORDER BY managerRequestId DESC LIMIT 10";
     $result = $conn->query($sql);
