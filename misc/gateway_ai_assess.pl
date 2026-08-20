@@ -109,8 +109,12 @@ $globalContext = {ok=>0,note=>'Global context unavailable for this run'}
 my $question = "TARASEC GATEWAY-LOCAL SECURITY ASSESSMENT\n".
                "Gateway: ".($setup->{nickname}//'unnamed')."\n".
                "This assessment concerns this gateway and its local units.\n\n".
-               "IDENTITY RULES:\n".
+               "IDENTITY AND DIRECTION RULES:\n".
                "- A customer/LAN unit exists only when owner_id + unit_id are both known.\n".
+               "- Every row under 'local stable unit summaries' and 'local unit destination fingerprints' describes activity ORIGINATING FROM a unit managed by THIS installation.\n".
+               "- Therefore repeated scanning, probing, brute force, exploit attempts or unusual fan-out in those local-unit sections means one of THIS OWNER'S managed units is generating the suspicious traffic; it is not merely an arbitrary external source.\n".
+               "- When that happens, the summary MUST say this explicitly, for example: 'ALERT: a managed local unit on this installation is originating repeated SSH probes and may be compromised.' Do not reduce this to vague wording such as 'the same source'.\n".
+               "- Treat suspicious outbound behaviour from a stable local unit as materially more important to this gateway owner than the same pattern from an unidentified external IP. Reflect that distinction in event_severity, summary, reasoning and recommended_action.\n".
                "- Never put an IP address in unit_id.\n".
                "- IP-only observations are observations, not units.\n".
                "- Central context is supporting evidence and may describe activity outside this gateway.\n\n";
@@ -166,6 +170,7 @@ $question .= "\nREQUIRED OUTPUT CONTRACT:\n".
              "Return JSON only. Include event_severity, category, confidence, summary, signals, reasoning, recommended_action.\n".
              "Always include arrays unit_assessments, node_assessments, ip_observations, botnet_clusters even when empty.\n".
              "unit_assessments items require owner_id and unit_id and may include confidence,severity,category,summary,evidence.\n".
+             "For suspicious local-unit-originated activity, explicitly identify owner_id:unit_id in the relevant unit_assessment and make clear it is a managed unit on THIS installation.\n".
              "ip_observations are never units. node_assessments are for known TaraSec/network infrastructure only.\n".
              "botnet_clusters must distinguish member identity classes explicitly.\n";
 
