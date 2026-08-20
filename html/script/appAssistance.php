@@ -88,16 +88,65 @@ try {
             'threshold' => (int)$threshold,
             'handled' => false,
             'sentPartners' => false,
+            'deliveryState' => 'local_pending',
             'comment' => $comment
         ]);
     }
 
     if ($action === 'list') {
-        // The table's primary key is requestId. Keep the API field name
-        // assistanceRequestId for App compatibility.
-        $result = $conn->query("SELECT requestId AS assistanceRequestId, INET_NTOA(ip) AS ip, port, category, comment, purpose, requestQuality, handled, sentPartners FROM assistanceRequest WHERE purpose='internalRequest' ORDER BY requestId DESC LIMIT 25");
+        /*
+         * assistanceRequest.sentPartners is an old field which really means
+         * "taralink queued outward work". The App must not present that as
+         * successful delivery. Derive sentPartners from pendingWget instead:
+         * every AssistanceRequest delivery for this request must have an exact
+         * "ok" reply and be handled. DB v83 keeps failed rows unhandled so they
+         * remain retryable.
+         */
+        $sql = "SELECT
+                    AR.requestId AS assistanceRequestId,
+                    INET_NTOA(AR.ip) AS ip,
+                    AR.port,
+                    AR.category,
+                    AR.comment,
+                    AR.purpose,
+                    AR.requestQuality,
+                    AR.handled,
+                    AR.sentPartners AS outwardQueued,
+                    (SELECT COUNT(*) FROM pendingWget PW
+                      WHERE PW.category='AssistanceRequest'
+                        AND PW.regardingId=AR.requestId) AS deliveryCount,
+                    (SELECT COUNT(*) FROM pendingWget PW
+                      WHERE PW.category='AssistanceRequest'
+                        AND PW.regardingId=AR.requestId
+                        AND PW.handled IS NOT NULL
+                        AND TRIM(COALESCE(PW.reply,''))='ok') AS acceptedCount,
+                    (SELECT COUNT(*) FROM pendingWget PW
+                      WHERE PW.category='AssistanceRequest'
+                        AND PW.regardingId=AR.requestId
+                        AND PW.handled IS NULL) AS pendingCount
+                FROM assistanceRequest AR
+                WHERE AR.purpose='internalRequest'
+                ORDER BY AR.requestId DESC
+                LIMIT 25";
+        $result = $conn->query($sql);
         $items = [];
         while ($row = $result->fetch_assoc()) {
+            $outwardQueued = !empty($row['outwardQueued']);
+            $deliveryCount = (int)$row['deliveryCount'];
+            $acceptedCount = (int)$row['acceptedCount'];
+            $pendingCount = (int)$row['pendingCount'];
+            $delivered = $outwardQueued && $deliveryCount > 0 && $acceptedCount === $deliveryCount;
+
+            if ($delivered) {
+                $deliveryState = 'db_accepted';
+            } elseif ($deliveryCount > 0 && $pendingCount > 0) {
+                $deliveryState = 'sending_or_retrying';
+            } elseif ($outwardQueued) {
+                $deliveryState = 'queued';
+            } else {
+                $deliveryState = 'local_pending';
+            }
+
             $items[] = [
                 'assistanceRequestId' => (int)$row['assistanceRequestId'],
                 'ip' => (string)$row['ip'],
@@ -106,7 +155,10 @@ try {
                 'comment' => (string)$row['comment'],
                 'threshold' => (int)$row['requestQuality'],
                 'handled' => !empty($row['handled']),
-                'sentPartners' => !empty($row['sentPartners'])
+                'sentPartners' => $delivered,
+                'deliveryState' => $deliveryState,
+                'deliveryCount' => $deliveryCount,
+                'acceptedCount' => $acceptedCount
             ];
         }
         $conn->close();
