@@ -5,12 +5,27 @@ use lib ('/root/taransvar/perl');
 use DBI;
 use Digest::SHA qw(sha256_hex);
 use HTTP::Tiny;
-use JSON::PP qw(encode_json);
+use JSON::PP qw(encode_json decode_json);
+use POSIX qw(strftime);
 use func;
 
 # Generates manager credentials/tokens locally. If MAIL_SERVICE_URL is set in
 # /etc/tarasec.conf, unsent email-verification requests are submitted to the
 # TaraSec back-office template mail service. Gateway approval remains local.
+# The relay health result is written to /run/tarasec-mail-relay-status.json so
+# Gatekeeper can show whether both the HTTP relay and its sendmail backend work.
+
+my $STATUS_FILE = '/run/tarasec-mail-relay-status.json';
+
+sub write_mail_status {
+    my (%status) = @_;
+    $status{checkedAt} = strftime('%Y-%m-%dT%H:%M:%SZ', gmtime());
+    if (open(my $fh, '>', $STATUS_FILE)) {
+        print $fh encode_json(\%status), "\n";
+        close($fh);
+        chmod 0644, $STATUS_FILE;
+    }
+}
 
 sub random_hex_32 {
     my $value = `openssl rand -hex 32 2>/dev/null`;
@@ -30,7 +45,10 @@ sub read_tarasec_config {
         $line =~ s/^\s+|\s+$//g;
         next if $line eq '' || $line =~ /^#/;
         my ($k, $v) = split(/\s*=\s*/, $line, 2);
-        $cfg{$k} = $v if defined($k) && defined($v);
+        if (defined($k) && defined($v)) {
+            $v =~ s/^['"]|['"]$//g;
+            $cfg{$k} = $v;
+        }
     }
     close($fh);
     return \%cfg;
@@ -75,6 +93,34 @@ $select->finish();
 my $cfg = read_tarasec_config();
 my $mail_url = $cfg->{MAIL_SERVICE_URL} // '';
 if ($mail_url ne '') {
+    my $health_url = $cfg->{MAIL_SERVICE_HEALTH_URL} // $mail_url;
+    $health_url =~ s{/send\.php(?:\?.*)?$}{/health.php};
+    my $http = HTTP::Tiny->new(timeout => 10);
+    my $health = $http->get($health_url);
+    my $relay_reachable = $health->{success} ? 1 : 0;
+    my $sending_service = 0;
+    my $health_error = '';
+
+    if ($health->{success}) {
+        eval {
+            my $h = decode_json($health->{content} // '{}');
+            $sending_service = $h->{sendingService} ? 1 : 0;
+            $health_error = $h->{error} // '';
+        };
+        $health_error = 'invalid_health_response' if $@;
+    } else {
+        $health_error = 'HTTP '.($health->{status} // 0).' '.($health->{reason} // 'unreachable');
+    }
+
+    write_mail_status(
+        configured => 1,
+        relayReachable => $relay_reachable,
+        sendingService => $sending_service,
+        healthUrl => $health_url,
+        error => $health_error,
+    );
+    print "Mail relay health: relay=".($relay_reachable?'UP':'DOWN').", sending service=".($sending_service?'UP':'DOWN')."\n";
+
     my $nickname = '';
     eval {
         my $sth = $dbh->prepare('SELECT nickname FROM setup LIMIT 1');
@@ -102,9 +148,12 @@ if ($mail_url ne '') {
            SET emailSentTime = NOW(), emailVerifyTokenPlain = NULL
          WHERE managerRequestId = ? AND emailSentTime IS NULL
     });
-    my $http = HTTP::Tiny->new(timeout => 10);
 
     while (my $row = $pending->fetchrow_hashref()) {
+        if (!$relay_reachable || !$sending_service) {
+            warn "Verification email remains pending: mail relay/sending backend is not healthy.\n";
+            next;
+        }
         my $payload = encode_json({
             template => 'manager_activation',
             to => $row->{email},
@@ -125,12 +174,20 @@ if ($mail_url ne '') {
         } else {
             my $status = $res->{status} // 0;
             my $reason = $res->{reason} // 'unknown error';
+            write_mail_status(
+                configured => 1,
+                relayReachable => 1,
+                sendingService => 0,
+                healthUrl => $health_url,
+                error => "send failed: HTTP $status $reason",
+            );
             warn "Mail service failed for manager request $row->{managerRequestId}: HTTP $status $reason\n";
         }
     }
     $mark->finish();
     $pending->finish();
 } else {
+    write_mail_status(configured => 0, relayReachable => 0, sendingService => 0, error => 'MAIL_SERVICE_URL not configured');
     print "MAIL_SERVICE_URL not configured; verification email delivery skipped.\n";
 }
 
