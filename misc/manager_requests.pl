@@ -12,19 +12,67 @@ use func;
 # Generates manager credentials/tokens locally. If MAIL_SERVICE_URL is set in
 # /etc/tarasec.conf, unsent email-verification requests are submitted to the
 # TaraSec back-office template mail service. Gateway approval remains local.
-# The relay health result is written to /run/tarasec-mail-relay-status.json so
-# Gatekeeper can show whether both the HTTP relay and its sendmail backend work.
+# The relay health result is written to /run/tarasec-mail-relay-status.json and
+# is also sent as a partial gateway status report to the global DB server(s).
 
 my $STATUS_FILE = '/run/tarasec-mail-relay-status.json';
 
+sub report_mail_status_to_db {
+    my ($dbh, $status) = @_;
+
+    my $payload = encode_json({
+        _partialStatus => 1,
+        mailCfg        => $status->{configured} ? 1 : 0,
+        mailRelay      => $status->{relayReachable} ? 1 : 0,
+        mailSend       => $status->{sendingService} ? 1 : 0,
+        mailChecked    => $status->{checkedAt} // '',
+        mailErr        => $status->{error} // '',
+    });
+
+    my $sth = $dbh->prepare(q{
+        SELECT INET_NTOA(globalDb1ip) AS db1,
+               INET_NTOA(globalDb2ip) AS db2,
+               INET_NTOA(globalDb3ip) AS db3
+          FROM setup
+         LIMIT 1
+    });
+    $sth->execute();
+    my $row = $sth->fetchrow_hashref() || {};
+    $sth->finish();
+
+    my %seen;
+    my $http = HTTP::Tiny->new(timeout => 3);
+    for my $db_ip ($row->{db1}, $row->{db2}, $row->{db3}) {
+        next unless defined($db_ip) && $db_ip ne '';
+        next if $seen{$db_ip}++;
+
+        my $res = $http->post("http://$db_ip/script/statusReport.php", {
+            headers => {'content-type' => 'application/json'},
+            content => $payload,
+        });
+        if ($res->{success}) {
+            print "Mail health reported to DB server $db_ip.\n";
+        } else {
+            my $code = $res->{status} // 0;
+            my $reason = $res->{reason} // 'unknown error';
+            warn "Unable to report mail health to DB server $db_ip: HTTP $code $reason\n";
+        }
+    }
+}
+
 sub write_mail_status {
-    my (%status) = @_;
+    my ($dbh, %status) = @_;
     $status{checkedAt} = strftime('%Y-%m-%dT%H:%M:%SZ', gmtime());
+
     if (open(my $fh, '>', $STATUS_FILE)) {
         print $fh encode_json(\%status), "\n";
         close($fh);
         chmod 0644, $STATUS_FILE;
     }
+
+    eval { report_mail_status_to_db($dbh, \%status); 1 } or do {
+        warn "Unable to publish mail health status: $@";
+    };
 }
 
 sub random_hex_32 {
@@ -113,6 +161,7 @@ if ($mail_url ne '') {
     }
 
     write_mail_status(
+        $dbh,
         configured => 1,
         relayReachable => $relay_reachable,
         sendingService => $sending_service,
@@ -175,6 +224,7 @@ if ($mail_url ne '') {
             my $status = $res->{status} // 0;
             my $reason = $res->{reason} // 'unknown error';
             write_mail_status(
+                $dbh,
                 configured => 1,
                 relayReachable => 1,
                 sendingService => 0,
@@ -187,7 +237,13 @@ if ($mail_url ne '') {
     $mark->finish();
     $pending->finish();
 } else {
-    write_mail_status(configured => 0, relayReachable => 0, sendingService => 0, error => 'MAIL_SERVICE_URL not configured');
+    write_mail_status(
+        $dbh,
+        configured => 0,
+        relayReachable => 0,
+        sendingService => 0,
+        error => 'MAIL_SERVICE_URL not configured'
+    );
     print "MAIL_SERVICE_URL not configured; verification email delivery skipped.\n";
 }
 
