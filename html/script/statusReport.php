@@ -32,11 +32,14 @@ if (strlen($status) > 1_000_000) {
     exit('Status report (json) too large');
 }
 
-json_decode($status);
-if (json_last_error() !== JSON_ERROR_NONE) {
+$incoming = json_decode($status, true);
+if (json_last_error() !== JSON_ERROR_NONE || !is_array($incoming)) {
     http_response_code(400);
     exit('Invalid JSON: ' . json_last_error_msg());
 }
+
+$partialStatus = !empty($incoming['_partialStatus']);
+unset($incoming['_partialStatus']);
 
 $conn = getConnection();
 
@@ -44,17 +47,41 @@ try {
     $conn->begin_transaction();
 
     // Status is a control-plane message. Only known routers may create/update status.
-    $stmt = $conn->prepare('SELECT 1 FROM partnerRouter WHERE ip = INET_ATON(?) LIMIT 1');
+    // Fetch the current JSON as well so small subsystem reports can be merged without
+    // replacing the normal full gateway status sent by crontasks.pl.
+    $stmt = $conn->prepare('SELECT status FROM partnerRouter WHERE ip = INET_ATON(?) LIMIT 1 FOR UPDATE');
     $stmt->bind_param('s', $sender);
     $stmt->execute();
-    $knownRouter = (bool)$stmt->get_result()->fetch_row();
+    $routerRow = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
-    if (!$knownRouter) {
+    if (!$routerRow) {
         $conn->rollback();
         http_response_code(403);
         echo 'unregistered router';
         return;
+    }
+
+    $current = json_decode((string)($routerRow['status'] ?? ''), true);
+    if (!is_array($current)) {
+        $current = [];
+    }
+
+    if ($partialStatus) {
+        $incoming = array_replace_recursive($current, $incoming);
+    } else {
+        // Mail health is refreshed independently by manager_requests.pl. Preserve
+        // its latest values when the normal full status report does not carry them.
+        foreach (['mailCfg','mailRelay','mailSend','mailChecked','mailErr'] as $key) {
+            if (!array_key_exists($key, $incoming) && array_key_exists($key, $current)) {
+                $incoming[$key] = $current[$key];
+            }
+        }
+    }
+
+    $status = json_encode($incoming, JSON_UNESCAPED_SLASHES);
+    if ($status === false) {
+        throw new RuntimeException('Unable to encode merged status JSON');
     }
 
     $sql = '
