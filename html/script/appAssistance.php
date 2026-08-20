@@ -85,12 +85,17 @@ try {
             'ip' => $ip,
             'port' => (int)$port,
             'category' => $category,
-            'threshold' => (int)$threshold
+            'threshold' => (int)$threshold,
+            'handled' => false,
+            'sentPartners' => false,
+            'comment' => $comment
         ]);
     }
 
     if ($action === 'list') {
-        $result = $conn->query("SELECT assistanceRequestId, INET_NTOA(ip) AS ip, port, category, comment, purpose, requestQuality, handled, sentPartners FROM assistanceRequest WHERE purpose='internalRequest' ORDER BY assistanceRequestId DESC LIMIT 25");
+        // The table's primary key is requestId. Keep the API field name
+        // assistanceRequestId for App compatibility.
+        $result = $conn->query("SELECT requestId AS assistanceRequestId, INET_NTOA(ip) AS ip, port, category, comment, purpose, requestQuality, handled, sentPartners FROM assistanceRequest WHERE purpose='internalRequest' ORDER BY requestId DESC LIMIT 25");
         $items = [];
         while ($row = $result->fetch_assoc()) {
             $items[] = [
