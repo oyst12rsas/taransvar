@@ -1,0 +1,8 @@
+[Unit]
+Description=TaraSec manager verification email worker
+After=network-online.target mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/perl /root/taransvar/perl/manager_requests.pl
