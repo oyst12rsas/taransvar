@@ -62,12 +62,21 @@ try {
         return;
     }
 
+    $current = json_decode((string)($routerRow['status'] ?? ''), true);
+    if (!is_array($current)) {
+        $current = [];
+    }
+
     if ($partialStatus) {
-        $current = json_decode((string)($routerRow['status'] ?? ''), true);
-        if (!is_array($current)) {
-            $current = [];
-        }
         $incoming = array_replace_recursive($current, $incoming);
+    } else {
+        // Mail health is refreshed independently by manager_requests.pl. Preserve
+        // its latest values when the normal full status report does not carry them.
+        foreach (['mailCfg','mailRelay','mailSend','mailChecked','mailErr'] as $key) {
+            if (!array_key_exists($key, $incoming) && array_key_exists($key, $current)) {
+                $incoming[$key] = $current[$key];
+            }
+        }
     }
 
     $status = json_encode($incoming, JSON_UNESCAPED_SLASHES);
