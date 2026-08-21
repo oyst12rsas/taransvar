@@ -26,39 +26,26 @@ sub interface_has_carrier {
     return $v =~ /^1/ ? 1 : 0;
 }
 
-sub capture_running {
-    my ($iface) = @_;
-    my $quoted = quotemeta($iface);
-    my $out = `ps -eo args= 2>/dev/null`;
-    return $out =~ m{/root/taransvar/perl/dhcp_capture\.pl\s+$quoted(?:\s|$)}m ? 1 : 0;
-}
-
-sub start_capture {
-    my ($iface) = @_;
-    return unless interface_exists($iface);
-    return if capture_running($iface);
-    return unless -x '/usr/bin/tshark';
-
-    my $pid = fork();
-    if (!defined $pid) {
-        warn "Unable to fork DHCP capture for $iface: $!\n";
-        return;
-    }
-    if ($pid == 0) {
-        chdir('/') or exit 1;
-        open(STDIN, '<', '/dev/null');
-        open(STDOUT, '>>', "/root/setup/log/dhcp_capture-$iface.log");
-        open(STDERR, '>>', "/root/setup/log/dhcp_capture-$iface.log");
-        exec('/usr/bin/perl', '/root/taransvar/perl/dhcp_capture.pl', $iface);
-        exit 1;
-    }
-    print "Started DHCP capture on $iface (PID $pid).\n";
-}
-
 sub default_route_iface {
     my $route = `ip route show default 2>/dev/null | head -1`;
     return $1 if $route =~ /\bdev\s+(\S+)/;
     return '';
+}
+
+sub ensure_capture_service {
+    my ($iface) = @_;
+    return unless interface_exists($iface);
+    return unless -x '/usr/bin/tshark';
+
+    my $unit = "tarasec-dhcp-capture\@$iface.service";
+    if (service_active($unit)) {
+        print "DHCP capture already active on $iface.\n";
+        return;
+    }
+
+    print "Starting DHCP capture service on $iface.\n";
+    my $rc = system('/bin/systemctl', 'start', $unit);
+    warn "Unable to start $unit\n" if $rc != 0;
 }
 
 my $dbh = getConnection();
@@ -76,9 +63,6 @@ my $internal = $setup->{internalNic} // '';
 my %capture;
 
 if ($ssid ne '') {
-    # An SSID in setup is a declaration that this node is expected to maintain
-    # a Wi-Fi AP. Prefer the configured internal NIC when it is wireless; wlan0
-    # remains the normal Raspberry Pi default.
     my $wifi = ($internal ne '' && -d "/sys/class/net/$internal/wireless") ? $internal : 'wlan0';
     if (!interface_exists($wifi)) {
         warn "SSID '$ssid' configured but Wi-Fi interface $wifi does not exist.\n";
@@ -100,16 +84,13 @@ if ($ssid ne '') {
 
 $capture{$internal} = 1 if $internal ne '' && interface_exists($internal);
 
-# Also watch additional connected physical LAN NICs. Exclude loopback, VPNs,
-# the upstream/default-route interface and obvious virtual interfaces. Merely
-# having an unused adapter is not enough: carrier must be present.
 my $upstream = default_route_iface();
 opendir(my $dh, '/sys/class/net') or die "Unable to inspect interfaces: $!\n";
 while (my $iface = readdir($dh)) {
     next if $iface =~ /^\./;
     next if $iface eq $upstream || $iface eq 'lo';
     next if $iface =~ /^(?:wg|wt|tun|tap|docker|br-|veth)/;
-    next if -d "/sys/class/net/$iface/wireless"; # Wi-Fi is governed by setup.ssid.
+    next if -d "/sys/class/net/$iface/wireless";
     next unless interface_has_carrier($iface);
     $capture{$iface} = 1;
 }
@@ -121,7 +102,7 @@ if (!-x '/usr/bin/tshark') {
     mkdir '/root/setup' unless -d '/root/setup';
     mkdir '/root/setup/log' unless -d '/root/setup/log';
     for my $iface (sort keys %capture) {
-        start_capture($iface);
+        ensure_capture_service($iface);
     }
 }
 
