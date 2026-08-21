@@ -13,7 +13,7 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # Gatekeeper dbVersion is a minimum schema capability, not an exact application
-# version.  Keep the historical minimum number but make newer schemas valid.
+# version. Keep the historical minimum number but make newer schemas valid.
 python3 - "$GATEKEEPER_INDEX" <<'PY'
 from pathlib import Path
 import sys
@@ -23,8 +23,6 @@ old='if (intval($setupRow["dbVersion"])+0 != $nRequiredDbVersion)'
 new='if (intval($setupRow["dbVersion"])+0 < $nRequiredDbVersion)'
 if old in s:
     s=s.replace(old,new,1)
-    # With a minimum-version test the inner "older" test is always true; leave
-    # the old newer-version branch unreachable to minimize change to legacy PHP.
     p.write_text(s)
 PY
 
@@ -33,12 +31,20 @@ install -m 0755 "$ROOT_DIR/manager_requests.pl" "$RUNTIME_DIR/manager_requests.p
 install -m 0644 "$ROOT_DIR/systemd/tarasec-manager-requests.service" "$SYSTEMD_DIR/tarasec-manager-requests.service"
 install -m 0644 "$ROOT_DIR/systemd/tarasec-manager-requests.timer" "$SYSTEMD_DIR/tarasec-manager-requests.timer"
 
+# Hotspot/DHCP self-check. setup.ssid declares that this node is expected to
+# maintain a Wi-Fi AP. The watcher also keeps DHCP capture running per client NIC.
+install -m 0755 "$ROOT_DIR/hotspot_watch.pl" "$RUNTIME_DIR/hotspot_watch.pl"
+install -m 0755 "$ROOT_DIR/dhcp_capture.pl" "$RUNTIME_DIR/dhcp_capture.pl"
+install -m 0644 "$ROOT_DIR/systemd/tarasec-hotspot-watch.service" "$SYSTEMD_DIR/tarasec-hotspot-watch.service"
+install -m 0644 "$ROOT_DIR/systemd/tarasec-hotspot-watch.timer" "$SYSTEMD_DIR/tarasec-hotspot-watch.timer"
+
 # Install gateway-local AI assessment worker/timer as part of every App-manageable
-# node.  Whether an AI call is allowed/funded remains controlled by central policy.
+# node. Whether an AI call is allowed/funded remains controlled by central policy.
 bash "$ROOT_DIR/setup_gateway_ai.sh"
 
 systemctl daemon-reload
 systemctl enable --now tarasec-manager-requests.timer
+systemctl enable --now tarasec-hotspot-watch.timer
 
 if [[ -x "$ROOT_DIR/deploy_web.sh" ]]; then
     bash "$ROOT_DIR/deploy_web.sh"
@@ -49,9 +55,12 @@ fi
 echo
 echo "Installed TaraSec App/node services:"
 echo "  manager verification worker: tarasec-manager-requests.timer"
-echo "  gateway AI worker:           tarasec-gateway-ai.timer"
+echo "  hotspot/DHCP self-check:      tarasec-hotspot-watch.timer"
+echo "  gateway AI worker:            tarasec-gateway-ai.timer"
 echo
 echo "AI assessments still require central gateway AI policy/funding."
+echo "Test hotspot with: sudo systemctl start tarasec-hotspot-watch.service"
+echo "Inspect hotspot with: sudo journalctl -u tarasec-hotspot-watch.service -n 100 --no-pager"
 echo "Test AI with: sudo systemctl start tarasec-gateway-ai.service"
 echo "Inspect AI with: sudo journalctl -u tarasec-gateway-ai.service -n 100 --no-pager"
 echo "Test mail with: sudo systemctl start tarasec-manager-requests.service"
