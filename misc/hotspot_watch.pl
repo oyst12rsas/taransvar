@@ -32,6 +32,30 @@ sub default_route_iface {
     return '';
 }
 
+sub ensure_iptables_rule {
+    my ($chain, @rule) = @_;
+    my $iptables = -x '/usr/sbin/iptables' ? '/usr/sbin/iptables' : '/sbin/iptables';
+    return unless -x $iptables;
+
+    return if system($iptables, '-C', $chain, @rule) == 0;
+    my $rc = system($iptables, '-I', $chain, '1', @rule);
+    warn "Unable to add iptables rule to $chain: @rule\n" if $rc != 0;
+}
+
+sub ensure_hotspot_firewall {
+    my ($iface) = @_;
+    return unless interface_exists($iface);
+
+    # Cigar exposed a long-standing direction bug: a DHCP server receives
+    # client 68 -> server 67 and sends server 67 -> client 68.
+    ensure_iptables_rule('INPUT',  '-i', $iface, '-p', 'udp', '--sport', '68', '--dport', '67', '-j', 'ACCEPT');
+    ensure_iptables_rule('OUTPUT', '-o', $iface, '-p', 'udp', '--sport', '67', '--dport', '68', '-j', 'ACCEPT');
+
+    # dnsmasq is advertised as resolver to hotspot clients.
+    ensure_iptables_rule('INPUT', '-i', $iface, '-p', 'udp', '--dport', '53', '-j', 'ACCEPT');
+    ensure_iptables_rule('INPUT', '-i', $iface, '-p', 'tcp', '--dport', '53', '-j', 'ACCEPT');
+}
+
 sub ensure_capture_service {
     my ($iface) = @_;
     return unless interface_exists($iface);
@@ -69,6 +93,8 @@ if ($ssid ne '') {
     } else {
         system('/usr/sbin/rfkill', 'unblock', 'wifi') if -x '/usr/sbin/rfkill';
         system('/sbin/ip', 'link', 'set', $wifi, 'up');
+
+        ensure_hotspot_firewall($wifi);
 
         if (!service_active('hostapd.service')) {
             print "hostapd is not active; restarting for configured SSID '$ssid'.\n";
