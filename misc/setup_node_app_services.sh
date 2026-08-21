@@ -12,8 +12,6 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-# Gatekeeper dbVersion is a minimum schema capability, not an exact application
-# version. Keep the historical minimum number but make newer schemas valid.
 python3 - "$GATEKEEPER_INDEX" <<'PY'
 from pathlib import Path
 import sys
@@ -31,15 +29,12 @@ install -m 0755 "$ROOT_DIR/manager_requests.pl" "$RUNTIME_DIR/manager_requests.p
 install -m 0644 "$ROOT_DIR/systemd/tarasec-manager-requests.service" "$SYSTEMD_DIR/tarasec-manager-requests.service"
 install -m 0644 "$ROOT_DIR/systemd/tarasec-manager-requests.timer" "$SYSTEMD_DIR/tarasec-manager-requests.timer"
 
-# Hotspot/DHCP self-check. setup.ssid declares that this node is expected to
-# maintain a Wi-Fi AP. The watcher also keeps DHCP capture running per client NIC.
 install -m 0755 "$ROOT_DIR/hotspot_watch.pl" "$RUNTIME_DIR/hotspot_watch.pl"
 install -m 0755 "$ROOT_DIR/dhcp_capture.pl" "$RUNTIME_DIR/dhcp_capture.pl"
 install -m 0644 "$ROOT_DIR/systemd/tarasec-hotspot-watch.service" "$SYSTEMD_DIR/tarasec-hotspot-watch.service"
 install -m 0644 "$ROOT_DIR/systemd/tarasec-hotspot-watch.timer" "$SYSTEMD_DIR/tarasec-hotspot-watch.timer"
+install -m 0644 "$ROOT_DIR/systemd/tarasec-dhcp-capture@.service" "$SYSTEMD_DIR/tarasec-dhcp-capture@.service"
 
-# Install gateway-local AI assessment worker/timer as part of every App-manageable
-# node. Whether an AI call is allowed/funded remains controlled by central policy.
 bash "$ROOT_DIR/setup_gateway_ai.sh"
 
 systemctl daemon-reload
@@ -56,11 +51,13 @@ echo
 echo "Installed TaraSec App/node services:"
 echo "  manager verification worker: tarasec-manager-requests.timer"
 echo "  hotspot/DHCP self-check:      tarasec-hotspot-watch.timer"
+echo "  DHCP capture template:        tarasec-dhcp-capture@.service"
 echo "  gateway AI worker:            tarasec-gateway-ai.timer"
 echo
 echo "AI assessments still require central gateway AI policy/funding."
 echo "Test hotspot with: sudo systemctl start tarasec-hotspot-watch.service"
 echo "Inspect hotspot with: sudo journalctl -u tarasec-hotspot-watch.service -n 100 --no-pager"
+echo "Inspect DHCP capture with: sudo systemctl status 'tarasec-dhcp-capture@*' --no-pager"
 echo "Test AI with: sudo systemctl start tarasec-gateway-ai.service"
 echo "Inspect AI with: sudo journalctl -u tarasec-gateway-ai.service -n 100 --no-pager"
 echo "Test mail with: sudo systemctl start tarasec-manager-requests.service"
