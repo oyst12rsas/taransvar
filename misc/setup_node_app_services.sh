@@ -31,6 +31,7 @@ install -m 0644 "$ROOT_DIR/systemd/tarasec-manager-requests.timer" "$SYSTEMD_DIR
 
 install -m 0755 "$ROOT_DIR/hotspot_watch.pl" "$RUNTIME_DIR/hotspot_watch.pl"
 install -m 0755 "$ROOT_DIR/dhcp_capture.pl" "$RUNTIME_DIR/dhcp_capture.pl"
+install -m 0644 "$ROOT_DIR/lib_dhcp.pm" "$RUNTIME_DIR/lib_dhcp.pm"
 install -m 0644 "$ROOT_DIR/systemd/tarasec-hotspot-watch.service" "$SYSTEMD_DIR/tarasec-hotspot-watch.service"
 install -m 0644 "$ROOT_DIR/systemd/tarasec-hotspot-watch.timer" "$SYSTEMD_DIR/tarasec-hotspot-watch.timer"
 install -m 0644 "$ROOT_DIR/systemd/tarasec-dhcp-capture@.service" "$SYSTEMD_DIR/tarasec-dhcp-capture@.service"
