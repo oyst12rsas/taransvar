@@ -1,0 +1,17 @@
+[Unit]
+Description=TaraSec DHCP capture on %I
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/taransvar/perl
+ExecStart=/usr/bin/perl /root/taransvar/perl/dhcp_capture.pl %I
+Restart=always
+RestartSec=3
+StandardOutput=append:/root/setup/log/dhcp_capture-%I.log
+StandardError=append:/root/setup/log/dhcp_capture-%I.log
+
+[Install]
+WantedBy=multi-user.target
