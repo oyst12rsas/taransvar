@@ -1,17 +1,17 @@
 #dhcp_capture.pl
 
-#Check if records are being added: 
+#Check if records are being added:
 #select * from dhcpEvent order by dhcpEventId desc limit 5;
 
 use lib ('/root/taransvar/perl');
-#use lib ('.');
-		
+
 use strict;
 use warnings;
 use autodie;
 use DBI;
-use func;	#NOTE! See comment above regarding lib..
-use lib_dhcp;
+use func;
+use Socket qw(inet_aton);
+use POSIX qw(strftime);
 
 my $iface;
 
@@ -19,26 +19,58 @@ if ($ARGV[0]) {
     $iface = $ARGV[0];
 } else {
     print "*********** ERROR interface has to be specified as parameter. Aborting.\n";
-    return;
+    exit 1;
 }
 
+sub tshark_args {
+    my ($iface) = @_;
 
-use strict;
-use warnings;
-use DBI;
-use Socket qw(inet_aton);
-use POSIX qw(strftime);
+    my $tshark = -x '/usr/bin/tshark' ? '/usr/bin/tshark' : 'tshark';
+    my $fields = `$tshark -G fields 2>/dev/null`;
 
-my $pidfile = "/tmp/dhcp_capture.pid";
+    my ($filter, $prefix);
+    if ($fields =~ /(?:^|\t)dhcp\.hw\.mac_addr(?:\t|$)/m) {
+        $filter = 'dhcp';
+        $prefix = 'dhcp';
+    } elsif ($fields =~ /(?:^|\t)bootp\.hw\.mac_addr(?:\t|$)/m) {
+        $filter = 'bootp';
+        $prefix = 'bootp';
+    } else {
+        die "This tshark version exposes neither dhcp.hw.mac_addr nor bootp.hw.mac_addr.\n";
+    }
 
-sub write_pidfile {
-    open my $pf, ">", $pidfile or die "Cannot write $pidfile: $!";
-    print $pf "$$\n";
-    close $pf;
-}
+    my @wanted = (
+        'hw.mac_addr',
+        'ip.your',
+        'option.hostname',
+        'option.vendor_class_id',
+        'option.dhcp',
+    );
 
-END {
-    unlink $pidfile if -f $pidfile;
+    for my $suffix (@wanted) {
+        my $field = "$prefix.$suffix";
+        die "Required tshark field '$field' is unavailable.\n"
+            unless $fields =~ /(?:^|\t)\Q$field\E(?:\t|$)/m;
+    }
+
+    print "Using tshark DHCP field namespace: $prefix\n";
+
+    return (
+        $tshark,
+        '-i', $iface,
+        '-l',
+        '-nn',
+        '-Y', $filter,
+        '-T', 'fields',
+        '-e', 'frame.time_epoch',
+        '-e', 'ip.src',
+        '-e', 'ip.dst',
+        '-e', "$prefix.hw.mac_addr",
+        '-e', "$prefix.ip.your",
+        '-e', "$prefix.option.hostname",
+        '-e', "$prefix.option.vendor_class_id",
+        '-e', "$prefix.option.dhcp",
+    );
 }
 
 sub ip_to_int_or_undef {
@@ -48,7 +80,7 @@ sub ip_to_int_or_undef {
     my $packed = inet_aton($ip);
     return undef if !defined $packed;
 
-    return unpack("N", $packed);
+    return unpack('N', $packed);
 }
 
 sub normalize_mac {
@@ -74,7 +106,7 @@ sub epoch_to_mysql_datetime {
     my $frac = $epoch - $sec;
     my $micro = int($frac * 1_000_000);
 
-    return strftime("%Y-%m-%d %H:%M:%S", localtime($sec)) . sprintf(".%06d", $micro);
+    return strftime('%Y-%m-%d %H:%M:%S', localtime($sec)) . sprintf('.%06d', $micro);
 }
 
 sub do_save_tshark_record {
@@ -91,9 +123,11 @@ sub do_save_tshark_record {
     $dhcp_type = undef if !defined $dhcp_type || $dhcp_type eq '';
     $dhcp_type = int($dhcp_type) if defined $dhcp_type;
 
-    #my $client_mac = normalize_mac($mac);
-    my $client_mac = normalize_mac(first_csv_value($mac));    
-    return if !defined $client_mac;   # skip unusable rows
+    my $client_mac = normalize_mac(first_csv_value($mac));
+    if (!defined $client_mac) {
+        $conn->disconnect;
+        return;
+    }
 
     my $seen_at = epoch_to_mysql_datetime($time);
 
@@ -115,7 +149,7 @@ sub do_save_tshark_record {
     };
 
     my $sth = $conn->prepare($sql)
-        or die "Prepare failed: " . $conn->errstr;
+        or die 'Prepare failed: ' . $conn->errstr;
 
     $sth->execute(
         $seen_at,
@@ -128,23 +162,21 @@ sub do_save_tshark_record {
         (defined $vendor   && $vendor   ne '' ? $vendor   : undef),
         $dhcp_type,
         $raw_line,
-    ) or die "Execute failed: " . $sth->errstr;
+    ) or die 'Execute failed: ' . $sth->errstr;
 
     $sth->finish;
     $conn->disconnect;
 }
-
 
 sub process_dhcp_stream {
     my ($iface) = @_;
 
     print "Starting DHCP stream processor on $iface...\n";
 
-    my @args = get_tshark_args($iface);
+    my @args = tshark_args($iface);
+    print join(' ', @args) . "\n";
 
-    print join(" ", @args) . "\n";
-
-    open(my $fh, "-|", @args)
+    open(my $fh, '-|', @args)
         or die "Cannot start tshark: $!";
 
     while (my $line = <$fh>) {
@@ -156,7 +188,7 @@ sub process_dhcp_stream {
 
         next if !defined $mac || $mac eq '';
 
-        print "DHCP: $mac -> " . ($ip // '') . " (" . ($hostname // '') . ")\n";
+        print "DHCP: $mac -> " . ($ip // '') . ' (' . ($hostname // '') . ")\n";
 
         eval {
             do_save_tshark_record(
@@ -177,9 +209,10 @@ sub process_dhcp_stream {
         }
     }
 
-    close($fh);
+    if (!close($fh)) {
+        my $exit = $? >> 8;
+        die "tshark exited with code $exit\n";
+    }
 }
 
-
 process_dhcp_stream($iface);
-
