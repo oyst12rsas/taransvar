@@ -109,6 +109,70 @@ sub epoch_to_mysql_datetime {
     return strftime('%Y-%m-%d %H:%M:%S', localtime($sec)) . sprintf('.%06d', $micro);
 }
 
+sub register_unit_for_event {
+    my ($conn, $event_id, $client_mac, $your_ip_int, $hostname) = @_;
+
+    # DHCP discovery/request packets legitimately carry 0.0.0.0. They are useful
+    # telemetry but must not create/update a unit until an actual address exists.
+    if (!defined($your_ip_int) || $your_ip_int == 0) {
+        my $mark = $conn->prepare("UPDATE dhcpEvent SET handled=b'1' WHERE dhcpEventId=?");
+        $mark->execute($event_id);
+        $mark->finish();
+        return;
+    }
+
+    my $mac_hex = $client_mac;
+    $mac_hex =~ s/://g;
+    $mac_hex = uc($mac_hex);
+
+    my $lookup = $conn->prepare(q{
+        SELECT unitId, hostname
+          FROM unit
+         WHERE LEFT(mac,6)=UNHEX(?)
+         ORDER BY unitId DESC
+         LIMIT 1
+    });
+    $lookup->execute($mac_hex);
+    my $unit = $lookup->fetchrow_hashref();
+    $lookup->finish();
+
+    my $unit_id;
+    if ($unit) {
+        $unit_id = int($unit->{unitId});
+        my $update = $conn->prepare(q{
+            UPDATE unit
+               SET ipAddress=?,
+                   hostname=CASE
+                       WHEN (hostname IS NULL OR hostname='') AND ?<>'' THEN ?
+                       ELSE hostname
+                   END,
+                   lastSeen=NOW()
+             WHERE unitId=?
+        });
+        my $host = defined($hostname) ? $hostname : '';
+        $update->execute($your_ip_int, $host, $host, $unit_id);
+        $update->finish();
+    } else {
+        my $insert = $conn->prepare(q{
+            INSERT INTO unit (mac,ipAddress,hostname,lastSeen,dhcpClientId)
+            VALUES (UNHEX(?),?,?,NOW(),b'0000000')
+        });
+        $insert->execute(
+            $mac_hex,
+            $your_ip_int,
+            (defined($hostname) && $hostname ne '' ? $hostname : undef)
+        );
+        $unit_id = int($conn->{mysql_insertid} || 0);
+        $insert->finish();
+        die "Unable to obtain unitId for newly inserted DHCP unit\n" unless $unit_id > 0;
+        print "Registered new TaraSec unit $unit_id for $client_mac\n";
+    }
+
+    my $mark = $conn->prepare("UPDATE dhcpEvent SET unitId=?,handled=b'1' WHERE dhcpEventId=?");
+    $mark->execute($unit_id, $event_id);
+    $mark->finish();
+}
+
 sub do_save_tshark_record {
     my ($raw_line, $time, $src, $dst, $mac, $ip, $hostname, $vendor, $iface, $dhcp_type) = @_;
 
@@ -164,7 +228,10 @@ sub do_save_tshark_record {
         $raw_line,
     ) or die 'Execute failed: ' . $sth->errstr;
 
+    my $event_id = int($conn->{mysql_insertid} || 0);
     $sth->finish;
+    register_unit_for_event($conn, $event_id, $client_mac, $your_ip_int, $hostname)
+        if $event_id > 0;
     $conn->disconnect;
 }
 
