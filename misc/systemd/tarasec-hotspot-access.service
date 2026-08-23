@@ -1,0 +1,15 @@
+[Unit]
+Description=TaraSec hotspot captive-portal access controller
+After=network-online.target mariadb.service mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/taransvar/perl
+ExecStart=/usr/bin/perl /root/taransvar/perl/hotspot_access.pl
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
