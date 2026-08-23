@@ -1,0 +1,24 @@
+# TaraSec managed-hotspot enrollment server configuration
+# Copy to /etc/tarasec-managed-server.conf on the GLOBAL/BACK-OFFICE enrollment server.
+# chmod 600 /etc/tarasec-managed-server.conf
+
+# NetBird control plane. Use a dedicated service-user token with only the
+# permissions needed to create setup keys for the hotspot group.
+NETBIRD_API_BASE=https://netbird.taransvar.no/api
+NETBIRD_MANAGEMENT_URL=https://netbird.taransvar.no
+NETBIRD_API_TOKEN=
+NETBIRD_HOTSPOT_GROUP_ID=
+
+# Wazuh/SOC API. Use a dedicated RBAC API user with agent:create/key access,
+# not the Wazuh administrator account.
+WAZUH_API_BASE=https://soc.example.org:55000
+WAZUH_MANAGER=soc.example.org
+WAZUH_API_USER=
+WAZUH_API_PASSWORD=
+WAZUH_VERIFY_TLS=1
+# Optional CA bundle for a private SOC CA.
+WAZUH_CA_FILE=
+
+# What the local owner UI should advertise after enrollment.
+PAYMENT_AVAILABLE=1
+PAYMENT_CONTACT_URL=https://tarasec.org/
