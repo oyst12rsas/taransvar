@@ -33,6 +33,7 @@ install -m 0755 "$ROOT_DIR/hotspot_watch.pl" "$RUNTIME_DIR/hotspot_watch.pl"
 install -m 0755 "$ROOT_DIR/hotspot_access.pl" "$RUNTIME_DIR/hotspot_access.pl"
 install -m 0755 "$ROOT_DIR/hotspot_usage.pl" "$RUNTIME_DIR/hotspot_usage.pl"
 install -m 0755 "$ROOT_DIR/opennds_configure.pl" "$RUNTIME_DIR/opennds_configure.pl"
+install -m 0755 "$ROOT_DIR/managed_enroll.sh" "$RUNTIME_DIR/managed_enroll.sh"
 install -m 0755 "$ROOT_DIR/dhcp_capture.pl" "$RUNTIME_DIR/dhcp_capture.pl"
 install -m 0644 "$ROOT_DIR/lib_dhcp.pm" "$RUNTIME_DIR/lib_dhcp.pm"
 install -m 0644 "$ROOT_DIR/systemd/tarasec-hotspot-watch.service" "$SYSTEMD_DIR/tarasec-hotspot-watch.service"
@@ -63,6 +64,26 @@ if command -v opennds >/dev/null 2>&1 || systemctl list-unit-files opennds.servi
     perl "$RUNTIME_DIR/opennds_configure.pl"
 fi
 
+# Managed operation is explicit/opt-in. A one-time TaraSec enrollment token may
+# be supplied by the installer environment. No reusable NetBird or Wazuh secret
+# is built into the repository.
+if [[ -n "${TARASEC_ENROLL_TOKEN:-}" ]]; then
+    echo "[+] Enrolling this hotspot in TaraSec managed services..."
+    args=(--token "$TARASEC_ENROLL_TOKEN")
+    [[ -n "${TARASEC_COUNTRY:-}" ]] && args+=(--country "$TARASEC_COUNTRY")
+    [[ -n "${TARASEC_ENROLL_URL:-}" ]] && args+=(--server "$TARASEC_ENROLL_URL")
+    "$RUNTIME_DIR/managed_enroll.sh" "${args[@]}"
+else
+    echo
+    echo "TaraSec managed services are available but were NOT enabled automatically."
+    echo "They include the TaraSec NetBird management VPN, Wazuh/SOC monitoring,"
+    echo "and optional automatic M-Pesa/GCash-compatible payment integration."
+    echo "To enroll after receiving a one-time token:"
+    echo "  sudo $RUNTIME_DIR/managed_enroll.sh --token TOKEN --country KE"
+    echo "  # use --country PH for a Philippine hotspot"
+    echo "Local information/status page: /managed-services.php"
+fi
+
 echo
 echo "Installed TaraSec App/node services:"
 echo "  manager verification worker:  tarasec-manager-requests.timer"
@@ -75,6 +96,11 @@ if systemctl is-active --quiet opennds.service 2>/dev/null; then
     echo "  captive portal:                opennds.service + /opennds/fas.php"
 else
     echo "  captive portal:                TaraSec iptables fallback"
+fi
+if [[ -r /etc/tarasec-managed.conf ]]; then
+    echo "  managed services:              enrolled (see /managed-services.php)"
+else
+    echo "  managed services:              available, not enrolled"
 fi
 echo
 echo "AI assessments still require central gateway AI policy/funding."
