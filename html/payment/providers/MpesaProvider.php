@@ -62,6 +62,11 @@ final class MpesaProvider
         return (string)$data['access_token'];
     }
 
+    private function password(string $timestamp): string
+    {
+        return base64_encode($this->required('MPESA_SHORTCODE') . $this->required('MPESA_PASSKEY') . $timestamp);
+    }
+
     private function normalizePhone(string $phone): string
     {
         $digits = preg_replace('/\D+/', '', $phone) ?? '';
@@ -74,16 +79,14 @@ final class MpesaProvider
     public function start(array $payment): array
     {
         $shortcode = $this->required('MPESA_SHORTCODE');
-        $passkey = $this->required('MPESA_PASSKEY');
         $phone = $this->normalizePhone((string)($payment['phone'] ?? ''));
         $timestamp = date('YmdHis');
-        $password = base64_encode($shortcode . $passkey . $timestamp);
         $callback = paymentBaseUrl() . '/payment/callback/mpesa.php';
         $amountKes = max(1, (int)round(((int)$payment['amountMinor']) / 100));
 
         $payload = [
             'BusinessShortCode' => $shortcode,
-            'Password' => $password,
+            'Password' => $this->password($timestamp),
             'Timestamp' => $timestamp,
             'TransactionType' => paymentCfg($this->cfg, 'MPESA_TRANSACTION_TYPE', 'CustomerPayBillOnline'),
             'Amount' => $amountKes,
@@ -103,5 +106,21 @@ final class MpesaProvider
         $providerId = $response['CheckoutRequestID'] ?? null;
         if (!$providerId) throw new RuntimeException('M-Pesa did not return CheckoutRequestID.');
         return ['providerPaymentId' => (string)$providerId, 'response' => $response, 'redirectUrl' => null];
+    }
+
+    public function verifyCheckout(string $checkoutRequestId): array
+    {
+        $timestamp = date('YmdHis');
+        $payload = [
+            'BusinessShortCode' => $this->required('MPESA_SHORTCODE'),
+            'Password' => $this->password($timestamp),
+            'Timestamp' => $timestamp,
+            'CheckoutRequestID' => $checkoutRequestId,
+        ];
+        return $this->curlJson(
+            $this->apiBase . '/mpesa/stkpushquery/v1/query',
+            ['Authorization: Bearer ' . $this->token(), 'Content-Type: application/json', 'Accept: application/json'],
+            $payload
+        );
     }
 }
