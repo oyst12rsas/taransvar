@@ -16,53 +16,61 @@ sub cmd_ok {
     return system(@_) == 0;
 }
 
+sub table_cmd {
+    my ($table, @args) = @_;
+    return ($IPTABLES, @args) if $table eq 'filter';
+    return ($IPTABLES, '-t', $table, @args);
+}
+
 sub ensure_chain {
     my ($table, $chain) = @_;
-    my @base = ($IPTABLES);
-    push @base, ('-t', $table) if $table ne 'filter';
-    return if cmd_ok(@base, '-nL', $chain);
-    system(@base, '-N', $chain) == 0 or die "Unable to create chain $chain\n";
+    my @list = table_cmd($table, '-nL', $chain);
+    return if cmd_ok(@list);
+    my @create = table_cmd($table, '-N', $chain);
+    system(@create) == 0 or die "Unable to create chain $chain\n";
 }
 
 sub flush_chain {
     my ($table, $chain) = @_;
-    my @base = ($IPTABLES);
-    push @base, ('-t', $table) if $table ne 'filter';
-    system(@base, '-F', $chain) == 0 or die "Unable to flush chain $chain\n";
+    my @cmd = table_cmd($table, '-F', $chain);
+    system(@cmd) == 0 or die "Unable to flush chain $chain\n";
 }
 
 sub ensure_jump {
     my ($table, $parent, $chain) = @_;
-    my @base = ($IPTABLES);
-    push @base, ('-t', $table) if $table ne 'filter';
-    return if cmd_ok(@base, '-C', $parent, '-j', $chain);
-    system(@base, '-I', $parent, '1', '-j', $chain) == 0
-        or die "Unable to hook $chain into $parent\n";
+    my @check = table_cmd($table, '-C', $parent, '-j', $chain);
+    return if cmd_ok(@check);
+    my @insert = table_cmd($table, '-I', $parent, '1', '-j', $chain);
+    system(@insert) == 0 or die "Unable to hook $chain into $parent\n";
 }
 
 sub remove_jump {
     my ($table, $parent, $chain) = @_;
-    my @base = ($IPTABLES);
-    push @base, ('-t', $table) if $table ne 'filter';
-    while (cmd_ok(@base, '-C', $parent, '-j', $chain)) {
-        system(@base, '-D', $parent, '-j', $chain);
+    while (1) {
+        my @check = table_cmd($table, '-C', $parent, '-j', $chain);
+        last unless cmd_ok(@check);
+        my @delete = table_cmd($table, '-D', $parent, '-j', $chain);
+        system(@delete);
     }
 }
 
 sub remove_chain {
     my ($table, $chain) = @_;
-    my @base = ($IPTABLES);
-    push @base, ('-t', $table) if $table ne 'filter';
-    return unless cmd_ok(@base, '-nL', $chain);
-    system(@base, '-F', $chain);
-    system(@base, '-X', $chain);
+    my @list = table_cmd($table, '-nL', $chain);
+    return unless cmd_ok(@list);
+    my @flush = table_cmd($table, '-F', $chain);
+    my @delete = table_cmd($table, '-X', $chain);
+    system(@flush);
+    system(@delete);
 }
 
 sub cleanup_hotspot_firewall {
-    remove_jump('filter', 'INPUT',      'TARASEC_HOTSPOT_IN');
-    remove_jump('filter', 'FORWARD',    'TARASEC_HOTSPOT_FWD');
-    remove_jump('nat',    'PREROUTING', 'TARASEC_HOTSPOT_PRE');
-    remove_jump('nat',    'POSTROUTING','TARASEC_HOTSPOT_POST');
+    return unless -x $IPTABLES;
+
+    remove_jump('filter', 'INPUT',       'TARASEC_HOTSPOT_IN');
+    remove_jump('filter', 'FORWARD',     'TARASEC_HOTSPOT_FWD');
+    remove_jump('nat',    'PREROUTING',  'TARASEC_HOTSPOT_PRE');
+    remove_jump('nat',    'POSTROUTING', 'TARASEC_HOTSPOT_POST');
 
     remove_chain('filter', 'TARASEC_HOTSPOT_IN');
     remove_chain('filter', 'TARASEC_HOTSPOT_FWD');
@@ -129,7 +137,7 @@ sub refresh_firewall {
     ensure_jump('nat',    'PREROUTING',  'TARASEC_HOTSPOT_PRE');
     ensure_jump('nat',    'POSTROUTING', 'TARASEC_HOTSPOT_POST');
 
-    # Local hotspot services only. Do not change the machine-wide policy.
+    # Local hotspot services only. Never flush or change global TaraSec policy.
     system($IPTABLES, '-A', 'TARASEC_HOTSPOT_IN', '-i', $internal,
            '-p', 'udp', '--sport', '68', '--dport', '67', '-j', 'ACCEPT');
     system($IPTABLES, '-A', 'TARASEC_HOTSPOT_IN', '-i', $internal,
@@ -155,7 +163,7 @@ sub refresh_firewall {
            'allowed_lan', 'src', '-j', 'REDIRECT', '--to-ports', '80');
     system($IPTABLES, '-t', 'nat', '-A', 'TARASEC_HOTSPOT_PRE', '-j', 'RETURN');
 
-    # NAT only hotspot clients that have access; do not touch unrelated traffic.
+    # NAT only authorised hotspot clients; unrelated traffic is untouched.
     system($IPTABLES, '-t', 'nat', '-A', 'TARASEC_HOTSPOT_POST', '-o', $external,
            '-m', 'set', '--match-set', 'allowed_lan', 'src', '-j', 'MASQUERADE');
     system($IPTABLES, '-t', 'nat', '-A', 'TARASEC_HOTSPOT_POST', '-j', 'RETURN');
@@ -191,18 +199,17 @@ while (!$stop) {
                 cleanup_hotspot_firewall();
             }
             $last_hotspot_state = 0;
-            $dbh->disconnect();
-            return;
+        } else {
+            my $internal = $setup->{internalNic} // '';
+            my $external = $setup->{externalNic} // '';
+            die "Hotspot enabled but internalNic/externalNic is not configured\n"
+                if $internal eq '' || $external eq '';
+
+            refresh_access_table($dbh);
+            refresh_firewall($dbh, $internal, $external);
+            $last_hotspot_state = 1;
         }
 
-        my $internal = $setup->{internalNic} // '';
-        my $external = $setup->{externalNic} // '';
-        die "Hotspot enabled but internalNic/externalNic is not configured\n"
-            if $internal eq '' || $external eq '';
-
-        refresh_access_table($dbh);
-        refresh_firewall($dbh, $internal, $external);
-        $last_hotspot_state = 1;
         $dbh->disconnect();
     };
 
