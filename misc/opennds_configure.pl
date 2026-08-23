@@ -8,8 +8,9 @@ my $KEY_FILE = '/etc/tarasec-opennds-fas.key';
 
 sub service_exists {
     my ($name) = @_;
-    return system('/bin/systemctl', 'status', $name, '--no-pager', '--quiet') == 0
-        || system('/bin/systemctl', 'list-unit-files', $name, '--no-legend') == 0;
+    return 1 if system('/bin/systemctl', 'status', $name, '--no-pager', '--quiet') == 0;
+    my $listed = `/bin/systemctl list-unit-files '$name' --no-legend 2>/dev/null`;
+    return $listed =~ /^\Q$name\E\s/m ? 1 : 0;
 }
 
 sub random_hex {
