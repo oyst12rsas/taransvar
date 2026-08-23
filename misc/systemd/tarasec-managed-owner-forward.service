@@ -1,0 +1,9 @@
+[Unit]
+Description=TaraSec managed owner registration forwarding
+After=network-online.target mariadb.service mysql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/perl /root/taransvar/perl/managed_owner_forward.pl
+User=root
