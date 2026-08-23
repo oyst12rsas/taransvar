@@ -1,0 +1,10 @@
+[Unit]
+Description=TaraSec hotspot IPFM usage accounting
+After=network-online.target mariadb.service mysql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/taransvar/perl
+ExecStart=/usr/bin/perl /root/taransvar/perl/hotspot_usage.pl
