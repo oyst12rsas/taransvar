@@ -1,0 +1,26 @@
+# TaraSec hotspot payment providers
+# Copy to /etc/tarasec-payment.conf and chmod 600.
+# Never commit real provider secrets or private keys.
+
+# Public HTTPS origin reachable by wallet callbacks.
+PAYMENT_PUBLIC_BASE_URL=https://wifi.example.org
+
+# ---- Kenya: Safaricom M-Pesa Daraja ----
+MPESA_ENV=sandbox
+MPESA_CONSUMER_KEY=
+MPESA_CONSUMER_SECRET=
+MPESA_SHORTCODE=
+MPESA_PASSKEY=
+MPESA_TRANSACTION_TYPE=CustomerPayBillOnline
+
+# ---- Philippines: GCash OpenAPI ----
+# The API host/client credentials are supplied during GCash partner onboarding.
+GCASH_API_BASE=
+GCASH_CLIENT_ID=
+GCASH_PARTNER_ID=
+GCASH_APP_ID=
+GCASH_PRODUCT_CODE=
+GCASH_SITE_NAME=GCash
+GCASH_KEY_VERSION=1
+GCASH_PRIVATE_KEY_FILE=/etc/tarasec/gcash-private.pem
+GCASH_PLATFORM_PUBLIC_KEY_FILE=/etc/tarasec/gcash-platform-public.pem
