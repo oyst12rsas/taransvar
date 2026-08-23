@@ -1,0 +1,10 @@
+[Unit]
+Description=Retry TaraSec managed owner forwarding
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
