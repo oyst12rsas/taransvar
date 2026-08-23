@@ -46,12 +46,8 @@ sub ensure_hotspot_firewall {
     my ($iface) = @_;
     return unless interface_exists($iface);
 
-    # Cigar exposed a long-standing direction bug: a DHCP server receives
-    # client 68 -> server 67 and sends server 67 -> client 68.
     ensure_iptables_rule('INPUT',  '-i', $iface, '-p', 'udp', '--sport', '68', '--dport', '67', '-j', 'ACCEPT');
     ensure_iptables_rule('OUTPUT', '-o', $iface, '-p', 'udp', '--sport', '67', '--dport', '68', '-j', 'ACCEPT');
-
-    # dnsmasq is advertised as resolver to hotspot clients.
     ensure_iptables_rule('INPUT', '-i', $iface, '-p', 'udp', '--dport', '53', '-j', 'ACCEPT');
     ensure_iptables_rule('INPUT', '-i', $iface, '-p', 'tcp', '--dport', '53', '-j', 'ACCEPT');
 }
@@ -74,13 +70,20 @@ sub ensure_capture_service {
 
 my $dbh = getConnection();
 my $sth = $dbh->prepare(q{
-    SELECT COALESCE(ssid,'') ssid, COALESCE(internalNic,'') internalNic
+    SELECT CAST(hotspot AS UNSIGNED) hotspot,
+           COALESCE(ssid,'') ssid,
+           COALESCE(internalNic,'') internalNic
       FROM setup LIMIT 1
 });
 $sth->execute();
 my $setup = $sth->fetchrow_hashref() || {};
 $sth->finish();
 $dbh->disconnect();
+
+if (!($setup->{hotspot} // 0)) {
+    print "Hotspot disabled in setup; health check has nothing to start.\n";
+    exit 0;
+}
 
 my $ssid = $setup->{ssid} // '';
 my $internal = $setup->{internalNic} // '';
