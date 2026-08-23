@@ -2,54 +2,14 @@
 /** Receive managed-hotspot owner registrations from TaraSec back-office nodes. */
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../db_connect.php';
-
-function out(int $status, array $data): never {
-    http_response_code($status);
-    echo json_encode($data, JSON_UNESCAPED_SLASHES);
-    exit;
-}
-
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') out(405, ['ok'=>false,'error'=>'POST required']);
-$cfgPath = '/etc/tarasec-global-register.conf';
-if (!is_readable($cfgPath)) out(503, ['ok'=>false,'error'=>'Global registration not configured']);
-$cfg = parse_ini_file($cfgPath, false, INI_SCANNER_RAW);
-$secret = trim((string)($cfg['SHARED_SECRET'] ?? ''));
-if ($secret === '') out(503, ['ok'=>false,'error'=>'Global registration secret missing']);
-
-$raw = file_get_contents('php://input') ?: '';
-$timestamp = trim((string)($_SERVER['HTTP_X_TARASEC_TIMESTAMP'] ?? ''));
-$signature = strtolower(trim((string)($_SERVER['HTTP_X_TARASEC_SIGNATURE'] ?? '')));
-if (!ctype_digit($timestamp) || abs(time() - (int)$timestamp) > 300) out(401, ['ok'=>false,'error'=>'Stale or invalid timestamp']);
-$expected = hash_hmac('sha256', $timestamp . "\n" . $raw, $secret);
-if (!hash_equals($expected, $signature)) out(401, ['ok'=>false,'error'=>'Invalid signature']);
-
-$in = json_decode($raw, true);
-if (!is_array($in)) out(400, ['ok'=>false,'error'=>'Invalid JSON']);
-$uuid = trim((string)($in['installation_uuid'] ?? ''));
-$name = substr(trim((string)($in['owner_name'] ?? '')), 0, 255);
-$email = strtolower(substr(trim((string)($in['owner_email'] ?? '')), 0, 255));
-$phone = substr(trim((string)($in['owner_phone'] ?? '')), 0, 64);
-$country = strtoupper(substr(trim((string)($in['country'] ?? '')), 0, 2));
-$hostname = substr(trim((string)($in['hostname'] ?? '')), 0, 255);
-$machineId = substr(trim((string)($in['machine_id'] ?? '')), 0, 128);
-$sourceId = (int)($in['source_installation_id'] ?? 0);
-$paymentAvailable = !empty($in['payment_available']) ? 1 : 0;
-if (!preg_match('/^[0-9a-f-]{36}$/i', $uuid)) out(400, ['ok'=>false,'error'=>'Invalid installation UUID']);
-if ($name === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || $phone === '') out(400, ['ok'=>false,'error'=>'Owner contact details required']);
-
-try {
-    $sql = "INSERT INTO managedOwnerRegistration
-        (installationUuid,ownerName,ownerEmail,ownerPhone,country,hostname,machineId,sourceInstallationId,paymentAvailable)
-        VALUES (?,?,?,?,?,?,?,?,?)
-        ON DUPLICATE KEY UPDATE
-          lastRegistered=NOW(), ownerName=VALUES(ownerName), ownerEmail=VALUES(ownerEmail),
-          ownerPhone=VALUES(ownerPhone), country=VALUES(country), hostname=VALUES(hostname),
-          machineId=VALUES(machineId), sourceInstallationId=VALUES(sourceInstallationId),
-          paymentAvailable=VALUES(paymentAvailable)";
-    $stmt = $conn->prepare($sql);
-    $stmt->execute([$uuid,$name,$email,$phone,$country ?: null,$hostname ?: null,$machineId ?: null,$sourceId ?: null,$paymentAvailable]);
-    out(200, ['ok'=>true,'installation_uuid'=>$uuid]);
-} catch (Throwable $e) {
-    error_log('globalManagedRegister: '.$e->getMessage());
-    out(500, ['ok'=>false,'error'=>'Global registration failed']);
-}
+function out(int $status,array $data): never { http_response_code($status); echo json_encode($data,JSON_UNESCAPED_SLASHES); exit; }
+if($_SERVER['REQUEST_METHOD']!=='POST')out(405,['ok'=>false,'error'=>'POST required']);
+$cfgPath='/etc/tarasec-global-register.conf';if(!is_readable($cfgPath))out(503,['ok'=>false,'error'=>'Global registration not configured']);$cfg=parse_ini_file($cfgPath,false,INI_SCANNER_RAW);$secret=trim((string)($cfg['SHARED_SECRET']??''));if($secret==='')out(503,['ok'=>false,'error'=>'Global registration secret missing']);
+$raw=file_get_contents('php://input')?:'';$timestamp=trim((string)($_SERVER['HTTP_X_TARASEC_TIMESTAMP']??''));$signature=strtolower(trim((string)($_SERVER['HTTP_X_TARASEC_SIGNATURE']??'')));if(!ctype_digit($timestamp)||abs(time()-(int)$timestamp)>300)out(401,['ok'=>false,'error'=>'Stale or invalid timestamp']);$expected=hash_hmac('sha256',$timestamp."\n".$raw,$secret);if(!hash_equals($expected,$signature))out(401,['ok'=>false,'error'=>'Invalid signature']);
+$in=json_decode($raw,true);if(!is_array($in))out(400,['ok'=>false,'error'=>'Invalid JSON']);
+$uuid=trim((string)($in['installation_uuid']??''));$name=substr(trim((string)($in['owner_name']??'')),0,255);$email=strtolower(substr(trim((string)($in['owner_email']??'')),0,255));$phone=substr(trim((string)($in['owner_phone']??'')),0,64);$ownerAddress=substr(trim((string)($in['owner_address']??'')),0,500);$siteName=substr(trim((string)($in['site_name']??'')),0,255);$siteAddress=substr(trim((string)($in['site_address']??'')),0,500);$country=strtoupper(substr(trim((string)($in['country']??'')),0,2));$hostname=substr(trim((string)($in['hostname']??'')),0,255);$machineId=substr(trim((string)($in['machine_id']??'')),0,128);$sourceId=(int)($in['source_installation_id']??0);$paymentAvailable=!empty($in['payment_available'])?1:0;
+if(!preg_match('/^[0-9a-f-]{36}$/i',$uuid))out(400,['ok'=>false,'error'=>'Invalid installation UUID']);if($name===''||!filter_var($email,FILTER_VALIDATE_EMAIL)||$phone===''||$ownerAddress==='')out(400,['ok'=>false,'error'=>'Owner contact details and address required']);
+try{
+$sql="INSERT INTO managedOwnerRegistration (installationUuid,ownerName,ownerEmail,ownerPhone,ownerAddress,siteName,siteAddress,country,hostname,machineId,sourceInstallationId,paymentAvailable) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE lastRegistered=NOW(),ownerName=VALUES(ownerName),ownerEmail=VALUES(ownerEmail),ownerPhone=VALUES(ownerPhone),ownerAddress=VALUES(ownerAddress),siteName=VALUES(siteName),siteAddress=VALUES(siteAddress),country=VALUES(country),hostname=VALUES(hostname),machineId=VALUES(machineId),sourceInstallationId=VALUES(sourceInstallationId),paymentAvailable=VALUES(paymentAvailable)";
+$stmt=$conn->prepare($sql);$stmt->execute([$uuid,$name,$email,$phone,$ownerAddress,$siteName?:null,$siteAddress?:null,$country?:null,$hostname?:null,$machineId?:null,$sourceId?:null,$paymentAvailable]);out(200,['ok'=>true,'installation_uuid'=>$uuid]);
+}catch(Throwable $e){error_log('globalManagedRegister: '.$e->getMessage());out(500,['ok'=>false,'error'=>'Global registration failed']);}
