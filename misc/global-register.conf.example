@@ -1,0 +1,4 @@
+# Install as /etc/tarasec-global-register.conf on the GLOBAL DB web/API server.
+# chmod 600 /etc/tarasec-global-register.conf
+# Must match GLOBAL_DB_SHARED_SECRET on the TaraSec back-office enrollment server.
+SHARED_SECRET=
