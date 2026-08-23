@@ -31,6 +31,7 @@ install -m 0644 "$ROOT_DIR/systemd/tarasec-manager-requests.timer" "$SYSTEMD_DIR
 
 install -m 0755 "$ROOT_DIR/hotspot_watch.pl" "$RUNTIME_DIR/hotspot_watch.pl"
 install -m 0755 "$ROOT_DIR/hotspot_access.pl" "$RUNTIME_DIR/hotspot_access.pl"
+install -m 0755 "$ROOT_DIR/opennds_configure.pl" "$RUNTIME_DIR/opennds_configure.pl"
 install -m 0755 "$ROOT_DIR/dhcp_capture.pl" "$RUNTIME_DIR/dhcp_capture.pl"
 install -m 0644 "$ROOT_DIR/lib_dhcp.pm" "$RUNTIME_DIR/lib_dhcp.pm"
 install -m 0644 "$ROOT_DIR/systemd/tarasec-hotspot-watch.service" "$SYSTEMD_DIR/tarasec-hotspot-watch.service"
@@ -51,18 +52,31 @@ elif [[ -f "$GATEKEEPER_INDEX" ]]; then
     install -D -m 0644 "$GATEKEEPER_INDEX" "$DEPLOYED_INDEX"
 fi
 
+# openNDS is optional. If present, configure its supported FAS interface and
+# let it own captive-portal packet filtering. The helper disables the TaraSec
+# iptables fallback service only after openNDS has been detected.
+if command -v opennds >/dev/null 2>&1 || systemctl list-unit-files opennds.service --no-legend 2>/dev/null | grep -q opennds; then
+    perl "$RUNTIME_DIR/opennds_configure.pl"
+fi
+
 echo
 echo "Installed TaraSec App/node services:"
 echo "  manager verification worker:  tarasec-manager-requests.timer"
 echo "  hotspot/DHCP self-check:       tarasec-hotspot-watch.timer"
-echo "  hotspot access controller:     tarasec-hotspot-access.service"
+echo "  hotspot access fallback:       tarasec-hotspot-access.service"
 echo "  DHCP capture template:         tarasec-dhcp-capture@.service"
 echo "  gateway AI worker:             tarasec-gateway-ai.timer"
+if systemctl is-active --quiet opennds.service 2>/dev/null; then
+    echo "  captive portal:                opennds.service + /opennds/fas.php"
+else
+    echo "  captive portal:                TaraSec iptables fallback"
+fi
 echo
 echo "AI assessments still require central gateway AI policy/funding."
 echo "Test hotspot health: sudo systemctl start tarasec-hotspot-watch.service"
 echo "Inspect hotspot health: sudo journalctl -u tarasec-hotspot-watch.service -n 100 --no-pager"
 echo "Inspect hotspot access: sudo journalctl -u tarasec-hotspot-access.service -n 100 --no-pager"
+echo "Inspect OpenNDS: sudo systemctl status opennds --no-pager"
 echo "Inspect DHCP capture: sudo systemctl status 'tarasec-dhcp-capture@*' --no-pager"
 echo "Test AI with: sudo systemctl start tarasec-gateway-ai.service"
 echo "Inspect AI with: sudo journalctl -u tarasec-gateway-ai.service -n 100 --no-pager"
