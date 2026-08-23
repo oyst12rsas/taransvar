@@ -2,11 +2,10 @@
 /**
  * TaraSec managed hotspot bootstrap API.
  *
- * The caller supplies a one-time TaraSec enrollment token. This endpoint
- * consumes it, creates an installation record, creates a one-off NetBird setup
- * key and a unique Wazuh agent key, and returns only those per-installation
- * bootstrap credentials. Central NetBird/Wazuh API credentials never leave the
- * server.
+ * The caller supplies a one-time TaraSec enrollment token plus owner contact
+ * details. This endpoint consumes the token, stores the installation for
+ * back-office follow-up, creates one-off NetBird/Wazuh bootstrap credentials,
+ * and leaves global-DB forwarding to the retry worker.
  */
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../db_connect.php';
@@ -123,6 +122,14 @@ function createWazuhAgent(array $cfg, int $installationId, string $hostname): ar
     return ['id' => (string)$id, 'key' => (string)$key, 'name' => $name];
 }
 
+function newUuid(): string {
+    $b = random_bytes(16);
+    $b[6] = chr((ord($b[6]) & 0x0f) | 0x40);
+    $b[8] = chr((ord($b[8]) & 0x3f) | 0x80);
+    $h = bin2hex($b);
+    return substr($h,0,8).'-'.substr($h,8,4).'-'.substr($h,12,4).'-'.substr($h,16,4).'-'.substr($h,20);
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') failJson(405, 'POST required');
 $input = json_decode(file_get_contents('php://input') ?: '', true);
 if (!is_array($input)) failJson(400, 'Invalid JSON');
@@ -130,7 +137,13 @@ $token = trim((string)($input['enrollment_token'] ?? ''));
 $hostname = substr(trim((string)($input['hostname'] ?? 'hotspot')), 0, 255);
 $country = strtoupper(substr(trim((string)($input['country'] ?? '')), 0, 2));
 $machineId = substr(trim((string)($input['machine_id'] ?? '')), 0, 128);
+$ownerName = substr(trim((string)($input['owner_name'] ?? '')), 0, 255);
+$ownerEmail = strtolower(substr(trim((string)($input['owner_email'] ?? '')), 0, 255));
+$ownerPhone = substr(trim((string)($input['owner_phone'] ?? '')), 0, 64);
 if ($token === '') failJson(400, 'Missing enrollment_token');
+if ($ownerName === '') failJson(400, 'Owner name is required');
+if (!filter_var($ownerEmail, FILTER_VALIDATE_EMAIL)) failJson(400, 'Valid owner email is required');
+if (!preg_match('/^[+0-9][0-9 ()-]{6,30}$/', $ownerPhone)) failJson(400, 'Valid owner phone number is required');
 
 try {
     $cfg = managedConfig();
@@ -140,14 +153,17 @@ try {
     $stmt->execute([$hash]);
     $ticket = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$ticket) { $conn->rollBack(); failJson(403, 'Enrollment token invalid, expired, or already used'); }
+    if (strtolower(trim((string)$ticket['ownerEmail'])) !== $ownerEmail) {
+        $conn->rollBack();
+        failJson(403, 'Owner email does not match the TaraSec enrollment invitation');
+    }
 
-    $stmt = $conn->prepare('INSERT INTO managedInstallation (created,lastSeen,ownerEmail,hostname,country,machineId,paymentAvailable) VALUES (NOW(),NOW(),?,?,?,?,?)');
     $paymentAvailable = cfg($cfg, 'PAYMENT_AVAILABLE', '1') === '1' ? 1 : 0;
-    $stmt->execute([$ticket['ownerEmail'] ?? null, $hostname, $country ?: null, $machineId ?: null, $paymentAvailable]);
+    $uuid = newUuid();
+    $stmt = $conn->prepare('INSERT INTO managedInstallation (installationUuid,created,lastSeen,ownerName,ownerEmail,ownerPhone,hostname,country,machineId,paymentAvailable) VALUES (?,NOW(),NOW(),?,?,?,?,?,?,?)');
+    $stmt->execute([$uuid, $ownerName, $ownerEmail, $ownerPhone, $hostname, $country ?: null, $machineId ?: null, $paymentAvailable]);
     $installationId = (int)$conn->lastInsertId();
 
-    // Consume the TaraSec token before creating external credentials. A failed
-    // bootstrap is recoverable by issuing a new enrollment token; reuse is not.
     $stmt = $conn->prepare('UPDATE managedEnrollmentToken SET usedTime=NOW(), managedInstallationId=? WHERE managedEnrollmentTokenId=?');
     $stmt->execute([$installationId, $ticket['managedEnrollmentTokenId']]);
     $conn->commit();
@@ -161,6 +177,8 @@ try {
     echo json_encode([
         'ok' => true,
         'installation_id' => $installationId,
+        'installation_uuid' => $uuid,
+        'owner' => ['name' => $ownerName, 'email' => $ownerEmail, 'phone' => $ownerPhone],
         'netbird' => [
             'management_url' => cfg($cfg, 'NETBIRD_MANAGEMENT_URL'),
             'setup_key' => $nb['key'],
@@ -176,6 +194,7 @@ try {
             'available' => (bool)$paymentAvailable,
             'contact_url' => cfg($cfg, 'PAYMENT_CONTACT_URL', 'https://tarasec.org/'),
         ],
+        'global_registration' => ['queued' => true],
     ], JSON_UNESCAPED_SLASHES);
 } catch (Throwable $e) {
     if ($conn->inTransaction()) $conn->rollBack();
