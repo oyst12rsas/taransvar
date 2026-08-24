@@ -257,7 +257,6 @@ void sendToGlogalDbServers(_GlobalServers *cGlobalDb, char *szParams, uint32_t n
 {
 	for (int n = 0; n < 3; n++)
 	{
-    	//char *lpGlobalDbIp; //No idea why this isn't working: szGlobalDb[n];
     	char *lpGlobalDbIp = cGlobalDb->ip[n];
 
 		if (strlen(lpGlobalDbIp))
@@ -267,16 +266,13 @@ void sendToGlogalDbServers(_GlobalServers *cGlobalDb, char *szParams, uint32_t n
 
 			if (inet_aton(lpGlobalDbIp, &addr)) {
 				nGlobalDbIp = addr.s_addr;
-	    		// success
 			} else {
-    			// invalid IP
-    			nGlobalDbIp = 0;
+				nGlobalDbIp = 0;
 				printf("************************* Invalid ip: %s (skipping)\n", lpGlobalDbIp);
 			}
 
 			if (nGlobalDbIp)
 			{
-				//if (nGlobalDbIp != nMyIp)	- for some reason these are different... didn't debug, using strings instead...
 				if (strcmp(lpGlobalDbIp, cMyIp))
 				{
 	    			if (lpGlobalDbIp && strlen(lpGlobalDbIp) > 7)
@@ -287,12 +283,12 @@ void sendToGlogalDbServers(_GlobalServers *cGlobalDb, char *szParams, uint32_t n
 						snprintf(szUrl, sizeof(szUrl), "http://%s/script/config_update.php?%s", lpGlobalDbIp, szParams);
 						*szWgetBuff = 0;
 						printf("Sending request: %s\n", szUrl);
-						wget(szUrl, szWgetBuff, sizeof(szWgetBuff));  //Using global static buffers because reply doesn't come immediately.
+						wget(szUrl, szWgetBuff, sizeof(szWgetBuff));
 	    			} else {
     					char szBuf[256];
 	    				if (lpGlobalDbIp && *lpGlobalDbIp)
     						printf("****** Skipping wrong IP address for global DB server: %s\n", lpGlobalDbIp);
-      					//addWarningRecord(conn, szBuf);
+      					(void)szBuf;
 					}
 				}
 				else
@@ -336,31 +332,22 @@ int isMeOrMine(uint32_t nIp, uint32_t nMyIp, uint32_t nNettmask)
 
 void checkHackReports()
 {
-	//Checks if there's reported attacks by units in our network  
 	MYSQL *conn, *updateConn, *lookupConn, *localUpdate;
 	MYSQL_RES *res;
 	MYSQL_ROW row;
-
 	char *lpHackReportStatus = "updated";
 
-	//printf("About to check hack reports\n");
-
 	conn = getConnection();
-	//printf("Got connected to DB\n");
 	updateConn = 0;
 	lookupConn = 0;
 	localUpdate = 0;
 	uint32_t nMyIp;
 	uint32_t nNettmask;
 	char cMyIp[20];
-	char szSQL[400]; 
+	char szSQL[400];
 	_GlobalServers cGlobalDb;
-	//char szGlobalDb1[30];
-	//char szGlobalDb2[30];
-	//char szGlobalDb3[30];
 
-	char *lpSql = "select adminIP, inet_ntoa(adminIP), inet_ntoa(globalDb1ip), inet_ntoa(globalDb2ip), inet_ntoa(globalDb3ip), nettmask, internalIP from setup"; 
-	//printf("About to query\n");
+	char *lpSql = "select adminIP, inet_ntoa(adminIP), inet_ntoa(globalDb1ip), inet_ntoa(globalDb2ip), inet_ntoa(globalDb3ip), nettmask, internalIP from setup";
 	if (mysql_query(conn, lpSql)) {
 		fprintf(stderr, "**** ERROR ******* While finding setup: %s\n", mysql_error(conn));
 		addWarningRecord("**** ERROR ******* While finding setup");
@@ -369,24 +356,17 @@ void checkHackReports()
 	}
 	res = mysql_use_result(conn);
 	row = mysql_fetch_row(res);
-	//printf("After fetch_row\n");
 	nMyIp = (row[0]?atoi(row[0]):0);
 	uint32_t nInternalIp = (row[6]?atoi(row[6]):0);
 	nNettmask = (row[5]?atoi(row[5]):0);
 	strcpy(cMyIp, row[1]);
 	for (int n=0; n < 3; n++)
 	{
-	  char *lpDest = (&cGlobalDb)->ip[n]; 
+	  char *lpDest = (&cGlobalDb)->ip[n];
 	  strcpy(lpDest, (row[2+n]?row[2+n]: ""));
 	}
-	//strcpy(szGlobalDb1, (row[2]row[2]);
-	//strcpy(szGlobalDb2, row[3]);
-	//strcpy(szGlobalDb3, row[4]);
-	
-	//printf("Freeing result\n");
     mysql_free_result(res);
-	
-	//NOTE! Not checking hackReports regarding units in our network until 10 seconds later to give the system the chance to import recent port assignments
+
 	sprintf(szSQL, "select reportId, ip, port, inet_ntoa(ip), created, TIMESTAMPDIFF(SECOND, created, NOW()) as SecondsSince, sendAttemptCount, inet_ntoa(sentByIp), why from hackReport where handledTime is null and (ip <> %u or created < DATE_SUB(NOW(), INTERVAL 10 SECOND))", nMyIp);
 
 	if (mysql_query(conn, szSQL)) {
@@ -394,11 +374,8 @@ void checkHackReports()
 		addWarningRecord("**** ERROR ******* While fetching hackReports");
 		return;
 	}
-	
-	//printf("********************** Processing hackReports ***********\n");
-	
+
 	res = mysql_use_result(conn);
-	//printf("About to traverse the rows\n");
 
 	while ((row = mysql_fetch_row(res)) != NULL)
 	{
@@ -409,35 +386,34 @@ void checkHackReports()
 			setHackReportAsHandled("Aborted (timed out 10 times)", atoi(row[0]));
             continue;
 	    }
-	        
+
 		printf("Hack report %s, %s %s:%s, sent by: %s, count: %s, wt: %s\n", row[0], row[4], row[3], row[2], row[7], row[6], row[8]);
 
 		if (updateConn == NULL)
 			updateConn = getConnection();
-            
+
 		u_int32_t nNumericIp = (row[1]?atoi(row[1]):0);
 		u_int32_t nInfectionId = 0;
 		u_int32_t nUnitId = 0;
 		char cSQL[400];
-		int bUpdateHandled = 1;   //By default update the handled field after handling...
+		int bUpdateHandled = 1;
 		char *lpIp = (row[3]?row[3]:"(null)");
 		u_int32_t nInternaIpFromUnitPort = 0;
 
-		if (nNumericIp == nMyIp || isMeOrMine(nNumericIp, nInternalIp, nNettmask))	//Own public/NAT IP or a unit on my internal subnet
+		if (nNumericIp == nMyIp || isMeOrMine(nNumericIp, nInternalIp, nNettmask))
 		{
 			strcpy(cWhat, "Me or my unit. ");
 			printf("Me or my unit caused hackReport to be filed..\n");
 
 			if (nNumericIp != nMyIp)
 			{
-				//Child unit without NAT
-				sprintf(szSQL, "select U.unitId, infectionId from unit U left outer join internalInfections I on I.unitId = U.unitId where ipAddress = %d  order by infectionId desc, U.unitId desc", nNumericIp);
+				sprintf(szSQL, "select U.unitId, infectionId from unit U left outer join internalInfections I on I.unitId = U.unitId where ipAddress = %d order by infectionId desc, U.unitId desc", nNumericIp);
 				printf ("System thinks it's local unit without NAT. Maybe report from partner that threat info changed?):\n%s\n", szSQL);
 				if (mysql_query(updateConn, szSQL)) {
 					fprintf(stderr, "****** ERROR ***** While finding port assignment: %s\n", mysql_error(updateConn));
 					return;
 				}
-			
+
 				MYSQL_RES *lookupRes = mysql_use_result(updateConn);
 				if (!lookupRes) {
 					printf("******* ERROR ***** Fetching unit and infection.\n");
@@ -455,99 +431,88 @@ void checkHackReports()
 			else
 			{
 				strcpy(cWhat, "NAT'ed unit. ");
-				//This is a hacking report regarding one of my NAT'ed units.. Find what unit it was based on 
-				printf("This is a hacking report regarding one of my units.. Find what unit it was based on\n"); 
-				//the port and put in internalInfections table
-		
-				//OT 250212 - Seems like this SQL did not select the most 
-				sprintf(szSQL, "select portAssignmentId, UP.created, ifnull(U.unitId,0), UP.ipAddress, description, dhcpClientId, vci, hostname, inet_ntoa(UP.ipAddress) from unitPort UP join unit U on U.unitId = UP.unitId where port = %s order by portAssignmentId desc limit 1", row[2]); 
-				//printf ("SQL: %s\n", szSQL);
+				printf("This is a hacking report regarding one of my units.. Find what unit it was based on\n");
+
+				sprintf(szSQL, "select portAssignmentId, UP.created, ifnull(U.unitId,0), UP.ipAddress, description, dhcpClientId, vci, hostname, inet_ntoa(UP.ipAddress) from unitPort UP join unit U on U.unitId = UP.unitId where port = %s order by portAssignmentId desc limit 1", row[2]);
 				if (mysql_query(updateConn, szSQL)) {
 					fprintf(stderr, "****** ERROR ***** While finding port assignment: %s\n", mysql_error(updateConn));
 					return;
 				}
-			
+
 				MYSQL_RES *lookupRes = mysql_use_result(updateConn);
 				MYSQL_ROW lookupRow = mysql_fetch_row(lookupRes);
 				if (lookupRow)
 				{
 					nUnitId = atoi(lookupRow[2]);
-					printf("Hackreport %s port %s is %s %s %s %s %s\n", row[4], row[2], lookupRow[8], lookupRow[4], lookupRow[5], lookupRow[6], lookupRow[7]); 
+					printf("Hackreport %s port %s is %s %s %s %s %s\n", row[4], row[2], lookupRow[8], lookupRow[4], lookupRow[5], lookupRow[6], lookupRow[7]);
 					if (!lookupConn)
 						lookupConn = getConnection();
 
-					printf("Setting ip\n");
 					nInternaIpFromUnitPort = (lookupRow[3]?atoi(lookupRow[3]):0);
-					printf("ip set\n");
-                                
-					//Hacking report found on one of our connected units.
-					//Check if this address is already registered. Get the last one if several and check if not different unit.. 
-					//**** NOTE! This table should reflect changes in IP address..  
+
 					sprintf(cSQL, "select infectionId, unitId, handled, inserted, status from internalInfections where ip = %s and (unitId is null or unitId = %s) order by infectionId desc limit 1", lookupRow[3], lookupRow[2]);
 					if (mysql_query(lookupConn, cSQL)) {
 						fprintf(stderr, "****** ERROR ******* While finding port assignment: %s\n", mysql_error(lookupConn));
 						return;
 					}
-                                
+
 					MYSQL_RES *lookupRes2 = mysql_use_result(lookupConn);
 					MYSQL_ROW lookupRow2 = mysql_fetch_row(lookupRes2);
 					if (lookupRow2)
 						nInfectionId = atoi(lookupRow2[0]);
 
 					mysql_free_result(lookupRes2);
-					printf("Freeing\n");
 				}
 				else
 				{
 					printf("No port assignment found for %s:%s (should check conntrack?).\n", lpIp, row[2]);
 				}
-				printf("freeing lookupRes\n");
 				mysql_free_result(lookupRes);
-				printf("lookupRes freed\n");
 			}
 
-			printf("getting connection\n");
 			localUpdate = getConnection();
-			printf("got the connection\n");
 
 			if (nInfectionId > 0)
 			{
-				printf("Updating internalInfections record\n");
-				strncpy(cWhat, "Already reg as infected. ", sizeof(cWhat) - strlen(cWhat));
-				//NOTE! 260312 - Even though it's in the internalInfections table, it may be deactivated... so don't put it back in active state here...
-				//This IP is already registered in internalInfections. Update it (those are the IP  
-				//addresses that will be sent to tarakernel and be subject to tagging and blocking). 
-				//sprintf(cSQL, "update internalInfections set unitId = %s, lastSeen = now(), active = 1, handled = null where infectionId = %s", lookupRow[2], lookupRow2[0]);
-				sprintf(cSQL, "update internalInfections set unitId = %d, lastSeen = now() where infectionId = %d", nUnitId, nInfectionId);
-				lpHackReportStatus = "infection->lastSeen updated";
-				printf("Already in internalInfections, update it (NOTE! Was setting to active - which may be a problem...).\n");                                          
-						
+				int bDeliberateSelfRegistration = row[8] && strstr(row[8], "User self registered as infected");
+
+				if (bDeliberateSelfRegistration)
+				{
+					strncpy(cWhat, "Existing infection deliberately reactivated. ", sizeof(cWhat) - strlen(cWhat) - 1);
+					sprintf(cSQL, "update internalInfections set unitId = %d, lastSeen = now(), active = b'1', handled = b'0' where infectionId = %d", nUnitId, nInfectionId);
+					lpHackReportStatus = "infection reactivated";
+					printf("Self-registration deliberately reactivates existing internalInfections record %u.\n", nInfectionId);
+				}
+				else
+				{
+					strncpy(cWhat, "Already reg as infected. ", sizeof(cWhat) - strlen(cWhat) - 1);
+					// Ordinary reports must not undo a deliberate admin deactivation.
+					sprintf(cSQL, "update internalInfections set unitId = %d, lastSeen = now() where infectionId = %d", nUnitId, nInfectionId);
+					lpHackReportStatus = "infection->lastSeen updated";
+					printf("Already in internalInfections; updating lastSeen without changing active state.\n");
+				}
+
 				if (mysql_query(localUpdate, cSQL)) {
 					fprintf(stderr, "******** ERROR ****** While updating internalInfections: %s\n", mysql_error(localUpdate));
 					addWarningRecord("******** ERROR ****** While updating internalInfections");
 					return;
 				}
-        	          		
+
 			} else {
 				printf("Creating new internalInfections record for %s:%s (internal ip: %u).\n", lpIp, (row[2]?row[2]:"(null)"), nInternaIpFromUnitPort);
-				strncpy(cWhat, "Not reg as infected. ", sizeof(cWhat) - strlen(cWhat));
+				strncpy(cWhat, "Not reg as infected. ", sizeof(cWhat) - strlen(cWhat) - 1);
 
-				//Check if special case... 
 				char *lpWhat = row[8]?row[8]:"";
 				if (strstr(lpWhat, "sinkhole"))
 				{
-					snprintf(cWhat, sizeof(cWhat) - strlen(cWhat), "Sinkhole accessed. ");
+					snprintf(cWhat + strlen(cWhat), sizeof(cWhat) - strlen(cWhat), "Sinkhole accessed. ");
 				}
 
-				//This IP is not yet registered in internalInfections. Put it there.
-				//(those are the IP addresses that will be sent to tarakernel and be subject to tagging and blocking).
-				//NOTE! Check first if NAT'ed subnet. If so, store true IP.
 				if (nInternaIpFromUnitPort)
 				{
 					nNumericIp = nInternaIpFromUnitPort;
 					printf("Storing ip from unitPort as in (%d)", nInternaIpFromUnitPort);
 				}
-				//What about port? Should the original port of the NAT port be stored.. It's normally the same number if few units (name number is available)..
 
 				sprintf(cSQL, "insert into internalInfections (ip, nettmask, status, unitId, severity, why) values (%d, inet_aton('255.255.255.255'), 'firsttime', %d, 7, ?)", nNumericIp, nUnitId);
 
@@ -582,38 +547,31 @@ void checkHackReports()
 				mysql_stmt_close(stmt);
 
 				lpHackReportStatus = "Infection registered";
-				printf("New unit not yet registered as infected. Inserted now.\n");                                          
-				/*if (mysql_query(localUpdate, cSQL)) {
-					fprintf(stderr, "**** ERROR **** While inserting internalInfections: %s\n", mysql_error(localUpdate));
-					addWarningRecord("******** ERROR ****** While updating internalInfections");
-					return;
-				}*/
+				printf("New unit not yet registered as infected. Inserted now.\n");
 			}
-				
+
 			if (nUnitId)
 			{
 				sprintf(cSQL, "update hackReport set unitId = %d where reportId = %d", nUnitId, atoi(row[0]));
-				//printf("******** Updating unitId: %s\n", cSQL);
 				if (mysql_query(localUpdate, cSQL)) {
 					fprintf(stderr, "******** ERROR ****** While updating hackReport: %s\n", mysql_error(localUpdate));
 					addWarningRecord("******** ERROR ****** While updating hackReport");
 					return;
 				}
 			}
-				
-			//*************** Send message to global DB servers that one of our units reported infected 
+
 			char szParams[200];
 			sprintf(szParams, "f=confession&ip=%s&port=%s&ourid=%d", row[3], row[2], nUnitId);
 			sendToGlogalDbServers(&cGlobalDb, szParams, nMyIp, cMyIp);
 
 			sprintf(cSQL, "update hackReport set sentGlobalDB = now(), status = concat(status, '(confessed)') where reportId = %d", atoi(row[0]));
-				
+
 			if (mysql_query(localUpdate, cSQL)) {
 				fprintf(stderr, "******** ERROR ****** While updating hackReport: %s\n", mysql_error(localUpdate));
 				addWarningRecord("******** ERROR ****** While updating hackReport");
 				return;
 			}
-		}//me or mine
+		}
 		else
 		{
 			printf("Hack attempt from none of my units. Report back to ISP and global DB servers\n");
@@ -679,8 +637,6 @@ void checkHackReports()
                 setTaralinkSystemError(systemError, 7);
                 addWarningRecord(systemError);
 
-                //Retry the original report only when the responsible partner failed,
-                //or when no partner exists and global DB delivery is the only route.
                 if (partnerDeliveryFailed || (!nRouterIp && globalDeliveryFailed)) {
                     increaseSendAttemptCount(atoi(row[0]));
                     bUpdateHandled = 0;
@@ -691,14 +647,12 @@ void checkHackReports()
 		}
 
 		if (bUpdateHandled) {
-			if (!*cWhat)			
+			if (!*cWhat)
 				strcpy(cWhat, "FirstTime");
 
 		    setHackReportAsHandled(cWhat, atoi(row[0]));
 		}
-	}//while more records.
-
-	//printf("About to close databases\n");
+	}
 
 	if (updateConn)
 		mysql_close(updateConn);
@@ -706,8 +660,7 @@ void checkHackReports()
 		mysql_close(lookupConn);
 	if (localUpdate)
 		mysql_close(localUpdate);
-	
+
 	mysql_free_result(res);
 	mysql_close(conn);
 }
-
