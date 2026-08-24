@@ -1,0 +1,27 @@
+<group name="tarasec,">
+  <rule id="110100" level="3">
+    <decoded_as>tarasec</decoded_as>
+    <description>TaraSec structured security event</description>
+  </rule>
+
+  <rule id="110101" level="8">
+    <if_sid>110100</if_sid>
+    <field name="tarasec_event">sinkhole_hit</field>
+    <description>TaraSec sinkhole hit by pseudonymous unit $(tarasec_unit_id) via $(tarasec_gateway)</description>
+    <group>network,threat_detection,</group>
+  </rule>
+
+  <rule id="110102" level="7">
+    <if_sid>110100</if_sid>
+    <field name="tarasec_event">threat_report</field>
+    <description>TaraSec threat report for pseudonymous unit $(tarasec_unit_id) via $(tarasec_gateway)</description>
+    <group>network,threat_detection,</group>
+  </rule>
+
+  <rule id="110109" level="10">
+    <if_sid>110100</if_sid>
+    <field name="tarasec_event">soc_worker_error</field>
+    <description>TaraSec SOC event worker error</description>
+    <group>system_error,</group>
+  </rule>
+</group>
