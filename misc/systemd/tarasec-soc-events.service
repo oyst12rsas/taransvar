@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/perl /home/oystein/taransvar/misc/worker_soc_events.pl
+ExecStart=/usr/bin/perl /usr/local/sbin/tarasec-soc-events.pl
 Restart=on-failure
 RestartSec=3
 User=root
