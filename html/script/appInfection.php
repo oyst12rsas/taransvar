@@ -21,6 +21,15 @@ try {
     // It is the JSON view of the same canonical assessment used by the web UI.
     $data = getTagData();
 
+    // On a receiving node the packet carrying this very HTTP request may be
+    // logged asynchronously.  Keep the same TCP source port and retry briefly
+    // so getTagData() can see the TaraSec tag from this request itself.
+    $trafficAge = (int)($data['trafficSecondsSince'] ?? -1);
+    if ($trafficAge < 0 || $trafficAge >= 45) {
+        usleep(300000);
+        $data = getTagData();
+    }
+
     echo json_encode([
         'ok' => true,
         'infected' => ((int)($data['severity'] ?? 0)) > 1,
