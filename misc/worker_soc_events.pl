@@ -16,8 +16,8 @@ my $state_file = '/var/lib/tarasec/soc_last_report_id';
 my $poll_seconds = 2;
 
 sub read_last_id {
-    return 0 unless -r $state_file;
-    open my $fh, '<', $state_file or return 0;
+    return undef unless -r $state_file;
+    open my $fh, '<', $state_file or return undef;
     my $id = <$fh> // 0;
     close $fh;
     $id =~ s/\D//g;
@@ -42,7 +42,7 @@ sub safe_value {
     return $value;
 }
 
-openlog('tarasec', 'pid,nofatal', LOG_AUTHPRIV);
+openlog('tarasec', 'pid,nofatal', LOG_USER);
 
 my $last_id = read_last_id();
 my $dbh;
@@ -50,6 +50,14 @@ my $dbh;
 while (1) {
     eval {
         $dbh = getConnection() unless $dbh && eval { $dbh->ping };
+
+        # First launch starts at the current end of hackReport so installing
+        # Wazuh does not replay old history as if it were new security traffic.
+        if (!defined $last_id) {
+            my ($current) = $dbh->selectrow_array('SELECT COALESCE(MAX(reportId),0) FROM hackReport');
+            $last_id = $current || 0;
+            write_last_id($last_id);
+        }
 
         my $gateway = hostname();
         eval {
