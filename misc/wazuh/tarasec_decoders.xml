@@ -1,0 +1,9 @@
+<decoder name="tarasec">
+  <prematch>^TARASEC </prematch>
+</decoder>
+
+<decoder name="tarasec-fields">
+  <parent>tarasec</parent>
+  <regex>event=([^ ]+) unit_id=([0-9]+) public_ip=([^ ]+) public_port=([0-9]+) gateway="([^"]*)" severity=([0-9]+) report_id=([0-9]+)</regex>
+  <order>tarasec_event,tarasec_unit_id,srcip,srcport,tarasec_gateway,tarasec_severity,tarasec_report_id</order>
+</decoder>
