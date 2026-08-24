@@ -1,0 +1,14 @@
+[Unit]
+Description=TaraSec structured SOC event emitter
+After=network-online.target mysql.service mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/perl /home/oystein/taransvar/misc/worker_soc_events.pl
+Restart=on-failure
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target
