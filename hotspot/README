@@ -1,30 +1,73 @@
-- Check: Login msg... 
-- Change internal IP address
-- Install.pl still contains code of setup_network.pl...
-- fix dhcpcommit.pl elsewhere
-- Radius servers are hardcoded in db.pl (search 192.168.100.12)
+TaraSec Hotspot
+===============
 
-***** Install instructions *********
-NOTE! We assume you already installed our "Gatekeeper" system.
+New installations should use the automatic hotspot installer at the repository root:
 
-- To become root user, type: "sudo su -" <enter>
+    sudo bash tara_hotspot.sh
 
-********** Install Linux packages that are not part of the Gatekeeper system ********
-sudo su
-apt-get update -y && apt-get upgrade -y
-apt-get install ipfm freeradius freeradius-mysql -y 
+The installer is designed to require no questions on a normal machine. It automatically:
 
-************ Install the Taransvar hotspot system ***********
-- cd to hotsport directory (sibling to tarakernel, taralink, misc++)
-- Type "sh distro/install.sh" <enter>
+- detects the interface carrying the IPv4 default route and uses it as WAN;
+- finds an unused Wi-Fi interface whose driver supports AP mode;
+- unblocks software-blocked Wi-Fi;
+- chooses a private /24 that does not conflict with existing routes or addresses;
+- installs and configures hostapd and dnsmasq without replacing the machine's global dnsmasq configuration;
+- enables IPv4 forwarding using a dedicated sysctl drop-in;
+- creates TaraSec-specific firewall/NAT chains without changing the host's global FORWARD policy;
+- installs openNDS when it is available from the system package repositories;
+- preserves an existing NetBird connection and does not require NetBird enrollment for local hotspot operation;
+- creates backups before changing TaraSec-owned configuration;
+- validates hostapd/dnsmasq configuration and performs a basic health check;
+- can be rerun safely.
 
-Now open your browser and type "localhost"<enter>
-This should display a login box.. 
+Default hotspot
+---------------
 
-*********** To fix after ***********
-sudo crontab -u root -e
-- Then fix the path of crontasks.pl (contains oystein which is wrong)
+SSID: TaraSec
+Wi-Fi security: open (intended for captive-portal access)
+Channel: 6
+DHCP clients: .50 through .200 on the automatically selected /24
 
-************ If trouble **************
-- Type "localhost" in the browser, log in (username and login is printed there) and click "Logs" in top menu, then "Status" in left menu and then the link to show server status. There should be green text saying all is well. Otherwise red text telling what's wrong. If this doens't help, then copy all the text and send it to support. 
-- Make sure if tarakernel is running, taralink must also run. sudo dmesg -w 
+The installer stores its detected configuration in:
+
+    /etc/tarasec/hotspot.conf
+
+Advanced overrides
+------------------
+
+Most users should not need these. They are useful for unusual hardware or automated deployment:
+
+    TARASEC_HOTSPOT_IF=wlan1
+    TARASEC_WAN_IF=eth0
+    TARASEC_SSID=TaraSec
+    TARASEC_WIFI_PASSWORD='optional-wpa2-password'
+    TARASEC_HOTSPOT_CIDR=192.168.50.0/24
+    TARASEC_COUNTRY=NO
+    TARASEC_CHANNEL=6
+    TARASEC_INSTALL_OPENNDS=auto   # auto, yes, or no
+    TARASEC_NETBIRD_SETUP_KEY=...
+    TARASEC_NETBIRD_MGMT_URL=https://netbird.taransvar.no
+    TARASEC_NONINTERACTIVE=1
+
+If several unused AP-capable Wi-Fi adapters are present, the installer asks which one to use. In non-interactive mode it stops instead, so automation never guesses between equally plausible radios.
+
+Existing/legacy hotspot code
+----------------------------
+
+The files under hotspot/perl and older FreeRADIUS-based setup routines are retained for compatibility and migration work. They are not the recommended installation path for a new TaraSec hotspot. In particular, do not follow older notes that require manual RADIUS addresses, per-user paths, or hand-edited cron entries.
+
+Troubleshooting
+---------------
+
+Useful commands:
+
+    cat /etc/tarasec/hotspot.conf
+    ip -br addr
+    ip route
+    iw dev
+    systemctl status hostapd dnsmasq tarasec-hotspot-interface tarasec-hotspot-firewall --no-pager
+    journalctl -u hostapd -u dnsmasq -n 100 --no-pager
+    iptables -S TARASEC-HOTSPOT-FWD
+    iptables -t nat -S TARASEC-HOTSPOT-NAT
+
+If the installer cannot identify an unused AP-capable Wi-Fi interface, adding a supported USB Wi-Fi adapter is usually enough; the next run will detect it automatically.
