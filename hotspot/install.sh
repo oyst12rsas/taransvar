@@ -17,7 +17,7 @@ set -euo pipefail
 #   TARASEC_NETBIRD_SETUP_KEY=...
 #   TARASEC_NONINTERACTIVE=1
 
-VERSION=2.1
+VERSION=2.2
 CONF_DIR=/etc/tarasec
 STATE_FILE=$CONF_DIR/hotspot.conf
 SSID="${TARASEC_SSID:-TaraSec}"
@@ -52,8 +52,6 @@ state_value(){
 }
 
 load_previous_state(){
-  # Environment values always win. Previous installer state is used only to make
-  # repeat runs stable and silent.
   [[ -n "$HOTSPOT_IF" ]] || HOTSPOT_IF="$(state_value HOTSPOT_IF)"
   [[ -n "$WAN_IF" ]] || WAN_IF="$(state_value WAN_IF)"
   [[ -n "$CIDR" ]] || CIDR="$(state_value HOTSPOT_CIDR)"
@@ -63,7 +61,7 @@ install_packages(){
   have apt-get || die "Debian/Ubuntu/Raspberry Pi OS is currently required"
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -y
-  apt-get install -y hostapd dnsmasq iw rfkill iproute2 iptables curl ca-certificates
+  apt-get install -y hostapd dnsmasq-base iw rfkill iproute2 iptables curl ca-certificates
   systemctl unmask hostapd 2>/dev/null || true
 }
 
@@ -94,20 +92,16 @@ choose_from(){
 detect_interfaces(){
   local current_default candidates=() i
   current_default=$(ip -4 route show default | awk '$1=="default"{for(i=1;i<=NF;i++)if($i=="dev"){print $(i+1);exit}}')
-
-  # Prefer the real current default route over stale saved WAN state.
   if [[ -n "${TARASEC_WAN_IF:-}" ]]; then WAN_IF="$TARASEC_WAN_IF";
   elif [[ -n "$current_default" ]]; then WAN_IF="$current_default";
   fi
   [[ -n "$WAN_IF" ]] || die "No Internet/default-route interface found"
   ip link show "$WAN_IF" >/dev/null 2>&1 || die "WAN interface '$WAN_IF' does not exist"
 
-  # Keep a previously selected hotspot radio when it still exists and supports AP.
   if [[ -n "$HOTSPOT_IF" ]] && { ! ip link show "$HOTSPOT_IF" >/dev/null 2>&1 || ! supports_ap "$HOTSPOT_IF"; }; then
     warn "Previously selected hotspot interface '$HOTSPOT_IF' is no longer usable; redetecting"
     HOTSPOT_IF=""
   fi
-
   if [[ -z "$HOTSPOT_IF" ]]; then
     while read -r i; do
       [[ -n "$i" && "$i" != "$WAN_IF" ]] || continue
@@ -115,20 +109,16 @@ detect_interfaces(){
     done < <(wifi_list)
     HOTSPOT_IF=$(choose_from "Multiple AP-capable Wi-Fi adapters were found." "${candidates[@]}") || true
   fi
-
   [[ -n "$HOTSPOT_IF" ]] || die "No separate AP-capable Wi-Fi adapter found. Connect one and rerun."
   [[ "$HOTSPOT_IF" != "$WAN_IF" ]] || die "Refusing to use the same interface for WAN and hotspot"
-
   rfkill unblock wifi 2>/dev/null || true
   rfkill list 2>/dev/null | grep -A4 -F 'Wireless LAN' | grep -q 'Hard blocked: yes' && die "Wi-Fi is hardware blocked"
-
   log "WAN: $WAN_IF"
   log "Hotspot Wi-Fi: $HOTSPOT_IF"
 }
 
 route_conflict_except_own(){
   local c="$1"
-  # A route already attached to our selected hotspot interface is expected on reruns.
   ip -4 route show table all 2>/dev/null |
     grep -F "$c" |
     grep -vE "(^|[[:space:]])dev[[:space:]]+$HOTSPOT_IF([[:space:]]|$)" |
@@ -137,11 +127,9 @@ route_conflict_except_own(){
 
 choose_network(){
   local c prefix
-  if [[ -n "$CIDR" ]]; then
-    if route_conflict_except_own "$CIDR"; then
-      warn "Saved/requested subnet $CIDR now conflicts with another interface; choosing a new subnet"
-      CIDR=""
-    fi
+  if [[ -n "$CIDR" ]] && route_conflict_except_own "$CIDR"; then
+    warn "Saved/requested subnet $CIDR now conflicts with another interface; choosing a new subnet"
+    CIDR=""
   fi
   if [[ -z "$CIDR" ]]; then
     for c in 192.168.50.0/24 192.168.60.0/24 192.168.70.0/24 192.168.80.0/24 192.168.90.0/24 10.42.0.0/24 10.43.0.0/24 10.44.0.0/24 172.20.50.0/24 172.21.50.0/24; do
@@ -156,7 +144,7 @@ choose_network(){
 
 backup(){
   mkdir -p "$BACKUP" "$CONF_DIR"
-  for f in /etc/hostapd/hostapd.conf /etc/dnsmasq.d/tarasec-hotspot.conf /etc/systemd/system/tarasec-hotspot-interface.service /etc/systemd/system/tarasec-hotspot-firewall.service /usr/local/sbin/tarasec-hotspot-firewall "$STATE_FILE"; do
+  for f in /etc/hostapd/hostapd.conf /etc/tarasec/dnsmasq-hotspot.conf /etc/systemd/system/tarasec-hotspot-interface.service /etc/systemd/system/tarasec-hotspot-firewall.service /etc/systemd/system/tarasec-hotspot-dnsmasq.service /usr/local/sbin/tarasec-hotspot-firewall "$STATE_FILE"; do
     [[ -e "$f" ]] && cp -a "$f" "$BACKUP/$(basename "$f")" 2>/dev/null || true
   done
 }
@@ -178,7 +166,7 @@ EOF
 Description=TaraSec hotspot interface
 After=network-online.target
 Wants=network-online.target
-Before=hostapd.service dnsmasq.service
+Before=hostapd.service tarasec-hotspot-dnsmasq.service
 [Service]
 Type=oneshot
 ExecStart=/sbin/ip link set dev $HOTSPOT_IF up
@@ -214,17 +202,33 @@ EOF
     grep -q '^DAEMON_CONF=' /etc/default/hostapd && sed -i 's|^DAEMON_CONF=.*|DAEMON_CONF="/etc/hostapd/hostapd.conf"|' /etc/default/hostapd || echo 'DAEMON_CONF="/etc/hostapd/hostapd.conf"' >>/etc/default/hostapd
   fi
 
-  mkdir -p /etc/dnsmasq.d
-  cat >/etc/dnsmasq.d/tarasec-hotspot.conf <<EOF
+  mkdir -p "$CONF_DIR"
+  cat >$CONF_DIR/dnsmasq-hotspot.conf <<EOF
 interface=$HOTSPOT_IF
-bind-dynamic
+bind-interfaces
+listen-address=$GW
+port=0
 dhcp-range=$DHCP_START,$DHCP_END,255.255.255.0,12h
 dhcp-option=3,$GW
-dhcp-option=6,$GW
-domain-needed
-bogus-priv
+dhcp-option=6,1.1.1.1,8.8.8.8
+dhcp-authoritative
 EOF
-  dnsmasq --test >/dev/null 2>&1 || die "Generated dnsmasq configuration is invalid"
+  dnsmasq --test --conf-file=$CONF_DIR/dnsmasq-hotspot.conf >/dev/null 2>&1 || die "Generated TaraSec dnsmasq configuration is invalid"
+
+  cat >/etc/systemd/system/tarasec-hotspot-dnsmasq.service <<EOF
+[Unit]
+Description=TaraSec hotspot DHCP
+After=tarasec-hotspot-interface.service
+Requires=tarasec-hotspot-interface.service
+Before=opennds.service
+[Service]
+Type=simple
+ExecStart=/usr/sbin/dnsmasq --keep-in-foreground --conf-file=$CONF_DIR/dnsmasq-hotspot.conf --pid-file=/run/tarasec-hotspot-dnsmasq.pid
+Restart=on-failure
+RestartSec=2
+[Install]
+WantedBy=multi-user.target
+EOF
 }
 
 write_firewall(){
@@ -301,18 +305,19 @@ EOF
 
 start_and_check(){
   systemctl daemon-reload
-  systemctl enable tarasec-hotspot-interface tarasec-hotspot-firewall hostapd dnsmasq >/dev/null
+  # Leave the host's normal dnsmasq service alone; TaraSec owns a dedicated instance.
+  systemctl enable tarasec-hotspot-interface tarasec-hotspot-firewall tarasec-hotspot-dnsmasq hostapd >/dev/null
   systemctl restart tarasec-hotspot-interface
-  systemctl restart dnsmasq
+  systemctl restart tarasec-hotspot-dnsmasq
   systemctl restart hostapd
   systemctl restart tarasec-hotspot-firewall
   systemctl restart opennds 2>/dev/null || true
 
   local bad=0
   systemctl is-active --quiet hostapd || { warn "hostapd failed"; bad=1; }
-  systemctl is-active --quiet dnsmasq || { warn "dnsmasq failed"; bad=1; }
+  systemctl is-active --quiet tarasec-hotspot-dnsmasq || { warn "TaraSec DHCP failed"; bad=1; }
   ip -4 addr show "$HOTSPOT_IF" | grep -q "inet $GW/24" || { warn "hotspot IP missing"; bad=1; }
-  [[ $bad -eq 0 ]] || warn "See: journalctl -u hostapd -u dnsmasq -n 100 --no-pager"
+  [[ $bad -eq 0 ]] || warn "See: journalctl -u hostapd -u tarasec-hotspot-dnsmasq -n 100 --no-pager"
 }
 
 summary(){
