@@ -61,7 +61,7 @@ install_packages(){
   have apt-get || die "Debian/Ubuntu/Raspberry Pi OS is currently required"
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -y
-  apt-get install -y hostapd dnsmasq-base iw rfkill iproute2 iptables curl ca-certificates
+  apt-get install -y hostapd dnsmasq-base iw rfkill iproute2 iptables nftables curl ca-certificates
   systemctl unmask hostapd 2>/dev/null || true
 }
 
@@ -97,7 +97,6 @@ detect_interfaces(){
   fi
   [[ -n "$WAN_IF" ]] || die "No Internet/default-route interface found"
   ip link show "$WAN_IF" >/dev/null 2>&1 || die "WAN interface '$WAN_IF' does not exist"
-
   if [[ -n "$HOTSPOT_IF" ]] && { ! ip link show "$HOTSPOT_IF" >/dev/null 2>&1 || ! supports_ap "$HOTSPOT_IF"; }; then
     warn "Previously selected hotspot interface '$HOTSPOT_IF' is no longer usable; redetecting"
     HOTSPOT_IF=""
@@ -119,15 +118,19 @@ detect_interfaces(){
 
 route_conflict_except_own(){
   local c="$1"
-  ip -4 route show table all 2>/dev/null | grep -F "$c" |
-    grep -vE "(^|[[:space:]])dev[[:space:]]+$HOTSPOT_IF([[:space:]]|$)" | grep -q .
+  ip -4 route show table all 2>/dev/null |
+    grep -F "$c" |
+    grep -vE "(^|[[:space:]])dev[[:space:]]+$HOTSPOT_IF([[:space:]]|$)" |
+    grep -q .
 }
 
 choose_network(){
   local c prefix
-  if [[ -n "$CIDR" ]] && route_conflict_except_own "$CIDR"; then
-    warn "Saved/requested subnet $CIDR now conflicts with another interface; choosing a new subnet"
-    CIDR=""
+  if [[ -n "$CIDR" ]]; then
+    if route_conflict_except_own "$CIDR"; then
+      warn "Saved/requested subnet $CIDR now conflicts with another interface; choosing a new subnet"
+      CIDR=""
+    fi
   fi
   if [[ -z "$CIDR" ]]; then
     for c in 192.168.50.0/24 192.168.60.0/24 192.168.70.0/24 192.168.80.0/24 192.168.90.0/24 10.42.0.0/24 10.43.0.0/24 10.44.0.0/24 172.20.50.0/24 172.21.50.0/24; do
@@ -142,7 +145,7 @@ choose_network(){
 
 backup(){
   mkdir -p "$BACKUP" "$CONF_DIR"
-  for f in /etc/hostapd/hostapd.conf "$CONF_DIR/dnsmasq-hotspot.conf" /etc/systemd/system/tarasec-hotspot-interface.service /etc/systemd/system/tarasec-hotspot-firewall.service /etc/systemd/system/tarasec-hotspot-dnsmasq.service /usr/local/sbin/tarasec-hotspot-firewall "$STATE_FILE"; do
+  for f in /etc/hostapd/hostapd.conf /etc/systemd/system/tarasec-hotspot-interface.service /etc/systemd/system/tarasec-hotspot-firewall.service /etc/systemd/system/tarasec-hotspot-dnsmasq.service /usr/local/sbin/tarasec-hotspot-firewall "$STATE_FILE"; do
     [[ -e "$f" ]] && cp -a "$f" "$BACKUP/$(basename "$f")" 2>/dev/null || true
   done
 }
@@ -158,7 +161,6 @@ write_network_config(){
 net.ipv4.ip_forward=1
 EOF
   sysctl -w net.ipv4.ip_forward=1 >/dev/null
-
   cat >/etc/systemd/system/tarasec-hotspot-interface.service <<EOF
 [Unit]
 Description=TaraSec hotspot interface
@@ -174,7 +176,6 @@ RemainAfterExit=yes
 [Install]
 WantedBy=multi-user.target
 EOF
-
   [[ -n "$COUNTRY" ]] || COUNTRY=$(iw reg get 2>/dev/null | awk '/^country [A-Z][A-Z]:/{gsub(":","",$2);print $2;exit}')
   [[ "$COUNTRY" =~ ^[A-Z]{2}$ ]] || COUNTRY=""
   mkdir -p /etc/hostapd
@@ -195,11 +196,9 @@ EOF
       echo wpa=0
     fi
   } >/etc/hostapd/hostapd.conf
-
   if [[ -f /etc/default/hostapd ]]; then
     grep -q '^DAEMON_CONF=' /etc/default/hostapd && sed -i 's|^DAEMON_CONF=.*|DAEMON_CONF="/etc/hostapd/hostapd.conf"|' /etc/default/hostapd || echo 'DAEMON_CONF="/etc/hostapd/hostapd.conf"' >>/etc/default/hostapd
   fi
-
   mkdir -p "$CONF_DIR"
   cat >$CONF_DIR/dnsmasq-hotspot.conf <<EOF
 interface=$HOTSPOT_IF
@@ -212,7 +211,6 @@ dhcp-option=6,1.1.1.1,8.8.8.8
 dhcp-authoritative
 EOF
   dnsmasq --test --conf-file=$CONF_DIR/dnsmasq-hotspot.conf >/dev/null 2>&1 || die "Generated TaraSec dnsmasq configuration is invalid"
-
   cat >/etc/systemd/system/tarasec-hotspot-dnsmasq.service <<EOF
 [Unit]
 Description=TaraSec hotspot DHCP
@@ -235,35 +233,56 @@ write_firewall(){
 set -u
 H='$HOTSPOT_IF'; W='$WAN_IF'; C='$CIDR'
 IPT="\$(command -v iptables || true)"
-[[ -n "\$IPT" ]] || { echo '[TaraSec firewall] iptables not found' >&2; exit 1; }
+NFT="\$(command -v nft || true)"
 
-run(){
-  if ! "\$IPT" "\$@"; then
-    echo "[TaraSec firewall] failed: iptables \$*" >&2
-    return 1
-  fi
+iptables_usable(){
+  [[ -n "\$IPT" ]] || return 1
+  "\$IPT" -S FORWARD >/dev/null 2>&1 || return 1
+  "\$IPT" -t nat -S POSTROUTING >/dev/null 2>&1 || return 1
 }
 
-# Filter chain. Remove/recreate only TaraSec-owned state; never flush global chains.
-"\$IPT" -D FORWARD -j TARASEC-HOTSPOT-FWD 2>/dev/null || true
-"\$IPT" -F TARASEC-HOTSPOT-FWD 2>/dev/null || true
-"\$IPT" -X TARASEC-HOTSPOT-FWD 2>/dev/null || true
-run -N TARASEC-HOTSPOT-FWD || exit 1
-run -I FORWARD 1 -j TARASEC-HOTSPOT-FWD || exit 1
-run -A TARASEC-HOTSPOT-FWD -i "\$H" -o "\$W" -s "\$C" -j ACCEPT || exit 1
-run -A TARASEC-HOTSPOT-FWD -i "\$W" -o "\$H" -d "\$C" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT || exit 1
-run -A TARASEC-HOTSPOT-FWD -j RETURN || exit 1
+setup_iptables(){
+  run(){ if ! "\$IPT" "\$@"; then echo "[TaraSec firewall] failed: iptables \$*" >&2; return 1; fi; }
+  "\$IPT" -D FORWARD -j TARASEC-HOTSPOT-FWD 2>/dev/null || true
+  "\$IPT" -F TARASEC-HOTSPOT-FWD 2>/dev/null || true
+  "\$IPT" -X TARASEC-HOTSPOT-FWD 2>/dev/null || true
+  run -N TARASEC-HOTSPOT-FWD || return 1
+  run -I FORWARD 1 -j TARASEC-HOTSPOT-FWD || return 1
+  run -A TARASEC-HOTSPOT-FWD -i "\$H" -o "\$W" -s "\$C" -j ACCEPT || return 1
+  run -A TARASEC-HOTSPOT-FWD -i "\$W" -o "\$H" -d "\$C" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT || return 1
+  run -A TARASEC-HOTSPOT-FWD -j RETURN || return 1
+  "\$IPT" -t nat -D POSTROUTING -j TARASEC-HOTSPOT-NAT 2>/dev/null || true
+  "\$IPT" -t nat -F TARASEC-HOTSPOT-NAT 2>/dev/null || true
+  "\$IPT" -t nat -X TARASEC-HOTSPOT-NAT 2>/dev/null || true
+  run -t nat -N TARASEC-HOTSPOT-NAT || return 1
+  run -t nat -I POSTROUTING 1 -j TARASEC-HOTSPOT-NAT || return 1
+  run -t nat -A TARASEC-HOTSPOT-NAT -s "\$C" -o "\$W" -j MASQUERADE || return 1
+  run -t nat -A TARASEC-HOTSPOT-NAT -j RETURN || return 1
+  echo "[TaraSec firewall] active via \$("\$IPT" --version 2>/dev/null | head -1)" >&2
+}
 
-# NAT chain.
-"\$IPT" -t nat -D POSTROUTING -j TARASEC-HOTSPOT-NAT 2>/dev/null || true
-"\$IPT" -t nat -F TARASEC-HOTSPOT-NAT 2>/dev/null || true
-"\$IPT" -t nat -X TARASEC-HOTSPOT-NAT 2>/dev/null || true
-run -t nat -N TARASEC-HOTSPOT-NAT || exit 1
-run -t nat -I POSTROUTING 1 -j TARASEC-HOTSPOT-NAT || exit 1
-run -t nat -A TARASEC-HOTSPOT-NAT -s "\$C" -o "\$W" -j MASQUERADE || exit 1
-run -t nat -A TARASEC-HOTSPOT-NAT -j RETURN || exit 1
+setup_nft(){
+  [[ -n "\$NFT" ]] || { echo '[TaraSec firewall] neither usable iptables nor nft found' >&2; return 1; }
+  "\$NFT" delete table inet tarasec_hotspot 2>/dev/null || true
+  "\$NFT" delete table ip tarasec_hotspot_nat 2>/dev/null || true
+  "\$NFT" -f - <<NFT_RULES
+add table inet tarasec_hotspot
+add chain inet tarasec_hotspot forward { type filter hook forward priority -5; policy accept; }
+add rule inet tarasec_hotspot forward iifname "\$H" oifname "\$W" ip saddr \$C accept
+add rule inet tarasec_hotspot forward iifname "\$W" oifname "\$H" ip daddr \$C ct state established,related accept
+add table ip tarasec_hotspot_nat
+add chain ip tarasec_hotspot_nat postrouting { type nat hook postrouting priority srcnat; policy accept; }
+add rule ip tarasec_hotspot_nat postrouting ip saddr \$C oifname "\$W" masquerade
+NFT_RULES
+  echo '[TaraSec firewall] active via native nftables' >&2
+}
 
-echo "[TaraSec firewall] active via \$("\$IPT" --version 2>/dev/null | head -1)" >&2
+if iptables_usable; then
+  setup_iptables || { echo '[TaraSec firewall] iptables setup failed; trying native nftables' >&2; setup_nft; }
+else
+  echo '[TaraSec firewall] iptables compatibility layer lacks usable FORWARD/POSTROUTING chains; using native nftables' >&2
+  setup_nft
+fi
 EOF
   chmod 0755 /usr/local/sbin/tarasec-hotspot-firewall
   cat >/etc/systemd/system/tarasec-hotspot-firewall.service <<EOF
@@ -331,17 +350,16 @@ start_and_check(){
   systemctl restart hostapd
   if ! systemctl restart tarasec-hotspot-firewall; then
     warn "TaraSec firewall failed. Exact reason follows:"
-    journalctl -u tarasec-hotspot-firewall -n 20 --no-pager >&2 || true
+    journalctl -u tarasec-hotspot-firewall -n 30 --no-pager >&2 || true
     return 1
   fi
   systemctl restart opennds 2>/dev/null || true
-
   local bad=0
   systemctl is-active --quiet hostapd || { warn "hostapd failed"; bad=1; }
   systemctl is-active --quiet tarasec-hotspot-dnsmasq || { warn "TaraSec DHCP failed"; bad=1; }
-  systemctl is-active --quiet tarasec-hotspot-firewall || { warn "TaraSec firewall failed"; bad=1; }
   ip -4 addr show "$HOTSPOT_IF" | grep -q "inet $GW/24" || { warn "hotspot IP missing"; bad=1; }
-  [[ $bad -eq 0 ]] || warn "See: journalctl -u hostapd -u tarasec-hotspot-dnsmasq -u tarasec-hotspot-firewall -n 100 --no-pager"
+  [[ $bad -eq 0 ]] || warn "See: journalctl -u hostapd -u tarasec-hotspot-dnsmasq -n 100 --no-pager"
+  [[ $bad -eq 0 ]]
 }
 
 summary(){
