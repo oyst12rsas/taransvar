@@ -13,18 +13,27 @@ C="${3:-$(state_value HOTSPOT_CIDR)}"
 IPT="$(command -v iptables || true)"
 NFT="$(command -v nft || true)"
 
-allow_dhcp_in_existing_drop_chains() {
+allow_hotspot_services_in_existing_drop_chains() {
     [[ -n "$NFT" ]] || return 0
     local family table chain
     while read -r family table chain; do
         [[ -n "$family" && -n "$table" && -n "$chain" ]] || continue
-        if "$NFT" list chain "$family" "$table" "$chain" 2>/dev/null | grep -Fq "iifname \"$H\" udp dport 67 accept"; then
-            continue
+
+        if ! "$NFT" list chain "$family" "$table" "$chain" 2>/dev/null | grep -Fq "iifname \"$H\" udp dport 67 accept"; then
+            "$NFT" insert rule "$family" "$table" "$chain" iifname "$H" udp dport 67 accept 2>/dev/null && \
+                echo "[TaraSec firewall] allowed DHCP in existing DROP chain $family/$table/$chain" >&2
         fi
-        if "$NFT" insert rule "$family" "$table" "$chain" iifname "$H" udp dport 67 accept 2>/dev/null; then
-            echo "[TaraSec firewall] allowed DHCP in existing DROP chain $family/$table/$chain" >&2
-        else
-            echo "[TaraSec firewall] warning: could not add DHCP exception to DROP chain $family/$table/$chain" >&2
+        if ! "$NFT" list chain "$family" "$table" "$chain" 2>/dev/null | grep -Fq "iifname \"$H\" udp dport 53 accept"; then
+            "$NFT" insert rule "$family" "$table" "$chain" iifname "$H" udp dport 53 accept 2>/dev/null && \
+                echo "[TaraSec firewall] allowed DNS/UDP in existing DROP chain $family/$table/$chain" >&2
+        fi
+        if ! "$NFT" list chain "$family" "$table" "$chain" 2>/dev/null | grep -Fq "iifname \"$H\" tcp dport 53 accept"; then
+            "$NFT" insert rule "$family" "$table" "$chain" iifname "$H" tcp dport 53 accept 2>/dev/null && \
+                echo "[TaraSec firewall] allowed DNS/TCP in existing DROP chain $family/$table/$chain" >&2
+        fi
+        if ! "$NFT" list chain "$family" "$table" "$chain" 2>/dev/null | grep -Fq "iifname \"$H\" tcp dport 2050 accept"; then
+            "$NFT" insert rule "$family" "$table" "$chain" iifname "$H" tcp dport 2050 accept 2>/dev/null && \
+                echo "[TaraSec firewall] allowed openNDS in existing DROP chain $family/$table/$chain" >&2
         fi
     done < <(
         "$NFT" list ruleset 2>/dev/null | awk '
@@ -56,6 +65,9 @@ setup_iptables() {
     run -N TARASEC-HOTSPOT-IN || return 1
     run -I INPUT 1 -j TARASEC-HOTSPOT-IN || return 1
     run -A TARASEC-HOTSPOT-IN -i "$H" -p udp --dport 67 -j ACCEPT || return 1
+    run -A TARASEC-HOTSPOT-IN -i "$H" -p udp --dport 53 -j ACCEPT || return 1
+    run -A TARASEC-HOTSPOT-IN -i "$H" -p tcp --dport 53 -j ACCEPT || return 1
+    run -A TARASEC-HOTSPOT-IN -i "$H" -p tcp --dport 2050 -j ACCEPT || return 1
     run -A TARASEC-HOTSPOT-IN -j RETURN || return 1
 
     "$IPT" -D FORWARD -j TARASEC-HOTSPOT-FWD 2>/dev/null || true
@@ -74,7 +86,7 @@ setup_iptables() {
     run -t nat -I POSTROUTING 1 -j TARASEC-HOTSPOT-NAT || return 1
     run -t nat -A TARASEC-HOTSPOT-NAT -s "$C" -o "$W" -j MASQUERADE || return 1
     run -t nat -A TARASEC-HOTSPOT-NAT -j RETURN || return 1
-    allow_dhcp_in_existing_drop_chains
+    allow_hotspot_services_in_existing_drop_chains
     echo "[TaraSec firewall] active via $($IPT --version 2>/dev/null | head -1) on $H" >&2
 }
 
@@ -86,6 +98,9 @@ setup_nft() {
 add table inet tarasec_hotspot
 add chain inet tarasec_hotspot input { type filter hook input priority -50; policy accept; }
 add rule inet tarasec_hotspot input iifname "$H" udp dport 67 accept
+add rule inet tarasec_hotspot input iifname "$H" udp dport 53 accept
+add rule inet tarasec_hotspot input iifname "$H" tcp dport 53 accept
+add rule inet tarasec_hotspot input iifname "$H" tcp dport 2050 accept
 add chain inet tarasec_hotspot forward { type filter hook forward priority -50; policy accept; }
 add rule inet tarasec_hotspot forward iifname "$H" oifname "$W" ip saddr $C accept
 add rule inet tarasec_hotspot forward iifname "$W" oifname "$H" ip daddr $C ct state established,related accept
@@ -93,8 +108,8 @@ add table ip tarasec_hotspot_nat
 add chain ip tarasec_hotspot_nat postrouting { type nat hook postrouting priority srcnat; policy accept; }
 add rule ip tarasec_hotspot_nat postrouting ip saddr $C oifname "$W" masquerade
 NFT_RULES
-    allow_dhcp_in_existing_drop_chains
-    echo "[TaraSec firewall] active via native nftables on $H (DHCP input explicitly allowed)" >&2
+    allow_hotspot_services_in_existing_drop_chains
+    echo "[TaraSec firewall] active via native nftables on $H (DHCP, DNS and openNDS input explicitly allowed)" >&2
 }
 
 if iptables_usable; then
