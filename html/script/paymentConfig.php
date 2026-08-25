@@ -10,18 +10,34 @@ function taraPaymentEnvironment(): string
 
 function taraPaymentConfig(): array
 {
+    $defaultCurrency = strtoupper(trim((string)getenv('BRAINTREE_DEFAULT_CURRENCY')));
+    if (!preg_match('/^[A-Z]{3}$/', $defaultCurrency)) $defaultCurrency = 'USD';
+
     return [
         'provider' => 'braintree',
         'environment' => taraPaymentEnvironment(),
         'merchantId' => trim((string)getenv('BRAINTREE_MERCHANT_ID')),
         'publicKey' => trim((string)getenv('BRAINTREE_PUBLIC_KEY')),
         'privateKey' => trim((string)getenv('BRAINTREE_PRIVATE_KEY')),
+        'defaultCurrency' => $defaultCurrency,
     ];
 }
 
 function taraPaymentConfigured(array $config): bool
 {
     return $config['merchantId'] !== '' && $config['publicKey'] !== '' && $config['privateKey'] !== '';
+}
+
+function taraPaymentMerchantAccountId(string $currency, array $config): ?string
+{
+    $currency = strtoupper($currency);
+    if ($currency === $config['defaultCurrency']) return null;
+
+    $value = trim((string)getenv('BRAINTREE_MERCHANT_ACCOUNT_' . $currency));
+    if ($value === '') {
+        throw new RuntimeException("No Braintree merchant account is configured for currency $currency.");
+    }
+    return $value;
 }
 
 function taraPaymentAutoload(): ?string
