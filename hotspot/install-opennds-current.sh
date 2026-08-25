@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Install a current openNDS release on Debian/Raspberry Pi OS when the distro
-# package is too old for the host firewall stack.
 VERSION="${OPENNDS_VERSION:-11.0.0}"
 TAG="v${VERSION}"
 STATE=/etc/tarasec/hotspot.conf
@@ -36,17 +34,23 @@ git clone --depth 1 --branch "$TAG" https://github.com/openNDS/openNDS.git "$WOR
 make -C "$WORK" -j"$(nproc)"
 make -C "$WORK" install
 
-# Generic Linux still uses /etc/opennds/opennds.conf in openNDS 11.x.
-# Do NOT reuse Debian 9.10's config across the major-version jump; install the
-# upstream 11.x template, then set only the TaraSec gateway interface.
-mkdir -p /etc/opennds
-[[ -f "$WORK/resources/opennds.conf" ]] || die "Upstream generic Linux config template missing"
-cp -f "$WORK/resources/opennds.conf" /etc/opennds/opennds.conf
-sed -i -E "s|^[#[:space:]]*GatewayInterface[[:space:]].*|GatewayInterface $HOTSPOT_IF|" /etc/opennds/opennds.conf
+# openNDS 11 make install intentionally installs and uses the UCI-style
+# /etc/config/opennds file even on generic Linux. Do not replace it with the
+# older /etc/opennds/opennds.conf format.
+CFG=/etc/config/opennds
+[[ -f "$CFG" ]] || die "openNDS installation did not create $CFG"
 
-# Remove any stale UCI-format file left by previous experiments. Generic Linux
-# does not use it in 11.x and stale content can confuse wrapper scripts.
-rm -f /etc/config/opennds 2>/dev/null || true
+# Ensure a clean upstream v11 config, then set only the TaraSec hotspot interface.
+cp "$WORK/linux_openwrt/opennds/files/etc/config/opennds" "$CFG"
+if grep -qE "^[[:space:]]*option[[:space:]]+gatewayinterface" "$CFG"; then
+    sed -i -E "s|^[[:space:]]*option[[:space:]]+gatewayinterface.*|\toption gatewayinterface '$HOTSPOT_IF'|" "$CFG"
+else
+    sed -i "/^[[:space:]]*config[[:space:]]\+opennds[[:space:]]\+'setup'/a\	option gatewayinterface '$HOTSPOT_IF'" "$CFG"
+fi
+
+# TaraSec uses its own dnsmasq instance. Point openNDS to its lease file path
+# when/if a dedicated lease file is configured later; for now leave upstream
+# automatic lease-file discovery enabled.
 
 systemctl daemon-reload
 systemctl enable opennds
@@ -61,6 +65,6 @@ fi
 INSTALLED="$(opennds -v 2>/dev/null | head -1 || true)"
 log "Installed: ${INSTALLED:-openNDS $VERSION}"
 log "Gateway interface: $HOTSPOT_IF"
-log "Config: /etc/opennds/opennds.conf"
+log "Config: $CFG"
 log "Backup: $BACKUP"
 log "Connect a client and open an HTTP page to trigger captive portal detection."
