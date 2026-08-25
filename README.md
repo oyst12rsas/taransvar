@@ -1,30 +1,41 @@
-# Taransaver
-This is a read me file
-CHANGED by Øystein
+# Taransvar / TaraSec
 
-NOTE! This repository is for development only for now... The "Taransavar" repository works better for now...
+This open-source project helps people set up a **TaraSec Hotspot** or **TaraSec Router**.
 
-We are using Ubuntu Linux, so you may experience less issues while installing if you do the same. 
-Read full technical install description in "Taransvar Gatekeeper.pdf" (still working on it)
-Read more about the project in "Taransvar Cyber Security.pdf" 
+The easiest way to get started is to tell ChatGPT:
 
-If you're too impatient to check document... To clone the project to your computer.
-- sudo apt install git
-- navigate to where you want it (eg cd ~)
-- git clone https://github.com/oyst12rsas/taransvar.git
+> **I want to install a TaraSec Hotspot (or TaraSec Router) from the GitHub repository `oyst12rsas/taransvar`. Please read the repository's AI installation guide first, explain what TaraSec offers, check whether my device is suitable, and guide me through the installation.**
 
-You can also try it yourself without installing:
-... we're working on it... Please ask us if you're interested.
+ChatGPT or another AI assistant can explain what TaraSec does, what benefits it may provide, check what your device requires, and guide you through installation and setup.
 
+**For AI assistants:** read [`AI_INSTALL_GUIDE.md`](AI_INSTALL_GUIDE.md) before giving TaraSec Hotspot/Router installation instructions. Prefer automatic environment detection and the repository installer over asking users to manually construct networking.
 
-Known issues:
-- (Wnen running install again??): it "hangs" on sudo apt install iptables-persistent until you press enter. This is a known linux issue
-- misc/startup.pl is supposed to run on startup to set up network properly. Run it manually if trouble.
-- there's also misc/diagnsoe.pl A if problems (A means it's the main server with clients (check top of script)
+Learn more at **https://tarasec.org**.
 
-If you install the honeypot (using taransvar_lab_setup.pl):
-- Make Cowrie listen to port 22:
-sed -i 's/^listen_endpoints =.*/listen_endpoints = tcp:22:interface=0.0.0.0/' /home/cowrie/cowrie/etc/cowrie.cfg
-- On he host, block honeypot from going out on internet:
-iptables -A FORWARD -s 10.10.10.11 -m state --state ESTABLISHED,RELATED -j ACCEPT
-iptables -A FORWARD -s 10.10.10.11 -j DROP
+## Hotspot development
+
+The current Debian/Raspberry Pi OS hotspot installer is under `hotspot/` and is being actively tested. The normal entry point is:
+
+```bash
+cd ~/taransvar
+git pull --ff-only
+sudo bash hotspot/install.sh
+```
+
+OpenWrt-specific implementation belongs in the separate `oyst12rsas/taraSec_openWRT` repository, while reusable identity/registration work belongs in `oyst12rsas/taransvar_ID`.
+
+## General Taransvar development
+
+We primarily use Linux. Some older parts of this repository predate the current TaraSec Hotspot work and may have separate installation requirements.
+
+Technical/project documents in the repository provide additional background on Taransvar and Gatekeeper.
+
+To clone the project:
+
+```bash
+sudo apt install git
+cd ~
+git clone https://github.com/oyst12rsas/taransvar.git
+```
+
+If you encounter a hotspot installation problem, please preserve the diagnostic output. The goal is to improve the installer for the next user rather than rely on machine-specific manual workarounds.
