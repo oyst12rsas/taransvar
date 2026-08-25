@@ -1,0 +1,17 @@
+# TaraSec build/runtime artifacts
+*.o
+*.ko
+*.mod
+*.mod.c
+*.cmd
+*.log
+Module.symvers
+modules.order
+
+# Local compiled programs
+taralink/taralink
+
+# Common temporary/editor files
+*~
+*.swp
+.DS_Store
