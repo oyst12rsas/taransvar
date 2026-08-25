@@ -33,17 +33,19 @@ $orderId = 'TS-' . gmdate('YmdHis') . '-' . bin2hex(random_bytes(4));
 try {
     $config = taraPaymentConfig();
     $gateway = taraPaymentGateway($config);
+    $merchantAccountId = taraPaymentMerchantAccountId($currency, $config);
 
-    $result = $gateway->transaction()->sale([
+    $sale = [
         'amount' => number_format($amount, 2, '.', ''),
         'paymentMethodNonce' => $nonce,
         'orderId' => $orderId,
         'options' => ['submitForSettlement' => true],
-        'customFields' => array_filter([
-            'hotspot_id' => $hotspotId,
-            'research_discount' => $research ? '1' : '0',
-        ], static fn($v) => $v !== ''),
-    ]);
+    ];
+    if ($merchantAccountId !== null) {
+        $sale['merchantAccountId'] = $merchantAccountId;
+    }
+
+    $result = $gateway->transaction()->sale($sale);
 
     if (!$result->success) {
         $message = 'Payment was not approved.';
