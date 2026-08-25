@@ -13,6 +13,8 @@ WORK=/usr/local/src/tarasec-opennds-${VERSION}
 BACKUP=/root/tarasec-opennds-backup-$(date +%Y%m%d-%H%M%S)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 STALE_BRIDGE="${TARASEC_HOTSPOT_BRIDGE:-br-tarasec}"
+THEME_SOURCE="$SCRIPT_DIR/opennds/theme_tarasec.sh"
+THEME_TARGET=/usr/lib/opennds/theme_tarasec.sh
 
 log(){ echo "[TaraSec openNDS] $*"; }
 die(){ echo "[TaraSec openNDS ERROR] $*" >&2; exit 1; }
@@ -25,6 +27,7 @@ HOTSPOT_IF="${TARASEC_HOTSPOT_IF:-$(state_value HOTSPOT_IF)}"
 GW="${TARASEC_HOTSPOT_IP:-$(state_value HOTSPOT_IP)}"
 [[ -n "$HOTSPOT_IF" && -n "$GW" ]] || die "Hotspot state incomplete; run hotspot/install.sh first"
 ip link show "$HOTSPOT_IF" >/dev/null 2>&1 || die "Hotspot interface '$HOTSPOT_IF' does not exist"
+[[ -f "$THEME_SOURCE" ]] || die "Missing TaraSec portal theme: $THEME_SOURCE"
 
 mkdir -p "$BACKUP" /usr/local/src
 [[ -d /etc/opennds ]] && cp -a /etc/opennds "$BACKUP/" || true
@@ -45,17 +48,32 @@ if ip link show "$STALE_BRIDGE" >/dev/null 2>&1; then
     fi
 fi
 
-# Restore the original routed hotspot architecture.
+# Restore the routed hotspot architecture.
 ip addr flush dev "$HOTSPOT_IF" 2>/dev/null || true
 ip addr add "$GW/24" dev "$HOTSPOT_IF"
 ip link set "$HOTSPOT_IF" up
 if [[ -f /etc/hostapd/hostapd.conf ]]; then
     sed -i '/^bridge=/d' /etc/hostapd/hostapd.conf
 fi
+
+# A captive portal needs local DNS. Cigar testing showed that advertising public
+# resolvers directly prevents reliable CPD/portal operation and also bypasses
+# the local service openNDS expects to be available on the hotspot gateway.
 if [[ -f /etc/tarasec/dnsmasq-hotspot.conf ]]; then
     sed -i -E "s/^interface=.*/interface=$HOTSPOT_IF/" /etc/tarasec/dnsmasq-hotspot.conf
     sed -i -E "s/^listen-address=.*/listen-address=$GW/" /etc/tarasec/dnsmasq-hotspot.conf
+    sed -i '/^port=0$/d' /etc/tarasec/dnsmasq-hotspot.conf
+    if grep -q '^dhcp-option=6,' /etc/tarasec/dnsmasq-hotspot.conf; then
+        sed -i -E "s/^dhcp-option=6,.*/dhcp-option=6,$GW/" /etc/tarasec/dnsmasq-hotspot.conf
+    else
+        echo "dhcp-option=6,$GW" >> /etc/tarasec/dnsmasq-hotspot.conf
+    fi
+    grep -q '^server=' /etc/tarasec/dnsmasq-hotspot.conf || {
+        echo 'server=1.1.1.1' >> /etc/tarasec/dnsmasq-hotspot.conf
+        echo 'server=8.8.8.8' >> /etc/tarasec/dnsmasq-hotspot.conf
+    }
 fi
+
 # Remove stale bridge state if an earlier helper managed to save it.
 if [[ -f "$STATE" ]]; then
     sed -i '/^HOTSPOT_BRIDGE=/d' "$STATE"
@@ -85,7 +103,22 @@ if grep -qE "^[[:space:]]*#?[[:space:]]*option[[:space:]]+gatewayname" "$CFG"; t
     sed -i -E "0,/^[[:space:]]*#?[[:space:]]*option[[:space:]]+gatewayname.*/s||\toption gatewayname 'TaraSec'|" "$CFG"
 fi
 
-# Reapply TaraSec firewall/DHCP exception rules on the physical AP interface.
+# Install the self-contained TaraSec ThemeSpec. Captive portal browsers often
+# block external CSS/JS before authentication, so the theme embeds its layout.
+install -m 0755 "$THEME_SOURCE" "$THEME_TARGET"
+if grep -qE "^[[:space:]]*#?[[:space:]]*option[[:space:]]+login_option_enabled" "$CFG"; then
+    sed -i -E "0,/^[[:space:]]*#?[[:space:]]*option[[:space:]]+login_option_enabled.*/s||\toption login_option_enabled '3'|" "$CFG"
+else
+    sed -i "/^[[:space:]]*config[[:space:]]\+opennds/a\	option login_option_enabled '3'" "$CFG"
+fi
+if grep -qE "^[[:space:]]*#?[[:space:]]*option[[:space:]]+themespec_path" "$CFG"; then
+    sed -i -E "0,/^[[:space:]]*#?[[:space:]]*option[[:space:]]+themespec_path.*/s||\toption themespec_path '$THEME_TARGET'|" "$CFG"
+else
+    sed -i "/^[[:space:]]*config[[:space:]]\+opennds/a\	option themespec_path '$THEME_TARGET'" "$CFG"
+fi
+
+# Reapply TaraSec firewall exceptions. This helper also handles legacy DROP
+# base chains by explicitly permitting DHCP, DNS and the openNDS portal port.
 if [[ -x "$SCRIPT_DIR/tarasec-hotspot-firewall-v2.sh" ]]; then
     "$SCRIPT_DIR/tarasec-hotspot-firewall-v2.sh" "$HOTSPOT_IF"
 fi
@@ -106,6 +139,7 @@ INSTALLED="$(opennds -v 2>/dev/null | head -1 || true)"
 log "Installed: ${INSTALLED:-openNDS $VERSION}"
 log "Gateway interface: $HOTSPOT_IF"
 log "Gateway address: $GW/24"
+log "Theme: $THEME_TARGET"
 log "Config: $CFG"
 log "Backup: $BACKUP"
-log "Connect a client and open an HTTP page to trigger captive portal detection."
+log "Reconnect a client or open an HTTP page to see the TaraSec captive portal."
