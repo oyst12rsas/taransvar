@@ -6,6 +6,8 @@ TAG="v${VERSION}"
 STATE=/etc/tarasec/hotspot.conf
 WORK=/usr/local/src/tarasec-opennds-${VERSION}
 BACKUP=/root/tarasec-opennds-backup-$(date +%Y%m%d-%H%M%S)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+BRIDGE="${TARASEC_HOTSPOT_BRIDGE:-br-tarasec}"
 
 log(){ echo "[TaraSec openNDS] $*"; }
 die(){ echo "[TaraSec openNDS ERROR] $*" >&2; exit 1; }
@@ -34,28 +36,35 @@ git clone --depth 1 --branch "$TAG" https://github.com/openNDS/openNDS.git "$WOR
 make -C "$WORK" -j"$(nproc)"
 make -C "$WORK" install
 
-# openNDS 11 make install intentionally installs and uses the UCI-style
-# /etc/config/opennds file even on generic Linux. Do not replace it with the
-# older /etc/opennds/opennds.conf format.
+# openNDS 11 forbids using a raw wireless interface as GatewayInterface.
+# Convert the TaraSec hotspot to a dedicated bridge and bind DHCP/firewall/openNDS there.
+[[ -x "$SCRIPT_DIR/setup-bridge.sh" ]] || chmod +x "$SCRIPT_DIR/setup-bridge.sh"
+TARASEC_HOTSPOT_BRIDGE="$BRIDGE" "$SCRIPT_DIR/setup-bridge.sh"
+
 CFG=/etc/config/opennds
 [[ -f "$CFG" ]] || die "openNDS installation did not create $CFG"
 
-# Ensure a clean upstream v11 config, then set only the TaraSec hotspot interface.
+# Restore a clean upstream v11 config and set only the TaraSec bridge interface.
 cp "$WORK/linux_openwrt/opennds/files/etc/config/opennds" "$CFG"
 if grep -qE "^[[:space:]]*option[[:space:]]+gatewayinterface" "$CFG"; then
-    sed -i -E "s|^[[:space:]]*option[[:space:]]+gatewayinterface.*|\toption gatewayinterface '$HOTSPOT_IF'|" "$CFG"
+    sed -i -E "s|^[[:space:]]*option[[:space:]]+gatewayinterface.*|\toption gatewayinterface '$BRIDGE'|" "$CFG"
 else
-    sed -i "/^[[:space:]]*config[[:space:]]\+opennds[[:space:]]\+'setup'/a\	option gatewayinterface '$HOTSPOT_IF'" "$CFG"
+    sed -i "/^[[:space:]]*config[[:space:]]\+opennds[[:space:]]\+'setup'/a\	option gatewayinterface '$BRIDGE'" "$CFG"
 fi
 
-# TaraSec uses its own dnsmasq instance. Point openNDS to its lease file path
-# when/if a dedicated lease file is configured later; for now leave upstream
-# automatic lease-file discovery enabled.
+# TaraSec uses a dedicated dnsmasq instance. Leave upstream automatic lease-file
+# discovery enabled for now; the main installer will later set an explicit lease
+# file once hotspot registration/client accounting is integrated.
+
+# Reapply firewall rules with the bridge as the hotspot-facing interface.
+if [[ -x "$SCRIPT_DIR/tarasec-hotspot-firewall-v2.sh" ]]; then
+    "$SCRIPT_DIR/tarasec-hotspot-firewall-v2.sh"
+fi
 
 systemctl daemon-reload
 systemctl enable opennds
 systemctl restart opennds
-sleep 2
+sleep 8
 
 if ! systemctl is-active --quiet opennds; then
     journalctl -u opennds -n 80 --no-pager >&2 || true
@@ -64,7 +73,8 @@ fi
 
 INSTALLED="$(opennds -v 2>/dev/null | head -1 || true)"
 log "Installed: ${INSTALLED:-openNDS $VERSION}"
-log "Gateway interface: $HOTSPOT_IF"
+log "Radio interface: $HOTSPOT_IF"
+log "Gateway bridge: $BRIDGE"
 log "Config: $CFG"
 log "Backup: $BACKUP"
 log "Connect a client and open an HTTP page to trigger captive portal detection."
