@@ -5,23 +5,19 @@
 set -u
 STATE=/etc/tarasec/hotspot.conf
 state_value() { [[ -r "$STATE" ]] && sed -n "s/^$1=//p" "$STATE" | tail -1; }
-H="${1:-$(state_value HOTSPOT_IF)}"
+BRIDGE="$(state_value HOTSPOT_BRIDGE)"
+H="${1:-${BRIDGE:-$(state_value HOTSPOT_IF)}}"
 W="${2:-$(state_value WAN_IF)}"
 C="${3:-$(state_value HOTSPOT_CIDR)}"
 [[ -n "$H" && -n "$W" && -n "$C" ]] || { echo '[TaraSec firewall] missing hotspot state/arguments' >&2; exit 1; }
 IPT="$(command -v iptables || true)"
 NFT="$(command -v nft || true)"
 
-# nftables evaluates all matching base chains. An accept in our early TaraSec
-# input chain does not override a later input base chain with policy drop.
-# Discover such chains directly from nft (including legacy iptables-nft chains)
-# and insert only the DHCP exception they need.
 allow_dhcp_in_existing_drop_chains() {
     [[ -n "$NFT" ]] || return 0
     local family table chain
     while read -r family table chain; do
         [[ -n "$family" && -n "$table" && -n "$chain" ]] || continue
-        # Never duplicate the rule on reruns.
         if "$NFT" list chain "$family" "$table" "$chain" 2>/dev/null | grep -Fq "iifname \"$H\" udp dport 67 accept"; then
             continue
         fi
@@ -79,7 +75,7 @@ setup_iptables() {
     run -t nat -A TARASEC-HOTSPOT-NAT -s "$C" -o "$W" -j MASQUERADE || return 1
     run -t nat -A TARASEC-HOTSPOT-NAT -j RETURN || return 1
     allow_dhcp_in_existing_drop_chains
-    echo "[TaraSec firewall] active via $($IPT --version 2>/dev/null | head -1)" >&2
+    echo "[TaraSec firewall] active via $($IPT --version 2>/dev/null | head -1) on $H" >&2
 }
 
 setup_nft() {
@@ -98,7 +94,7 @@ add chain ip tarasec_hotspot_nat postrouting { type nat hook postrouting priorit
 add rule ip tarasec_hotspot_nat postrouting ip saddr $C oifname "$W" masquerade
 NFT_RULES
     allow_dhcp_in_existing_drop_chains
-    echo '[TaraSec firewall] active via native nftables (DHCP input explicitly allowed)' >&2
+    echo "[TaraSec firewall] active via native nftables on $H (DHCP input explicitly allowed)" >&2
 }
 
 if iptables_usable; then
