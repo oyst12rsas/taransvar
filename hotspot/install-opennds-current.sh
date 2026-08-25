@@ -3,7 +3,6 @@ set -euo pipefail
 
 # Install a current openNDS release on Debian/Raspberry Pi OS when the distro
 # package is too old for the host firewall stack.
-# Defaults to the current validated TaraSec target release.
 VERSION="${OPENNDS_VERSION:-11.0.0}"
 TAG="v${VERSION}"
 STATE=/etc/tarasec/hotspot.conf
@@ -30,9 +29,6 @@ systemctl disable --now opennds 2>/dev/null || true
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get install -y build-essential git libmicrohttpd-dev nftables ca-certificates curl
-
-# Remove Debian's 9.x binaries/service while preserving our backup. The source
-# install below provides /usr/bin/opennds, /usr/bin/ndsctl and systemd service.
 apt-get remove -y opennds opennds-daemon opennds-daemon-common 2>/dev/null || true
 
 rm -rf "$WORK"
@@ -40,17 +36,17 @@ git clone --depth 1 --branch "$TAG" https://github.com/openNDS/openNDS.git "$WOR
 make -C "$WORK" -j"$(nproc)"
 make -C "$WORK" install
 
-# Configure the native UCI-style generic-Linux config installed by openNDS 10.1+
-# without depending on the uci command being present.
-CFG=/etc/config/opennds
-[[ -f "$CFG" ]] || die "openNDS installation did not create $CFG"
+# Generic Linux still uses /etc/opennds/opennds.conf in openNDS 11.x.
+# Do NOT reuse Debian 9.10's config across the major-version jump; install the
+# upstream 11.x template, then set only the TaraSec gateway interface.
+mkdir -p /etc/opennds
+[[ -f "$WORK/resources/opennds.conf" ]] || die "Upstream generic Linux config template missing"
+cp -f "$WORK/resources/opennds.conf" /etc/opennds/opennds.conf
+sed -i -E "s|^[#[:space:]]*GatewayInterface[[:space:]].*|GatewayInterface $HOTSPOT_IF|" /etc/opennds/opennds.conf
 
-if grep -qE "^[[:space:]]*option[[:space:]]+gatewayinterface" "$CFG"; then
-    sed -i -E "s|^[[:space:]]*option[[:space:]]+gatewayinterface.*|\toption gatewayinterface '$HOTSPOT_IF'|" "$CFG"
-else
-    # Insert in the first config block.
-    sed -i "0,/^[[:space:]]*config[[:space:]]/s//&\n\toption gatewayinterface '$HOTSPOT_IF'/" "$CFG"
-fi
+# Remove any stale UCI-format file left by previous experiments. Generic Linux
+# does not use it in 11.x and stale content can confuse wrapper scripts.
+rm -f /etc/config/opennds 2>/dev/null || true
 
 systemctl daemon-reload
 systemctl enable opennds
@@ -65,5 +61,6 @@ fi
 INSTALLED="$(opennds -v 2>/dev/null | head -1 || true)"
 log "Installed: ${INSTALLED:-openNDS $VERSION}"
 log "Gateway interface: $HOTSPOT_IF"
+log "Config: /etc/opennds/opennds.conf"
 log "Backup: $BACKUP"
 log "Connect a client and open an HTTP page to trigger captive portal detection."
