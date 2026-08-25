@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # TaraSec hotspot firewall helper.
-# Arguments: HOTSPOT_IF WAN_IF HOTSPOT_CIDR
+# Optional arguments: HOTSPOT_IF WAN_IF HOTSPOT_CIDR
+# With no arguments, values are read from /etc/tarasec/hotspot.conf.
 set -u
-H="${1:?hotspot interface required}"
-W="${2:?WAN interface required}"
-C="${3:?hotspot CIDR required}"
+STATE=/etc/tarasec/hotspot.conf
+state_value() { [[ -r "$STATE" ]] && sed -n "s/^$1=//p" "$STATE" | tail -1; }
+H="${1:-$(state_value HOTSPOT_IF)}"
+W="${2:-$(state_value WAN_IF)}"
+C="${3:-$(state_value HOTSPOT_CIDR)}"
+[[ -n "$H" && -n "$W" && -n "$C" ]] || { echo '[TaraSec firewall] missing hotspot state/arguments' >&2; exit 1; }
 IPT="$(command -v iptables || true)"
 NFT="$(command -v nft || true)"
 
