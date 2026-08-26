@@ -40,8 +40,6 @@ if ($username === '' || $password === '' || filter_var($clientIp, FILTER_VALIDAT
     portalReply('Login failed', 'Missing or invalid hotspot login information.');
 }
 
-// Only accept a client address from the configured hotspot /24. This prevents a
-// management login over NetBird from accidentally creating an access session.
 $db = new CDb();
 $setup = $db->fetch('select inet_ntoa(internalIP) as internalIP from setup limit 1', array());
 $gatewayIp = ($setup && !empty($setup['internalIP'])) ? (string)$setup['internalIP'] : '192.168.50.1';
@@ -51,10 +49,15 @@ if (count($gatewayParts) !== 4 || count($clientParts) !== 4 || array_slice($gate
     portalReply('Login failed', 'This login request did not originate from a TaraSec hotspot client address.');
 }
 
+// Existing TaraSec databases contain both newer RADIUS-style rows
+// (Cleartext-Password :=) and older generated hotspot users where the password
+// is simply stored in value with op == and attribute blank.  Both are legitimate
+// local hotspot account formats and use the same quota/expiry columns.
 $user = $db->fetch(
-    "select username,value,confirmedTime,subscriptionType,expirytime,giveHoursAfterLogin,mbquota,coalesce(mbusage,0) as mbusage
+    "select username,value,confirmedTime,subscriptionType,expirytime,giveHoursAfterLogin,mbquota,coalesce(mbusage,0) as mbusage,attribute,op
        from radcheck
-      where username=:name and op=':=' and attribute='Cleartext-Password'
+      where username=:name
+        and ((op=':=' and attribute='Cleartext-Password') or (op='==' and coalesce(attribute,'')=''))
       limit 1",
     array(':name' => $username),
     PDO::FETCH_ASSOC
@@ -64,11 +67,13 @@ if (!$user || !hash_equals((string)$user['value'], $password)) {
     portalReply('Login failed', 'Incorrect username or password.');
 }
 
-if (empty($user['confirmedTime'])) {
+// Legacy generated quota users predate confirmation and have confirmedTime NULL.
+// Newer Cleartext-Password accounts retain the confirmation requirement.
+$isLegacy = ((string)$user['op'] === '==' && (string)$user['attribute'] === '');
+if (!$isLegacy && empty($user['confirmedTime'])) {
     portalReply('Account not confirmed', 'This hotspot account must be confirmed before it can be used.');
 }
 
-// Preserve the legacy "start expiry on first successful login" behaviour.
 $type = (string)$user['subscriptionType'];
 if (($type === 'limited' || $type === 'expiry') && empty($user['expirytime'])) {
     $hours = (int)($user['giveHoursAfterLogin'] ?? 0);
@@ -98,12 +103,12 @@ if ($type === 'quota') {
 }
 
 if (!$allowed) {
-    // Fail closed for the captive IP. Do not disturb sessions belonging to other clients.
     $db->execute('delete from access where ip=:ip', array(':ip' => $clientIp));
     portalReply('Access is not active', 'The username and password are correct, but this account has expired or has no remaining quota.');
 }
 
-// The captive client IP, not REMOTE_ADDR, is the subscriber identity here.
+// Create the subscriber session for the openNDS client address, never the
+// management/browser REMOTE_ADDR, and grant access immediately.
 $db->execute(
     'update session set active=0, logouttime=NOW() where ip=:ip and active=1 and logouttime is null',
     array(':ip' => $clientIp)
