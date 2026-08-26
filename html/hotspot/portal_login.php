@@ -13,7 +13,7 @@ require_once __DIR__ . '/radiuslib.php';
 require_once __DIR__ . '/funcs.php';
 require_once __DIR__ . '/funcs2.php';
 
-function portalReply($title, $message, $success = false)
+function portalReply($title, $message, $success = false, $fas = '')
 {
     http_response_code($success ? 200 : 403);
     $titleEsc = htmlspecialchars($title, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
@@ -22,7 +22,12 @@ function portalReply($title, $message, $success = false)
     echo '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">';
     echo '<title>TaraSec hotspot</title><style>body{font-family:sans-serif;background:#f4f6f8;margin:0;padding:24px}.card{max-width:560px;margin:auto;background:white;padding:24px;border-radius:14px;box-shadow:0 2px 12px #0002}.ok{color:#087a35}.bad{color:#a51d1d}.btn{display:inline-block;margin-top:18px;padding:12px 18px;background:#222;color:#fff;text-decoration:none;border-radius:8px}</style></head><body><div class="card">';
     echo '<h2 class="'.$class.'">'.$titleEsc.'</h2><p>'.$messageEsc.'</p>';
-    echo '<a class="btn" href="http://status.client">Return to hotspot access</a>';
+    if ($success && $fas !== '') {
+        $href = 'http://status.client/opennds_preauth/?fas=' . rawurlencode($fas) . '&continue=clicked';
+        echo '<a class="btn" href="'.htmlspecialchars($href, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'">Continue to Internet access</a>';
+    } else {
+        echo '<a class="btn" href="http://status.client">Return to hotspot access</a>';
+    }
     echo '</div></body></html>';
     exit;
 }
@@ -34,6 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $username = trim(isset($_POST['name']) ? (string)$_POST['name'] : '');
 $password = isset($_POST['pass']) ? (string)$_POST['pass'] : '';
 $clientIp = trim(isset($_POST['client_ip']) ? (string)$_POST['client_ip'] : '');
+$fas = trim(isset($_POST['fas']) ? (string)$_POST['fas'] : '');
 
 if ($username === '' || $password === '' || filter_var($clientIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
     portalReply('Login failed', 'Missing or invalid hotspot login information.');
@@ -74,7 +80,6 @@ $type = (string)$user['subscriptionType'];
 if (($type === 'limited' || $type === 'expiry') && empty($user['expirytime'])) {
     $hours = (int)(isset($user['giveHoursAfterLogin']) ? $user['giveHoursAfterLogin'] : 0);
     if ($hours > 0) {
-        // Avoid binding inside INTERVAL for compatibility with older PDO/MySQL.
         $db->execute(
             'update radcheck set expirytime=DATE_ADD(NOW(), INTERVAL '.intval($hours).' HOUR) where username=:name',
             array(':name' => $username)
@@ -118,4 +123,4 @@ $db->execute(
 );
 $db->execute('update radcheck set last_login=NOW() where username=:name', array(':name' => $username));
 
-portalReply('Access confirmed', 'Your account is valid. Return to the hotspot page to enable Internet access.', true);
+portalReply('Access confirmed', 'Your account is valid. Continue to the TaraSec hotspot page to authorize Internet access.', true, $fas);
