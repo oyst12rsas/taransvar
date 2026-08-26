@@ -17,7 +17,7 @@ function users_show()
 	print '<a href="index.php?f=users_chpw&nm='.$szUser.'">Change password</a><br><br>';
 	$pDb = new CDb;
 	$cFlds = array(":name" => $szUser);
-	if (!$cFetched = $pDb->fetchNext("select value, confirmedTime, confirmCode, wrongConfCodeCount, wrongPasswordTime, wrongPasswordCount, subscriptionType, expirytime, mbquota, round(mbusage,1) as mbusage, round(coalesce(mbquota,0)-coalesce(mbusage,0),1) as quotaLeft from radcheck where username = :name and op = ':=' and attribute = 'Cleartext-Password'", $cFlds))
+	if (!$cFetched = $pDb->fetchNext("select value, confirmedTime, confirmCode, wrongConfCodeCount, wrongPasswordTime, wrongPasswordCount, subscriptionType, expirytime, mbquota, round(coalesce(mbusage,0),1) as mbusage, round(coalesce(mbquota,0)-coalesce(mbusage,0),1) as quotaLeft from radcheck where username = :name and ((op = ':=' and attribute = 'Cleartext-Password') or (op = '==' and coalesce(attribute,'') = ''))", $cFlds))
 	{
 		print "Problems fetching user data! Aborting";
 		return;
@@ -27,8 +27,8 @@ function users_show()
 	
 	$szMbLeft = ($bQuotaLeft?"":'<font color="red">').$cFetched["quotaLeft"].($bQuotaLeft?"":'</font>');
 	
-	$szRows = tr(td("Total quota:").td($cFetched["mbquota"],1,'align="right"')).//.td(a("[Add quota]",func("users_addquota&name=".$szUser)),2)).
-			tr(td("Total used:").td($cFetched["mbusage"],1,'align="right"')).//td("&nbsp;",2)).
+	$szRows = tr(td("Total quota:").td($cFetched["mbquota"],1,'align="right"')).
+			tr(td("Total used:").td($cFetched["mbusage"],1,'align="right"')).
 			tr(td("Quota left:").td($szMbLeft,1,'align="right"').td("&nbsp;"));
 			
 	$szRows .= tr(td(getAddQuotaForm($szUser, $bSubmitSameLine=true, $bIncludeUsername=false),2));
@@ -36,12 +36,9 @@ function users_show()
 	$szChangSubTypeForm = '<form  action="index.php?f=users_changesubtype&nm='.$szUser.'" method="post">'.getSubscriptionTypeDropList($cFetched["subscriptionType"]).'<button type="submit">Submit</button></form>';
 			
 	$szRows .= tr(td("Subscription type:").td($szChangSubTypeForm));
-	$szRows .= tr(td("Expiry time:").td($cFetched["expirytime"]."&nbsp;".a("[Add time]",func("users_addtime&name=".$szUser))));//.td("&nbsp;",2));
-	
+	$szRows .= tr(td("Expiry time:").td($cFetched["expirytime"]."&nbsp;".a("[Add time]",func("users_addtime&name=".$szUser))));
 	
 	print table($szRows);
-
-	
 
 	showUsageHistoryFor($szUser);
 }
