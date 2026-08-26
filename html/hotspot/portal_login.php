@@ -1,7 +1,8 @@
 <?php
 // TaraSec captive-portal account login.
 // This endpoint is for hotspot subscribers, not back-office login.
-// The openNDS theme supplies the actual captive client IP explicitly.
+// Client identity is derived from the TCP peer address. A posted client_ip is
+// treated only as a consistency check and is never authoritative.
 
 session_start();
 error_reporting(E_ALL);
@@ -38,11 +39,19 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $username = trim(isset($_POST['name']) ? (string)$_POST['name'] : '');
 $password = isset($_POST['pass']) ? (string)$_POST['pass'] : '';
-$clientIp = trim(isset($_POST['client_ip']) ? (string)$_POST['client_ip'] : '');
+$postedClientIp = trim(isset($_POST['client_ip']) ? (string)$_POST['client_ip'] : '');
+$clientIp = trim(isset($_SERVER['REMOTE_ADDR']) ? (string)$_SERVER['REMOTE_ADDR'] : '');
 $fas = trim(isset($_POST['fas']) ? (string)$_POST['fas'] : '');
 
 if ($username === '' || $password === '' || filter_var($clientIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
     portalReply('Login failed', 'Missing or invalid hotspot login information.');
+}
+
+// The hidden client_ip comes from the openNDS theme. It is useful for detecting
+// proxying/tampering, but must never decide which client receives access.
+if ($postedClientIp !== '' && (!filter_var($postedClientIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) || !hash_equals($clientIp, $postedClientIp))) {
+    error_log('TaraSec captive login client address mismatch: peer=' . $clientIp . ' posted=' . $postedClientIp);
+    portalReply('Login failed', 'The hotspot client address did not match this connection. Please reconnect to the hotspot and try again.');
 }
 
 $db = new CDb();
