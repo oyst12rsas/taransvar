@@ -24,10 +24,9 @@ function users_chpw()
 		}
 		else
 		{
-			//print "<br>".red("NOT YET LEARNED TO SAVE")."<br><br>";
 			$pDb = new CDb;
 			$cFlds = array(":name" => $szUser);
-			$szSQL = "update radcheck set value = ? where username = ? and op = ':=' and attribute = 'Cleartext-Password'";
+			$szSQL = "update radcheck set value = ? where username = ? and ((op = ':=' and attribute = 'Cleartext-Password') or (op = '==' and coalesce(attribute,'') = ''))";
 			$stmt = $conn->prepare($szSQL);
 			$stmt->bind_param("ss", $szPwd1, $szUser);
 	                $stmt->execute();
@@ -41,7 +40,6 @@ function users_chpw()
 		$szPwd2 = "";
 	}
 	
-			
 	print '<form  action="index.php?f=users_chpw&nm='.$szUser.'" method="post">';
 	$szRows = tr(td('Password:').td('<input type="edit" name="pwd" value="'.$szPwd1.'">')).
 	tr(td('Repeat password:').td('<input type="edit" name="pwd2" value="'.$szPwd2.'">>')).
