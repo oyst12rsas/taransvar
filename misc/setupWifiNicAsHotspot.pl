@@ -35,9 +35,18 @@ sub install_opennds {
 
 sub configure_opennds {
     my ($ifname, $gateway_name) = @_;
-    my $conf = '/etc/opennds/opennds.conf';
+    my $legacy_conf = '/etc/opennds/opennds.conf';
+    my $conf = '/etc/config/opennds';
 
-    die "openNDS configuration file $conf was not installed.\n" unless -f $conf;
+    # openNDS 10.x helper scripts read /etc/config/opennds on Linux as well as
+    # OpenWrt. Ubuntu currently installs a template at /etc/opennds/opennds.conf,
+    # so seed the runtime config from it when necessary.
+    if (!-f $conf) {
+        die "openNDS configuration template $legacy_conf was not installed.\n"
+            unless -f $legacy_conf;
+        sh('mkdir -p /etc/config');
+        sh("cp '$legacy_conf' '$conf'");
+    }
 
     # The package may start immediately with its generic default (usually
     # br-lan). Stop it while binding it to the actual TaraSec client interface.
@@ -53,16 +62,23 @@ sub configure_opennds {
     my $cfg = <$fh>;
     close $fh;
 
-    if ($cfg =~ /^\s*#?\s*GatewayInterface\s+\S+.*$/mi) {
+    # Current openNDS /etc/config/opennds syntax uses lowercase option names.
+    # Also handle older GatewayInterface/GatewayName syntax so upgrades remain
+    # safe and idempotent.
+    if ($cfg =~ /^\s*option\s+gatewayinterface\s+['\"]?[^'\"\s]+['\"]?.*$/mi) {
+        $cfg =~ s/^\s*option\s+gatewayinterface\s+['\"]?[^'\"\s]+['\"]?.*$/option gatewayinterface '$ifname'/mi;
+    } elsif ($cfg =~ /^\s*#?\s*GatewayInterface\s+\S+.*$/mi) {
         $cfg =~ s/^\s*#?\s*GatewayInterface\s+\S+.*$/GatewayInterface $ifname/mi;
     } else {
-        $cfg = "GatewayInterface $ifname\n" . $cfg;
+        $cfg .= "\noption gatewayinterface '$ifname'\n";
     }
 
-    if ($cfg =~ /^\s*#?\s*GatewayName\s+.*$/mi) {
+    if ($cfg =~ /^\s*option\s+gatewayname\s+.*$/mi) {
+        $cfg =~ s/^\s*option\s+gatewayname\s+.*$/option gatewayname '$gateway_name'/mi;
+    } elsif ($cfg =~ /^\s*#?\s*GatewayName\s+.*$/mi) {
         $cfg =~ s/^\s*#?\s*GatewayName\s+.*$/GatewayName $gateway_name/mi;
     } else {
-        $cfg = "GatewayName $gateway_name\n" . $cfg;
+        $cfg .= "option gatewayname '$gateway_name'\n";
     }
 
     open my $out, '>', $conf or die "Unable to write $conf: $!\n";
@@ -72,12 +88,20 @@ sub configure_opennds {
     sh('systemctl enable opennds');
     sh('systemctl restart opennds');
 
-    # Do not claim that TaraSec hotspot installation succeeded if the captive
-    # portal is absent or failed to bind to the intended client interface.
-    my $active = system('systemctl is-active --quiet opennds') == 0;
-    my $status = `ndsctl status 2>&1`;
-    my $nds_ok = $? == 0;
+    # openNDS may need a moment after systemd reports the service started before
+    # the ndsctl socket exists. Poll briefly instead of racing startup.
+    my $status = '';
+    my $nds_ok = 0;
+    for (1..15) {
+        $status = `ndsctl status 2>&1`;
+        if ($? == 0) {
+            $nds_ok = 1;
+            last;
+        }
+        sleep 1;
+    }
 
+    my $active = system('systemctl is-active --quiet opennds') == 0;
     if (!$active || !$nds_ok) {
         print STDERR "\nopenNDS verification failed.\n";
         print STDERR $status if $status ne '';
@@ -85,9 +109,6 @@ sub configure_opennds {
         die "TaraSec hotspot NOT complete: captive portal is not running.\n";
     }
 
-    # Current openNDS versions report the bound interface in ndsctl status.
-    # Treat a different explicitly reported interface as a hard installation
-    # error, while remaining compatible with versions that omit that field.
     if ($status =~ /(?:Managed interface|Interface)\s*:\s*(\S+)/i) {
         my $managed_if = $1;
         if ($managed_if ne $ifname) {
@@ -112,7 +133,7 @@ die "NetworkManager is not running. TaraSec hotspot setup will not switch this h
     unless system('systemctl is-active --quiet NetworkManager') == 0;
 
 # Never select the current default-route interface as the client-side hotspot.
-chomp(my $wan_if = `ip -4 route show default | awk 'NR==1 {print $5}'`);
+chomp(my $wan_if = `ip -4 route show default | awk 'NR==1 {print \$5}'`);
 if ($wan_if && $wan_if eq $wifi_if) {
     die "Refusing to convert $wifi_if to hotspot because it is the active Internet uplink. Connect another uplink first.\n";
 }
