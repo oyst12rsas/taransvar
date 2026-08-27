@@ -7,7 +7,7 @@ use warnings;
 # backend on ordinary Ubuntu systems.
 
 my $wifi_if = shift @ARGV // '';
-my $ssid    = shift @ARGV // 'TaraSec';
+my $requested_ssid = shift @ARGV // '';
 my $addr    = shift @ARGV // '192.168.50.1/24';
 
 sub sh {
@@ -16,8 +16,13 @@ sub sh {
     system($cmd) == 0 or die "Command failed: $cmd\n";
 }
 
+sub valid_short_name {
+    my ($name) = @_;
+    return $name =~ /^[A-Za-z0-9][A-Za-z0-9_-]{0,15}$/;
+}
+
 if ($> != 0) {
-    die "Run as root, for example: sudo perl setupWifiNicAsHotspot.pl wlp5s0 TaraSec\n";
+    die "Run as root, for example: sudo perl setupWifiNicAsHotspot.pl wlp5s0\n";
 }
 
 if (!$wifi_if) {
@@ -39,6 +44,72 @@ if ($wan_if && $wan_if eq $wifi_if) {
 my $iw = `iw list 2>/dev/null`;
 die "Wi-Fi hardware does not advertise AP mode support.\n"
     unless $iw =~ /Supported interface modes:.*?\*\s+AP\b/s;
+
+# Scan before AP mode so the installer can show the owner what nearby phone
+# users currently see. A failed/blocked scan is informative, not fatal.
+print "\nScanning nearby Wi-Fi networks on $wifi_if...\n";
+my @nearby;
+my $scan = `nmcli -t -f SSID device wifi list ifname '$wifi_if' --rescan yes 2>/dev/null`;
+for my $s (split /\n/, $scan) {
+    $s =~ s/\\:/:/g;
+    next if $s eq '';
+    push @nearby, $s unless grep { $_ eq $s } @nearby;
+    last if @nearby >= 8;
+}
+
+print "\nChoose the Wi-Fi name for this TaraSec hotspot.\n";
+print "People nearby will see it when they open the Wi-Fi list on their phone.\n";
+if (@nearby) {
+    print "\nNearby Wi-Fi names currently include:\n";
+    print "    $_\n" for @nearby;
+} else {
+    print "\n(No nearby Wi-Fi names could be read; you can still choose the hotspot name.)\n";
+}
+
+chomp(my $hostname = `hostname -s 2>/dev/null`);
+$hostname ||= 'hotspot';
+$hostname =~ s/[^A-Za-z0-9_-]//g;
+$hostname = substr($hostname, 0, 16);
+$hostname = 'hotspot' unless valid_short_name($hostname);
+
+my $ssid;
+if ($requested_ssid ne '') {
+    # Backward-compatible unattended mode: a full TaraSec_* SSID may be passed.
+    my $short = $requested_ssid;
+    $short =~ s/^TaraSec_//;
+    die "Invalid hotspot name '$short'. Use 1-16 characters: letters, digits, '-' or '_', starting with a letter or digit.\n"
+        unless valid_short_name($short);
+    $ssid = "TaraSec_$short";
+} else {
+    while (1) {
+        print "\nHotspot name [$hostname]: ";
+        my $short = <STDIN>;
+        defined $short or die "No hotspot name received.\n";
+        chomp $short;
+        $short = $hostname if $short eq '';
+
+        if (!valid_short_name($short)) {
+            print "Please use 1-16 characters: letters, digits, '-' or '_'. No spaces.\n";
+            next;
+        }
+
+        my $candidate = "TaraSec_$short";
+        if (grep { lc($_) eq lc($candidate) } @nearby) {
+            print "\nNote: '$candidate' is already visible nearby. Duplicate Wi-Fi names are allowed, but may be confusing locally.\n";
+        }
+
+        print "\nYour hotspot will appear in people's Wi-Fi list as:\n\n";
+        print "        $candidate\n\n";
+        print "Is this what you want? [Y/n]: ";
+        my $answer = <STDIN>;
+        defined $answer or die "No confirmation received.\n";
+        chomp $answer;
+        if ($answer eq '' || $answer =~ /^y(?:es)?$/i) {
+            $ssid = $candidate;
+            last;
+        }
+    }
+}
 
 my $profile = "tarasec-hotspot-$wifi_if";
 
