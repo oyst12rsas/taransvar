@@ -71,7 +71,6 @@ sub configure_opennds {
         $cfg .= "\toption enabled '1'\n";
     }
 
-    # Remove obsolete generic-Linux syntax if copied from Ubuntu's legacy file.
     $cfg =~ s/^\s*GatewayInterface\s+.*\n//mig;
     $cfg =~ s/^\s*GatewayName\s+.*\n//mig;
 
@@ -214,9 +213,8 @@ if ($requested_ssid ne '') {
 }
 
 system('systemctl stop opennds >/dev/null 2>&1');
-# The separate system dnsmasq path was an earlier experiment; disable it if it
-# was installed by a previous TaraSec test. NetworkManager owns hotspot DHCP/DNS.
-system('systemctl disable --now dnsmasq >/dev/null 2>&1');
+# Remove only the TaraSec system-dnsmasq fragment left by earlier test builds.
+# Do not disable the host's dnsmasq service; it may be used by libvirt or other software.
 unlink '/etc/dnsmasq.d/tarasec-hotspot.conf' if -f '/etc/dnsmasq.d/tarasec-hotspot.conf';
 
 my $profile = "tarasec-hotspot-$wifi_if";
