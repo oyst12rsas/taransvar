@@ -103,17 +103,13 @@ fi
 
 perl /root/wifi/perl/checkSleepingRunning.pl
 
-# Every TaraSec hotspot gets the NetBird agent for the management plane.
-# Enrollment is automatic when NB_SETUP_KEY is supplied. For self-hosted
-# deployments NB_MANAGEMENT_URL can also be supplied. Secrets are never stored
-# in this repository.
-if [ -x "$REPO_ROOT/misc/install_netbird_management.sh" ] || [ -f "$REPO_ROOT/misc/install_netbird_management.sh" ]; then
-    echo
-    echo "Installing TaraSec NetBird management agent..."
-    bash "$REPO_ROOT/misc/install_netbird_management.sh"
-else
-    echo "WARNING: $REPO_ROOT/misc/install_netbird_management.sh not found; NetBird was not installed."
-fi
+# Every TaraSec hotspot MUST be on the NetBird management plane.
+# Installation and enrollment are automatic. The setup key comes from the
+# environment or a protected local provisioning file; secrets are never stored
+# in Git. If enrollment cannot be verified, the hotspot installation stops.
+echo
+echo "Installing and enrolling TaraSec NetBird management..."
+bash "$REPO_ROOT/misc/install_netbird_management.sh"
 
 # Optionally configure a client Wi-Fi interface during unattended installs.
 # Example:
@@ -131,7 +127,7 @@ else
 fi
 
 printf "\nInstall script is finished\n"
-printf "WAN configuration was left under the existing network backend; wt0 is management only.\n"
+printf "WAN configuration was preserved; NetBird wt0/wt* is management only.\n"
 read -n 1 -s -p "********** The system should now restart. Press Ctrl-C to abort or any other key to reboot. "
 echo
 reboot
