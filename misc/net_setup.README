@@ -1,0 +1,7 @@
+TaraSec network role note
+
+- WAN_IF: physical/ordinary Internet uplink.
+- LAN_IF: client-side LAN/hotspot interface.
+- NetBird wt* interfaces: management plane only; do not use as WAN_IF or LAN_IF.
+
+Use misc/net_setup.conf with misc/net_setup.pl. Review the generated /root/taransvar/iptables.sh before applying it.
