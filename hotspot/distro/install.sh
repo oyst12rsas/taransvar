@@ -17,7 +17,78 @@ HOTSPOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$HOTSPOT_DIR/.." && pwd)"
 cd "$HOTSPOT_DIR"
 
-echo "Please wait a few seconds while installing the files...... "
+echo "=== TaraSec hotspot preflight ==="
+if [ ! -r /etc/os-release ]; then
+    echo "ERROR: Cannot identify this Linux installation." >&2
+    exit 1
+fi
+. /etc/os-release
+echo "OS: ${PRETTY_NAME:-$ID}"
+
+if [ "${ID:-}" != "ubuntu" ] && [ "${ID_LIKE:-}" != *debian* ]; then
+    echo "ERROR: This installer currently supports Ubuntu/Debian-family systems." >&2
+    exit 1
+fi
+
+if ! command -v apt-get >/dev/null 2>&1; then
+    echo "ERROR: apt-get is required by this installer." >&2
+    exit 1
+fi
+
+# Do not assume a fresh hotspot already has the web/database/network tooling.
+# apt is idempotent: already installed packages are left alone.
+echo
+echo "Checking/installing TaraSec prerequisites..."
+apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    ca-certificates curl git perl python3 \
+    network-manager iw rfkill iproute2 \
+    apache2 mysql-server mysql-client \
+    php libapache2-mod-php php-mysql \
+    cron \
+    libdbi-perl libdbd-mysql-perl \
+    ipfm freeradius freeradius-mysql
+
+required_commands=(curl git perl python3 nmcli iw rfkill ip systemctl apache2 mysql)
+missing=0
+for cmd in "${required_commands[@]}"; do
+    if command -v "$cmd" >/dev/null 2>&1; then
+        printf "  %-12s OK\n" "$cmd"
+    else
+        printf "  %-12s MISSING\n" "$cmd"
+        missing=1
+    fi
+done
+if [ "$missing" -ne 0 ]; then
+    echo "ERROR: One or more required commands are still missing after package installation." >&2
+    exit 1
+fi
+
+systemctl enable --now NetworkManager
+systemctl enable --now apache2
+systemctl enable --now mysql
+systemctl enable --now cron
+
+# We require a working non-NetBird Internet uplink before changing Wi-Fi.
+WAN_IF="$(ip -4 route show default | awk 'NR==1 {print $5}')"
+if [ -z "$WAN_IF" ]; then
+    echo "ERROR: No IPv4 default route found. Connect this computer to the Internet first." >&2
+    exit 1
+fi
+if [[ "$WAN_IF" =~ ^(wt[0-9]+|netbird[0-9]*)$ ]]; then
+    echo "ERROR: NetBird cannot be the hotspot's normal WAN/default route." >&2
+    exit 1
+fi
+echo "WAN/uplink detected: $WAN_IF (will be preserved)"
+
+if ! curl -fsS --connect-timeout 5 --max-time 10 https://tarasec.org/ >/dev/null; then
+    echo "ERROR: Internet/TaraSec HTTPS connectivity test failed. The WAN will not be modified." >&2
+    exit 1
+fi
+echo "Internet/TaraSec HTTPS: OK"
+
+echo
+echo "Please wait while installing the hotspot application..."
 
 mkdir -p /root/wifi/perl /root/wifi/log /root/wifi/temp /root/wifi/distro
 mkdir -p /var/log/ipfm/subnet/daily/archived
@@ -25,7 +96,6 @@ mkdir -p /var/log/ipfm/subnet/hourly/archived
 mkdir -p /var/log/ipfm/subnet/minute/archived
 mkdir -p /var/log/ipfm/individual/archived
 
-# The hotspot application assumes the Gatekeeper/base web tree already exists.
 mkdir -p /var/www/html/temp
 chown www-data:www-data /var/www/html/temp
 chown www-data:www-data /var/www/html/temp/* 2>/dev/null || true
@@ -36,6 +106,8 @@ cp distro/copythese/ipfm.conf /etc
 cp distro/copythese/startup.conf /etc/init
 cp distro/copythese/taransvar.service /etc/systemd/system
 
+mkdir -p /var/spool/cron/crontabs
+touch /var/spool/cron/crontabs/root
 if ! grep -q sleepingbeauty /var/spool/cron/crontabs/root 2>/dev/null; then
     printf "\n* * * * * perl /root/wifi/perl/sleepingbeauty.pl > /root/wifi/log/sleeping.txt\n" >> /var/spool/cron/crontabs/root
     chmod 0600 /var/spool/cron/crontabs/root
