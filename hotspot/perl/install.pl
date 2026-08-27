@@ -69,11 +69,22 @@ open(my $fCronh, '>>', $szCrontabFile) or die "Could not open file '$szCrontabFi
 print $fCronh $szString." perl ".$szSysRoot."perl/sendReport.pl";
 close $fCronh;
 
+# IPFM was used by the original hotspot for legacy bandwidth accounting.
+# It is no longer packaged by current Ubuntu releases, so do not make modern
+# TaraSec installation depend on it. If an older host still has ipfm, preserve
+# the historical configuration and restart behaviour.
 my $szDevice = $cSetup->{"internalNic"};
-my $szCmd = 'sed -i "s/DEVICE eth0/DEVICE '.$szDevice.'/"  /etc/ipfm.conf';
-system($szCmd);
-#Restart ipfm
-system("sudo killall ipfm && sudo ipfm");
+if (system('command -v ipfm >/dev/null 2>&1') == 0) {
+	if (-f '/etc/ipfm.conf') {
+		my $szCmd = 'sed -i "s/DEVICE eth0/DEVICE '.$szDevice.'/"  /etc/ipfm.conf';
+		system($szCmd);
+	}
+	system("killall ipfm >/dev/null 2>&1 || true");
+	system("ipfm");
+	print "Legacy IPFM accounting enabled.\n";
+} else {
+	print "IPFM is not installed on this OS; skipping legacy IPFM bandwidth accounting.\n";
+}
 
 #Create guest user (don't know what this is good for so dropping)
 #my $szGuestPass;
