@@ -2,10 +2,13 @@
 use strict;
 use warnings;
 
-# Configure a Wi-Fi interface as a TaraSec hotspot without disturbing
-# the currently active Internet uplink. NetworkManager is the supported
-# backend on ordinary Ubuntu systems. openNDS is installed on top of the
-# working NetworkManager shared connection to enforce captive-portal access.
+# Configure a Wi-Fi interface as a TaraSec captive-portal hotspot without
+# disturbing the currently active Internet uplink.
+#
+# NetworkManager owns only the Wi-Fi AP and static client-side address.
+# TaraSec owns DHCP/DNS (system dnsmasq), forwarding/NAT and openNDS.  Do not
+# use NetworkManager "ipv4.method shared" here: its private dnsmasq lease state
+# is not visible to openNDS on generic Ubuntu systems.
 
 my $wifi_if = shift @ARGV // '';
 my $requested_ssid = shift @ARGV // '';
@@ -22,29 +25,127 @@ sub valid_short_name {
     return $name =~ /^[A-Za-z0-9][A-Za-z0-9_-]{0,15}$/;
 }
 
-sub install_opennds {
-    return if system('command -v ndsctl >/dev/null 2>&1') == 0;
+sub ipv4_24_details {
+    my ($cidr) = @_;
+    die "Hotspot address must currently be an IPv4 /24 (for example 192.168.50.1/24).\n"
+        unless $cidr =~ /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/24$/;
 
-    print "\nInstalling openNDS captive portal...\n";
-    sh('apt-get update');
-    sh('DEBIAN_FRONTEND=noninteractive apt-get install -y opennds');
+    my @oct = ($1, $2, $3, $4);
+    for my $n (@oct) {
+        die "Invalid IPv4 address '$cidr'.\n" if $n > 255;
+    }
 
-    die "openNDS package installation completed but ndsctl is still unavailable.\n"
+    my $gateway = join('.', @oct);
+    my $base = join('.', @oct[0..2]);
+    return ($gateway, "$base.0/24", "$base.50", "$base.200");
+}
+
+sub install_hotspot_packages {
+    my $need_update = 0;
+    $need_update = 1 unless system('command -v dnsmasq >/dev/null 2>&1') == 0;
+    $need_update = 1 unless system('command -v ndsctl >/dev/null 2>&1') == 0;
+
+    sh('apt-get update') if $need_update;
+    sh('DEBIAN_FRONTEND=noninteractive apt-get install -y dnsmasq')
+        unless system('dpkg-query -W -f=\${Status} dnsmasq 2>/dev/null | grep -q "install ok installed"') == 0;
+    sh('DEBIAN_FRONTEND=noninteractive apt-get install -y opennds')
         unless system('command -v ndsctl >/dev/null 2>&1') == 0;
+
+    die "dnsmasq installation completed but dnsmasq is unavailable.\n"
+        unless system('command -v dnsmasq >/dev/null 2>&1') == 0;
+    die "openNDS installation completed but ndsctl is unavailable.\n"
+        unless system('command -v ndsctl >/dev/null 2>&1') == 0;
+}
+
+sub configure_dnsmasq {
+    my ($ifname, $gateway, $dhcp_start, $dhcp_end) = @_;
+    my $conf = '/etc/dnsmasq.d/tarasec-hotspot.conf';
+    my $leases = '/var/lib/misc/dnsmasq.leases';
+
+    sh('mkdir -p /etc/dnsmasq.d /var/lib/misc');
+
+    open my $out, '>', $conf or die "Unable to write $conf: $!\n";
+    print {$out} <<"DNSMASQ";
+# Managed by TaraSec misc/setupWifiNicAsHotspot.pl
+interface=$ifname
+bind-dynamic
+dhcp-authoritative
+dhcp-range=$dhcp_start,$dhcp_end,255.255.255.0,12h
+dhcp-option=3,$gateway
+dhcp-option=6,$gateway
+dhcp-leasefile=$leases
+domain-needed
+bogus-priv
+address=/status.client/$gateway
+DNSMASQ
+    close $out;
+
+    sh('dnsmasq --test');
+    sh('systemctl enable dnsmasq');
+    sh('systemctl restart dnsmasq');
+
+    die "TaraSec hotspot NOT complete: dnsmasq is not running.\n"
+        unless system('systemctl is-active --quiet dnsmasq') == 0;
+
+    print "\ndnsmasq DHCP/DNS verified on $ifname.\n";
+}
+
+sub configure_nat {
+    my ($ifname, $wan_if, $subnet) = @_;
+    my $script = '/usr/local/sbin/tarasec-hotspot-nat.sh';
+    my $service = '/etc/systemd/system/tarasec-hotspot-nat.service';
+
+    open my $sysctl, '>', '/etc/sysctl.d/99-tarasec-hotspot.conf'
+        or die "Unable to write TaraSec sysctl config: $!\n";
+    print {$sysctl} "net.ipv4.ip_forward=1\n";
+    close $sysctl;
+    sh('sysctl -w net.ipv4.ip_forward=1');
+
+    open my $nat, '>', $script or die "Unable to write $script: $!\n";
+    print {$nat} <<"NAT";
+#!/bin/sh
+set -e
+iptables -t nat -C POSTROUTING -s '$subnet' -o '$wan_if' -j MASQUERADE 2>/dev/null || \\
+    iptables -t nat -A POSTROUTING -s '$subnet' -o '$wan_if' -j MASQUERADE
+iptables -C FORWARD -i '$ifname' -o '$wan_if' -s '$subnet' -j ACCEPT 2>/dev/null || \\
+    iptables -A FORWARD -i '$ifname' -o '$wan_if' -s '$subnet' -j ACCEPT
+iptables -C FORWARD -i '$wan_if' -o '$ifname' -d '$subnet' -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \\
+    iptables -A FORWARD -i '$wan_if' -o '$ifname' -d '$subnet' -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+NAT
+    close $nat;
+    sh("chmod 0755 '$script'");
+
+    open my $unit, '>', $service or die "Unable to write $service: $!\n";
+    print {$unit} <<"UNIT";
+[Unit]
+Description=TaraSec hotspot forwarding and NAT
+After=NetworkManager.service network-online.target
+Wants=network-online.target
+Before=opennds.service
+
+[Service]
+Type=oneshot
+ExecStart=$script
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+    close $unit;
+
+    sh('systemctl daemon-reload');
+    sh('systemctl enable tarasec-hotspot-nat.service');
+    sh('systemctl restart tarasec-hotspot-nat.service');
 }
 
 sub configure_opennds {
     my ($ifname, $gateway_name) = @_;
     my $legacy_conf = '/etc/opennds/opennds.conf';
     my $conf = '/etc/config/opennds';
+    my $leases = '/var/lib/misc/dnsmasq.leases';
 
     system('systemctl stop opennds >/dev/null 2>&1');
 
-    # openNDS 10.1+ reads /etc/config/opennds on all operating systems and the
-    # helper scripts expect UCI-style "option name 'value'" syntax. Ubuntu's
-    # package still ships the deprecated generic-Linux template at
-    # /etc/opennds/opennds.conf, so do not copy that legacy syntax into the
-    # active file. Create/repair a minimal UCI-style configuration instead.
     sh('mkdir -p /etc/config');
 
     if (-f $conf && !-e "$conf.tarasec-before") {
@@ -61,9 +162,6 @@ sub configure_opennds {
         close $fh;
     }
 
-    # If the current file came from Ubuntu's legacy template, replace it with a
-    # small valid UCI-style config. Otherwise preserve existing UCI options and
-    # only update the TaraSec interface/name.
     if ($cfg !~ /^\s*config\s+opennds\b/m && $cfg !~ /^\s*option\s+gatewayinterface\b/m) {
         $cfg = "config opennds 'opennds'\n";
         $cfg .= "\toption enabled '1'\n";
@@ -71,28 +169,28 @@ sub configure_opennds {
         $cfg = "config opennds 'opennds'\n" . $cfg;
     }
 
-    # Remove legacy directives if a prior failed install copied the old file.
     $cfg =~ s/^\s*GatewayInterface\s+.*\n//mig;
     $cfg =~ s/^\s*GatewayName\s+.*\n//mig;
 
-    if ($cfg =~ /^\s*option\s+gatewayinterface\s+.*$/mi) {
-        $cfg =~ s/^\s*option\s+gatewayinterface\s+.*$/\toption gatewayinterface '$ifname'/mi;
-    } else {
-        $cfg .= "\toption gatewayinterface '$ifname'\n";
-    }
+    my %opts = (
+        gatewayinterface => $ifname,
+        gatewayname      => $gateway_name,
+        dhcp_leases_file => $leases,
+    );
 
-    if ($cfg =~ /^\s*option\s+gatewayname\s+.*$/mi) {
-        $cfg =~ s/^\s*option\s+gatewayname\s+.*$/\toption gatewayname '$gateway_name'/mi;
-    } else {
-        $cfg .= "\toption gatewayname '$gateway_name'\n";
+    for my $name (keys %opts) {
+        my $value = $opts{$name};
+        if ($cfg =~ /^\s*option\s+\Q$name\E\s+.*$/mi) {
+            $cfg =~ s/^\s*option\s+\Q$name\E\s+.*$/\toption $name '$value'/mi;
+        } else {
+            $cfg .= "\toption $name '$value'\n";
+        }
     }
 
     open my $out, '>', $conf or die "Unable to write $conf: $!\n";
     print {$out} $cfg;
     close $out;
 
-    # Verify the helper sees the values before starting the daemon. This catches
-    # config-format errors immediately instead of waiting for a br-lan timeout.
     my $parsed_if = `/usr/lib/opennds/libopennds.sh get_option_from_config gatewayinterface 2>/dev/null`;
     chomp $parsed_if;
     die "openNDS config parser did not read gatewayinterface '$ifname' (got '$parsed_if').\n"
@@ -102,6 +200,11 @@ sub configure_opennds {
     chomp $parsed_name;
     die "openNDS config parser did not read gatewayname '$gateway_name' (got '$parsed_name').\n"
         unless $parsed_name eq $gateway_name;
+
+    my $parsed_leases = `/usr/lib/opennds/libopennds.sh get_option_from_config dhcp_leases_file 2>/dev/null`;
+    chomp $parsed_leases;
+    die "openNDS config parser did not read DHCP lease file '$leases' (got '$parsed_leases').\n"
+        unless $parsed_leases eq $leases;
 
     sh('systemctl enable opennds');
     sh('systemctl restart opennds');
@@ -148,19 +251,19 @@ die "No Wi-Fi interface found. Specify it as the first argument.\n" unless $wifi
 die "NetworkManager is not running. TaraSec hotspot setup will not switch this host to systemd-networkd.\n"
     unless system('systemctl is-active --quiet NetworkManager') == 0;
 
-# Never select the current default-route interface as the client-side hotspot.
 chomp(my $wan_if = `ip -4 route show default | awk 'NR==1 {print \$5}'`);
 if ($wan_if && $wan_if eq $wifi_if) {
     die "Refusing to convert $wifi_if to hotspot because it is the active Internet uplink. Connect another uplink first.\n";
 }
+die "No IPv4 default-route interface found. Keep an Internet uplink connected before enabling the hotspot.\n"
+    unless $wan_if;
 
-# Check AP support before modifying the interface.
+my ($gateway_ip, $hotspot_subnet, $dhcp_start, $dhcp_end) = ipv4_24_details($addr);
+
 my $iw = `iw list 2>/dev/null`;
 die "Wi-Fi hardware does not advertise AP mode support.\n"
     unless $iw =~ /Supported interface modes:.*?\*\s+AP\b/s;
 
-# A fresh/previously wired-only host may have Wi-Fi software-disabled. Enable
-# it before scanning. A hardware rfkill remains an explicit error.
 system('rfkill unblock wifi >/dev/null 2>&1');
 system('nmcli radio wifi on >/dev/null 2>&1');
 sleep 1;
@@ -169,8 +272,6 @@ if ($wifi_state =~ /:unavailable\s*$/) {
     die "Wi-Fi interface $wifi_if is still unavailable after enabling the radio. Check rfkill/hardware Wi-Fi switch.\n";
 }
 
-# Scan before AP mode so the installer can show the owner what nearby phone
-# users currently see. A failed/blocked scan is informative, not fatal.
 print "\nScanning nearby Wi-Fi networks on $wifi_if...\n";
 my @nearby;
 my $scan = `nmcli -t -f SSID device wifi list ifname '$wifi_if' --rescan yes 2>/dev/null`;
@@ -234,21 +335,24 @@ if ($requested_ssid ne '') {
     }
 }
 
+system('systemctl stop opennds >/dev/null 2>&1');
+
 my $profile = "tarasec-hotspot-$wifi_if";
 system("nmcli connection delete '$profile' >/dev/null 2>&1");
 sh("nmcli connection add type wifi ifname '$wifi_if' con-name '$profile' autoconnect yes ssid '$ssid'");
-sh("nmcli connection modify '$profile' 802-11-wireless.mode ap ipv4.method shared ipv4.addresses '$addr' ipv6.method disabled connection.autoconnect-priority 100");
+sh("nmcli connection modify '$profile' 802-11-wireless.mode ap ipv4.method manual ipv4.addresses '$addr' ipv4.never-default yes ipv6.method disabled connection.autoconnect-priority 100");
 sh("nmcli connection up '$profile'");
 
-# NetworkManager now provides the AP, DHCP, DNS forwarding and NAT. Install and
-# bind openNDS only after that router path is known to be up.
-install_opennds();
+install_hotspot_packages();
+configure_dnsmasq($wifi_if, $gateway_ip, $dhcp_start, $dhcp_end);
+configure_nat($wifi_if, $wan_if, $hotspot_subnet);
 configure_opennds($wifi_if, $ssid);
 
 print "\nTaraSec hotspot interface configured and captive portal enforced.\n";
-print "WAN:     ".($wan_if || '<unknown>')." (left unchanged)\n";
+print "WAN:     $wan_if (left unchanged)\n";
 print "Hotspot: $wifi_if\n";
 print "SSID:    $ssid\n";
 print "Address: $addr\n";
+print "DHCP:    $dhcp_start - $dhcp_end (system dnsmasq)\n";
 print "Profile: $profile\n";
 print "Portal:  openNDS active and verified\n";
