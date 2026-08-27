@@ -38,61 +38,77 @@ sub configure_opennds {
     my $legacy_conf = '/etc/opennds/opennds.conf';
     my $conf = '/etc/config/opennds';
 
-    # openNDS 10.x helper scripts read /etc/config/opennds on Linux as well as
-    # OpenWrt. Ubuntu currently installs a template at /etc/opennds/opennds.conf,
-    # so seed the runtime config from it when necessary.
-    if (!-f $conf) {
-        die "openNDS configuration template $legacy_conf was not installed.\n"
-            unless -f $legacy_conf;
-        sh('mkdir -p /etc/config');
-        sh("cp '$legacy_conf' '$conf'");
-    }
-
-    # The package may start immediately with its generic default (usually
-    # br-lan). Stop it while binding it to the actual TaraSec client interface.
     system('systemctl stop opennds >/dev/null 2>&1');
 
-    my $backup = "$conf.tarasec-before";
-    if (!-e $backup) {
-        sh("cp '$conf' '$backup'");
+    # openNDS 10.1+ reads /etc/config/opennds on all operating systems and the
+    # helper scripts expect UCI-style "option name 'value'" syntax. Ubuntu's
+    # package still ships the deprecated generic-Linux template at
+    # /etc/opennds/opennds.conf, so do not copy that legacy syntax into the
+    # active file. Create/repair a minimal UCI-style configuration instead.
+    sh('mkdir -p /etc/config');
+
+    if (-f $conf && !-e "$conf.tarasec-before") {
+        sh("cp '$conf' '$conf.tarasec-before'");
+    } elsif (!-f $conf && -f $legacy_conf && !-e "$legacy_conf.tarasec-before") {
+        sh("cp '$legacy_conf' '$legacy_conf.tarasec-before'");
     }
 
-    open my $fh, '<', $conf or die "Unable to read $conf: $!\n";
-    local $/;
-    my $cfg = <$fh>;
-    close $fh;
+    my $cfg = '';
+    if (-f $conf) {
+        open my $fh, '<', $conf or die "Unable to read $conf: $!\n";
+        local $/;
+        $cfg = <$fh>;
+        close $fh;
+    }
 
-    # Current openNDS /etc/config/opennds syntax uses lowercase option names.
-    # Also handle older GatewayInterface/GatewayName syntax so upgrades remain
-    # safe and idempotent.
-    if ($cfg =~ /^\s*option\s+gatewayinterface\s+['\"]?[^'\"\s]+['\"]?.*$/mi) {
-        $cfg =~ s/^\s*option\s+gatewayinterface\s+['\"]?[^'\"\s]+['\"]?.*$/option gatewayinterface '$ifname'/mi;
-    } elsif ($cfg =~ /^\s*#?\s*GatewayInterface\s+\S+.*$/mi) {
-        $cfg =~ s/^\s*#?\s*GatewayInterface\s+\S+.*$/GatewayInterface $ifname/mi;
+    # If the current file came from Ubuntu's legacy template, replace it with a
+    # small valid UCI-style config. Otherwise preserve existing UCI options and
+    # only update the TaraSec interface/name.
+    if ($cfg !~ /^\s*config\s+opennds\b/m && $cfg !~ /^\s*option\s+gatewayinterface\b/m) {
+        $cfg = "config opennds 'opennds'\n";
+        $cfg .= "\toption enabled '1'\n";
+    } elsif ($cfg !~ /^\s*config\s+opennds\b/m) {
+        $cfg = "config opennds 'opennds'\n" . $cfg;
+    }
+
+    # Remove legacy directives if a prior failed install copied the old file.
+    $cfg =~ s/^\s*GatewayInterface\s+.*\n//mig;
+    $cfg =~ s/^\s*GatewayName\s+.*\n//mig;
+
+    if ($cfg =~ /^\s*option\s+gatewayinterface\s+.*$/mi) {
+        $cfg =~ s/^\s*option\s+gatewayinterface\s+.*$/\toption gatewayinterface '$ifname'/mi;
     } else {
-        $cfg .= "\noption gatewayinterface '$ifname'\n";
+        $cfg .= "\toption gatewayinterface '$ifname'\n";
     }
 
     if ($cfg =~ /^\s*option\s+gatewayname\s+.*$/mi) {
-        $cfg =~ s/^\s*option\s+gatewayname\s+.*$/option gatewayname '$gateway_name'/mi;
-    } elsif ($cfg =~ /^\s*#?\s*GatewayName\s+.*$/mi) {
-        $cfg =~ s/^\s*#?\s*GatewayName\s+.*$/GatewayName $gateway_name/mi;
+        $cfg =~ s/^\s*option\s+gatewayname\s+.*$/\toption gatewayname '$gateway_name'/mi;
     } else {
-        $cfg .= "option gatewayname '$gateway_name'\n";
+        $cfg .= "\toption gatewayname '$gateway_name'\n";
     }
 
     open my $out, '>', $conf or die "Unable to write $conf: $!\n";
     print {$out} $cfg;
     close $out;
 
+    # Verify the helper sees the values before starting the daemon. This catches
+    # config-format errors immediately instead of waiting for a br-lan timeout.
+    my $parsed_if = `/usr/lib/opennds/libopennds.sh get_option_from_config gatewayinterface 2>/dev/null`;
+    chomp $parsed_if;
+    die "openNDS config parser did not read gatewayinterface '$ifname' (got '$parsed_if').\n"
+        unless $parsed_if eq $ifname;
+
+    my $parsed_name = `/usr/lib/opennds/libopennds.sh get_option_from_config gatewayname 2>/dev/null`;
+    chomp $parsed_name;
+    die "openNDS config parser did not read gatewayname '$gateway_name' (got '$parsed_name').\n"
+        unless $parsed_name eq $gateway_name;
+
     sh('systemctl enable opennds');
     sh('systemctl restart opennds');
 
-    # openNDS may need a moment after systemd reports the service started before
-    # the ndsctl socket exists. Poll briefly instead of racing startup.
     my $status = '';
     my $nds_ok = 0;
-    for (1..15) {
+    for (1..30) {
         $status = `ndsctl status 2>&1`;
         if ($? == 0) {
             $nds_ok = 1;
