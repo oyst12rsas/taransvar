@@ -27,90 +27,98 @@ if ($infectedParam !== '0' && $infectedParam !== '1') {
 
 $wantInfected = $infectedParam === '1';
 $sender = getSenderIp();
-$senderPort = (int)($_SERVER['REMOTE_PORT'] ?? 0);
+
+if (filter_var($sender, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+    controlFail(400, 'Unable to identify calling IPv4 client');
+}
 
 try {
-    if ($wantInfected) {
-        /*
-         * Use the existing TaraSec incident path. Taralink will resolve the
-         * unit and create/reactivate internalInfections, then notify tarakernel.
-         * reportHacking() currently prints browser-oriented text, so suppress
-         * that output here to keep this endpoint valid JSON.
-         */
-        ob_start();
-        reportHacking('demo', 'User self registered as infected');
-        ob_end_clean();
+    $conn = getConnection();
 
+    // The app toggle describes the calling device itself. Do not create a
+    // hackReport and do not infer another unit from the TCP source port.
+    // The local TaraSec gateway sees the phone's LAN address and marks that
+    // exact /32 in internalInfections so tarakernel can tag its traffic.
+    $stmt = $conn->prepare(
+        "SELECT infectionId
+           FROM internalInfections
+          WHERE ip = INET_ATON(?)
+          ORDER BY infectionId DESC
+          LIMIT 1"
+    );
+    $stmt->bind_param('s', $sender);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    $infectionId = $row ? (int)$row['infectionId'] : 0;
+    $severity = 3;
+    $why = 'TaraSec app: device self-declared infected';
+
+    if ($wantInfected) {
+        if ($infectionId > 0) {
+            $stmt = $conn->prepare(
+                "UPDATE internalInfections
+                    SET active = b'1',
+                        handled = b'0',
+                        severity = ?,
+                        status = 'unknown',
+                        nettmask = 4294967295,
+                        why = ?,
+                        lastSeen = NOW()
+                  WHERE infectionId = ?"
+            );
+            $stmt->bind_param('isi', $severity, $why, $infectionId);
+            $stmt->execute();
+            $stmt->close();
+        } else {
+            $stmt = $conn->prepare(
+                "INSERT INTO internalInfections
+                    (ip, nettmask, status, handled, active, lastSeen, severity, why)
+                 VALUES
+                    (INET_ATON(?), 4294967295, 'unknown', b'0', b'1', NOW(), ?, ?)"
+            );
+            $stmt->bind_param('sis', $sender, $severity, $why);
+            $stmt->execute();
+            $infectionId = (int)$conn->insert_id;
+            $stmt->close();
+        }
+
+        $conn->close();
         echo json_encode([
             'ok' => true,
             'requested' => 'infected',
-            'message' => 'Infection report submitted to TaraSec'
+            'client_ip' => $sender,
+            'infectionId' => $infectionId,
+            'severity' => $severity,
+            'message' => 'This device is marked infected on the local TaraSec gateway'
         ], JSON_UNESCAPED_SLASHES);
         exit;
     }
 
-    /*
-     * CLEAN is a local owner action, equivalent to Gatekeeper deactivation.
-     * Resolve the current unit from the connection port when possible; fall
-     * back to the directly observed sender IP. handled=0 makes the normal
-     * configuration path tell tarakernel about the state change.
-     */
-    $conn = getConnection();
-    $unitId = 0;
-
-    if ($senderPort > 0) {
-        $stmt = $conn->prepare(
-            "SELECT unitId FROM unitPort WHERE port = ? ORDER BY lastSeen DESC LIMIT 1"
-        );
-        $stmt->bind_param('i', $senderPort);
-        $stmt->execute();
-        if ($row = $stmt->get_result()->fetch_assoc()) {
-            $unitId = (int)($row['unitId'] ?? 0);
-        }
-        $stmt->close();
-    }
-
     $changed = 0;
-    if ($unitId > 0) {
+    if ($infectionId > 0) {
         $stmt = $conn->prepare(
             "UPDATE internalInfections
-             SET active = b'0', handled = b'0', lastSeen = NOW()
-             WHERE unitId = ?
-             ORDER BY infectionId DESC
-             LIMIT 1"
+                SET active = b'0', handled = b'0', lastSeen = NOW()
+              WHERE infectionId = ?"
         );
-        $stmt->bind_param('i', $unitId);
-        $stmt->execute();
-        $changed = $stmt->affected_rows;
-        $stmt->close();
-    }
-
-    if ($changed === 0) {
-        $stmt = $conn->prepare(
-            "UPDATE internalInfections
-             SET active = b'0', handled = b'0', lastSeen = NOW()
-             WHERE ip = INET_ATON(?)
-             ORDER BY infectionId DESC
-             LIMIT 1"
-        );
-        $stmt->bind_param('s', $sender);
+        $stmt->bind_param('i', $infectionId);
         $stmt->execute();
         $changed = $stmt->affected_rows;
         $stmt->close();
     }
 
     $conn->close();
-
     echo json_encode([
         'ok' => true,
         'requested' => 'clean',
+        'client_ip' => $sender,
+        'infectionId' => $infectionId,
         'changed' => $changed,
-        'message' => $changed > 0 ? 'Infection deactivated' : 'No active infection needed changing'
+        'message' => $infectionId > 0 ? 'This device is marked clean on the local TaraSec gateway' : 'This device had no infection record'
     ], JSON_UNESCAPED_SLASHES);
 } catch (Throwable $e) {
-    while (ob_get_level() > 0) {
-        ob_end_clean();
-    }
-    error_log('appInfectionControl.php failed for ' . $sender . ':' . $senderPort . ': ' . $e->getMessage());
-    controlFail(500, 'Unable to change infection state');
+    error_log('appInfectionControl.php failed for ' . $sender . ': ' . $e->getMessage());
+    controlFail(500, 'Unable to change this device infection state');
 }
