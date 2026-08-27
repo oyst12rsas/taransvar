@@ -1,30 +1,101 @@
-- Check: Login msg... 
-- Change internal IP address
-- Install.pl still contains code of setup_network.pl...
-- fix dhcpcommit.pl elsewhere
-- Radius servers are hardcoded in db.pl (search 192.168.100.12)
+# TaraSec Hotspot installation
 
-***** Install instructions *********
-NOTE! We assume you already installed our "Gatekeeper" system.
+TaraSec Hotspot should use three logically separate network roles:
 
-- To become root user, type: "sudo su -" <enter>
+- **WAN/uplink**: the interface that already provides Internet access. Keep its working configuration unchanged.
+- **Hotspot/client LAN**: normally a spare Wi-Fi interface configured as the access point for clients.
+- **NetBird management**: the NetBird overlay interface (`wt0`) used for TaraSec administration, SOC/status traffic and remote support. It must not become the normal client Internet path.
 
-********** Install Linux packages that are not part of the Gatekeeper system ********
-sudo su
-apt-get update -y && apt-get upgrade -y
-apt-get install ipfm freeradius freeradius-mysql -y 
+## Important networking rule
 
-************ Install the Taransvar hotspot system ***********
-- cd to hotsport directory (sibling to tarakernel, taralink, misc++)
-- Type "sh distro/install.sh" <enter>
+Do not use the historical network setup that rewrote `/etc/network/interfaces` or restarted `systemd-networkd` on NetworkManager-based Ubuntu systems. `misc/setup_network.pl` is now a compatibility wrapper and no longer performs those changes.
 
-Now open your browser and type "localhost"<enter>
-This should display a login box.. 
+For modern Ubuntu, NetworkManager is the supported hotspot backend. The existing Internet uplink is preserved.
 
-*********** To fix after ***********
-sudo crontab -u root -e
-- Then fix the path of crontasks.pl (contains oystein which is wrong)
+## 1. Install the existing TaraSec hotspot application
 
-************ If trouble **************
-- Type "localhost" in the browser, log in (username and login is printed there) and click "Logs" in top menu, then "Status" in left menu and then the link to show server status. There should be green text saying all is well. Otherwise red text telling what's wrong. If this doens't help, then copy all the text and send it to support. 
-- Make sure if tarakernel is running, taralink must also run. sudo dmesg -w 
+The hotspot application still assumes that the TaraSec/Gatekeeper base system is present.
+
+Become root when required:
+
+    sudo -i
+
+Install additional packages required by the legacy hotspot application:
+
+    apt-get update
+    apt-get install -y ipfm freeradius freeradius-mysql
+
+From the repository `hotspot` directory, the legacy application installer is:
+
+    sudo bash distro/install.sh
+
+Note: this installer contains older application/service setup. Network interface configuration must use the modern steps below rather than the old `setup_network.pl` behavior.
+
+## 2. Configure the Wi-Fi hotspot safely
+
+First make sure the intended WAN/uplink is already online. Then configure a separate Wi-Fi interface as the TaraSec access point:
+
+    sudo perl ../misc/setupWifiNicAsHotspot.pl <wifi-interface> TaraSec 192.168.50.1/24
+
+If the Wi-Fi interface is omitted, the script tries to find a Wi-Fi device automatically. It refuses to convert the current default-route interface into a hotspot and checks that the hardware advertises AP mode support.
+
+The NetworkManager hotspot profile provides the client-side private address/DHCP/NAT foundation. openNDS can then enforce captive-portal policy on that client-side interface without replacing the WAN configuration.
+
+## 3. Install and join NetBird management
+
+Install the NetBird agent on every TaraSec hotspot:
+
+    sudo bash ../misc/install_netbird_management.sh
+
+For unattended enrollment, provide a NetBird setup key. For self-hosted NetBird also provide the management URL:
+
+    sudo NB_SETUP_KEY='<setup-key>' \
+         NB_MANAGEMENT_URL='https://<your-netbird-management-host>' \
+         bash ../misc/install_netbird_management.sh
+
+If `NB_SETUP_KEY` is not supplied, the installer installs the agent but does not enroll the peer. It prints the enrollment command instead; this avoids storing setup keys in Git.
+
+After enrollment verify:
+
+    netbird status
+    ip addr show wt0
+
+`wt0` is the management plane. Hotspot customer Internet traffic should normally remain:
+
+    client -> hotspot Wi-Fi -> TaraSec/openNDS -> WAN -> Internet
+
+and not:
+
+    client -> wt0 -> NetBird -> Internet
+
+NetBird access policies/groups should restrict which management/SOC peers can reach hotspots. Do not automatically expose the hotspot client subnet to every NetBird peer.
+
+## 4. Firewall/router configuration
+
+The newer configurable firewall generator is:
+
+    misc/net_setup.conf
+    misc/net_setup.pl
+
+Set `WAN_IF` to the actual Internet uplink and `LAN_IF` to the hotspot/client interface. Do not use `wt0` as either value merely because NetBird is connected.
+
+Review the generated rules before applying them. The generator writes `/root/taransvar/iptables.sh` and does not itself execute that file.
+
+## 5. Verification
+
+Verify the roles independently:
+
+    ip route
+    nmcli device status
+    netbird status
+
+The expected result is:
+
+- WAN has the normal default route and Internet connectivity.
+- hotspot Wi-Fi serves clients on its private subnet.
+- `wt0` is connected to TaraSec management/NetBird.
+- NetworkManager remains responsible for Ubuntu host networking where that was the existing backend.
+
+## Legacy notes
+
+The historical installer/documentation assumed fixed interface layouts and included hard-coded/host-specific setup. These assumptions should not be used for new installations. Interface selection must be based on the active Internet route plus an available client interface so the currently working Internet connection is preserved.
