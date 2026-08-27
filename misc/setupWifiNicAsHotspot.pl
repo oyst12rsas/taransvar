@@ -68,7 +68,8 @@ sub configure_dnsmasq {
     print {$out} <<"DNSMASQ";
 # Managed by TaraSec misc/setupWifiNicAsHotspot.pl
 interface=$ifname
-bind-dynamic
+# Do not force bind-interfaces or bind-dynamic here. Ubuntu releases may set
+# one of these globally, and dnsmasq refuses to start if both are enabled.
 dhcp-authoritative
 dhcp-range=$dhcp_start,$dhcp_end,255.255.255.0,12h
 dhcp-option=3,$gateway
@@ -80,7 +81,14 @@ address=/status.client/$gateway
 DNSMASQ
     close $out;
 
-    sh('dnsmasq --test');
+    my $test = `dnsmasq --test 2>&1`;
+    if ($? != 0) {
+        print STDERR $test;
+        print STDERR "\nEffective dnsmasq bind directives:\n";
+        system(q{grep -RniE '^[[:space:]]*(bind-interfaces|bind-dynamic)([[:space:]]|$)' /etc/dnsmasq.conf /etc/dnsmasq.d 2>/dev/null});
+        die "TaraSec hotspot NOT complete: dnsmasq configuration test failed.\n";
+    }
+
     sh('systemctl enable dnsmasq');
     sh('systemctl restart dnsmasq');
 
