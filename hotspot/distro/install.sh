@@ -35,8 +35,6 @@ if ! command -v apt-get >/dev/null 2>&1; then
     exit 1
 fi
 
-# Do not assume a fresh hotspot already has the web/database/network tooling.
-# apt is idempotent: already installed packages are left alone.
 echo
 echo "Checking/installing TaraSec prerequisites..."
 apt-get update
@@ -49,9 +47,6 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
     libdbi-perl libdbd-mysql-perl \
     freeradius freeradius-mysql
 
-# IPFM is an old bandwidth-accounting dependency and is no longer available in
-# current Ubuntu repositories. Install it only on distributions that still
-# provide it; the modern hotspot does not fail without it.
 if apt-cache show ipfm >/dev/null 2>&1; then
     echo "Installing optional legacy IPFM accounting package..."
     DEBIAN_FRONTEND=noninteractive apt-get install -y ipfm
@@ -79,7 +74,6 @@ systemctl enable --now apache2
 systemctl enable --now mysql
 systemctl enable --now cron
 
-# We require a working non-NetBird Internet uplink before changing Wi-Fi.
 WAN_IF="$(ip -4 route show default | awk 'NR==1 {print $5}')"
 if [ -z "$WAN_IF" ]; then
     echo "ERROR: No IPv4 default route found. Connect this computer to the Internet first." >&2
@@ -101,6 +95,7 @@ echo
 echo "Please wait while installing the hotspot application..."
 
 mkdir -p /root/wifi/perl /root/wifi/log /root/wifi/temp /root/wifi/distro
+mkdir -p /root/setup/log
 if command -v ipfm >/dev/null 2>&1; then
     mkdir -p /var/log/ipfm/subnet/daily/archived
     mkdir -p /var/log/ipfm/subnet/hourly/archived
@@ -160,6 +155,38 @@ sed -i "s/Options Indexes FollowSymLinks/Options FollowSymLinks/" /etc/apache2/a
 systemctl restart apache2
 systemctl restart mysql
 
+# A historical hotspot install assumed Gatekeeper had already created the
+# TaraSec database and application users. Fresh hotspot installs must bootstrap
+# those dependencies themselves before hotspot/perl/install.pl connects.
+echo
+echo "Checking TaraSec database bootstrap..."
+mysql -e "CREATE DATABASE IF NOT EXISTS taransvar;"
+
+SCHEMA_PRESENT="$(mysql -N -s -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='taransvar' AND table_name='hotspotSetup';")"
+if [ "${SCHEMA_PRESENT:-0}" = "0" ]; then
+    echo "Fresh TaraSec database detected; importing base schema..."
+    mysql taransvar < "$REPO_ROOT/db/taransvar.sql"
+    if [ -s "$REPO_ROOT/db/postcreate.sql" ]; then
+        mysql taransvar < "$REPO_ROOT/db/postcreate.sql"
+    fi
+else
+    echo "Existing TaraSec schema detected; leaving data intact."
+fi
+
+# createUsers.pl is the canonical TaraSec user/grant setup. It is safe to run
+# on an existing installation and repairs missing application users/grants.
+(
+    cd "$REPO_ROOT/misc"
+    perl createUsers.pl
+)
+
+# Verify the exact account used by hotspot/perl/func.pm before proceeding.
+if ! mysql -uscriptUsrAces3f3 -prErte8Oi98e-2_# -N -s taransvar -e "SELECT 1;" >/dev/null 2>&1; then
+    echo "ERROR: TaraSec application database account could not connect after bootstrap." >&2
+    exit 1
+fi
+echo "TaraSec database/application account: OK"
+
 ( cd perl && perl install.pl )
 service cron reload
 
@@ -177,9 +204,6 @@ echo
 echo "Installing and enrolling TaraSec NetBird management..."
 bash "$REPO_ROOT/misc/install_netbird_management.sh"
 
-# Configure the client Wi-Fi side. If no explicit SSID is supplied, the helper
-# scans nearby Wi-Fi names, proposes TaraSec_<hostname>, validates the short
-# name, shows exactly what phone users will see, and asks for confirmation.
 if [ -n "${TARASEC_HOTSPOT_IF:-}" ]; then
     ADDR="${TARASEC_HOTSPOT_ADDR:-192.168.50.1/24}"
     perl "$REPO_ROOT/misc/setupWifiNicAsHotspot.pl" \
