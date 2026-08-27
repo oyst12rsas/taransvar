@@ -155,9 +155,6 @@ sed -i "s/Options Indexes FollowSymLinks/Options FollowSymLinks/" /etc/apache2/a
 systemctl restart apache2
 systemctl restart mysql
 
-# A historical hotspot install assumed Gatekeeper had already created the
-# TaraSec database and application users. Fresh hotspot installs must bootstrap
-# those dependencies themselves before hotspot/perl/install.pl connects.
 echo
 echo "Checking TaraSec database bootstrap..."
 mysql -e "CREATE DATABASE IF NOT EXISTS taransvar;"
@@ -173,14 +170,11 @@ else
     echo "Existing TaraSec schema detected; leaving data intact."
 fi
 
-# createUsers.pl is the canonical TaraSec user/grant setup. It is safe to run
-# on an existing installation and repairs missing application users/grants.
 (
     cd "$REPO_ROOT/misc"
     perl createUsers.pl
 )
 
-# Verify the exact account used by hotspot/perl/func.pm before proceeding.
 if ! mysql -uscriptUsrAces3f3 -prErte8Oi98e-2_# -N -s taransvar -e "SELECT 1;" >/dev/null 2>&1; then
     echo "ERROR: TaraSec application database account could not connect after bootstrap." >&2
     exit 1
@@ -190,12 +184,30 @@ echo "TaraSec database/application account: OK"
 ( cd perl && perl install.pl )
 service cron reload
 
-if [ -e /etc/freeradius/sites-enabled/default ] && [ ! -e /etc/freeradius/sites-enabled/default.old ]; then
-    mv /etc/freeradius/sites-enabled/default /etc/freeradius/sites-enabled/default.old
-fi
-cp distro/copythese/radiusdefault /etc/freeradius/sites-enabled/default
-if [ -e /etc/freeradius/radiusd.conf ]; then
-    sed -i 's/#$INCLUDE sql.conf/$INCLUDE sql.conf/' /etc/freeradius/radiusd.conf || true
+# FreeRADIUS moved from /etc/freeradius/* to versioned paths such as
+# /etc/freeradius/3.0/* on modern Ubuntu/Debian. Discover the active config
+# root instead of assuming the legacy location.
+RADIUS_ROOT=""
+for d in /etc/freeradius /etc/freeradius/*; do
+    if [ -d "$d/sites-enabled" ]; then
+        RADIUS_ROOT="$d"
+        break
+    fi
+done
+
+if [ -n "$RADIUS_ROOT" ]; then
+    echo "Configuring FreeRADIUS in $RADIUS_ROOT..."
+    mkdir -p "$RADIUS_ROOT/sites-enabled"
+    if [ -e "$RADIUS_ROOT/sites-enabled/default" ] && [ ! -e "$RADIUS_ROOT/sites-enabled/default.old" ]; then
+        mv "$RADIUS_ROOT/sites-enabled/default" "$RADIUS_ROOT/sites-enabled/default.old"
+    fi
+    cp distro/copythese/radiusdefault "$RADIUS_ROOT/sites-enabled/default"
+
+    if [ -e "$RADIUS_ROOT/radiusd.conf" ]; then
+        sed -i 's/#$INCLUDE sql.conf/$INCLUDE sql.conf/' "$RADIUS_ROOT/radiusd.conf" || true
+    fi
+else
+    echo "WARNING: FreeRADIUS is installed but no sites-enabled directory was found; skipping legacy TaraSec radiusdefault copy."
 fi
 
 perl /root/wifi/perl/checkSleepingRunning.pl
