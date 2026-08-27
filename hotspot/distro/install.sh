@@ -1,75 +1,61 @@
 #!/bin/bash
+set -e
 
 press_enter()
 {
     echo -en "\nPress Enter to continue"
     read line
-    #clear
 }
 
 if [ "$(id -u)" -ne 0 ]; then
-        echo 'This script must be run by root.\nStart with: sudo bash install.sh' >&2
-        exit 1
+    echo 'This script must be run by root. Start with: sudo bash install.sh' >&2
+    exit 1
 fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOTSPOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$HOTSPOT_DIR/.." && pwd)"
+cd "$HOTSPOT_DIR"
 
 echo "Please wait a few seconds while installing the files...... "
 
-mkdir /root/wifi/
-mkdir /root/wifi/perl
-mkdir /root/wifi/log
-mkdir /root/wifi/temp
-mkdir /root/wifi/distro
-mkdir /var/log/ipfm
-mkdir /var/log/ipfm/subnet
-mkdir /var/log/ipfm/subnet/daily
-mkdir /var/log/ipfm/subnet/daily/archived
-mkdir /var/log/ipfm/subnet/hourly
-mkdir /var/log/ipfm/subnet/hourly/archived
-mkdir /var/log/ipfm/subnet/minute
-mkdir /var/log/ipfm/subnet/minute/archived
-mkdir /var/log/ipfm/individual
-mkdir /var/log/ipfm/individual/archived
+mkdir -p /root/wifi/perl /root/wifi/log /root/wifi/temp /root/wifi/distro
+mkdir -p /var/log/ipfm/subnet/daily/archived
+mkdir -p /var/log/ipfm/subnet/hourly/archived
+mkdir -p /var/log/ipfm/subnet/minute/archived
+mkdir -p /var/log/ipfm/individual/archived
 
-#mysqldump -d -u root -p > /root/wifi/distro/copythese
-#mkdir /var/www/html/hotspot
-#cp -r html /var/www/hotspot
-#chown www-data:www-data /var/www/html/hotspot
-#mkdir /var/www/html/temp
+# The hotspot application assumes the Gatekeeper/base web tree already exists.
+mkdir -p /var/www/html/temp
 chown www-data:www-data /var/www/html/temp
-chown www-data:www-data /var/www/html/temp/*
+chown www-data:www-data /var/www/html/temp/* 2>/dev/null || true
 
-cp distro/copythese/*.sql /root/wifi/distro 
-#cp distro/copythese/iptables.sh /root/wifi
+cp distro/copythese/*.sql /root/wifi/distro
 cp perl/* /root/wifi/perl
-#cp distro/copythese/dhcpd.conf /etc/dhcp
 cp distro/copythese/ipfm.conf /etc
 cp distro/copythese/startup.conf /etc/init
 cp distro/copythese/taransvar.service /etc/systemd/system
 
-#my $szCrontabFile = "";
-
-#OT 250226 - disabled
-#cp distro/copythese/crontab /var/spool/cron/crontabs/root
-#chmod 0600 /var/spool/cron/crontabs/root
-#touch -m /var/spool/cron/crontabs/root
-#systemctl daemon-reload
-if ! grep -q sleepingbeauty "/var/spool/cron/crontabs/root" ; then #OT 250313 - changed from here to "fi"
-   printf "\n* * * * * perl /root/wifi/perl/sleepingbeauty.pl > /root/wifi/log/sleeping.txt\n" >> /var/spool/cron/crontabs/root
-   printf "sleepingbeauty put in crontab\n"
+# OT 250226 - old full crontab replacement disabled.
+if ! grep -q sleepingbeauty /var/spool/cron/crontabs/root 2>/dev/null; then
+    printf "\n* * * * * perl /root/wifi/perl/sleepingbeauty.pl > /root/wifi/log/sleeping.txt\n" >> /var/spool/cron/crontabs/root
+    chmod 0600 /var/spool/cron/crontabs/root
+    printf "sleepingbeauty put in crontab\n"
 else
-   printf "sleepingbeauty was already in crontab\n"
+    printf "sleepingbeauty was already in crontab\n"
 fi
 
 cp distro/copythese/*.gpg /root/wifi/temp
 
+systemctl daemon-reload
 systemctl enable taransvar
 systemctl start taransvar
 
-#To enable perl script to read syslog (not working) - or chmod 644 syslog
+# Allow web diagnostics to read logs.
 usermod -a -G adm www-data
 
 file="/var/www/html/index.html"
-if [ -f "$file" ] ; then
+if [ -f "$file" ]; then
     rm "$file"
 fi
 
@@ -77,47 +63,75 @@ a2enmod cgi
 cp distro/copythese/debugserver /usr/lib/cgi-bin
 chmod 705 /usr/lib/cgi-bin/*
 
-#sed -i 's/#net.ipv4.ip_forward/net.ipv4.ip_forward/g' /etc/sysctl.conf
-#Because the sed doesn't seem to work:
+# Forwarding is needed for hotspot/router operation.
 sysctl -w net.ipv4.ip_forward=1
 
-#sed -i 's/#net.ipv6.conf.all.forwarding/net.ipv6.conf.all.forwarding/g' /etc/sysctl.conf
-sed -i "s/Options Indexes FollowSymLinks/Options FollowSymLinks/"  /etc/apache2/apache2.conf
+# Do NOT rewrite /etc/network/interfaces and do NOT restart systemd-networkd.
+# Modern TaraSec Ubuntu installations preserve the active WAN and use
+# NetworkManager via misc/setupWifiNicAsHotspot.pl for the client Wi-Fi side.
 
-echo "<Directory /usr/lib/cgi-bin>" >> /etc/apache2/apache2.conf
-echo "  Options +ExecCGI" >> /etc/apache2/apache2.conf
-echo "</Directory>" >> /etc/apache2/apache2.conf
-echo "" >> /etc/apache2/apache2.conf
-echo "AddHandler cgi-script .cgi .pl" >> /etc/apache2/apache2.conf
-echo "" >> /etc/apache2/apache2.conf
+echo "Configuring Apache CGI support..."
+if ! grep -q '^<Directory /usr/lib/cgi-bin>$' /etc/apache2/apache2.conf; then
+    cat >> /etc/apache2/apache2.conf <<'EOF'
+<Directory /usr/lib/cgi-bin>
+  Options +ExecCGI
+</Directory>
 
+AddHandler cgi-script .cgi .pl
+EOF
+fi
+
+sed -i "s/Options Indexes FollowSymLinks/Options FollowSymLinks/" /etc/apache2/apache2.conf
 systemctl restart apache2
 systemctl restart mysql
 
-#mysql taransvar < /root/wifi/distro/emptydb.sql
-#Moved to install.pl:  mysql taransvar < /root/wifi/distro/aftercreate.sql	#NOTE! Should check first that it's not yet run....
-
-#Network setup is handled much better by Gatekeeper system...
-#perl /root/wifi/perl/setup_network.pl 
-
 (
     cd perl
-    perl install.pl 
+    perl install.pl
 )
-#perl /root/wifi/perl/callCheckCert.pl
 
 service cron reload
 
-#Radius
-mv /etc/freeradius/sites-enabled/default /etc/freeradius/sites-enabled/default.old
+# Radius legacy configuration.
+if [ -e /etc/freeradius/sites-enabled/default ] && [ ! -e /etc/freeradius/sites-enabled/default.old ]; then
+    mv /etc/freeradius/sites-enabled/default /etc/freeradius/sites-enabled/default.old
+fi
 cp distro/copythese/radiusdefault /etc/freeradius/sites-enabled/default
-sed -i "s/#$INCLUDE sql.conf/$INCLUDE sql.conf/"  /etc/freeradius/radiusd.conf
+if [ -e /etc/freeradius/radiusd.conf ]; then
+    sed -i 's/#$INCLUDE sql.conf/$INCLUDE sql.conf/' /etc/freeradius/radiusd.conf || true
+fi
 
 perl /root/wifi/perl/checkSleepingRunning.pl
 
-printf "Install script is finished\n";
-read -n 1 -s -p "********** The system should now restart. Press Ctrl-C to abort or any other key to boot./n"  
-#press_enter
+# Every TaraSec hotspot gets the NetBird agent for the management plane.
+# Enrollment is automatic when NB_SETUP_KEY is supplied. For self-hosted
+# deployments NB_MANAGEMENT_URL can also be supplied. Secrets are never stored
+# in this repository.
+if [ -x "$REPO_ROOT/misc/install_netbird_management.sh" ] || [ -f "$REPO_ROOT/misc/install_netbird_management.sh" ]; then
+    echo
+    echo "Installing TaraSec NetBird management agent..."
+    bash "$REPO_ROOT/misc/install_netbird_management.sh"
+else
+    echo "WARNING: $REPO_ROOT/misc/install_netbird_management.sh not found; NetBird was not installed."
+fi
 
+# Optionally configure a client Wi-Fi interface during unattended installs.
+# Example:
+#   TARASEC_HOTSPOT_IF=wlp5s0 TARASEC_HOTSPOT_SSID=TaraSec sudo -E bash distro/install.sh
+# If omitted, networking is left untouched and can be configured afterwards.
+if [ -n "${TARASEC_HOTSPOT_IF:-}" ]; then
+    SSID="${TARASEC_HOTSPOT_SSID:-TaraSec}"
+    ADDR="${TARASEC_HOTSPOT_ADDR:-192.168.50.1/24}"
+    perl "$REPO_ROOT/misc/setupWifiNicAsHotspot.pl" "$TARASEC_HOTSPOT_IF" "$SSID" "$ADDR"
+else
+    echo
+    echo "Hotspot Wi-Fi interface not changed automatically."
+    echo "Configure it with:"
+    echo "  sudo perl $REPO_ROOT/misc/setupWifiNicAsHotspot.pl <wifi-if> TaraSec 192.168.50.1/24"
+fi
+
+printf "\nInstall script is finished\n"
+printf "WAN configuration was left under the existing network backend; wt0 is management only.\n"
+read -n 1 -s -p "********** The system should now restart. Press Ctrl-C to abort or any other key to reboot. "
+echo
 reboot
-
