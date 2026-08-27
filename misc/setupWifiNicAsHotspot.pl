@@ -45,6 +45,16 @@ my $iw = `iw list 2>/dev/null`;
 die "Wi-Fi hardware does not advertise AP mode support.\n"
     unless $iw =~ /Supported interface modes:.*?\*\s+AP\b/s;
 
+# A fresh/previously wired-only host may have Wi-Fi software-disabled. Enable
+# it before scanning. A hardware rfkill remains an explicit error.
+system('rfkill unblock wifi >/dev/null 2>&1');
+system('nmcli radio wifi on >/dev/null 2>&1');
+sleep 1;
+my $wifi_state = `nmcli -t -f DEVICE,TYPE,STATE device status | grep '^\Q$wifi_if\E:wifi:' 2>/dev/null`;
+if ($wifi_state =~ /:unavailable\s*$/) {
+    die "Wi-Fi interface $wifi_if is still unavailable after enabling the radio. Check rfkill/hardware Wi-Fi switch.\n";
+}
+
 # Scan before AP mode so the installer can show the owner what nearby phone
 # users currently see. A failed/blocked scan is informative, not fatal.
 print "\nScanning nearby Wi-Fi networks on $wifi_if...\n";
@@ -74,7 +84,6 @@ $hostname = 'hotspot' unless valid_short_name($hostname);
 
 my $ssid;
 if ($requested_ssid ne '') {
-    # Backward-compatible unattended mode: a full TaraSec_* SSID may be passed.
     my $short = $requested_ssid;
     $short =~ s/^TaraSec_//;
     die "Invalid hotspot name '$short'. Use 1-16 characters: letters, digits, '-' or '_', starting with a letter or digit.\n"
@@ -112,13 +121,7 @@ if ($requested_ssid ne '') {
 }
 
 my $profile = "tarasec-hotspot-$wifi_if";
-
-# Remove only our own previous profile, never arbitrary user Wi-Fi profiles.
 system("nmcli connection delete '$profile' >/dev/null 2>&1");
-
-# ipv4.method shared gives the AP a private address, DHCP/DNS service and NAT
-# through NetworkManager. openNDS can then enforce captive-portal policy on
-# this client-side interface without reconfiguring the WAN.
 sh("nmcli connection add type wifi ifname '$wifi_if' con-name '$profile' autoconnect yes ssid '$ssid'");
 sh("nmcli connection modify '$profile' 802-11-wireless.mode ap ipv4.method shared ipv4.addresses '$addr' ipv6.method disabled connection.autoconnect-priority 100");
 sh("nmcli connection up '$profile'");
