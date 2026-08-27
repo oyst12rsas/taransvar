@@ -25,8 +25,8 @@ fi
 . /etc/os-release
 echo "OS: ${PRETTY_NAME:-$ID}"
 
-if [ "${ID:-}" != "ubuntu" ] && [ "${ID_LIKE:-}" != *debian* ]; then
-    echo "ERROR: This installer currently supports Ubuntu/Debian-family systems." >&2
+if [ "${ID:-}" != "ubuntu" ] && [ "${ID:-}" != "debian" ] && [ "${ID:-}" != "raspbian" ] && [ "${ID_LIKE:-}" != *debian* ]; then
+    echo "ERROR: This installer currently supports Ubuntu/Debian/Raspberry Pi OS family systems." >&2
     exit 1
 fi
 
@@ -219,6 +219,10 @@ else
 fi
 
 echo
+echo "Installing and verifying openNDS captive portal..."
+bash "$REPO_ROOT/misc/install_opennds.sh"
+
+echo
 echo "Installing and enrolling TaraSec NetBird management..."
 bash "$REPO_ROOT/misc/install_netbird_management.sh"
 
@@ -234,7 +238,7 @@ else
 fi
 
 printf "\nInstall script is finished\n"
-printf "WAN configuration was preserved; NetBird wt0/wt* is management only.\n"
+printf "WAN configuration was preserved; openNDS controls captive access and NetBird wt0/wt* is management only.\n"
 read -n 1 -s -p "********** The system should now restart. Press Ctrl-C to abort or any other key to reboot. "
 echo
 reboot
