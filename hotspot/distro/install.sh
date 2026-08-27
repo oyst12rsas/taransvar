@@ -36,7 +36,6 @@ cp distro/copythese/ipfm.conf /etc
 cp distro/copythese/startup.conf /etc/init
 cp distro/copythese/taransvar.service /etc/systemd/system
 
-# OT 250226 - old full crontab replacement disabled.
 if ! grep -q sleepingbeauty /var/spool/cron/crontabs/root 2>/dev/null; then
     printf "\n* * * * * perl /root/wifi/perl/sleepingbeauty.pl > /root/wifi/log/sleeping.txt\n" >> /var/spool/cron/crontabs/root
     chmod 0600 /var/spool/cron/crontabs/root
@@ -50,25 +49,15 @@ cp distro/copythese/*.gpg /root/wifi/temp
 systemctl daemon-reload
 systemctl enable taransvar
 systemctl start taransvar
-
-# Allow web diagnostics to read logs.
 usermod -a -G adm www-data
 
 file="/var/www/html/index.html"
-if [ -f "$file" ]; then
-    rm "$file"
-fi
+if [ -f "$file" ]; then rm "$file"; fi
 
 a2enmod cgi
 cp distro/copythese/debugserver /usr/lib/cgi-bin
 chmod 705 /usr/lib/cgi-bin/*
-
-# Forwarding is needed for hotspot/router operation.
 sysctl -w net.ipv4.ip_forward=1
-
-# Do NOT rewrite /etc/network/interfaces and do NOT restart systemd-networkd.
-# Modern TaraSec Ubuntu installations preserve the active WAN and use
-# NetworkManager via misc/setupWifiNicAsHotspot.pl for the client Wi-Fi side.
 
 echo "Configuring Apache CGI support..."
 if ! grep -q '^<Directory /usr/lib/cgi-bin>$' /etc/apache2/apache2.conf; then
@@ -85,14 +74,9 @@ sed -i "s/Options Indexes FollowSymLinks/Options FollowSymLinks/" /etc/apache2/a
 systemctl restart apache2
 systemctl restart mysql
 
-(
-    cd perl
-    perl install.pl
-)
-
+( cd perl && perl install.pl )
 service cron reload
 
-# Radius legacy configuration.
 if [ -e /etc/freeradius/sites-enabled/default ] && [ ! -e /etc/freeradius/sites-enabled/default.old ]; then
     mv /etc/freeradius/sites-enabled/default /etc/freeradius/sites-enabled/default.old
 fi
@@ -103,27 +87,22 @@ fi
 
 perl /root/wifi/perl/checkSleepingRunning.pl
 
-# Every TaraSec hotspot MUST be on the NetBird management plane.
-# Installation and enrollment are automatic. The setup key comes from the
-# environment or a protected local provisioning file; secrets are never stored
-# in Git. If enrollment cannot be verified, the hotspot installation stops.
 echo
 echo "Installing and enrolling TaraSec NetBird management..."
 bash "$REPO_ROOT/misc/install_netbird_management.sh"
 
-# Optionally configure a client Wi-Fi interface during unattended installs.
-# Example:
-#   TARASEC_HOTSPOT_IF=wlp5s0 TARASEC_HOTSPOT_SSID=TaraSec sudo -E bash distro/install.sh
-# If omitted, networking is left untouched and can be configured afterwards.
+# Configure the client Wi-Fi side. If no explicit SSID is supplied, the helper
+# scans nearby Wi-Fi names, proposes TaraSec_<hostname>, validates the short
+# name, shows exactly what phone users will see, and asks for confirmation.
 if [ -n "${TARASEC_HOTSPOT_IF:-}" ]; then
-    SSID="${TARASEC_HOTSPOT_SSID:-TaraSec}"
     ADDR="${TARASEC_HOTSPOT_ADDR:-192.168.50.1/24}"
-    perl "$REPO_ROOT/misc/setupWifiNicAsHotspot.pl" "$TARASEC_HOTSPOT_IF" "$SSID" "$ADDR"
+    perl "$REPO_ROOT/misc/setupWifiNicAsHotspot.pl" \
+        "$TARASEC_HOTSPOT_IF" "${TARASEC_HOTSPOT_SSID:-}" "$ADDR"
 else
     echo
-    echo "Hotspot Wi-Fi interface not changed automatically."
+    echo "No hotspot Wi-Fi interface was supplied."
     echo "Configure it with:"
-    echo "  sudo perl $REPO_ROOT/misc/setupWifiNicAsHotspot.pl <wifi-if> TaraSec 192.168.50.1/24"
+    echo "  sudo perl $REPO_ROOT/misc/setupWifiNicAsHotspot.pl <wifi-if>"
 fi
 
 printf "\nInstall script is finished\n"
