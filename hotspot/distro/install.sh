@@ -184,9 +184,6 @@ echo "TaraSec database/application account: OK"
 ( cd perl && perl install.pl )
 service cron reload
 
-# FreeRADIUS moved from /etc/freeradius/* to versioned paths such as
-# /etc/freeradius/3.0/* on modern Ubuntu/Debian. Discover the active config
-# root instead of assuming the legacy location.
 RADIUS_ROOT=""
 for d in /etc/freeradius /etc/freeradius/*; do
     if [ -d "$d/sites-enabled" ]; then
@@ -210,7 +207,16 @@ else
     echo "WARNING: FreeRADIUS is installed but no sites-enabled directory was found; skipping legacy TaraSec radiusdefault copy."
 fi
 
-perl /root/wifi/perl/checkSleepingRunning.pl
+# The old installer waited indefinitely for sleepingbeauty to appear. On a
+# fresh install the cron worker may not have reached its first minute yet, so a
+# blocking loop can stall installation for many minutes. Do a quick check and
+# continue; post-install diagnostics can verify the worker after setup/reboot.
+echo "Checking sleepingbeauty worker (non-blocking)..."
+if pgrep -f 'perl .*sleepingbeauty\.pl' >/dev/null 2>&1; then
+    echo "sleepingbeauty is running."
+else
+    echo "sleepingbeauty is not running yet; continuing installation. Cron will start it on its next scheduled run."
+fi
 
 echo
 echo "Installing and enrolling TaraSec NetBird management..."
