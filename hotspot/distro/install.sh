@@ -41,13 +41,23 @@ echo
 echo "Checking/installing TaraSec prerequisites..."
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    ca-certificates curl git perl python3 \
+    ca-certificates curl git perl python3 gnupg \
     network-manager iw rfkill iproute2 \
     apache2 mysql-server mysql-client \
     php libapache2-mod-php php-mysql \
     cron \
     libdbi-perl libdbd-mysql-perl \
-    ipfm freeradius freeradius-mysql
+    freeradius freeradius-mysql
+
+# IPFM is an old bandwidth-accounting dependency and is no longer available in
+# current Ubuntu repositories. Install it only on distributions that still
+# provide it; the modern hotspot does not fail without it.
+if apt-cache show ipfm >/dev/null 2>&1; then
+    echo "Installing optional legacy IPFM accounting package..."
+    DEBIAN_FRONTEND=noninteractive apt-get install -y ipfm
+else
+    echo "IPFM is not available on this OS; legacy IPFM accounting will be skipped."
+fi
 
 required_commands=(curl git perl python3 nmcli iw rfkill ip systemctl apache2 mysql)
 missing=0
@@ -91,10 +101,12 @@ echo
 echo "Please wait while installing the hotspot application..."
 
 mkdir -p /root/wifi/perl /root/wifi/log /root/wifi/temp /root/wifi/distro
-mkdir -p /var/log/ipfm/subnet/daily/archived
-mkdir -p /var/log/ipfm/subnet/hourly/archived
-mkdir -p /var/log/ipfm/subnet/minute/archived
-mkdir -p /var/log/ipfm/individual/archived
+if command -v ipfm >/dev/null 2>&1; then
+    mkdir -p /var/log/ipfm/subnet/daily/archived
+    mkdir -p /var/log/ipfm/subnet/hourly/archived
+    mkdir -p /var/log/ipfm/subnet/minute/archived
+    mkdir -p /var/log/ipfm/individual/archived
+fi
 
 mkdir -p /var/www/html/temp
 chown www-data:www-data /var/www/html/temp
@@ -102,7 +114,9 @@ chown www-data:www-data /var/www/html/temp/* 2>/dev/null || true
 
 cp distro/copythese/*.sql /root/wifi/distro
 cp perl/* /root/wifi/perl
-cp distro/copythese/ipfm.conf /etc
+if command -v ipfm >/dev/null 2>&1; then
+    cp distro/copythese/ipfm.conf /etc
+fi
 cp distro/copythese/startup.conf /etc/init
 cp distro/copythese/taransvar.service /etc/systemd/system
 
