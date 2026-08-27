@@ -6,13 +6,13 @@ use warnings;
 # disturbing the currently active Internet uplink.
 #
 # NetworkManager owns only the Wi-Fi AP and static client-side address.
-# TaraSec owns DHCP/DNS (system dnsmasq), forwarding/NAT and openNDS.  Do not
+# TaraSec owns DHCP/DNS (system dnsmasq), forwarding/NAT and openNDS. Do not
 # use NetworkManager "ipv4.method shared" here: its private dnsmasq lease state
 # is not visible to openNDS on generic Ubuntu systems.
 
 my $wifi_if = shift @ARGV // '';
 my $requested_ssid = shift @ARGV // '';
-my $addr    = shift @ARGV // '192.168.50.1/24';
+my $addr = shift @ARGV // '192.168.50.1/24';
 
 sub sh {
     my ($cmd) = @_;
@@ -57,6 +57,56 @@ sub install_hotspot_packages {
         unless system('command -v ndsctl >/dev/null 2>&1') == 0;
 }
 
+sub clear_stale_hotspot_dns_listener {
+    my ($gateway) = @_;
+    my $ss = `ss -H -lntup 2>/dev/null`;
+    my %pids;
+
+    for my $line (split /\n/, $ss) {
+        next unless $line =~ /\Q$gateway\E:53\b/;
+        while ($line =~ /pid=(\d+)/g) {
+            $pids{$1} = 1;
+        }
+    }
+
+    for my $pid (sort { $a <=> $b } keys %pids) {
+        my $cmdline = '';
+        if (open my $fh, '<', "/proc/$pid/cmdline") {
+            local $/;
+            $cmdline = <$fh> // '';
+            close $fh;
+            $cmdline =~ s/\0/ /g;
+        }
+
+        # A previous NetworkManager "shared" hotspot can leave its private
+        # dnsmasq alive briefly while the profile is being replaced. It is safe
+        # to terminate only that very specific helper. Never touch NetBird,
+        # libvirt, systemd-resolved, or an unknown DNS process.
+        my $is_nm_dnsmasq = $cmdline =~ /dnsmasq/i &&
+            ($cmdline =~ /NetworkManager/i ||
+             $cmdline =~ /nm-dnsmasq/i ||
+             $cmdline =~ m{--conf-file=/dev/null});
+
+        if (!$is_nm_dnsmasq) {
+            die "Port 53 on hotspot gateway $gateway is already used by PID $pid: $cmdline\n"
+              . "Refusing to stop an unknown DNS service.\n";
+        }
+
+        print "Stopping stale NetworkManager dnsmasq on $gateway:53 (PID $pid)...\n";
+        kill 'TERM', $pid or die "Unable to stop stale NetworkManager dnsmasq PID $pid: $!\n";
+        for (1..5) {
+            last unless kill 0, $pid;
+            sleep 1;
+        }
+        die "Stale NetworkManager dnsmasq PID $pid did not stop.\n" if kill 0, $pid;
+    }
+
+    my $remaining = `ss -H -lntup 2>/dev/null | grep -F '$gateway:53 ' 2>/dev/null`;
+    if ($remaining ne '') {
+        die "Port 53 on hotspot gateway $gateway is still occupied:\n$remaining";
+    }
+}
+
 sub configure_dnsmasq {
     my ($ifname, $gateway, $dhcp_start, $dhcp_end) = @_;
     my $conf = '/etc/dnsmasq.d/tarasec-hotspot.conf';
@@ -88,6 +138,8 @@ DNSMASQ
         system(q{grep -RniE '^[[:space:]]*(bind-interfaces|bind-dynamic)([[:space:]]|$)' /etc/dnsmasq.conf /etc/dnsmasq.d 2>/dev/null});
         die "TaraSec hotspot NOT complete: dnsmasq configuration test failed.\n";
     }
+
+    clear_stale_hotspot_dns_listener($gateway);
 
     sh('systemctl enable dnsmasq');
     sh('systemctl restart dnsmasq');
@@ -182,7 +234,7 @@ sub configure_opennds {
 
     my %opts = (
         gatewayinterface => $ifname,
-        gatewayname      => $gateway_name,
+        gatewayname => $gateway_name,
         dhcp_leases_file => $leases,
     );
 
@@ -346,7 +398,12 @@ if ($requested_ssid ne '') {
 system('systemctl stop opennds >/dev/null 2>&1');
 
 my $profile = "tarasec-hotspot-$wifi_if";
+# Bring the previous profile down before deleting it. This is important when a
+# previous version used ipv4.method shared, because NetworkManager may otherwise
+# leave its private dnsmasq alive on the hotspot gateway for a short time.
+system("nmcli connection down '$profile' >/dev/null 2>&1");
 system("nmcli connection delete '$profile' >/dev/null 2>&1");
+sleep 1;
 sh("nmcli connection add type wifi ifname '$wifi_if' con-name '$profile' autoconnect yes ssid '$ssid'");
 sh("nmcli connection modify '$profile' 802-11-wireless.mode ap ipv4.method manual ipv4.addresses '$addr' ipv4.never-default yes ipv6.method disabled connection.autoconnect-priority 100");
 sh("nmcli connection up '$profile'");
