@@ -4,7 +4,8 @@ use warnings;
 
 # Configure a Wi-Fi interface as a TaraSec hotspot without disturbing
 # the currently active Internet uplink. NetworkManager is the supported
-# backend on ordinary Ubuntu systems.
+# backend on ordinary Ubuntu systems. openNDS is installed on top of the
+# working NetworkManager shared connection to enforce captive-portal access.
 
 my $wifi_if = shift @ARGV // '';
 my $requested_ssid = shift @ARGV // '';
@@ -19,6 +20,82 @@ sub sh {
 sub valid_short_name {
     my ($name) = @_;
     return $name =~ /^[A-Za-z0-9][A-Za-z0-9_-]{0,15}$/;
+}
+
+sub install_opennds {
+    return if system('command -v ndsctl >/dev/null 2>&1') == 0;
+
+    print "\nInstalling openNDS captive portal...\n";
+    sh('apt-get update');
+    sh('DEBIAN_FRONTEND=noninteractive apt-get install -y opennds');
+
+    die "openNDS package installation completed but ndsctl is still unavailable.\n"
+        unless system('command -v ndsctl >/dev/null 2>&1') == 0;
+}
+
+sub configure_opennds {
+    my ($ifname, $gateway_name) = @_;
+    my $conf = '/etc/opennds/opennds.conf';
+
+    die "openNDS configuration file $conf was not installed.\n" unless -f $conf;
+
+    # The package may start immediately with its generic default (usually
+    # br-lan). Stop it while binding it to the actual TaraSec client interface.
+    system('systemctl stop opennds >/dev/null 2>&1');
+
+    my $backup = "$conf.tarasec-before";
+    if (!-e $backup) {
+        sh("cp '$conf' '$backup'");
+    }
+
+    open my $fh, '<', $conf or die "Unable to read $conf: $!\n";
+    local $/;
+    my $cfg = <$fh>;
+    close $fh;
+
+    if ($cfg =~ /^\s*#?\s*GatewayInterface\s+\S+.*$/mi) {
+        $cfg =~ s/^\s*#?\s*GatewayInterface\s+\S+.*$/GatewayInterface $ifname/mi;
+    } else {
+        $cfg = "GatewayInterface $ifname\n" . $cfg;
+    }
+
+    if ($cfg =~ /^\s*#?\s*GatewayName\s+.*$/mi) {
+        $cfg =~ s/^\s*#?\s*GatewayName\s+.*$/GatewayName $gateway_name/mi;
+    } else {
+        $cfg = "GatewayName $gateway_name\n" . $cfg;
+    }
+
+    open my $out, '>', $conf or die "Unable to write $conf: $!\n";
+    print {$out} $cfg;
+    close $out;
+
+    sh('systemctl enable opennds');
+    sh('systemctl restart opennds');
+
+    # Do not claim that TaraSec hotspot installation succeeded if the captive
+    # portal is absent or failed to bind to the intended client interface.
+    my $active = system('systemctl is-active --quiet opennds') == 0;
+    my $status = `ndsctl status 2>&1`;
+    my $nds_ok = $? == 0;
+
+    if (!$active || !$nds_ok) {
+        print STDERR "\nopenNDS verification failed.\n";
+        print STDERR $status if $status ne '';
+        print STDERR "Check: journalctl -u opennds --no-pager -n 100\n";
+        die "TaraSec hotspot NOT complete: captive portal is not running.\n";
+    }
+
+    # Current openNDS versions report the bound interface in ndsctl status.
+    # Treat a different explicitly reported interface as a hard installation
+    # error, while remaining compatible with versions that omit that field.
+    if ($status =~ /(?:Managed interface|Interface)\s*:\s*(\S+)/i) {
+        my $managed_if = $1;
+        if ($managed_if ne $ifname) {
+            die "TaraSec hotspot NOT complete: openNDS is bound to $managed_if instead of $ifname.\n";
+        }
+    }
+
+    print "\nopenNDS captive portal verified on $ifname.\n";
 }
 
 if ($> != 0) {
@@ -126,9 +203,15 @@ sh("nmcli connection add type wifi ifname '$wifi_if' con-name '$profile' autocon
 sh("nmcli connection modify '$profile' 802-11-wireless.mode ap ipv4.method shared ipv4.addresses '$addr' ipv6.method disabled connection.autoconnect-priority 100");
 sh("nmcli connection up '$profile'");
 
-print "\nTaraSec hotspot interface configured.\n";
+# NetworkManager now provides the AP, DHCP, DNS forwarding and NAT. Install and
+# bind openNDS only after that router path is known to be up.
+install_opennds();
+configure_opennds($wifi_if, $ssid);
+
+print "\nTaraSec hotspot interface configured and captive portal enforced.\n";
 print "WAN:     ".($wan_if || '<unknown>')." (left unchanged)\n";
 print "Hotspot: $wifi_if\n";
 print "SSID:    $ssid\n";
 print "Address: $addr\n";
 print "Profile: $profile\n";
+print "Portal:  openNDS active and verified\n";
