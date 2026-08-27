@@ -1,6 +1,6 @@
 # TaraSec Hotspot installation
 
-TaraSec Hotspot should use three logically separate network roles:
+TaraSec Hotspot uses three logically separate network roles:
 
 - **WAN/uplink**: the interface that already provides Internet access. Keep its working configuration unchanged.
 - **Hotspot/client LAN**: normally a spare Wi-Fi interface configured as the access point for clients.
@@ -12,24 +12,20 @@ Do not use the historical network setup that rewrote `/etc/network/interfaces` o
 
 For modern Ubuntu, NetworkManager is the supported hotspot backend. The existing Internet uplink is preserved.
 
-## 1. Install the existing TaraSec hotspot application
+## 1. Install the TaraSec hotspot application
 
 The hotspot application still assumes that the TaraSec/Gatekeeper base system is present.
 
-Become root when required:
+Install additional packages required by the legacy hotspot application if they are not already installed:
 
-    sudo -i
+    sudo apt-get update
+    sudo apt-get install -y ipfm freeradius freeradius-mysql
 
-Install additional packages required by the legacy hotspot application:
-
-    apt-get update
-    apt-get install -y ipfm freeradius freeradius-mysql
-
-From the repository `hotspot` directory, the legacy application installer is:
+From the repository `hotspot` directory:
 
     sudo bash distro/install.sh
 
-Note: this installer contains older application/service setup. Network interface configuration must use the modern steps below rather than the old `setup_network.pl` behavior.
+The installer now treats successful NetBird management enrollment as part of a successful hotspot install.
 
 ## 2. Configure the Wi-Fi hotspot safely
 
@@ -41,19 +37,67 @@ If the Wi-Fi interface is omitted, the script tries to find a Wi-Fi device autom
 
 The NetworkManager hotspot profile provides the client-side private address/DHCP/NAT foundation. openNDS can then enforce captive-portal policy on that client-side interface without replacing the WAN configuration.
 
-## 3. Install and join NetBird management
+## 3. Zero-touch NetBird management enrollment
 
-Install the NetBird agent on every TaraSec hotspot:
+Every TaraSec hotspot installs and joins NetBird automatically through:
 
-    sudo bash ../misc/install_netbird_management.sh
+    misc/install_netbird_management.sh
 
-For unattended enrollment, provide a NetBird setup key. For self-hosted NetBird also provide the management URL:
+Normal production installation does **not** require a NetBird setup key to be copied to the hotspot or stored in Git.
 
-    sudo NB_SETUP_KEY='<setup-key>' \
-         NB_MANAGEMENT_URL='https://<your-netbird-management-host>' \
-         bash ../misc/install_netbird_management.sh
+The flow is:
 
-If `NB_SETUP_KEY` is not supplied, the installer installs the agent but does not enroll the peer. It prints the enrollment command instead; this avoids storing setup keys in Git.
+1. The hotspot generates and persists a unique random TaraSec device ID in `/etc/tarasec/device-id`.
+2. It contacts the TaraSec HTTPS enrollment service.
+3. The TaraSec server uses its server-side NetBird API token to create a **one-off**, usage-limit-1 setup key.
+4. NetBird automatically assigns the new peer to a restricted bootstrap group.
+5. The one-off key is returned to that hotspot only.
+6. The hotspot immediately runs `netbird up`, then discards the key/response.
+7. The installer verifies NetBird management connectivity before considering installation successful.
+
+The default enrollment endpoint is:
+
+    https://tarasec.org/script/hotspotNetbirdEnroll.php
+
+It can be overridden for staging/testing with `TARASEC_ENROLL_URL`.
+
+An explicit `NB_SETUP_KEY` remains supported only as a test/repair override.
+
+### First-contact security boundary
+
+A public installer has no secret before its first contact with TaraSec. Therefore first-contact enrollment itself cannot prove that the caller is an already-trusted TaraSec device.
+
+For that reason, `NB_BOOTSTRAP_GROUP_ID` **must be isolated by NetBird policy**. A newly enrolled hotspot should have only the minimum management/SOC/registration access required to complete TaraSec owner/device registration. It must not automatically gain hotspot-to-hotspot or broad production access.
+
+After owner/device registration, TaraSec can promote the peer into the appropriate operational group/policy.
+
+### Configure the TaraSec enrollment server
+
+The public PHP endpoint is:
+
+    html/script/hotspotNetbirdEnroll.php
+
+The server-side NetBird token is stored only on the TaraSec enrollment/API server in:
+
+    /etc/tarasec/netbird-enrollment.env
+
+An example is provided at:
+
+    misc/netbird-enrollment-server.env.example
+
+A setup helper is provided:
+
+    sudo -E bash misc/setup_netbird_enrollment_server.sh
+
+It requires these server-side environment values:
+
+    NB_API_URL
+    NB_API_TOKEN
+    NB_BOOTSTRAP_GROUP_ID
+
+For self-hosted NetBird, also set `NB_MANAGEMENT_URL` as needed.
+
+The NetBird API token must never be committed to Git or returned to a hotspot.
 
 After enrollment verify:
 
@@ -67,8 +111,6 @@ After enrollment verify:
 and not:
 
     client -> wt0 -> NetBird -> Internet
-
-NetBird access policies/groups should restrict which management/SOC peers can reach hotspots. Do not automatically expose the hotspot client subnet to every NetBird peer.
 
 ## 4. Firewall/router configuration
 
@@ -95,6 +137,7 @@ The expected result is:
 - hotspot Wi-Fi serves clients on its private subnet.
 - `wt0` is connected to TaraSec management/NetBird.
 - NetworkManager remains responsible for Ubuntu host networking where that was the existing backend.
+- a NetBird interface is not the default Internet route.
 
 ## Legacy notes
 
