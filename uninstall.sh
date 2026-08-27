@@ -200,8 +200,8 @@ if [ -d "$REPO_ROOT/html" ] && [ -d /var/www/html ]; then
         rm -f -- "$dst"
     done < <(find "$REPO_ROOT/html" -type f -print0)
 
-    # Remove now-empty directories, deepest first, but never /var/www/html.
-    find /var/www/html -depth -type d -empty -delete 2>/dev/null || true
+    # Remove now-empty children, deepest first, but preserve /var/www/html.
+    find /var/www/html -mindepth 1 -depth -type d -empty -delete 2>/dev/null || true
 fi
 
 
@@ -281,7 +281,7 @@ fi
 
 echo
 if command -v mysql >/dev/null 2>&1; then
-    db_exists="$(mysql -N -s -e \"SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name='taransvar';\" 2>/dev/null || echo '?')"
+    db_exists="$(mysql -N -s -e "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name='taransvar';" 2>/dev/null || echo '?')"
     echo "taransvar database present: $db_exists"
 fi
 
