@@ -8,38 +8,30 @@ my $conf_file = "/root/taransvar/net_setup.conf";
 my $out_file  = "/root/taransvar/iptables.sh";
 
 if (!-e $conf_file) {
-    print "
-You need to copy taransvar/misc/net_setup.conf to /root/taransvar and apply your personal setup before running this script.
-
-";
-    print "sudo cp net_setup.conf /root/taransvar
-";
-    print "sudo nano /root/taransvar/net_setup.conf
-
-";
-    print "For now, it's writing a bash file for setting up iptables, but NOT running it.
-";
-    print "To run it: sudo bash $out_file
-";
+    print "\nYou need to copy taransvar/misc/net_setup.conf to /root/taransvar and apply your personal setup before running this script.\n\n";
+    print "sudo cp net_setup.conf /root/taransvar\n";
+    print "sudo nano /root/taransvar/net_setup.conf\n\n";
+    print "For now, it's writing a bash file for setting up iptables, but NOT running it.\n";
+    print "To run it: sudo bash $out_file\n";
     exit;
 }
 
-
 my %cfg = read_config($conf_file);
-
-#print "DEBUG loaded config keys:\n";
-#for my $k (sort keys %cfg) {
-#    print "  [$k] = [$cfg{$k}]\n";
-#}
-
 validate_config(\%cfg);
+
+# NetBird is TaraSec's management plane. Do not accidentally make wt0 the
+# normal WAN or hotspot/client interface simply because it has connectivity.
+for my $role (qw(LAN_IF WAN_IF)) {
+    if (($cfg{$role} // '') =~ /^wt\d+$/) {
+        die "$role=$cfg{$role} looks like a NetBird interface. wt* is reserved for TaraSec management; choose the physical WAN/client interface instead.\n";
+    }
+}
 
 my $script = build_iptables_script(\%cfg);
 
 open(my $out, ">", $out_file) or die "Cannot write $out_file: $!";
 print $out $script;
 close($out);
-
 chmod 0755, $out_file or warn "Could not chmod +x $out_file: $!";
 
 print "Generated $out_file\nTo run it: sudo bash $out_file\n\n";
@@ -47,7 +39,6 @@ print "Generated $out_file\nTo run it: sudo bash $out_file\n\n";
 sub read_config {
     my ($file) = @_;
     my %c;
-
     open(my $fh, "<", $file) or die "Cannot open $file: $!";
     while (my $line = <$fh>) {
         chomp $line;
@@ -55,64 +46,33 @@ sub read_config {
         $line =~ s/^\s+|\s+$//g;
         next if $line eq '';
         next if $line =~ /^\s*#/;
-
         my ($k, $v) = split(/\s*=\s*/, $line, 2);
         next unless defined $k && defined $v;
-
         $k =~ s/^\s+|\s+$//g;
         $v =~ s/^\s+|\s+$//g;
-
         $c{$k} = $v;
     }
     close($fh);
-
     return %c;
 }
 
 sub validate_config {
     my ($c) = @_;
-
-    for my $required (qw(
-        NAME
-        LAN_IF
-        WAN_IF
-        LAN_NET
-        LAN_IP
-        WAN_NET
-        WAN_GW
-        ALLOW_SSH
-        SSH_PORT
-        ALLOW_DHCP
-        ALLOW_DNS
-        ENABLE_NAT
-        ENABLE_FORWARD_LAN_TO_WAN
-        LOG_DROPS
-        EXTRA_FORWARD_SRC
-        EXTRA_FORWARD_IF
-    )) {
+    for my $required (qw(NAME LAN_IF WAN_IF LAN_NET LAN_IP WAN_NET WAN_GW ALLOW_SSH SSH_PORT ALLOW_DHCP ALLOW_DNS ENABLE_NAT ENABLE_FORWARD_LAN_TO_WAN LOG_DROPS EXTRA_FORWARD_SRC EXTRA_FORWARD_IF)) {
         die "Missing required config key: $required\n" unless exists $c->{$required};
     }
-
-    for my $key (grep { /^PORT_FORWARD\d+$/ } keys %{$c}) {
-        parse_port_forward($c->{$key});
-    }
-
-    for my $key (grep { /^OPEN_INCOMING_PORT\d+$/ } keys %{$c}) {
-        parse_open_incoming_port($c->{$key});
-    }
+    for my $key (grep { /^PORT_FORWARD\d+$/ } keys %{$c}) { parse_port_forward($c->{$key}); }
+    for my $key (grep { /^OPEN_INCOMING_PORT\d+$/ } keys %{$c}) { parse_open_incoming_port($c->{$key}); }
 }
 
 sub build_iptables_script {
     my ($c) = @_;
-
     my $name                    = shell_quote($c->{NAME});
     my $lan_if                  = shell_quote($c->{LAN_IF});
     my $wan_if                  = shell_quote($c->{WAN_IF});
-    my $lan_net                 = shell_quote($c->{LAN_NET});
-    $lan_net = ensure_cidr_24($lan_net);
+    my $lan_net                 = ensure_cidr_24(shell_quote($c->{LAN_NET}));
     my $lan_ip                  = shell_quote($c->{LAN_IP});
     my $wan_net                 = shell_quote($c->{WAN_NET});
-#    $wan_net = ensure_cidr_24($wan_net);    
     my $wan_gw                  = shell_quote($c->{WAN_GW});
     my $allow_ssh               = is_true($c->{ALLOW_SSH});
     my $ssh_port                = int($c->{SSH_PORT});
@@ -124,23 +84,17 @@ sub build_iptables_script {
     my $extra_forward_src       = shell_quote($c->{EXTRA_FORWARD_SRC});
     my $extra_forward_if        = shell_quote($c->{EXTRA_FORWARD_IF});
 
-my $szLanOnWan = '';
-
-if ($c->{LAN_IF} ne '' && $c->{LAN_NET} ne '') {
-    # emit LAN INPUT/FORWARD/NAT rules
-    $szLanOnWan = "# Allow all traffic from LAN subnet on LAN interface
-iptables -A INPUT -i \$LAN_IF -s \$LAN_NET -j ACCEPT
-";
-} else {
-    $allow_dhcp = 0;
-    $enable_fwd_lan_to_wan = 0;
-}
-
+    my $szLanOnWan = '';
+    if ($c->{LAN_IF} ne '' && $c->{LAN_NET} ne '') {
+        $szLanOnWan = "# Allow all traffic from LAN subnet on LAN interface\niptables -A INPUT -i \$LAN_IF -s \$LAN_NET -j ACCEPT\n";
+    } else {
+        $allow_dhcp = 0;
+        $enable_fwd_lan_to_wan = 0;
+    }
 
     my $s = <<"EOF";
 #!/bin/bash
 set -e
-
 NAME=$name
 LAN_IF=$lan_if
 WAN_IF=$wan_if
@@ -161,11 +115,7 @@ echo "Applying iptables rules for \$NAME..."
 echo "LAN_IF=\$LAN_IF  WAN_IF=\$WAN_IF"
 echo "LAN_NET=\$LAN_NET  LAN_IP=\$LAN_IP"
 echo "WAN_NET=\$WAN_NET  WAN_GW=\$WAN_GW"
-
-# Enable IPv4 forwarding
 sysctl -w net.ipv4.ip_forward=1
-
-# Flush existing rules
 iptables -F
 iptables -X
 iptables -t nat -F
@@ -174,298 +124,98 @@ iptables -t mangle -F
 iptables -t mangle -X
 iptables -t raw -F
 iptables -t raw -X
-
-# Default policies
 iptables -P INPUT DROP
 iptables -P FORWARD DROP
 iptables -P OUTPUT ACCEPT
-
-# -------------------------
-# INPUT chain
-# -------------------------
-
-# Allow loopback
 iptables -A INPUT -i lo -j ACCEPT
-
-# Allow established/related
 iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-
 $szLanOnWan
-
 EOF
 
     if ($allow_ssh) {
-        $s .= <<"EOF";
-# Allow SSH
-iptables -A INPUT -p tcp --dport \$SSH_PORT -j ACCEPT
-
-EOF
+        $s .= "# Allow SSH\niptables -A INPUT -p tcp --dport \$SSH_PORT -j ACCEPT\n\n";
     }
-
     if ($allow_dhcp) {
-        $s .= <<"EOF";
-
-# Allow DHCP server/client traffic on LAN side
-iptables -A INPUT -i \$LAN_IF -p udp --sport 68 --dport 67 -j ACCEPT
-iptables -A INPUT -i \$LAN_IF -p udp --sport 67 --dport 68 -j ACCEPT
-
-EOF
+        $s .= "# Allow DHCP server/client traffic on LAN side\niptables -A INPUT -i \$LAN_IF -p udp --sport 68 --dport 67 -j ACCEPT\niptables -A INPUT -i \$LAN_IF -p udp --sport 67 --dport 68 -j ACCEPT\n\n";
     }
-
     if ($allow_dns) {
-        $s .= <<"EOF";
-# Allow DNS requests to this box
-iptables -A INPUT -p udp --dport 53 -j ACCEPT
-iptables -A INPUT -p tcp --dport 53 -j ACCEPT
-
-EOF
+        $s .= "# Allow DNS requests to this box\niptables -A INPUT -p udp --dport 53 -j ACCEPT\niptables -A INPUT -p tcp --dport 53 -j ACCEPT\n\n";
     }
+    $s .= "iptables -A INPUT -p icmp --icmp-type echo-request -j ACCEPT\n\n";
 
-    $s .= <<"EOF";
-# Optional ping to this host
-iptables -A INPUT -p icmp --icmp-type echo-request -j ACCEPT
-
-EOF
-
-my @open_keys = sort {
-    key_index($a, 'OPEN_INCOMING_PORT') <=> key_index($b, 'OPEN_INCOMING_PORT')
-} grep { /^OPEN_INCOMING_PORT\d+$/ } keys %{$c};
-
-
+    my @open_keys = sort { key_index($a, 'OPEN_INCOMING_PORT') <=> key_index($b, 'OPEN_INCOMING_PORT') } grep { /^OPEN_INCOMING_PORT\d+$/ } keys %{$c};
     if (@open_keys) {
-        $s .= "# -------------------------\n# Additional incoming ports\n# -------------------------\n\n";
+        $s .= "# Additional incoming ports\n";
         for my $key (@open_keys) {
             my $oip = parse_open_incoming_port($c->{$key});
             my $ifname = shell_quote($oip->{ifname});
             my $proto  = lc($oip->{proto});
-            my @ports  = @{$oip->{ports}};
-
-            $s .= "# $key = $c->{$key}\n";
-            for my $port (@ports) {
+            for my $port (@{$oip->{ports}}) {
                 if ($port =~ /^(\d+)-(\d+)$/) {
-                    my ($start, $end) = ($1, $2);
-                    my $range = "$start:$end";
-                    if ($proto eq 'tcp' || $proto eq 'both') {
-                        $s .= "iptables -A INPUT -i $ifname -p tcp --dport $range -j ACCEPT\n";
-                    }
-                    if ($proto eq 'udp' || $proto eq 'both') {
-                        $s .= "iptables -A INPUT -i $ifname -p udp --dport $range -j ACCEPT\n";
-                    }
+                    my $range = "$1:$2";
+                    $s .= "iptables -A INPUT -i $ifname -p tcp --dport $range -j ACCEPT\n" if $proto eq 'tcp' || $proto eq 'both';
+                    $s .= "iptables -A INPUT -i $ifname -p udp --dport $range -j ACCEPT\n" if $proto eq 'udp' || $proto eq 'both';
                 } else {
                     my $p = int($port);
-                    if ($proto eq 'tcp' || $proto eq 'both') {
-                        $s .= "iptables -A INPUT -i $ifname -p tcp --dport $p -j ACCEPT\n";
-                    }
-                    if ($proto eq 'udp' || $proto eq 'both') {
-                        $s .= "iptables -A INPUT -i $ifname -p udp --dport $p -j ACCEPT\n";
-                    }
+                    $s .= "iptables -A INPUT -i $ifname -p tcp --dport $p -j ACCEPT\n" if $proto eq 'tcp' || $proto eq 'both';
+                    $s .= "iptables -A INPUT -i $ifname -p udp --dport $p -j ACCEPT\n" if $proto eq 'udp' || $proto eq 'both';
                 }
             }
             $s .= "\n";
         }
     }
 
+    $s .= "iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n";
     if ($enable_fwd_lan_to_wan) {
-        $s .= <<"EOF";
-# -------------------------
-# FORWARD chain - LAN to WAN
-# -------------------------
-
-# Allow established/related forwarded traffic
-iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-
-# Allow LAN -> WAN forwarding
-iptables -A FORWARD -i \$LAN_IF -s \$LAN_NET -o \$WAN_IF -j ACCEPT
-
-EOF
-    } else {
-        $s .= <<"EOF";
-# -------------------------
-# FORWARD chain
-# -------------------------
-
-# Allow established/related forwarded traffic
-iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-
-EOF
+        $s .= "iptables -A FORWARD -i \$LAN_IF -s \$LAN_NET -o \$WAN_IF -j ACCEPT\n";
     }
-
-    $s .= <<"EOF";
-# Allow extra forwarding source via specific interface
-iptables -A FORWARD -i \$EXTRA_FORWARD_IF -s \$EXTRA_FORWARD_SRC -j ACCEPT
-iptables -A FORWARD -o \$EXTRA_FORWARD_IF -d \$EXTRA_FORWARD_SRC -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-
-EOF
+    $s .= "iptables -A FORWARD -i \$EXTRA_FORWARD_IF -s \$EXTRA_FORWARD_SRC -j ACCEPT\n";
+    $s .= "iptables -A FORWARD -o \$EXTRA_FORWARD_IF -d \$EXTRA_FORWARD_SRC -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n\n";
 
     if ($enable_nat) {
-        $s .= <<"EOF";
-# -------------------------
-# NAT
-# -------------------------
-
-# Masquerade LAN subnet out WAN
-iptables -t nat -A POSTROUTING -s \$LAN_NET -o \$WAN_IF -j MASQUERADE
-
-# Masquerade extra forwarded source out WAN
-iptables -t nat -A POSTROUTING -s \$EXTRA_FORWARD_SRC -o \$WAN_IF -j MASQUERADE
-
-EOF
+        $s .= "iptables -t nat -A POSTROUTING -s \$LAN_NET -o \$WAN_IF -j MASQUERADE\n";
+        $s .= "iptables -t nat -A POSTROUTING -s \$EXTRA_FORWARD_SRC -o \$WAN_IF -j MASQUERADE\n\n";
     }
 
-my @pf_keys = sort {
-    key_index($a, 'PORT_FORWARD') <=> key_index($b, 'PORT_FORWARD')
-} grep { /^PORT_FORWARD\d+$/ } keys %{$c};
-
-    if (@pf_keys) {
-        $s .= "# -------------------------\n# Port forwarding rules\n# -------------------------\n\n";
-        for my $key (@pf_keys) {
-            my $pf = parse_port_forward($c->{$key});
-            my $in_if        = shell_quote($pf->{in_if});
-            my $public_port  = int($pf->{public_port});
-            my $out_if       = shell_quote($pf->{out_if});
-            my $target_ip    = shell_quote($pf->{target_ip});
-            my $target_port  = int($pf->{target_port});
-
-            $s .= <<"EOF";
-# $key = $c->{$key}
-PF_IN_IF=$in_if
-PF_PUBLIC_PORT=$public_port
-PF_OUT_IF=$out_if
-PF_TARGET_IP=$target_ip
-PF_TARGET_PORT=$target_port
-PF_SNAT_IP=\$(get_if_ip \$PF_OUT_IF)
-if [ -z "\$PF_SNAT_IP" ]; then
-    echo "Could not determine IPv4 address for interface \$PF_OUT_IF used by $key" >&2
-    exit 1
-fi
-
-iptables -t nat -A PREROUTING -i \$PF_IN_IF -p tcp --dport \$PF_PUBLIC_PORT \
-    -j DNAT --to-destination \$PF_TARGET_IP:\$PF_TARGET_PORT
-
-iptables -A FORWARD -i \$PF_IN_IF -o \$PF_OUT_IF -p tcp -d \$PF_TARGET_IP --dport \$PF_TARGET_PORT \
-    -m conntrack --ctstate NEW,ESTABLISHED,RELATED -j ACCEPT
-
-iptables -A FORWARD -i \$PF_OUT_IF -o \$PF_IN_IF -p tcp -s \$PF_TARGET_IP --sport \$PF_TARGET_PORT \
-    -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-
-iptables -t nat -A POSTROUTING -o \$PF_OUT_IF -p tcp -d \$PF_TARGET_IP --dport \$PF_TARGET_PORT \
-    -j SNAT --to-source \$PF_SNAT_IP
-
-EOF
-        }
+    my @pf_keys = sort { key_index($a, 'PORT_FORWARD') <=> key_index($b, 'PORT_FORWARD') } grep { /^PORT_FORWARD\d+$/ } keys %{$c};
+    for my $key (@pf_keys) {
+        my $pf = parse_port_forward($c->{$key});
+        my $in_if = shell_quote($pf->{incoming_if});
+        my $out_if = shell_quote($pf->{outgoing_if});
+        my $pub = int($pf->{public_port});
+        my $tip = shell_quote($pf->{target_ip});
+        my $tp = int($pf->{target_port});
+        $s .= "iptables -t nat -A PREROUTING -i $in_if -p tcp --dport $pub -j DNAT --to-destination $tip:$tp\n";
+        $s .= "iptables -A FORWARD -i $in_if -o $out_if -p tcp -d $tip --dport $tp -j ACCEPT\n";
     }
 
     if ($log_drops) {
-        $s .= <<"EOF";
-# -------------------------
-# Logging before final drops
-# -------------------------
-
-iptables -A INPUT   -m limit --limit 5/second --limit-burst 20 -j LOG --log-prefix "IPTABLES_INPUT_DROP \$NAME: " --log-level 4
-iptables -A FORWARD -m limit --limit 5/second --limit-burst 20 -j LOG --log-prefix "IPTABLES_FORWARD_DROP \$NAME: " --log-level 4
-
-EOF
+        $s .= "iptables -A INPUT -m limit --limit 10/second --limit-burst 20 -j LOG --log-prefix 'TARASEC_INPUT_DROP ' --log-level 6\n";
+        $s .= "iptables -A FORWARD -m limit --limit 10/second --limit-burst 20 -j LOG --log-prefix 'TARASEC_FORWARD_DROP ' --log-level 6\n";
     }
-
-    $s .= <<"EOF";
-echo "iptables rules applied."
-echo
-echo "Current filter table:"
-iptables -L -v -n
-echo
-echo "Current nat table:"
-iptables -t nat -L -v -n
-EOF
-
     return $s;
 }
 
-sub parse_port_forward {
-    my ($value) = @_;
-
-    my ($left, $out_if, $right) = split(/\s*,\s*/, $value, 3);
-    die "Invalid PORT_FORWARD format: $value\n" unless defined $left && defined $out_if && defined $right;
-
-    my ($in_if, $public_port) = split(/:/, $left, 2);
-    my ($target_ip, $target_port) = split(/:/, $right, 2);
-
-    die "Invalid PORT_FORWARD incoming side: $value\n"
-        unless defined $in_if && defined $public_port && $in_if ne '' && $public_port =~ /^\d+$/;
-    die "Invalid PORT_FORWARD target side: $value\n"
-        unless defined $target_ip && defined $target_port && $target_ip ne '' && $target_port =~ /^\d+$/;
-    die "Invalid PORT_FORWARD outgoing interface: $value\n"
-        unless defined $out_if && $out_if ne '';
-
-    return {
-        in_if       => $in_if,
-        public_port => $public_port,
-        out_if      => $out_if,
-        target_ip   => $target_ip,
-        target_port => $target_port,
-    };
-}
-
-sub parse_open_incoming_port {
-    my ($value) = @_;
-
-    my ($ifname, $proto, @ports) = split(/\s*,\s*/, $value);
-    die "Invalid OPEN_INCOMING_PORT format: $value\n"
-        unless defined $ifname && defined $proto && @ports;
-
-    die "Invalid OPEN_INCOMING_PORT interface: $value\n"
-        unless $ifname ne '';
-
-    $proto = lc($proto);
-    die "Invalid OPEN_INCOMING_PORT protocol '$proto' in: $value\n"
-        unless $proto =~ /^(tcp|udp|both)$/;
-
-    for my $port (@ports) {
-        die "Invalid OPEN_INCOMING_PORT port '$port' in: $value\n"
-            unless $port =~ /^\d+$/ || $port =~ /^\d+-\d+$/;
-        if ($port =~ /^(\d+)-(\d+)$/) {
-            die "Invalid OPEN_INCOMING_PORT range '$port' in: $value\n" if $1 > $2;
-        }
-    }
-
-    return {
-        ifname => $ifname,
-        proto  => $proto,
-        ports  => \@ports,
-    };
-}
-
-sub is_true {
-    my ($v) = @_;
-    return 0 unless defined $v;
-    return $v =~ /^(1|yes|true|on)$/i ? 1 : 0;
-}
-
 sub shell_quote {
-    my ($s) = @_;
-    $s //= '';
-    $s =~ s/'/'"'"'/g;
-    return "'$s'";
+    my ($v) = @_;
+    $v //= '';
+    $v =~ s/'/'"'"'/g;
+    return "'$v'";
 }
-
-sub key_index {
-    my ($key, $prefix) = @_;
-    return 0 unless defined $key && defined $prefix;
-
-    my $re = qr/^\Q$prefix\E(\d+)$/;
-    if ($key =~ $re) {
-        return int($1);
-    }
-
-    warn "Could not extract numeric suffix from key [$key] for prefix [$prefix]\n";
-    return 0;
+sub is_true { my ($v) = @_; return defined($v) && $v =~ /^(?:1|yes|true|on)$/i ? 1 : 0; }
+sub ensure_cidr_24 { my ($v) = @_; $v =~ s/^'(.*)'$/$1/; $v .= '/24' if $v ne '' && $v !~ m{/\d+$}; return shell_quote($v); }
+sub key_index { my ($key, $prefix) = @_; return $key =~ /^\Q$prefix\E(\d+)$/ ? $1 : 0; }
+sub parse_port_forward {
+    my ($v) = @_;
+    die "Invalid PORT_FORWARD: $v\n" unless $v =~ /^([^:]+):(\d+),([^,]+),([^:]+):(\d+)$/;
+    return { incoming_if=>$1, public_port=>$2, outgoing_if=>$3, target_ip=>$4, target_port=>$5 };
 }
-
-sub ensure_cidr_24 {
-    my ($net) = @_;
-    return $net unless defined $net && $net ne '';
-
-    # If already has /something, leave it
-    return $net if $net =~ m{/\d+$};
-
-    return "$net/24";
+sub parse_open_incoming_port {
+    my ($v) = @_;
+    my @p = split /,/, $v;
+    die "Invalid OPEN_INCOMING_PORT: $v\n" unless @p >= 3;
+    my ($ifname, $proto, @ports) = @p;
+    die "Invalid protocol in OPEN_INCOMING_PORT: $proto\n" unless $proto =~ /^(?:tcp|udp|both)$/i;
+    for my $port (@ports) { die "Invalid port/range: $port\n" unless $port =~ /^\d+(?:-\d+)?$/; }
+    return { ifname=>$ifname, proto=>$proto, ports=>\@ports };
 }
