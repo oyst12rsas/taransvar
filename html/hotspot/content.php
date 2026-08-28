@@ -38,6 +38,12 @@ function submitBackofficeAdminLogin()
 	return true;
 }
 
+// content.php is included near the top of hotspot/index.php. Process the
+// back-office login here, before index.php's legacy main_subLogin switch gets
+// a chance to call the old radcheck/subscriber authentication routine.
+if (request("f") == "main_subLogin" && !loggedIn())
+	submitBackofficeAdminLogin();
+
 function getMainContent()
 {
 	global $bForceLogin;
@@ -46,9 +52,6 @@ $szF = (isset($_GET)&&isset($_GET["f"])?$_GET["f"]:"");
 
 if ($szF == "main_subLogin")
 {
-	// Fallback for callers that reach content.php directly. Normal index.php
-	// now handles this before menus are rendered, so admin state is available
-	// to the whole back-office page.
 	if (!submitBackofficeAdminLogin())
 		return;
 	$szF = "main";
