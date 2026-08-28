@@ -4,296 +4,94 @@ use warnings;
 use DBI;
 use Getopt::Long qw(GetOptions);
 
-my $set_admin_password;
-my $help;
-GetOptions(
-    'set-admin-password:s' => \$set_admin_password,
-    'help'                 => \$help,
-) or usage(1);
-
+my ($set_admin_password,$help);
+GetOptions('set-admin-password:s'=>\$set_admin_password,'help'=>\$help) or usage(1);
 usage(0) if $help;
+die "This command must be run as root. Use: sudo tarasec-users\n" if $> != 0;
 
-if ($> != 0) {
-    die "This command must be run as root. Use: sudo tarasec-users\n";
-}
-
-my $dbh = DBI->connect(
-    'DBI:mysql:database=taransvar',
-    'root',
-    '',
-    {
-        RaiseError => 1,
-        PrintError => 0,
-        AutoCommit => 1,
-        mysql_enable_utf8mb4 => 1,
-    }
-) or die "Unable to connect to TaraSec database.\n";
-
-if (defined $set_admin_password) {
-    set_admin_password($dbh, $set_admin_password);
-    exit 0;
-}
-
+my $dbh=DBI->connect('DBI:mysql:database=taransvar','root','',{RaiseError=>1,PrintError=>0,AutoCommit=>1,mysql_enable_utf8mb4=>1})
+    or die "Unable to connect to TaraSec database.\n";
+ensure_schema($dbh);
+if (defined $set_admin_password) { set_admin_password($dbh,$set_admin_password); exit 0; }
 print "=== TARASEC ACCESS ACCOUNTS ===\n\n";
-show_admins($dbh);
-print "\n";
-show_hotspot_users($dbh);
+show_admins($dbh); print "\n"; show_hotspot_users($dbh);
+print "\nAdmin passwords are never displayed.\nTo create the first administrator or reset an existing one:\n  sudo tarasec-users --set-admin-password\n";
+$dbh->disconnect; exit 0;
 
-print <<'TXT';
-
-Admin passwords are intentionally not displayed.
-To set or reset an administrator password on databases with the current admin schema:
-  sudo tarasec-users --set-admin-password
-
-To target a specific administrator:
-  sudo tarasec-users --set-admin-password USERNAME
-TXT
-
-$dbh->disconnect;
-exit 0;
-
-sub table_has_column {
-    my ($dbh, $table, $column) = @_;
-    my $sth = $dbh->prepare(q{
-        SELECT COUNT(*)
-          FROM information_schema.columns
-         WHERE table_schema = DATABASE()
-           AND table_name = ?
-           AND column_name = ?
-    });
-    $sth->execute($table, $column);
-    my ($count) = $sth->fetchrow_array;
-    $sth->finish;
-    return $count ? 1 : 0;
+sub column_exists {
+ my($dbh,$table,$col)=@_; my $s=$dbh->prepare('SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name=? AND column_name=?');
+ $s->execute($table,$col); my($n)=$s->fetchrow_array; return $n?1:0;
 }
-
+sub table_exists {
+ my($dbh,$table)=@_; my $s=$dbh->prepare('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=?');
+ $s->execute($table); my($n)=$s->fetchrow_array; return $n?1:0;
+}
+sub ensure_schema {
+ my($dbh)=@_;
+ my @usercols=(
+  ['isAdmin',"bit(1) NOT NULL DEFAULT b'0'"],['lastLogin','timestamp NULL DEFAULT NULL'],['lastLoginIp','int(10) unsigned DEFAULT NULL'],
+  ['loginFailsSinceSuccess','int(10) unsigned NOT NULL DEFAULT 0'],['loginFailReportedTime','timestamp NULL DEFAULT NULL']);
+ for my $c(@usercols){ next if column_exists($dbh,'user',$c->[0]); $dbh->do("ALTER TABLE user ADD COLUMN $c->[0] $c->[1]"); }
+ if (table_exists($dbh,'setup')) {
+  $dbh->do("ALTER TABLE setup ADD COLUMN selfRegistration bit(1) NOT NULL DEFAULT b'1'") unless column_exists($dbh,'setup','selfRegistration');
+  $dbh->do("ALTER TABLE setup ADD COLUMN requireRegistration bit(1) NOT NULL DEFAULT b'1'") unless column_exists($dbh,'setup','requireRegistration');
+ }
+ $dbh->do(q{CREATE TABLE IF NOT EXISTS hotspotSubscriber (
+  subscriberId int(10) unsigned NOT NULL AUTO_INCREMENT, username varchar(100) NOT NULL, password varchar(255) NOT NULL,
+  name varchar(100) DEFAULT NULL,email varchar(150) DEFAULT NULL,phone varchar(100) DEFAULT NULL,
+  createdTime timestamp NOT NULL DEFAULT current_timestamp(),confirmedTime timestamp NULL DEFAULT NULL,lastLogin timestamp NULL DEFAULT NULL,
+  subscriptionType enum('quota','expiry','limited') NOT NULL DEFAULT 'expiry',expiryTime timestamp NULL DEFAULT NULL,
+  giveHoursAfterLogin smallint(5) unsigned DEFAULT NULL,quotaMB int(10) unsigned NOT NULL DEFAULT 0,usageMB double NOT NULL DEFAULT 0,
+  campaignId smallint(5) unsigned DEFAULT NULL,enabled bit(1) NOT NULL DEFAULT b'1',legacyRadcheckId int(11) unsigned DEFAULT NULL,
+  PRIMARY KEY(subscriberId),UNIQUE KEY hotspotSubscriber_username(username),UNIQUE KEY hotspotSubscriber_legacyRadcheckId(legacyRadcheckId)
+ ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci});
+ migrate_radcheck($dbh) if table_exists($dbh,'radcheck');
+}
+sub migrate_radcheck {
+ my($dbh)=@_;
+ my $sql=q{INSERT IGNORE INTO hotspotSubscriber
+ (username,password,name,email,phone,createdTime,confirmedTime,lastLogin,subscriptionType,expiryTime,giveHoursAfterLogin,quotaMB,usageMB,campaignId,enabled,legacyRadcheckId)
+ SELECT username,COALESCE(value,''),NULLIF(name,''),NULLIF(email,''),NULLIF(phone,''),createdTime,
+ CASE WHEN op='==' AND COALESCE(attribute,'')='' THEN COALESCE(confirmedTime,createdTime) ELSE confirmedTime END,
+ last_login,subscriptionType,expirytime,giveHoursAfterLogin,GREATEST(COALESCE(mbquota,0),0),GREATEST(COALESCE(mbusage,0),0),campaignid,b'1',id
+ FROM radcheck WHERE (op=':=' AND attribute='Cleartext-Password') OR (op='==' AND COALESCE(attribute,'')='')};
+ eval{$dbh->do($sql)}; warn "Legacy radcheck migration skipped: $@" if $@ && $ENV{TARASEC_USERS_DEBUG};
+}
 sub show_admins {
-    my ($dbh) = @_;
-    print "Back-office administrators\n";
-    print "--------------------------\n";
-
-    # Older TaraSec/hotspot databases predate the isAdmin/login-status columns.
-    # Do not let that prevent the primary purpose of this helper: listing
-    # usable hotspot subscriber credentials from radcheck.
-    if (!table_has_column($dbh, 'user', 'isAdmin')) {
-        print "  (legacy user schema: administrator status is not available here)\n";
-        return;
-    }
-
-    my @optional = qw(suspendedUntil lastLogin);
-    my $suspended_expr = table_has_column($dbh, 'user', 'suspendedUntil')
-        ? 'suspendedUntil' : 'NULL AS suspendedUntil';
-    my $last_expr = table_has_column($dbh, 'user', 'lastLogin')
-        ? 'lastLogin' : 'NULL AS lastLogin';
-
-    my $sql = qq{
-        SELECT userId, username,
-               CAST(isAdmin AS UNSIGNED) AS isAdmin,
-               $suspended_expr,
-               $last_expr
-          FROM user
-         WHERE CAST(isAdmin AS UNSIGNED) = 1
-         ORDER BY username
-    };
-    my $sth = $dbh->prepare($sql);
-    $sth->execute;
-
-    my $count = 0;
-    while (my $row = $sth->fetchrow_hashref) {
-        $count++;
-        my $status = 'enabled';
-        if (defined $row->{suspendedUntil} && $row->{suspendedUntil} ne '') {
-            $status = "suspended until $row->{suspendedUntil}";
-        }
-        my $last = $row->{lastLogin} // 'never';
-        printf "  %-24s  %-28s  last login: %s\n", $row->{username}, $status, $last;
-    }
-    print "  (none configured)\n" if !$count;
-    $sth->finish;
+ my($dbh)=@_; print "Back-office administrators\n--------------------------\n";
+ my $s=$dbh->prepare('SELECT username,suspendedUntil,lastLogin FROM user WHERE CAST(isAdmin AS UNSIGNED)=1 ORDER BY username'); $s->execute;
+ my $n=0; while(my $r=$s->fetchrow_hashref){$n++; my $st=$r->{suspendedUntil}?"suspended until $r->{suspendedUntil}":'enabled'; my $last=$r->{lastLogin}//'never'; printf "  %-24s %-28s last login: %s\n",$r->{username},$st,$last;}
+ print "  (none configured; use --set-admin-password to create the first administrator)\n" unless $n;
 }
-
 sub show_hotspot_users {
-    my ($dbh) = @_;
-    print "Valid hotspot subscriber logins\n";
-    print "-------------------------------\n";
-
-    my $sql = q{
-        SELECT username, value, subscriptionType, expirytime,
-               giveHoursAfterLogin, mbquota, COALESCE(mbusage,0) AS mbusage,
-               attribute, op, confirmedTime, last_login
-          FROM radcheck
-         WHERE ((op=':=' AND attribute='Cleartext-Password')
-             OR (op='==' AND COALESCE(attribute,'')=''))
-         ORDER BY username
-    };
-
-    my $sth;
-    eval {
-        $sth = $dbh->prepare($sql);
-        $sth->execute;
-    };
-    if ($@) {
-        print "  Unable to read current hotspot subscriber schema.\n";
-        print "  Database error: $@" if $ENV{TARASEC_USERS_DEBUG};
-        return;
-    }
-
-    my $shown = 0;
-    while (my $row = $sth->fetchrow_hashref) {
-        my $type = $row->{subscriptionType} // '';
-        my $quota_ok = 1;
-        if ($type eq 'quota' || $type eq 'limited') {
-            my $quota = 0 + ($row->{mbquota} // 0);
-            my $used  = 0 + ($row->{mbusage} // 0);
-            $quota_ok = $quota > $used;
-        }
-
-        my $expiry_ok = 1;
-        if ($type eq 'expiry' || $type eq 'limited') {
-            if (!defined($row->{expirytime}) || $row->{expirytime} eq '') {
-                # A deferred expiry account is valid before first login when
-                # giveHoursAfterLogin will establish the expiry time.
-                $expiry_ok = (0 + ($row->{giveHoursAfterLogin} // 0)) > 0;
-            } else {
-                my ($date, $time) = split / /, $row->{expirytime}, 2;
-                if ($date && $time && $row->{expirytime} lt sql_now()) {
-                    $expiry_ok = 0;
-                }
-            }
-        }
-
-        my $legacy = (($row->{op} // '') eq '==' && ($row->{attribute} // '') eq '');
-        my $confirmed = $legacy || (defined($row->{confirmedTime}) && $row->{confirmedTime} ne '');
-        next unless $quota_ok && $expiry_ok && $confirmed;
-
-        $shown++;
-        my $validity = describe_validity($row);
-        # Subscriber credentials are deliberately shown: these are captive-
-        # portal access credentials, not privileged administrator credentials.
-        printf "  %-18s password: %-18s %s\n",
-            $row->{username}, ($row->{value} // ''), $validity;
-    }
-    print "  (no currently valid hotspot subscriber logins)\n" if !$shown;
-    $sth->finish;
+ my($dbh)=@_; print "Valid hotspot subscriber logins\n-------------------------------\n";
+ my $s=$dbh->prepare(q{SELECT username,password,subscriptionType,expiryTime,giveHoursAfterLogin,quotaMB,COALESCE(usageMB,0) usageMB,confirmedTime FROM hotspotSubscriber WHERE CAST(enabled AS UNSIGNED)=1 ORDER BY username}); $s->execute;
+ my $n=0; while(my $r=$s->fetchrow_hashref){ next unless valid_subscriber($r); $n++; printf "  %-18s password: %-18s %s\n",$r->{username},$r->{password}//'',describe_validity($r); }
+ print "  (no currently valid hotspot subscriber logins)\n" unless $n;
 }
-
+sub valid_subscriber {
+ my($r)=@_; return 0 unless $r->{confirmedTime}; my $t=$r->{subscriptionType}//'';
+ my $q=(0+($r->{quotaMB}//0))>(0+($r->{usageMB}//0));
+ my $e=$r->{expiryTime}?($r->{expiryTime} ge sql_now()):((0+($r->{giveHoursAfterLogin}//0))>0);
+ return $t eq 'quota'?$q:$t eq 'expiry'?$e:$t eq 'limited'?($q&&$e):0;
+}
 sub describe_validity {
-    my ($row) = @_;
-    my $type = $row->{subscriptionType} // '';
-    my @parts;
-
-    if (($type eq 'expiry' || $type eq 'limited')) {
-        if (defined($row->{expirytime}) && $row->{expirytime} ne '') {
-            push @parts, "expires $row->{expirytime}";
-        } elsif ((0 + ($row->{giveHoursAfterLogin} // 0)) > 0) {
-            push @parts, ($row->{giveHoursAfterLogin} + 0) . " hour(s) from first login";
-        }
-    }
-
-    if ($type eq 'quota' || $type eq 'limited') {
-        my $quota = 0 + ($row->{mbquota} // 0);
-        my $used  = 0 + ($row->{mbusage} // 0);
-        my $left  = $quota - $used;
-        $left = 0 if $left < 0;
-        push @parts, sprintf('%.0f MB remaining', $left);
-    }
-
-    return @parts ? '(' . join(', ', @parts) . ')' : '';
+ my($r)=@_; my @p; my $t=$r->{subscriptionType}//'';
+ if($t eq 'expiry'||$t eq 'limited'){push @p,$r->{expiryTime}?"expires $r->{expiryTime}":(0+($r->{giveHoursAfterLogin}//0)).' hour(s) from first login';}
+ if($t eq 'quota'||$t eq 'limited'){my $left=(0+($r->{quotaMB}//0))-(0+($r->{usageMB}//0));$left=0 if $left<0;push @p,sprintf('%.0f MB remaining',$left);}
+ return @p?'('.join(', ',@p).')':'';
 }
-
 sub set_admin_password {
-    my ($dbh, $requested_user) = @_;
-
-    if (!table_has_column($dbh, 'user', 'isAdmin')) {
-        die "This database uses the legacy user schema and does not have user.isAdmin; administrator password management is unavailable in this helper.\n";
-    }
-
-    my @admins;
-    my $sth = $dbh->prepare(q{
-        SELECT username
-          FROM user
-         WHERE CAST(isAdmin AS UNSIGNED) = 1
-         ORDER BY username
-    });
-    $sth->execute;
-    while (my ($u) = $sth->fetchrow_array) {
-        push @admins, $u;
-    }
-    $sth->finish;
-
-    die "No administrator account exists.\n" if !@admins;
-
-    my $username = defined($requested_user) && $requested_user ne ''
-        ? $requested_user
-        : (@admins == 1 ? $admins[0] : choose_admin(\@admins));
-
-    my %is_admin = map { $_ => 1 } @admins;
-    die "'$username' is not an administrator account.\n" if !$is_admin{$username};
-
-    print "Setting password for administrator '$username'.\n";
-    my $p1 = read_hidden('New password: ');
-    my $p2 = read_hidden('Repeat password: ');
-
-    die "Passwords did not match.\n" if $p1 ne $p2;
-    die "Password must be at least 10 characters.\n" if length($p1) < 10;
-
-    my @sets = ('password = ?');
-    push @sets, 'loginFailsSinceSuccess = 0' if table_has_column($dbh, 'user', 'loginFailsSinceSuccess');
-    push @sets, 'loginFailReportedTime = NULL' if table_has_column($dbh, 'user', 'loginFailReportedTime');
-    push @sets, 'suspendedUntil = NULL' if table_has_column($dbh, 'user', 'suspendedUntil');
-
-    my $sql = 'UPDATE user SET ' . join(', ', @sets) . ' WHERE username = ? AND CAST(isAdmin AS UNSIGNED) = 1';
-    my $upd = $dbh->prepare($sql);
-    $upd->execute($p1, $username);
-    my $rows = $upd->rows;
-    $upd->finish;
-
-    die "Administrator password was not changed.\n" if $rows < 1;
-    print "Administrator password updated for '$username'.\n";
-    print "The password was not printed or logged by this helper.\n";
+ my($dbh,$requested)=@_; my $s=$dbh->prepare('SELECT username FROM user WHERE CAST(isAdmin AS UNSIGNED)=1 ORDER BY username');$s->execute;my @a;while(my($u)=$s->fetchrow_array){push @a,$u;}
+ my $u=$requested//'';
+ if(!@a){ if(!$u){print "No administrator exists yet. Username for new administrator: ";chomp($u=<STDIN>//'');} die "Administrator username cannot be empty.\n" unless length $u; }
+ elsif(!$u){$u=@a==1?$a[0]:choose_admin(\@a);}
+ my $p1=read_hidden('New password: ');my $p2=read_hidden('Repeat password: ');die "Passwords did not match.\n" if $p1 ne $p2;die "Password must be at least 10 characters.\n" if length($p1)<10;
+ if(!@a){my $i=$dbh->prepare("INSERT INTO user(username,password,isAdmin,verified) VALUES(?,?,b'1',b'1')");$i->execute($u,$p1);print "Administrator '$u' created.\n";return;}
+ my %a=map{$_=>1}@a;die "'$u' is not an administrator account.\n" unless $a{$u};
+ my $q=$dbh->prepare("UPDATE user SET password=?,loginFailsSinceSuccess=0,loginFailReportedTime=NULL,suspendedUntil=NULL WHERE username=? AND CAST(isAdmin AS UNSIGNED)=1");$q->execute($p1,$u);print "Administrator password updated for '$u'.\n";
 }
-
-sub choose_admin {
-    my ($admins) = @_;
-    print "Administrators:\n";
-    for my $i (0 .. $#$admins) {
-        printf "  %d) %s\n", $i + 1, $admins->[$i];
-    }
-    print "Select administrator: ";
-    chomp(my $answer = <STDIN> // '');
-    die "Invalid selection.\n" if $answer !~ /^\d+$/ || $answer < 1 || $answer > @$admins;
-    return $admins->[$answer - 1];
-}
-
-sub read_hidden {
-    my ($prompt) = @_;
-    print $prompt;
-    system('stty', '-echo') == 0 or die "Unable to disable terminal echo.\n";
-    my $value = <STDIN>;
-    my $status = system('stty', 'echo');
-    print "\n";
-    die "Unable to restore terminal echo.\n" if $status != 0;
-    defined $value or die "No password entered.\n";
-    chomp $value;
-    return $value;
-}
-
-sub sql_now {
-    my @t = localtime();
-    return sprintf('%04d-%02d-%02d %02d:%02d:%02d',
-        $t[5] + 1900, $t[4] + 1, $t[3], $t[2], $t[1], $t[0]);
-}
-
-sub usage {
-    my ($exit) = @_;
-    print <<'TXT';
-Usage:
-  sudo tarasec-users
-  sudo tarasec-users --set-admin-password
-  sudo tarasec-users --set-admin-password USERNAME
-
-Without options, lists administrator usernames/status when supported and currently
-valid hotspot subscriber credentials. Administrator passwords are never displayed.
-TXT
-    exit $exit;
-}
+sub choose_admin {my($a)=@_;print "Administrators:\n";for my $i(0..$#$a){printf "  %d) %s\n",$i+1,$a->[$i];}print "Select administrator: ";chomp(my $x=<STDIN>//'');die "Invalid selection.\n" if $x!~/^\d+$/||$x<1||$x>@$a;return $a->[$x-1];}
+sub read_hidden {my($p)=@_;print $p;system('stty','-echo')==0 or die "Unable to disable terminal echo.\n";my $v=<STDIN>;system('stty','echo');print "\n";defined $v or die "No password entered.\n";chomp $v;return $v;}
+sub sql_now {my @t=localtime();return sprintf('%04d-%02d-%02d %02d:%02d:%02d',$t[5]+1900,$t[4]+1,$t[3],$t[2],$t[1],$t[0]);}
+sub usage {my($e)=@_;print "Usage:\n  sudo tarasec-users\n  sudo tarasec-users --set-admin-password [USERNAME]\n\nThe first --set-admin-password creates the initial back-office administrator.\n";exit $e;}
