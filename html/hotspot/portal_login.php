@@ -57,7 +57,8 @@ try {
     $user = null;
 }
 
-if (!$user || !(int)$user['enabled'] || !hash_equals((string)$user['password'], $password)) portalReply('Login failed', 'Incorrect username or password.');
+if (!$user || !hash_equals((string)$user['password'], $password)) portalReply('Login failed', 'Incorrect username or password.');
+if (!(int)$user['enabled']) portalReply('Account disabled', 'This hotspot account is currently disabled. Please contact the hotspot operator.');
 if (empty($user['confirmedTime'])) portalReply('Account not confirmed', 'This hotspot account must be confirmed before it can be used.');
 
 $type=(string)$user['subscriptionType'];
@@ -77,15 +78,51 @@ $validity = $db->fetch(
     array(':name'=>$username),
     PDO::FETCH_ASSOC
 );
-if (!$validity) portalReply('Access is not active','The hotspot subscriber account is not active.');
+if (!$validity) portalReply('Access unavailable','The hotspot subscriber account is not currently active. Please contact the hotspot operator.');
 
 $type=(string)$validity['subscriptionType'];
-$quotaOk=((float)$validity['usageMB'] < (float)$validity['quotaMB']);
+$quotaMB=(float)$validity['quotaMB'];
+$usageMB=(float)$validity['usageMB'];
+$quotaOk=($usageMB < $quotaMB);
+$hasExpiry=!empty($validity['expiryTime']);
 $expiryOk=((int)$validity['expiryOk']===1);
 $allowed=($type==='quota'?$quotaOk:($type==='expiry'?$expiryOk:($type==='limited'?$quotaOk&&$expiryOk:false)));
 if (!$allowed) {
     $db->execute('delete from access where ip=:ip',array(':ip'=>$clientIp));
-    portalReply('Access is not active','The account has expired or has no remaining quota.');
+
+    if ($type==='quota') {
+        if ($quotaMB <= 0) {
+            portalReply('No data quota assigned','This account does not currently have a data quota. Please contact the hotspot operator to add access.');
+        }
+        portalReply('Data quota used','This account has used its available data quota. Please renew or add more data to continue.');
+    }
+
+    if ($type==='expiry') {
+        if (!$hasExpiry) {
+            portalReply('No access period assigned','This account does not currently have an active access period. Please contact the hotspot operator to add access.');
+        }
+        portalReply('Access period expired','This account\'s access period has expired. Please renew it to continue using the Internet.');
+    }
+
+    if ($type==='limited') {
+        if (!$hasExpiry && $quotaMB <= 0) {
+            portalReply('No access assigned','This account has neither an active access period nor a data quota. Please contact the hotspot operator to add access.');
+        }
+        if (!$hasExpiry) {
+            portalReply('No access period assigned','This account has a data quota but no active access period. Please contact the hotspot operator to add or renew the access period.');
+        }
+        if (!$expiryOk) {
+            portalReply('Access period expired','This account\'s access period has expired. Please renew it to continue using the Internet.');
+        }
+        if ($quotaMB <= 0) {
+            portalReply('No data quota assigned','This account has an active access period but no data quota. Please contact the hotspot operator to add data.');
+        }
+        if (!$quotaOk) {
+            portalReply('Data quota used','This account has used its available data quota. Please renew or add more data to continue.');
+        }
+    }
+
+    portalReply('Access unavailable','The account is not currently permitted to use this hotspot. Please contact the hotspot operator.');
 }
 
 $db->execute('update session set active=0, logouttime=NOW() where ip=:ip and active=1 and logouttime is null',array(':ip'=>$clientIp));
