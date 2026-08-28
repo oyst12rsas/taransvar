@@ -54,6 +54,7 @@ This removes TaraSec-owned state from this machine, including:
   * TaraSec Wi-Fi disconnect/session watcher
   * TaraSec Apache captive-login listener on port 8080
   * TaraSec cron jobs, runtime/log directories and database
+  * TaraSec hotspot web application under /var/www/html/hotspot
   * TaraSec files deployed from this checkout into /var/www/html
   * /etc/tarasec device/configuration state
 
@@ -151,9 +152,6 @@ done
 
 echo
 echo "=== RESET OPENNDS TARASEC CONFIGURATION ==="
-# install_opennds.sh records the administrator's previous config before TaraSec
-# first overwrites it. Restore that config when available; otherwise remove the
-# TaraSec-generated active config so the next install starts cleanly.
 if [ -f /etc/config/opennds.tarasec-before ]; then
     mv -f /etc/config/opennds.tarasec-before /etc/config/opennds
 else
@@ -185,7 +183,6 @@ rm -f \
     /etc/apache2/conf-enabled/tarasec-captive-login.conf \
     /etc/sudoers.d/tarasec-hotspot-logout
 
-# Remove only the CGI stanza added by the TaraSec installer.
 if [ -f /etc/apache2/apache2.conf ] && command -v python3 >/dev/null 2>&1; then
     python3 - <<'PY' || true
 from pathlib import Path
@@ -210,6 +207,12 @@ rm -f /etc/init/startup.conf /usr/lib/cgi-bin/debugserver
 
 echo
 echo "=== REMOVE DEPLOYED TARASEC WEB FILES ==="
+# /var/www/html/hotspot is wholly TaraSec-owned by the hotspot installer and
+# must be removed as a unit. Leaving stale files here can make a broken fresh
+# installation appear to work.
+rm -rf /var/www/html/hotspot
+
+# For other web paths, remove only files that correspond to this checkout.
 if [ -d "$REPO_ROOT/html" ] && [ -d /var/www/html ]; then
     while IFS= read -r -d '' src; do
         rel="${src#$REPO_ROOT/html/}"
@@ -223,12 +226,24 @@ fi
 echo
 echo "=== REMOVE TARASEC DATABASE ==="
 if command -v mysql >/dev/null 2>&1; then
-    mysql <<'SQL' || true
+    if ! mysql <<'SQL'
 DROP DATABASE IF EXISTS taransvar;
 DROP USER IF EXISTS 'scriptUsrAces3f3'@'localhost';
 DROP USER IF EXISTS 'scriptUsrAces3f3'@'127.0.0.1';
 FLUSH PRIVILEGES;
 SQL
+    then
+        echo "ERROR: MySQL refused the TaraSec database/account cleanup." >&2
+        echo "The uninstall is not clean; refusing to report success." >&2
+        exit 1
+    fi
+
+    DB_LEFT="$(mysql -N -s -e "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name='taransvar';")"
+    if [ "${DB_LEFT:-1}" != "0" ]; then
+        echo "ERROR: taransvar database still exists after DROP DATABASE." >&2
+        exit 1
+    fi
+    echo "TaraSec database removed and verified."
 fi
 
 echo
@@ -266,9 +281,6 @@ else
     echo "The TaraSec openNDS configuration was reset, so reinstall can configure it afresh."
 fi
 
-# Restart only generic services that remain installed. NetworkManager may bring
-# back the machine's ordinary saved connection; we do not create/delete any
-# non-TaraSec connection profile.
 for svc in NetworkManager apache2 mysql cron; do
     if systemctl list-unit-files --no-legend "$svc.service" 2>/dev/null | grep -q .; then
         systemctl restart "$svc.service" 2>/dev/null || true
@@ -281,6 +293,7 @@ echo "Remaining TaraSec paths (if any):"
 remaining=0
 for p in \
     /etc/tarasec /root/wifi /root/setup /var/lib/tarasec /var/log/tarasec \
+    /var/www/html/hotspot \
     /etc/systemd/system/tarasec-wifi-session-watch.service \
     /etc/apache2/conf-available/tarasec-captive-login.conf; do
     if [ -e "$p" ]; then
@@ -300,6 +313,10 @@ echo
 if command -v mysql >/dev/null 2>&1; then
     db_exists="$(mysql -N -s -e "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name='taransvar';" 2>/dev/null || echo '?')"
     echo "taransvar database present: $db_exists"
+    if [ "$db_exists" != "0" ]; then
+        echo "ERROR: database cleanup verification failed." >&2
+        exit 1
+    fi
 fi
 
 echo
