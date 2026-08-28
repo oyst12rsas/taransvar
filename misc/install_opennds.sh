@@ -132,6 +132,7 @@ Listen 8080
 EOF
 a2enconf tarasec-captive-login >/dev/null
 apache2ctl configtest
+systemctl daemon-reload || true
 systemctl restart apache2
 
 # If no interface was supplied, use an existing TaraSec/openNDS interface only
@@ -186,10 +187,9 @@ EOF
     systemctl daemon-reload || true
     systemctl enable opennds 2>/dev/null || true
 
-    # openNDS can take a few seconds to release its pid/socket/firewall state.
-    # A direct systemctl restart may therefore return "already running" even
-    # though systemd subsequently retries and starts it successfully. Stop,
-    # wait for the old daemon to disappear, then start and wait for readiness.
+    # openNDS 10.x may transiently return "already running" immediately after
+    # a clean stop, while systemd schedules a successful retry. Do not let
+    # set -e abort here; the readiness loop below is authoritative.
     systemctl stop opennds || true
     for _ in $(seq 1 20); do
         if ! pgrep -x opennds >/dev/null 2>&1; then
@@ -201,10 +201,10 @@ EOF
         echo "ERROR: previous openNDS process did not exit within 20 seconds." >&2
         exit 1
     fi
-    systemctl start opennds
+    systemctl start opennds || true
 
     NDS_READY=0
-    for _ in $(seq 1 30); do
+    for _ in $(seq 1 45); do
         if systemctl is-active --quiet opennds && ndsctl status >/dev/null 2>&1; then
             NDS_READY=1
             break
