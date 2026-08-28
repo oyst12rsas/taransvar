@@ -25,12 +25,26 @@ if ! command -v iw >/dev/null 2>&1; then
     DEBIAN_FRONTEND=noninteractive apt-get install -y iw
 fi
 
+# Determine the active hotspot interface now and pass it explicitly to systemd.
+HOTSPOT_IF="${TARASEC_HOTSPOT_IF:-}"
+if [ -z "$HOTSPOT_IF" ] && [ -r /etc/config/opennds ]; then
+    HOTSPOT_IF="$(sed -n "s/^[[:space:]]*option[[:space:]]\+gatewayinterface[[:space:]]*['\"]\?\([^'\"[:space:]]*\)['\"]\?.*/\1/p" /etc/config/opennds | head -1)"
+fi
+if [ -z "$HOTSPOT_IF" ] && command -v ndsctl >/dev/null 2>&1; then
+    HOTSPOT_IF="$(ndsctl status 2>/dev/null | sed -n 's/^Managed interface:[[:space:]]*//p' | head -1 | tr -d '[][:space:]')"
+fi
+if [ -z "$HOTSPOT_IF" ] || ! ip link show "$HOTSPOT_IF" >/dev/null 2>&1; then
+    echo "ERROR: could not determine active TaraSec hotspot interface." >&2
+    echo "Set it explicitly, for example: sudo TARASEC_HOTSPOT_IF=wlp5s0 bash $0" >&2
+    exit 1
+fi
+
 # Repository files do not need their executable bit preserved by GitHub.
 # install(1) sets the required runtime mode explicitly here.
 install -m 0755 "$WATCH_SRC" /usr/local/sbin/tarasec-wifi-session-watch
 install -m 0755 "$LOGOUT_SRC" /usr/local/sbin/tarasec-subscriber-logout
 
-cat > /etc/systemd/system/tarasec-wifi-session-watch.service <<'EOF'
+cat > /etc/systemd/system/tarasec-wifi-session-watch.service <<EOF
 [Unit]
 Description=TaraSec hotspot Wi-Fi session disconnect watcher
 After=network-online.target opennds.service
@@ -38,6 +52,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+Environment=TARASEC_HOTSPOT_IF=$HOTSPOT_IF
 ExecStart=/usr/local/sbin/tarasec-wifi-session-watch
 Restart=always
 RestartSec=2
@@ -57,4 +72,4 @@ if ! systemctl is-active --quiet tarasec-wifi-session-watch.service; then
     exit 1
 fi
 
-echo "TaraSec Wi-Fi session watcher installed and active."
+echo "TaraSec Wi-Fi session watcher installed and active on $HOTSPOT_IF."
