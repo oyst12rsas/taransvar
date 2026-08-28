@@ -42,6 +42,13 @@ $gatewayIp = ($setup && !empty($setup['internalIP'])) ? (string)$setup['internal
 $gatewayParts = explode('.', $gatewayIp); $clientParts = explode('.', $clientIp);
 if (count($gatewayParts) !== 4 || count($clientParts) !== 4 || array_slice($gatewayParts,0,3) !== array_slice($clientParts,0,3)) portalReply('Login failed', 'This login request did not originate from a TaraSec hotspot client address.');
 
+// A back-office administrator identity is never valid as a captive-portal subscriber,
+// even if an old FreeRADIUS installation contains a radcheck row with the same name.
+try {
+    $admin = $db->fetch('select userId from user where username=:name and cast(isAdmin as unsigned)=1 limit 1', array(':name'=>$username), PDO::FETCH_ASSOC);
+    if ($admin) portalReply('Login failed', 'This is an administrator account, not a hotspot subscriber account.');
+} catch (Throwable $e) { }
+
 $user = null;
 try {
     $user = $db->fetch("select username,password,confirmedTime,subscriptionType,expiryTime,giveHoursAfterLogin,quotaMB,coalesce(usageMB,0) usageMB,cast(enabled as unsigned) enabled from hotspotSubscriber where username=:name limit 1", array(':name'=>$username), PDO::FETCH_ASSOC);
