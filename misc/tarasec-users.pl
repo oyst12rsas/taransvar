@@ -42,7 +42,7 @@ show_hotspot_users($dbh);
 print <<'TXT';
 
 Admin passwords are intentionally not displayed.
-To set or reset an administrator password:
+To set or reset an administrator password on databases with the current admin schema:
   sudo tarasec-users --set-admin-password
 
 To target a specific administrator:
@@ -52,20 +52,50 @@ TXT
 $dbh->disconnect;
 exit 0;
 
+sub table_has_column {
+    my ($dbh, $table, $column) = @_;
+    my $sth = $dbh->prepare(q{
+        SELECT COUNT(*)
+          FROM information_schema.columns
+         WHERE table_schema = DATABASE()
+           AND table_name = ?
+           AND column_name = ?
+    });
+    $sth->execute($table, $column);
+    my ($count) = $sth->fetchrow_array;
+    $sth->finish;
+    return $count ? 1 : 0;
+}
+
 sub show_admins {
     my ($dbh) = @_;
     print "Back-office administrators\n";
     print "--------------------------\n";
 
-    my $sth = $dbh->prepare(q{
+    # Older TaraSec/hotspot databases predate the isAdmin/login-status columns.
+    # Do not let that prevent the primary purpose of this helper: listing
+    # usable hotspot subscriber credentials from radcheck.
+    if (!table_has_column($dbh, 'user', 'isAdmin')) {
+        print "  (legacy user schema: administrator status is not available here)\n";
+        return;
+    }
+
+    my @optional = qw(suspendedUntil lastLogin);
+    my $suspended_expr = table_has_column($dbh, 'user', 'suspendedUntil')
+        ? 'suspendedUntil' : 'NULL AS suspendedUntil';
+    my $last_expr = table_has_column($dbh, 'user', 'lastLogin')
+        ? 'lastLogin' : 'NULL AS lastLogin';
+
+    my $sql = qq{
         SELECT userId, username,
                CAST(isAdmin AS UNSIGNED) AS isAdmin,
-               suspendedUntil,
-               lastLogin
+               $suspended_expr,
+               $last_expr
           FROM user
          WHERE CAST(isAdmin AS UNSIGNED) = 1
          ORDER BY username
-    });
+    };
+    my $sth = $dbh->prepare($sql);
     $sth->execute;
 
     my $count = 0;
@@ -104,11 +134,11 @@ sub show_hotspot_users {
     };
     if ($@) {
         print "  Unable to read current hotspot subscriber schema.\n";
+        print "  Database error: $@" if $ENV{TARASEC_USERS_DEBUG};
         return;
     }
 
     my $shown = 0;
-    my $now = time();
     while (my $row = $sth->fetchrow_hashref) {
         my $type = $row->{subscriptionType} // '';
         my $quota_ok = 1;
@@ -174,6 +204,10 @@ sub describe_validity {
 sub set_admin_password {
     my ($dbh, $requested_user) = @_;
 
+    if (!table_has_column($dbh, 'user', 'isAdmin')) {
+        die "This database uses the legacy user schema and does not have user.isAdmin; administrator password management is unavailable in this helper.\n";
+    }
+
     my @admins;
     my $sth = $dbh->prepare(q{
         SELECT username
@@ -203,15 +237,13 @@ sub set_admin_password {
     die "Passwords did not match.\n" if $p1 ne $p2;
     die "Password must be at least 10 characters.\n" if length($p1) < 10;
 
-    my $upd = $dbh->prepare(q{
-        UPDATE user
-           SET password = ?,
-               loginFailsSinceSuccess = 0,
-               loginFailReportedTime = NULL,
-               suspendedUntil = NULL
-         WHERE username = ?
-           AND CAST(isAdmin AS UNSIGNED) = 1
-    });
+    my @sets = ('password = ?');
+    push @sets, 'loginFailsSinceSuccess = 0' if table_has_column($dbh, 'user', 'loginFailsSinceSuccess');
+    push @sets, 'loginFailReportedTime = NULL' if table_has_column($dbh, 'user', 'loginFailReportedTime');
+    push @sets, 'suspendedUntil = NULL' if table_has_column($dbh, 'user', 'suspendedUntil');
+
+    my $sql = 'UPDATE user SET ' . join(', ', @sets) . ' WHERE username = ? AND CAST(isAdmin AS UNSIGNED) = 1';
+    my $upd = $dbh->prepare($sql);
     $upd->execute($p1, $username);
     my $rows = $upd->rows;
     $upd->finish;
@@ -260,8 +292,8 @@ Usage:
   sudo tarasec-users --set-admin-password
   sudo tarasec-users --set-admin-password USERNAME
 
-Without options, lists administrator usernames/status and currently valid hotspot
-subscriber credentials. Administrator passwords are never displayed.
+Without options, lists administrator usernames/status when supported and currently
+valid hotspot subscriber credentials. Administrator passwords are never displayed.
 TXT
     exit $exit;
 }
