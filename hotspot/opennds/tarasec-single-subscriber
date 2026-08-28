@@ -1,0 +1,49 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use DBI;
+
+my $dbh = eval {
+    DBI->connect(
+        'DBI:mysql:database=taransvar;host=localhost',
+        'scriptUsrAces3f3',
+        'rErte8Oi98e-2_#',
+        { RaiseError => 1, PrintError => 0, AutoCommit => 1, mysql_enable_utf8mb4 => 1 }
+    )
+};
+exit 0 unless $dbh;
+
+my $sth = eval {
+    my $s = $dbh->prepare(q{
+        SELECT username, password
+          FROM hotspotSubscriber
+         WHERE CAST(enabled AS UNSIGNED)=1
+         ORDER BY subscriberId
+         LIMIT 2
+    });
+    $s->execute;
+    $s;
+};
+exit 0 unless $sth;
+
+my @rows;
+while (my $row = $sth->fetchrow_hashref) {
+    push @rows, $row;
+}
+$dbh->disconnect;
+exit 0 unless @rows == 1;
+
+sub h {
+    my ($v) = @_;
+    $v = '' unless defined $v;
+    $v =~ s/&/&amp;/g;
+    $v =~ s/</&lt;/g;
+    $v =~ s/>/&gt;/g;
+    $v =~ s/"/&quot;/g;
+    $v =~ s/'/&#39;/g;
+    return $v;
+}
+
+my $u = h($rows[0]{username});
+my $p = h($rows[0]{password});
+print qq{<div class="note"><b>Hotspot test login</b><br>There is currently only one hotspot account, so its credentials are shown here for setup/testing.<br><b>Username:</b> <code>$u</code><br><b>Password:</b> <code>$p</code><br><span class="small">This notice disappears automatically when a second enabled hotspot account is created.</span></div>};
