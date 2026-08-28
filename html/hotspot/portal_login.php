@@ -15,7 +15,10 @@ require_once __DIR__ . '/funcs2.php';
 function portalReply($title, $message, $success = false, $fas = '')
 {
     if ($success && $fas !== '') {
-        header('Location: http://status.client/opennds_preauth/?fas=' . rawurlencode($fas) . '&continue=clicked', true, 303);
+        // openNDS ThemeSpec/FAS is served by the openNDS MHD listener on 2050.
+        // Port 80 belongs to Apache on TaraSec hosts, so omitting :2050 sends
+        // the browser to the wrong web server and leaves the client preauthenticated.
+        header('Location: http://status.client:2050/opennds_preauth/?fas=' . rawurlencode($fas) . '&continue=clicked', true, 303);
         exit;
     }
     http_response_code($success ? 200 : 403);
@@ -23,7 +26,7 @@ function portalReply($title, $message, $success = false, $fas = '')
     $messageEsc = htmlspecialchars($message, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     $class = $success ? 'ok' : 'bad';
     echo '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TaraSec hotspot</title><style>body{font-family:sans-serif;background:#f4f6f8;margin:0;padding:24px}.card{max-width:560px;margin:auto;background:white;padding:24px;border-radius:14px;box-shadow:0 2px 12px #0002}.ok{color:#087a35}.bad{color:#a51d1d}.btn{display:inline-block;margin-top:18px;padding:12px 18px;background:#222;color:#fff;text-decoration:none;border-radius:8px}</style></head><body><div class="card">';
-    echo '<h2 class="'.$class.'">'.$titleEsc.'</h2><p>'.$messageEsc.'</p><a class="btn" href="http://status.client">Return to hotspot access</a></div></body></html>';
+    echo '<h2 class="'.$class.'">'.$titleEsc.'</h2><p>'.$messageEsc.'</p><a class="btn" href="http://status.client:2050/">Return to hotspot access</a></div></body></html>';
     exit;
 }
 
