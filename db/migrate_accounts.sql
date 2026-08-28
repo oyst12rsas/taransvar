@@ -33,9 +33,14 @@ CREATE TABLE IF NOT EXISTS `hotspotSubscriber` (
   UNIQUE KEY `hotspotSubscriber_legacyRadcheckId` (`legacyRadcheckId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- Administrator identities are never hotspot subscriber identities.
+-- Administrator identities are never hotspot subscriber identities. Remove any
+-- old dual-use rows from both the new subscriber table and legacy FreeRADIUS.
 DELETE hs FROM hotspotSubscriber hs
 JOIN `user` u ON u.username=hs.username
+WHERE CAST(u.isAdmin AS UNSIGNED)=1;
+
+DELETE r FROM radcheck r
+JOIN `user` u ON u.username=r.username
 WHERE CAST(u.isAdmin AS UNSIGNED)=1;
 
 -- Migrate legacy RADIUS credentials only when they do not collide with an administrator.
