@@ -1,23 +1,18 @@
 #!/bin/bash
 set -euo pipefail
 
-# TaraSec uninstall/reset helper.
+# TaraSec uninstall/reset helper for Ubuntu/Debian/Raspberry Pi OS.
 #
 # Default behaviour removes TaraSec-owned configuration, services, database,
-# hotspot profiles, cron entries, deployed web files and runtime state while
-# preserving generic OS packages and the source checkout.
+# captive-portal state, hotspot profiles and runtime files while preserving the
+# source checkout, the machine's normal WAN/uplink and generic OS packages.
 #
 # Optional destructive flags:
 #   --purge-netbird   Also remove the NetBird client/package and its state.
-#   --purge-packages  Purge packages installed by the current TaraSec installer.
-#                     WARNING: some may have existed before TaraSec.
+#   --purge-packages  Purge generic packages installed by TaraSec. Use only on
+#                     a dedicated/disposable TaraSec test machine.
 #   --remove-source   Remove this TaraSec source checkout after uninstall.
 #   --yes             Skip the interactive confirmation.
-#
-# A truly byte-for-byte pre-TaraSec restoration is impossible for installations
-# made before the installer started recording a pre-install manifest. This
-# script therefore removes known TaraSec-owned state and is deliberately
-# conservative with generic system software unless explicitly requested.
 
 PURGE_NETBIRD=0
 PURGE_PACKAGES=0
@@ -31,7 +26,7 @@ for arg in "$@"; do
         --remove-source)  REMOVE_SOURCE=1 ;;
         --yes)            ASSUME_YES=1 ;;
         -h|--help)
-            sed -n '1,28p' "$0"
+            sed -n '1,24p' "$0"
             exit 0
             ;;
         *)
@@ -50,17 +45,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$SCRIPT_DIR"
 
 cat <<EOF
-=== TARASEC UNINSTALL ===
+=== TARASEC UNINSTALL / RESET ===
 
-This will remove TaraSec-owned state from this machine, including:
+This removes TaraSec-owned state from this machine, including:
   * TaraSec services and firewall helpers
-  * TaraSec hotspot NetworkManager profiles
-  * openNDS TaraSec captive-portal configuration/state
-  * TaraSec cron jobs and runtime/log directories
-  * TaraSec database and application DB account
+  * TaraSec NetworkManager hotspot profiles
+  * TaraSec openNDS captive-portal configuration
+  * TaraSec Wi-Fi disconnect/session watcher
+  * TaraSec Apache captive-login listener on port 8080
+  * TaraSec cron jobs, runtime/log directories and database
   * TaraSec files deployed from this checkout into /var/www/html
   * /etc/tarasec device/configuration state
 
+The current non-TaraSec WAN/default-route connection is preserved.
 Generic OS packages are preserved by default.
 NetBird package removal: $([ "$PURGE_NETBIRD" = 1 ] && echo YES || echo NO)
 Package purge:          $([ "$PURGE_PACKAGES" = 1 ] && echo YES || echo NO)
@@ -78,8 +75,16 @@ if [ "$ASSUME_YES" -ne 1 ]; then
 fi
 
 echo
+echo "=== RECORD CURRENT WAN ==="
+WAN_IF="$(ip -4 route show default 2>/dev/null | awk 'NR==1 {print $5}')"
+WAN_GW="$(ip -4 route show default 2>/dev/null | awk 'NR==1 {print $3}')"
+echo "WAN interface before reset: ${WAN_IF:-none}"
+echo "WAN gateway before reset:   ${WAN_GW:-none}"
+
+echo
 echo "=== STOP TARASEC SERVICES ==="
 known_services=(
+    tarasec-wifi-session-watch.service
     taransvar.service
     tarasec-management-firewall.service
     tarasec-hotspot.service
@@ -87,23 +92,23 @@ known_services=(
     opennds.service
 )
 for svc in "${known_services[@]}"; do
-    if systemctl list-unit-files --no-legend "$svc" 2>/dev/null | grep -q .; then
-        systemctl disable --now "$svc" 2>/dev/null || true
-    fi
+    systemctl disable --now "$svc" 2>/dev/null || true
 done
 
-# Remove TaraSec-specific service units/helpers if present. Do not remove generic
-# distro units such as apache2, mysql, NetworkManager or dnsmasq here.
 rm -f \
+    /etc/systemd/system/tarasec-wifi-session-watch.service \
     /etc/systemd/system/taransvar.service \
     /etc/systemd/system/tarasec-management-firewall.service \
     /etc/systemd/system/tarasec-hotspot.service \
     /etc/systemd/system/tarasec-hostapd-disconnect.service \
+    /usr/local/sbin/tarasec-wifi-session-watch \
+    /usr/local/sbin/tarasec-subscriber-logout \
+    /usr/local/sbin/tarasec-access-check \
+    /usr/local/sbin/tarasec-single-subscriber \
     /usr/local/sbin/tarasec-management-firewall \
     /usr/local/sbin/tarasec-mgmt-client \
     /usr/local/sbin/tarasec-hostapd-disconnect
 systemctl daemon-reload || true
-
 
 echo
 echo "=== REMOVE TARASEC CRON ENTRIES ==="
@@ -117,29 +122,25 @@ if [ -f /var/spool/cron/crontabs/root ]; then
 fi
 service cron reload 2>/dev/null || true
 
-
 echo
 echo "=== REMOVE HOTSPOT NETWORK PROFILES ==="
 if command -v nmcli >/dev/null 2>&1; then
     while IFS= read -r profile; do
         [ -n "$profile" ] || continue
         echo "Deleting NetworkManager profile: $profile"
+        nmcli connection down "$profile" >/dev/null 2>&1 || true
         nmcli connection delete "$profile" >/dev/null 2>&1 || true
     done < <(nmcli -t -f NAME connection show 2>/dev/null | grep '^tarasec-hotspot-' || true)
 fi
 
-
 echo
 echo "=== REMOVE TARASEC FIREWALL CHAINS ==="
-# iptables-nft chains created by TaraSec helpers. Delete jumps first, then chains.
 for table in filter nat mangle; do
     command -v iptables >/dev/null 2>&1 || break
     while read -r chain; do
         [ -n "$chain" ] || continue
-        # Remove references to the chain from all built-in/custom chains.
         while read -r rule; do
             [ -n "$rule" ] || continue
-            # Convert -A to -D and execute exactly the rendered iptables rule.
             rule="${rule/-A /-D }"
             iptables -t "$table" $rule 2>/dev/null || true
         done < <(iptables -t "$table" -S 2>/dev/null | grep -- "-j $chain" || true)
@@ -148,17 +149,53 @@ for table in filter nat mangle; do
     done < <(iptables -t "$table" -S 2>/dev/null | awk '/^-N TARASEC-/{print $2}')
 done
 
-
 echo
-echo "=== REMOVE OPENNDS TARASEC STATE ==="
-# openNDS itself is stopped above. Remove TaraSec-generated config/hooks but do
-# not delete unrelated administrator-created openNDS files blindly.
+echo "=== RESET OPENNDS TARASEC CONFIGURATION ==="
+# install_opennds.sh records the administrator's previous config before TaraSec
+# first overwrites it. Restore that config when available; otherwise remove the
+# TaraSec-generated active config so the next install starts cleanly.
+if [ -f /etc/config/opennds.tarasec-before ]; then
+    mv -f /etc/config/opennds.tarasec-before /etc/config/opennds
+else
+    rm -f /etc/config/opennds
+fi
+
+if [ -f /etc/opennds/opennds.conf.tarasec-before ]; then
+    mv -f /etc/opennds/opennds.conf.tarasec-before /etc/opennds/opennds.conf
+else
+    rm -f /etc/opennds/opennds.conf
+fi
+
 rm -f \
+    /usr/lib/opennds/theme_tarasec.sh \
+    /usr/lib/opennds/access_policy.pl \
+    /usr/lib/opennds/custombinauth.sh \
     /etc/opennds/htdocs/tarasec* \
     /etc/opennds/tarasec* \
     /usr/lib/opennds/tarasec* \
     /usr/local/lib/opennds/tarasec* 2>/dev/null || true
 
+echo
+echo "=== REMOVE CAPTIVE APACHE CONFIGURATION ==="
+if command -v a2disconf >/dev/null 2>&1; then
+    a2disconf tarasec-captive-login >/dev/null 2>&1 || true
+fi
+rm -f \
+    /etc/apache2/conf-available/tarasec-captive-login.conf \
+    /etc/apache2/conf-enabled/tarasec-captive-login.conf \
+    /etc/sudoers.d/tarasec-hotspot-logout
+
+# Remove only the CGI stanza added by the TaraSec installer.
+if [ -f /etc/apache2/apache2.conf ] && command -v python3 >/dev/null 2>&1; then
+    python3 - <<'PY' || true
+from pathlib import Path
+p = Path('/etc/apache2/apache2.conf')
+s = p.read_text()
+block = '''<Directory /usr/lib/cgi-bin>\n  Options +ExecCGI\n</Directory>\n\nAddHandler cgi-script .cgi .pl\n'''
+s = s.replace('\n' + block, '\n').replace(block, '')
+p.write_text(s)
+PY
+fi
 
 echo
 echo "=== REMOVE TARASEC RUNTIME / CONFIGURATION ==="
@@ -169,29 +206,10 @@ rm -rf \
     /var/lib/tarasec \
     /var/log/tarasec \
     /run/tarasec
-
-rm -f \
-    /etc/init/startup.conf \
-    /usr/lib/cgi-bin/debugserver
-
-# Remove only the Apache CGI block/handler added by the TaraSec installer.
-if [ -f /etc/apache2/apache2.conf ]; then
-    python3 - <<'PY' || true
-from pathlib import Path
-p=Path('/etc/apache2/apache2.conf')
-s=p.read_text()
-block='''<Directory /usr/lib/cgi-bin>\n  Options +ExecCGI\n</Directory>\n\nAddHandler cgi-script .cgi .pl\n'''
-s=s.replace('\n'+block, '\n').replace(block, '')
-p.write_text(s)
-PY
-fi
-
+rm -f /etc/init/startup.conf /usr/lib/cgi-bin/debugserver
 
 echo
 echo "=== REMOVE DEPLOYED TARASEC WEB FILES ==="
-# Delete files from /var/www/html only when there is a corresponding source
-# file under this checkout's html/ directory. This avoids wiping unrelated web
-# applications that may share Apache's DocumentRoot.
 if [ -d "$REPO_ROOT/html" ] && [ -d /var/www/html ]; then
     while IFS= read -r -d '' src; do
         rel="${src#$REPO_ROOT/html/}"
@@ -199,11 +217,8 @@ if [ -d "$REPO_ROOT/html" ] && [ -d /var/www/html ]; then
         [ -e "$dst" ] || continue
         rm -f -- "$dst"
     done < <(find "$REPO_ROOT/html" -type f -print0)
-
-    # Remove now-empty children, deepest first, but preserve /var/www/html.
     find /var/www/html -mindepth 1 -depth -type d -empty -delete 2>/dev/null || true
 fi
-
 
 echo
 echo "=== REMOVE TARASEC DATABASE ==="
@@ -216,17 +231,11 @@ FLUSH PRIVILEGES;
 SQL
 fi
 
-
 echo
 echo "=== NETBIRD ==="
 if command -v netbird >/dev/null 2>&1; then
-    # Disconnect this peer from the management network. This removes local
-    # enrollment state but cannot delete the peer record from the remote
-    # NetBird management server without server-side API credentials.
     netbird down 2>/dev/null || true
 fi
-rm -f /etc/tarasec/netbird.env 2>/dev/null || true
-
 if [ "$PURGE_NETBIRD" -eq 1 ]; then
     systemctl disable --now netbird.service 2>/dev/null || true
     if command -v apt-get >/dev/null 2>&1; then
@@ -234,17 +243,15 @@ if [ "$PURGE_NETBIRD" -eq 1 ]; then
     fi
     rm -rf /etc/netbird /var/lib/netbird /var/log/netbird
 else
-    echo "NetBird package preserved. Use --purge-netbird on a dedicated TaraSec machine."
+    echo "NetBird software preserved; local TaraSec enrollment state was removed."
 fi
-
 
 echo
 echo "=== OPTIONAL PACKAGE PURGE ==="
 if [ "$PURGE_PACKAGES" -eq 1 ]; then
     cat <<'EOF'
-WARNING: purging packages installed by the TaraSec installer. The old installer
-cannot tell whether these packages existed before TaraSec, so this mode is only
-appropriate for a machine dedicated to TaraSec or a disposable test host.
+WARNING: purging packages installed by TaraSec. Use this only on a dedicated or
+disposable TaraSec machine because some packages may have existed beforehand.
 EOF
     if command -v apt-get >/dev/null 2>&1; then
         DEBIAN_FRONTEND=noninteractive apt-get purge -y \
@@ -255,23 +262,33 @@ EOF
         DEBIAN_FRONTEND=noninteractive apt-get autoremove -y 2>/dev/null || true
     fi
 else
-    echo "Generic packages preserved."
+    echo "Generic packages, including any installed openNDS package/binary, preserved."
+    echo "The TaraSec openNDS configuration was reset, so reinstall can configure it afresh."
 fi
 
-# Restart generic services only if they remain installed.
+# Restart only generic services that remain installed. NetworkManager may bring
+# back the machine's ordinary saved connection; we do not create/delete any
+# non-TaraSec connection profile.
 for svc in NetworkManager apache2 mysql cron; do
     if systemctl list-unit-files --no-legend "$svc.service" 2>/dev/null | grep -q .; then
         systemctl restart "$svc.service" 2>/dev/null || true
     fi
 done
 
-
 echo
 echo "=== POST-UNINSTALL CHECK ==="
 echo "Remaining TaraSec paths (if any):"
-for p in /etc/tarasec /root/wifi /root/setup /var/lib/tarasec /var/log/tarasec; do
-    [ -e "$p" ] && echo "  $p"
+remaining=0
+for p in \
+    /etc/tarasec /root/wifi /root/setup /var/lib/tarasec /var/log/tarasec \
+    /etc/systemd/system/tarasec-wifi-session-watch.service \
+    /etc/apache2/conf-available/tarasec-captive-login.conf; do
+    if [ -e "$p" ]; then
+        echo "  $p"
+        remaining=1
+    fi
 done
+[ "$remaining" -eq 0 ] && echo "  none"
 
 echo
 if command -v nmcli >/dev/null 2>&1; then
@@ -283,6 +300,15 @@ echo
 if command -v mysql >/dev/null 2>&1; then
     db_exists="$(mysql -N -s -e "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name='taransvar';" 2>/dev/null || echo '?')"
     echo "taransvar database present: $db_exists"
+fi
+
+echo
+NEW_WAN_IF="$(ip -4 route show default 2>/dev/null | awk 'NR==1 {print $5}')"
+NEW_WAN_GW="$(ip -4 route show default 2>/dev/null | awk 'NR==1 {print $3}')"
+echo "WAN interface after reset: ${NEW_WAN_IF:-none}"
+echo "WAN gateway after reset:   ${NEW_WAN_GW:-none}"
+if [ -n "$WAN_IF" ] && [ -n "$NEW_WAN_IF" ] && [ "$WAN_IF" != "$NEW_WAN_IF" ]; then
+    echo "WARNING: default-route interface changed from $WAN_IF to $NEW_WAN_IF; inspect NetworkManager before reinstalling."
 fi
 
 if [ "$REMOVE_SOURCE" -eq 1 ]; then
@@ -297,6 +323,7 @@ fi
 echo
 echo "=== TARASEC UNINSTALL COMPLETE ==="
 echo "TaraSec-owned local state has been removed."
+echo "The normal WAN/default-route configuration was not intentionally modified."
 if [ "$PURGE_PACKAGES" -eq 0 ]; then
     echo "Generic packages were intentionally preserved."
 fi
