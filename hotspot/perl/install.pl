@@ -48,22 +48,13 @@ if (! -f $szCertFile)
 }
 	
 #$szCertFile = "/home/setup/distro/copythese/oystein.gpg";
-#$szCertFile = "~/Downloads/home/setup/distro/copythese/oystein.gpg";
 system('gpg --import '.$szCertFile);
 system('gpg --list-keys > ~/grpkeys2.txt');
-	
-#open(my $fh, '>>', $szSysSetupFile) or die "Could not open file '$szSysSetupFile' $!";
-#print $fh "Superuser=???\n";
-#close $fh;
 
 #Fix crontab
 #Generate crontab job desc (during the night, once a week). Format:  m h  dom mon dow   command
 my $szString = int(rand(59))." ".int(rand(6))." * * ".int(rand(7));
 my $szCrontabFile = "/var/spool/cron/crontabs/root";
-
-#system( "cp distro/copythese/crontab $szCrontabFile");
-#Moved to install.sh: copy("distro/copythese/crontab", $szCrontabFile)  or die "Copy failed: $!";
-#Moved to install.sh: system( "chmod 0600 /var/spool/cron/crontabs/root");
 
 open(my $fCronh, '>>', $szCrontabFile) or die "Could not open file '$szCrontabFile' $!";
 print $fCronh $szString." perl ".$szSysRoot."perl/sendReport.pl";
@@ -86,32 +77,22 @@ if (system('command -v ipfm >/dev/null 2>&1') == 0) {
 	print "IPFM is not installed on this OS; skipping legacy IPFM bandwidth accounting.\n";
 }
 
-#Create guest user (don't know what this is good for so dropping)
-#my $szGuestPass;
-#$szGuestPass .= $chars[rand @chars] for 1..5;
-#my $szGuestUser;
-#$szGuestUser = "user".$chars[rand @chars];
-#print "Creating $szGuestUser/$szGuestPass\n";
-#system("useradd -m -p \$(openssl passwd -1 $szGuestPass) $szGuestUser");
-
-#open(my $fSysSetup, '>>', $szSysSetupFile) or die "Could not open file '$szSysSetupFile' $!";
-#print $fSysSetup "Guest User:$szGuestUser/$szGuestPass\n";
-#close $fSysSetup;
-
-#Update tables unless it's already done....
+# Import one-time hotspot defaults. radcheck is no longer a TaraSec account
+# store, so its row count cannot be used as the installation marker. Use the
+# hotspotSetup row that aftercreate.sql itself creates instead.
 my $conn = getConnection();
-my $szSQL = "select count(*) as cnt from radcheck";
+my $szSQL = "select count(*) as cnt from hotspotSetup";
 my $sth = $conn->prepare($szSQL) or die "prepare statement failed: $conn->errstr()";
 $sth->execute() or die "execution failed: $sth->errstr()";
 my $nCount = 0;
 if (my $row = $sth->fetchrow_hashref()) {
-	$nCount = 0+$row->{'cnt'}; 
+	$nCount = 0+$row->{'cnt'};
 }
 if (!$nCount) {
-	system('mysql taransvar < /root/wifi/distro/aftercreate.sql');
+	my $rc = system('mysql taransvar < /root/wifi/distro/aftercreate.sql');
+	die "Unable to import TaraSec hotspot defaults from aftercreate.sql\n" if $rc != 0;
 } else {
 	print "hotspot setup already imported so skipping..\n";
 }
 
-
-
+$conn->disconnect;
