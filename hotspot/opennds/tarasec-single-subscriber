@@ -15,10 +15,13 @@ exit 0 unless $dbh;
 
 my $sth = eval {
     my $s = $dbh->prepare(q{
-        SELECT username, password
-          FROM hotspotSubscriber
-         WHERE CAST(enabled AS UNSIGNED)=1
-         ORDER BY subscriberId
+        SELECT hs.username, hs.password
+          FROM hotspotSubscriber hs
+          LEFT JOIN user u
+            ON u.username=hs.username AND CAST(u.isAdmin AS UNSIGNED)=1
+         WHERE CAST(hs.enabled AS UNSIGNED)=1
+           AND u.userId IS NULL
+         ORDER BY hs.subscriberId
          LIMIT 2
     });
     $s->execute;
