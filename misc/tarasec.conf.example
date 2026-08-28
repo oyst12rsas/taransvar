@@ -24,23 +24,33 @@ SSH_ALLOWED_SOURCES=
 SSH_HONEYPOT=on
 SSH_HONEYPOT_PORT=22
 
-# What TaraSec is allowed to say about SSH in status reports.
-#   on     = report the actual detected state
-#   off    = do not include SSH state in status reports
+# What TaraSec is allowed to say about SSH in status/control responses.
+#   on     = report the actual configured state
+#   off    = do not include SSH state
 #   open   = always report SSH as open, regardless of actual state
 #   closed = always report SSH as closed, regardless of actual state
 #
 # IMPORTANT: SSH_BROADCAST never changes sshd or firewall rules.
 SSH_BROADCAST=on
 
-# Whether this owner allows authenticated remote TaraSec management to request
-# SSH open/close changes. "off" means no remote request may change SSH state.
+# Whether this owner allows remote TaraSec management to request SSH
+# open/close changes. "off" means no remote request may change SSH state.
 SSH_REMOTE_CONTROL=off
 
-# Comma-separated TaraSec management identities/addresses permitted to request
-# a policy change when SSH_REMOTE_CONTROL=on.
+# Comma-separated management sources allowed to issue remote SSH commands.
+# The special value "dbserver" means any globalDb1ip/globalDb2ip/globalDb3ip
+# registered locally in the setup table. Literal IPv4 addresses and CIDR
+# networks can also be listed.
+# Examples:
+# SSH_REMOTE_ALLOWED_REQUESTERS=dbserver
+# SSH_REMOTE_ALLOWED_REQUESTERS=100.68.126.10,10.47.10.0/24
 SSH_REMOTE_ALLOWED_REQUESTERS=dbserver
 
-# Owner policy for temporary remote openings.
+# Optional second factor for the HTTP control request. If set, callers must
+# send exactly this value in the X-TaraSec-Token header. Keep it private.
+# SSH_REMOTE_TOKEN=replace-with-long-random-value
+
+# Owner policy for temporary remote openings. Reserved for timed-open requests;
+# ordinary open/close/status remote control is already implemented.
 SSH_TEMPORARY_ACCESS=on
 SSH_MAX_OPEN_MINUTES=60
