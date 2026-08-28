@@ -139,7 +139,7 @@ systemctl restart apache2
 # when it already has the expected hotspot address. This prevents a fresh
 # install from starting openNDS before NetworkManager has brought the AP up.
 if [ -z "$HOTSPOT_IF" ] && [ -r /etc/config/opennds ]; then
-    HOTSPOT_IF="$(sed -n "s/^[[:space:]]*option[[:space:]]\+gatewayinterface[[:space:]]\+'\([^']*\)'.*/\1/p" /etc/config/opennds | head -1)"
+    HOTSPOT_IF="$(sed -n "s/^[[:space:]]*option[[:space:]]\+gatewayinterface[[:space:]]+'\([^']*\)'.*/\1/p" /etc/config/opennds | head -1)"
 fi
 if [ -n "$HOTSPOT_IF" ]; then
     if ! ip -4 addr show dev "$HOTSPOT_IF" 2>/dev/null | grep -Eq "[[:space:]]inet[[:space:]]+$HOTSPOT_IP/"; then
@@ -167,6 +167,10 @@ config opennds 'opennds'
     option login_option_enabled '3'
     option themespec_path '/usr/lib/opennds/theme_tarasec.sh'
     option dhcp_leases_file '$LEASE_FILE'
+    list users_to_router 'allow udp port 53'
+    list users_to_router 'allow tcp port 53'
+    list users_to_router 'allow udp port 67'
+    list users_to_router 'allow tcp port 8080'
 EOF
 
     cat > /etc/opennds/opennds.conf <<EOF
@@ -219,9 +223,17 @@ EOF
 
     grep -q "option login_option_enabled '3'" /etc/config/opennds
     grep -q "option themespec_path '/usr/lib/opennds/theme_tarasec.sh'" /etc/config/opennds
+    grep -q "list users_to_router 'allow tcp port 8080'" /etc/config/opennds
     grep -q 'FirewallRule allow tcp port 8080' /etc/opennds/opennds.conf
     ss -lnt | grep -q ':8080 '
     ss -lnt | grep -q ':2050 '
+
+    # Verify the running daemon actually consumed the active UCI-style rule.
+    if ! journalctl -u opennds -n 120 --no-pager | grep 'list users_to_router' | tail -1 | grep -q '8080'; then
+        echo "ERROR: openNDS is running but TCP 8080 is not present in its effective users_to_router rules." >&2
+        journalctl -u opennds -n 60 --no-pager >&2 || true
+        exit 1
+    fi
 
     echo "TaraSec captive portal configured:"
     echo "  interface: $HOTSPOT_IF"
