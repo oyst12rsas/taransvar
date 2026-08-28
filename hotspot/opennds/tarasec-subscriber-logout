@@ -2,9 +2,6 @@
 set -euo pipefail
 IP="${1:-}"
 MYSQL_CNF="${TARASEC_ACCESS_MYSQL_CNF:-/etc/tarasec/access-mysql.cnf}"
-MYSQL=(mysql)
-[ -r "$MYSQL_CNF" ] && MYSQL+=(--defaults-extra-file="$MYSQL_CNF")
-MYSQL+=(--batch --skip-column-names --raw taransvar)
 
 if [[ ! "$IP" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]; then
     logger -t tarasec-logout "ignored invalid client ip: $IP"
@@ -14,7 +11,31 @@ for octet in "${BASH_REMATCH[@]:1}"; do
     (( octet >= 0 && octet <= 255 )) || exit 2
 done
 
-GW=$("${MYSQL[@]}" -e "SELECT INET_NTOA(internalIP) FROM setup LIMIT 1" 2>/dev/null | tr -d '[:space:]')
+run_mysql() {
+    local sql="$1"
+    local output
+
+    if [ -r "$MYSQL_CNF" ]; then
+        if output=$(mysql --defaults-extra-file="$MYSQL_CNF" --batch --skip-column-names --raw taransvar -e "$sql" 2>/dev/null); then
+            printf '%s' "$output"
+            return 0
+        fi
+    fi
+
+    # openNDS and the Wi-Fi session watcher run as root on supported installs.
+    # If a legacy dedicated credential file is stale, use the local root socket
+    # rather than leaving authenticated clients permanently authorized.
+    if [ "$(id -u)" -eq 0 ]; then
+        if output=$(mysql --batch --skip-column-names --raw taransvar -e "$sql" 2>/dev/null); then
+            printf '%s' "$output"
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+GW="$(run_mysql "SELECT INET_NTOA(internalIP) FROM setup LIMIT 1" | tr -d '[:space:]')" || GW=""
 [ -n "$GW" ] || GW="192.168.50.1"
 IFS=. read -r g1 g2 g3 g4 <<<"$GW"
 IFS=. read -r i1 i2 i3 i4 <<<"$IP"
@@ -23,14 +44,10 @@ if [ "$g1.$g2.$g3" != "$i1.$i2.$i3" ]; then
     exit 2
 fi
 
-"${MYSQL[@]}" <<SQL
-UPDATE session
-SET active=0,
-    logouttime=COALESCE(logouttime,NOW()),
-    lastrequest=NOW()
-WHERE ip='$IP' AND active=1;
-DELETE FROM access WHERE ip='$IP';
-SQL
+run_mysql "UPDATE session SET active=0, logouttime=COALESCE(logouttime,NOW()), lastrequest=NOW() WHERE ip='$IP' AND active=1; DELETE FROM access WHERE ip='$IP';" >/dev/null || {
+    logger -t tarasec-logout "failed to close TaraSec DB session/access for $IP"
+    exit 1
+}
 
 MAC="$(ip neigh show "$IP" 2>/dev/null | awk '/lladdr/{print $5; exit}')"
 if [[ "$MAC" =~ ^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$ ]]; then
