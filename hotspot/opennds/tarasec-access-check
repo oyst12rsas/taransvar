@@ -1,22 +1,41 @@
 #!/bin/bash
 # Return 0 only when the client IP has hasaccess=1 in TaraSec's access table.
 # Fail closed on malformed input, DB errors, missing table, or no matching row.
+# Prefer the dedicated TaraSec DB credentials. On systems where those legacy
+# credentials are stale, openNDS runs this helper as root, so a local unix-
+# socket MySQL root query is a safe compatibility fallback for this read-only
+# access check.
 set -u
 
 CLIENT_IP="${1:-}"
 DB_NAME="${TARASEC_ACCESS_DB:-taransvar}"
 MYSQL_CNF="${TARASEC_ACCESS_MYSQL_CNF:-/etc/tarasec/access-mysql.cnf}"
+QUERY="SELECT COALESCE(MAX(hasaccess),0) FROM access WHERE ip='${CLIENT_IP}'"
 
 case "$CLIENT_IP" in
   ''|*[!0-9.]*) exit 1 ;;
 esac
 
-MYSQL=(mysql)
-if [ -r "$MYSQL_CNF" ]; then
-  MYSQL+=(--defaults-extra-file="$MYSQL_CNF")
-fi
-MYSQL+=(--batch --skip-column-names --raw "$DB_NAME")
+run_query() {
+  local -a cmd=(mysql)
+  if [ "$1" = "cnf" ]; then
+    [ -r "$MYSQL_CNF" ] || return 1
+    cmd+=(--defaults-extra-file="$MYSQL_CNF")
+  fi
+  cmd+=(--batch --skip-column-names --raw "$DB_NAME" -e "$QUERY")
+  "${cmd[@]}" 2>/dev/null
+}
 
-value=$("${MYSQL[@]}" -e "SELECT COALESCE(MAX(hasaccess),0) FROM access WHERE ip='${CLIENT_IP}'" 2>/dev/null) || exit 1
+value=""
+if [ -r "$MYSQL_CNF" ]; then
+  value="$(run_query cnf)" || value=""
+fi
+
+# Ubuntu/Debian commonly authenticate local MySQL root through unix_socket.
+# Only attempt this fallback when this helper itself is running as root.
+if [ -z "$value" ] && [ "$(id -u)" -eq 0 ]; then
+  value="$(run_query root)" || value=""
+fi
+
 value=$(printf '%s' "$value" | tr -d '[:space:]')
 [ "$value" = "1" ]
