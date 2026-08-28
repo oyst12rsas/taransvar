@@ -21,7 +21,7 @@ header() {
 <meta http-equiv=\"Pragma\" content=\"no-cache\"><meta http-equiv=\"Expires\" content=\"0\">
 <meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">
 <title>TaraSec Hotspot</title>
-<style>*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#eef3f8;color:#172233;line-height:1.45}.top{background:#17212d;color:#fff;padding:15px 20px;font-weight:700;font-size:20px}.top span{font-weight:400;color:#b8c5d3;font-size:13px;margin-left:8px}.hero{background:linear-gradient(135deg,#1265ad,#268bc7);color:#fff;padding:28px 18px}.wrap{max-width:760px;margin:auto}.hero h1{font-size:30px;margin:0 0 8px}.hero p{margin:0;opacity:.95}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}.status{background:#17212d;border-radius:10px;padding:14px}.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#35c96f;margin-right:7px}.card{background:#fff;margin:18px auto;padding:22px;border-radius:12px;box-shadow:0 4px 16px rgba(22,43,67,.12)}h2{margin-top:0;color:#1265ad}.lead{font-size:17px}.note{background:#eef7ff;border-left:4px solid #268bc7;padding:12px;margin:15px 0}.research{background:#f6f8fa;border-radius:9px;padding:13px;margin:15px 0;font-size:14px}.btn{display:block;width:100%;border:0;border-radius:8px;padding:14px 18px;background:#1265ad;color:#fff;font-size:17px;font-weight:700;cursor:pointer;text-align:center;text-decoration:none;margin-top:10px}.btn2{background:#fff;color:#1265ad;border:1px solid #1265ad}.btnlogout{background:#a43737}.field{width:100%;padding:12px;border:1px solid #b9c7d5;border-radius:7px;font-size:16px;margin:5px 0 12px}.small{font-size:12px;color:#68788a;margin-top:15px}.ok{font-size:24px;color:#168b4a;font-weight:700}.bad{font-size:22px;color:#a43737;font-weight:700}@media(max-width:520px){.grid{grid-template-columns:1fr}.hero h1{font-size:25px}.card{margin:12px;padding:17px}}</style>
+<style>*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#eef3f8;color:#172233;line-height:1.45}.top{background:#17212d;color:#fff;padding:15px 20px;font-weight:700;font-size:20px}.top span{font-weight:400;color:#b8c5d3;font-size:13px;margin-left:8px}.hero{background:linear-gradient(135deg,#1265ad,#268bc7);color:#fff;padding:28px 18px}.wrap{max-width:760px;margin:auto}.hero h1{font-size:30px;margin:0 0 8px}.hero p{margin:0;opacity:.95}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}.status{background:#17212d;border-radius:10px;padding:14px}.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#35c96f;margin-right:7px}.card{background:#fff;margin:18px auto;padding:22px;border-radius:12px;box-shadow:0 4px 16px rgba(22,43,67,.12)}h2{margin-top:0;color:#1265ad}.lead{font-size:17px}.note{background:#eef7ff;border-left:4px solid #268bc7;padding:12px;margin:15px 0}.research{background:#f6f8fa;border-radius:9px;padding:13px;margin:15px 0;font-size:14px}.btn{display:block;width:100%;border:0;border-radius:8px;padding:14px 18px;background:#1265ad;color:#fff;font-size:17px;font-weight:700;cursor:pointer;text-align:center;text-decoration:none;margin-top:10px}.btn2{background:#fff;color:#1265ad;border:1px solid #1265ad}.btnlogout{background:#a43737}.field{width:100%;padding:12px;border:1px solid #b9c7d5;border-radius:7px;font-size:16px;margin:5px 0 12px}.small{font-size:12px;color:#68788a;margin-top:15px}.ok{font-size:24px;color:#168b4a;font-weight:700}.bad{font-size:22px;color:#a43737;font-weight:700}code{font-size:15px;background:#fff;padding:2px 5px;border-radius:4px}@media(max-width:520px){.grid{grid-template-columns:1fr}.hero h1{font-size:25px}.card{margin:12px;padding:17px}}</style>
 </head><body><div class=\"top\">TaraSec <span>Hotspot</span></div>
 <div class=\"hero\"><div class=\"wrap\"><h1>Security &amp; connectivity</h1><p>Internet access through a TaraSec-enabled hotspot.</p><div class=\"grid\"><div class=\"status\"><span class=\"dot\"></span><b>Connectivity</b><br>Hotspot available</div><div class=\"status\"><span class=\"dot\"></span><b>TaraSec</b><br>Protection active</div></div></div></div><div class=\"wrap\"><div class=\"card\">"
 }
@@ -57,10 +57,12 @@ authenticated_status_page() {
 }
 
 denied_page() {
-    local loginbase
+    local loginbase sole_login
     loginbase="$(hotspot_web_base)"
+    sole_login="$(/usr/local/sbin/tarasec-single-subscriber 2>/dev/null || true)"
     echo "<div class=\"bad\">Internet access is not active</div><p>This device does not currently have access on this hotspot.</p>
 <div class=\"note\"><b>Already have a hotspot account?</b><br>Log in below. Your subscription or quota determines whether Internet access is granted.</div>
+$sole_login
 <form id=\"tslogin\" action=\"$loginbase/portal_login.php\" method=\"post\">
 <input type=\"hidden\" name=\"client_ip\" value=\"$clientip\">
 <input type=\"hidden\" name=\"fas\" value=\"$fas\">
@@ -95,5 +97,5 @@ display_terms() {
 }
 
 session_length="0"; upload_rate="0"; download_rate="0"; upload_quota="0"; download_quota="0"
-quotas="$session_length $upload_rate $download_rate $upload_quota $download_quota"
+quotas="$session_length $upload_rate $download_rate $upload_quota $down_quota"
 ndscustomparams=""; ndscustomimages=""; ndscustomfiles=""; ndsparamlist="$ndsparamlist"; additionalthemevars=""; fasvarlist="$fasvarlist"; userinfo="$title"
