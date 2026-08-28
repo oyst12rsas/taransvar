@@ -184,12 +184,35 @@ EOF
 
     systemctl daemon-reload || true
     systemctl enable opennds 2>/dev/null || true
-    systemctl restart opennds
 
-    sleep 2
-    if ! systemctl is-active --quiet opennds; then
-        echo "ERROR: openNDS did not remain active after TaraSec portal configuration." >&2
-        journalctl -u opennds -n 40 --no-pager >&2 || true
+    # openNDS can take a few seconds to release its pid/socket/firewall state.
+    # A direct systemctl restart may therefore return "already running" even
+    # though systemd subsequently retries and starts it successfully. Stop,
+    # wait for the old daemon to disappear, then start and wait for readiness.
+    systemctl stop opennds || true
+    for _ in $(seq 1 20); do
+        if ! pgrep -x opennds >/dev/null 2>&1; then
+            break
+        fi
+        sleep 1
+    done
+    if pgrep -x opennds >/dev/null 2>&1; then
+        echo "ERROR: previous openNDS process did not exit within 20 seconds." >&2
+        exit 1
+    fi
+    systemctl start opennds
+
+    NDS_READY=0
+    for _ in $(seq 1 30); do
+        if systemctl is-active --quiet opennds && ndsctl status >/dev/null 2>&1; then
+            NDS_READY=1
+            break
+        fi
+        sleep 1
+    done
+    if [ "$NDS_READY" -ne 1 ]; then
+        echo "ERROR: openNDS did not become ready after TaraSec portal configuration." >&2
+        journalctl -u opennds -n 60 --no-pager >&2 || true
         exit 1
     fi
 
