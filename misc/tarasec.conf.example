@@ -1,0 +1,46 @@
+# /etc/tarasec.conf
+# TaraSec owner-controlled configuration.
+# Copy only the settings you want to override into /etc/tarasec.conf.
+
+# ---------------------------------------------------------------------------
+# SSH policy
+# ---------------------------------------------------------------------------
+
+# Whether the REAL SSH service may be reached through the TaraSec firewall.
+# This remains compatible with the existing Gatekeeper open/close control.
+ALLOW_SSH=1
+
+# Move real OpenSSH away from the decoy port.
+SSH_PORT=48222
+
+# Comma-separated IP addresses or CIDR networks allowed to reach real SSH.
+# Empty means any source may reach SSH when ALLOW_SSH=1.
+# Examples:
+# SSH_ALLOWED_SOURCES=100.68.126.10
+# SSH_ALLOWED_SOURCES=100.68.126.10,10.47.10.0/24
+SSH_ALLOWED_SOURCES=
+
+# Keep the conventional SSH port as a TaraSec decoy/sensor.
+SSH_HONEYPOT=on
+SSH_HONEYPOT_PORT=22
+
+# What TaraSec is allowed to say about SSH in status reports.
+#   on     = report the actual detected state
+#   off    = do not include SSH state in status reports
+#   open   = always report SSH as open, regardless of actual state
+#   closed = always report SSH as closed, regardless of actual state
+#
+# IMPORTANT: SSH_BROADCAST never changes sshd or firewall rules.
+SSH_BROADCAST=on
+
+# Remote management policy. These settings reserve the owner-controlled
+# authorization model for remote open/close requests. A remote requester must
+# never be able to bypass the local owner policy.
+SSH_REMOTE_CONTROL=off
+# Comma-separated TaraSec management identities/addresses permitted to request
+# a policy change when SSH_REMOTE_CONTROL=on.
+SSH_REMOTE_ALLOWED_REQUESTERS=dbserver
+
+# Optional upper bound for future temporary remote access requests.
+SSH_TEMPORARY_ACCESS=on
+SSH_MAX_OPEN_MINUTES=60
