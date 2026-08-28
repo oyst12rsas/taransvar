@@ -16,7 +16,44 @@ $szF = (isset($_GET)&&isset($_GET["f"])?$_GET["f"]:"");	//request("f"); //
 
 if ($szF == "main_subLogin")
 {
-	submitLogin($bBefore = false);
+	// The /hotspot back-office is an administrator interface. Administrator
+	// identities live in user/isAdmin and are deliberately separate from
+	// captive-portal subscribers (hotspotSubscriber) and legacy RADIUS users
+	// (radcheck). Keep this in sync with misc/tarasec-users.pl.
+	$szName = trim((string)request("name"));
+	$szPass = (string)request("pass");
+	$pDb = new CDb;
+	$cFlds = array(":name"=>$szName);
+	$cAdmin = false;
+	try {
+		$cAdmin = $pDb->fetch(
+			"select username,password from user where username=:name and cast(isAdmin as unsigned)=1 and (suspendedUntil is null or suspendedUntil < NOW()) limit 1",
+			$cFlds
+		);
+	} catch (Throwable $e) {
+		$cAdmin = false;
+	}
+
+	if (!$cAdmin || !isset($cAdmin["password"]) || !hash_equals((string)$cAdmin["password"], $szPass))
+	{
+		print red("Error in username or password!")."<br><br>";
+		doLogin();
+		return;
+	}
+
+	$_SESSION["loggedin"] = true;
+	$_SESSION["user"] = (string)$cAdmin["username"];
+	$_SESSION["superuser"] = true;
+	try {
+		$pDb->execute(
+			"update user set lastLogin=NOW(), lastLoginIp=inet_aton(:ip), loginFailsSinceSuccess=0, loginFailReportedTime=NULL where username=:name and cast(isAdmin as unsigned)=1",
+			array(":ip"=>getSenderIp(), ":name"=>$szName)
+		);
+	} catch (Throwable $e) { }
+
+	// Continue directly to the normal back-office home page after login.
+	$szF = "main";
+	$_GET["f"] = "main";
 }
 else
 	if ($bForceLogin || !isset($_SESSION["loggedin"]))
@@ -63,8 +100,10 @@ else
 
 if (loggedIn())
 {
-	//Check if also has valid session record. 
-	checkValidSession();
+	// Check subscriber sessions only for non-superusers. Back-office admins do
+	// not consume hotspot quota and therefore do not have a RADIUS session.
+	if (!isSuperUser())
+		checkValidSession();
 }
 
 
