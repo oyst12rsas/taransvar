@@ -20,6 +20,7 @@ URL="https://codeload.github.com/opennds/opennds/tar.gz/refs/tags/v$OPENNDS_VERS
 HOTSPOT_IF="${TARASEC_HOTSPOT_IF:-}"
 HOTSPOT_ADDR="${TARASEC_HOTSPOT_ADDR:-192.168.50.1/24}"
 HOTSPOT_NAME="${TARASEC_HOTSPOT_NAME:-TaraSec}"
+HOTSPOT_IP="${HOTSPOT_ADDR%/*}"
 
 . /etc/os-release
 if [ "${ID:-}" != "ubuntu" ] && [ "${ID:-}" != "debian" ] && [ "${ID:-}" != "raspbian" ] && [ "${ID_LIKE:-}" != *debian* ]; then
@@ -82,16 +83,12 @@ install -m 0755 "$REPO_ROOT/hotspot/opennds/custombinauth.sh" /usr/lib/opennds/c
 install -m 0755 "$REPO_ROOT/hotspot/opennds/tarasec-access-check" /usr/local/sbin/tarasec-access-check
 install -m 0755 "$REPO_ROOT/hotspot/opennds/tarasec-subscriber-logout" /usr/local/sbin/tarasec-subscriber-logout
 
-# The captive PHP endpoints depend on the existing hotspot PHP library files.
 mkdir -p /var/www/html/hotspot
 cp -a "$REPO_ROOT/html/hotspot/." /var/www/html/hotspot/
 chown -R root:root /var/www/html/hotspot
 find /var/www/html/hotspot -type d -exec chmod 0755 {} +
 find /var/www/html/hotspot -type f -exec chmod 0644 {} +
 
-# openNDS runs as root and may use this credentials file for the access-table
-# helper. These are the existing TaraSec application DB credentials created by
-# createUsers.pl and verified by hotspot/distro/install.sh.
 mkdir -p /etc/tarasec
 cat > /etc/tarasec/access-mysql.cnf <<'EOF'
 [client]
@@ -101,9 +98,6 @@ host=localhost
 EOF
 chmod 0600 /etc/tarasec/access-mysql.cnf
 
-# portal_status.php needs exactly one privileged operation: close the calling
-# subscriber's TaraSec/openNDS session. Do not grant www-data general ndsctl or
-# shell privileges.
 if ! command -v sudo >/dev/null 2>&1; then
     apt-get update
     DEBIAN_FRONTEND=noninteractive apt-get install -y sudo
@@ -114,10 +108,6 @@ EOF
 chmod 0440 /etc/sudoers.d/tarasec-hotspot-logout
 visudo -cf /etc/sudoers.d/tarasec-hotspot-logout >/dev/null
 
-# Determine the local /24 exposed by the captive-login Apache vhost. TaraSec's
-# current hotspot setup uses /24 client networks; retain 192.168.50.0/24 as the
-# safe default if a non-/24 address is supplied.
-HOTSPOT_IP="${HOTSPOT_ADDR%/*}"
 HOTSPOT_PREFIX="${HOTSPOT_ADDR#*/}"
 IFS=. read -r h1 h2 h3 h4 <<<"$HOTSPOT_IP"
 if [ "$HOTSPOT_PREFIX" = "24" ] && [ -n "${h1:-}" ] && [ -n "${h2:-}" ] && [ -n "${h3:-}" ]; then
@@ -143,9 +133,17 @@ a2enconf tarasec-captive-login >/dev/null
 apache2ctl configtest
 systemctl restart apache2
 
-# If no interface was supplied, try to preserve/use an already configured one.
+# If no interface was supplied, use an existing TaraSec/openNDS interface only
+# when it already has the expected hotspot address. This prevents a fresh
+# install from starting openNDS before NetworkManager has brought the AP up.
 if [ -z "$HOTSPOT_IF" ] && [ -r /etc/config/opennds ]; then
     HOTSPOT_IF="$(sed -n "s/^[[:space:]]*option[[:space:]]\+gatewayinterface[[:space:]]\+'\([^']*\)'.*/\1/p" /etc/config/opennds | head -1)"
+fi
+if [ -n "$HOTSPOT_IF" ]; then
+    if ! ip -4 addr show dev "$HOTSPOT_IF" 2>/dev/null | grep -Eq "[[:space:]]inet[[:space:]]+$HOTSPOT_IP/"; then
+        echo "Hotspot interface $HOTSPOT_IF does not yet have $HOTSPOT_IP; deferring openNDS TaraSec activation until the AP is up."
+        HOTSPOT_IF=""
+    fi
 fi
 
 if [ -n "$HOTSPOT_IF" ]; then
@@ -207,8 +205,7 @@ EOF
     echo "  ThemeSpec: /usr/lib/opennds/theme_tarasec.sh"
     echo "  TaraSec login: http://$HOTSPOT_IP:8080/hotspot/portal_login.php"
 else
-    echo "openNDS and TaraSec portal assets are installed, but no hotspot interface is configured yet."
-    echo "Run setupWifiNicAsHotspot.pl (or rerun this helper with TARASEC_HOTSPOT_IF set) to activate captive enforcement."
+    echo "openNDS and TaraSec portal assets are installed, but captive enforcement activation is deferred until the hotspot interface is up."
 fi
 
 echo "openNDS/TaraSec captive portal installation complete."
