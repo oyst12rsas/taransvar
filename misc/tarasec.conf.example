@@ -6,19 +6,32 @@
 # SSH policy
 # ---------------------------------------------------------------------------
 
-# The actual open/closed state remains controlled by TaraSec's existing
-# Gatekeeper setup (ALLOW_SSH in /etc/tarasecfw.conf). This file controls the
-# owner's participation policy and how/where SSH is exposed.
+# The actual ordinary open/closed state remains controlled by TaraSec's
+# existing Gatekeeper setup. This file controls how and where SSH is exposed.
 
 # Move real OpenSSH away from the decoy port.
 SSH_PORT=48222
 
-# Comma-separated IP addresses or CIDR networks allowed to reach real SSH.
-# Empty means any source may reach SSH while Gatekeeper has SSH open.
-# Examples:
-# SSH_ALLOWED_SOURCES=100.68.126.10
-# SSH_ALLOWED_SOURCES=100.68.126.10,10.47.10.0/24
+# Comma-separated IP addresses or CIDR networks allowed to reach real SSH while
+# Gatekeeper has SSH open. Empty means any source may reach it while open.
 SSH_ALLOWED_SOURCES=
+
+# VPS/recovery protection. When enabled, these sources remain allowed to the
+# real SSH port even when Gatekeeper or remote control closes ordinary SSH.
+# Use this for a trusted management VPN subnet or fixed recovery/admin IP.
+SSH_RECOVERY_PROTECT=on
+# Examples:
+# SSH_RECOVERY_SOURCES=100.68.126.10
+# SSH_RECOVERY_SOURCES=10.47.10.0/24,100.68.126.10
+SSH_RECOVERY_SOURCES=
+
+# Safe SSH port migration. setup_ssh_honeypot.sh first makes sshd listen on both
+# old/decoy and new real ports, validates the new listener, then removes sshd
+# from the decoy port. A systemd rollback timer restores the previous sshd
+# configuration unless it is cancelled after a fresh management connection is
+# confirmed on the new port.
+SSH_FAILSAFE=on
+SSH_FAILSAFE_MINUTES=10
 
 # Keep the conventional SSH port as a TaraSec decoy/sensor.
 SSH_HONEYPOT=on
@@ -29,7 +42,6 @@ SSH_HONEYPOT_PORT=22
 #   off    = do not include SSH state
 #   open   = always report SSH as open, regardless of actual state
 #   closed = always report SSH as closed, regardless of actual state
-#
 # IMPORTANT: SSH_BROADCAST never changes sshd or firewall rules.
 SSH_BROADCAST=on
 
@@ -37,17 +49,11 @@ SSH_BROADCAST=on
 # open/close changes. "off" means no remote request may change SSH state.
 SSH_REMOTE_CONTROL=off
 
-# Comma-separated management sources allowed to issue remote SSH commands.
-# The special value "dbserver" means any globalDb1ip/globalDb2ip/globalDb3ip
-# registered locally in the setup table. Literal IPv4 addresses and CIDR
-# networks can also be listed.
-# Examples:
-# SSH_REMOTE_ALLOWED_REQUESTERS=dbserver
-# SSH_REMOTE_ALLOWED_REQUESTERS=100.68.126.10,10.47.10.0/24
+# The special value "dbserver" means locally registered global DB server IPs.
+# Literal IPv4 addresses and CIDR networks can also be listed.
 SSH_REMOTE_ALLOWED_REQUESTERS=dbserver
 
-# Optional second factor for the HTTP control request. If set, callers must
-# send exactly this value in the X-TaraSec-Token header. Keep it private.
+# Optional second factor for HTTP control requests.
 # SSH_REMOTE_TOKEN=replace-with-long-random-value
 
 # Owner policy for temporary remote openings. Reserved for timed-open requests;
