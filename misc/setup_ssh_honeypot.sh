@@ -32,10 +32,24 @@ if [ "$SSH_FAILSAFE_MINUTES" -lt 1 ] || [ "$SSH_FAILSAFE_MINUTES" -gt 120 ]; the
 if [ "${SSH_HONEYPOT,,}" = "on" ] && [ "$SSH_PORT" -eq "$SSH_HONEYPOT_PORT" ]; then echo "Real SSH and honeypot cannot use the same port ($SSH_PORT)." >&2; exit 1; fi
 if ! command -v sshd >/dev/null 2>&1; then echo "OpenSSH server is not installed." >&2; exit 1; fi
 
+# Ubuntu 22.10+ may use systemd ssh.socket activation. In that mode the
+# socket generator derives ListenStream entries from sshd_config during
+# daemon-reload, so merely restarting ssh.service leaves the old port bound.
 restart_sshd() {
-    if systemctl list-unit-files ssh.service >/dev/null 2>&1; then systemctl restart ssh.service
-    elif systemctl list-unit-files sshd.service >/dev/null 2>&1; then systemctl restart sshd.service
-    else echo "Could not identify ssh.service/sshd.service." >&2; return 1; fi
+    if systemctl list-unit-files ssh.socket >/dev/null 2>&1 \
+       && systemctl is-enabled --quiet ssh.socket 2>/dev/null; then
+        systemctl daemon-reload
+        systemctl stop ssh.service 2>/dev/null || true
+        systemctl restart ssh.socket
+        systemctl start ssh.service
+    elif systemctl list-unit-files ssh.service >/dev/null 2>&1; then
+        systemctl restart ssh.service
+    elif systemctl list-unit-files sshd.service >/dev/null 2>&1; then
+        systemctl restart sshd.service
+    else
+        echo "Could not identify ssh.socket/ssh.service/sshd.service." >&2
+        return 1
+    fi
 }
 is_on() { case "${1,,}" in 1|yes|true|on) return 0 ;; *) return 1 ;; esac; }
 
@@ -53,7 +67,16 @@ if [ -s "$STATE/iptables.previous" ] && command -v iptables-restore >/dev/null 2
 if [ -s "$STATE/ip6tables.previous" ] && command -v ip6tables-restore >/dev/null 2>&1; then ip6tables-restore < "$STATE/ip6tables.previous" || true; fi
 if [ -f "$STATE/90-tarasec.conf.previous" ]; then cp -a "$STATE/90-tarasec.conf.previous" "$DROPIN"; else rm -f "$DROPIN"; fi
 sshd -t
-if systemctl list-unit-files ssh.service >/dev/null 2>&1; then systemctl restart ssh.service; else systemctl restart sshd.service; fi
+if systemctl list-unit-files ssh.socket >/dev/null 2>&1 && systemctl is-enabled --quiet ssh.socket 2>/dev/null; then
+    systemctl daemon-reload
+    systemctl stop ssh.service 2>/dev/null || true
+    systemctl restart ssh.socket
+    systemctl start ssh.service
+elif systemctl list-unit-files ssh.service >/dev/null 2>&1; then
+    systemctl restart ssh.service
+else
+    systemctl restart sshd.service
+fi
 logger -t tarasec "TARASEC_SSH_ROLLBACK restored previous firewall and sshd configuration"
 EOF
 chmod 0755 "$ROLLBACK_SCRIPT"
