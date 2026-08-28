@@ -38,10 +38,29 @@ fi
 echo
 echo "Checking/installing TaraSec prerequisites..."
 apt-get update
+
+# Ubuntu publishes mysql-server/mysql-client directly. Debian/Raspberry Pi OS
+# Bookworm normally provides MariaDB as the default MySQL-compatible server and
+# client instead. Select an available pair without changing the application,
+# which continues to use the standard mysql command/protocol.
+DB_SERVER_PKG=""
+DB_CLIENT_PKG=""
+if apt-cache show mysql-server >/dev/null 2>&1 && apt-cache show mysql-client >/dev/null 2>&1; then
+    DB_SERVER_PKG="mysql-server"
+    DB_CLIENT_PKG="mysql-client"
+elif apt-cache show mariadb-server >/dev/null 2>&1 && apt-cache show mariadb-client >/dev/null 2>&1; then
+    DB_SERVER_PKG="mariadb-server"
+    DB_CLIENT_PKG="mariadb-client"
+else
+    echo "ERROR: Neither MySQL nor MariaDB server/client packages are available from configured apt repositories." >&2
+    exit 1
+fi
+
+echo "Database packages: $DB_SERVER_PKG $DB_CLIENT_PKG"
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
     ca-certificates curl git perl python3 gnupg \
     network-manager iw rfkill iproute2 \
-    apache2 mysql-server mysql-client \
+    apache2 "$DB_SERVER_PKG" "$DB_CLIENT_PKG" \
     php libapache2-mod-php php-mysql \
     cron \
     libdbi-perl libdbd-mysql-perl \
@@ -71,7 +90,15 @@ fi
 
 systemctl enable --now NetworkManager
 systemctl enable --now apache2
-systemctl enable --now mysql
+if systemctl list-unit-files --no-legend mysql.service 2>/dev/null | grep -q .; then
+    DB_SERVICE="mysql"
+elif systemctl list-unit-files --no-legend mariadb.service 2>/dev/null | grep -q .; then
+    DB_SERVICE="mariadb"
+else
+    echo "ERROR: Installed database server has no mysql.service or mariadb.service unit." >&2
+    exit 1
+fi
+systemctl enable --now "$DB_SERVICE"
 systemctl enable --now cron
 
 WAN_IF="$(ip -4 route show default | awk 'NR==1 {print $5}')"
@@ -153,7 +180,7 @@ fi
 
 sed -i "s/Options Indexes FollowSymLinks/Options FollowSymLinks/" /etc/apache2/apache2.conf
 systemctl restart apache2
-systemctl restart mysql
+systemctl restart "$DB_SERVICE"
 
 echo
 echo "Checking TaraSec database bootstrap..."
