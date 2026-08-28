@@ -11,6 +11,7 @@ ROLLBACK_DIR="/var/lib/tarasec/ssh-rollback"
 ROLLBACK_SCRIPT="/usr/local/lib/tarasec/ssh-rollback.sh"
 ROLLBACK_SERVICE="tarasec-ssh-rollback.service"
 ROLLBACK_TIMER="tarasec-ssh-rollback.timer"
+HONEYPOT_SERVICE="tarasec-ssh-honeypot.service"
 
 if [ "$(id -u)" -ne 0 ]; then echo "Run as root: sudo bash $0 [$CONF]" >&2; exit 1; fi
 if [ ! -r "$CONF" ]; then echo "Missing firewall configuration: $CONF" >&2; exit 1; fi
@@ -58,11 +59,21 @@ if [ -f "$SSHD_DROPIN" ]; then cp -a "$SSHD_DROPIN" "$ROLLBACK_DIR/90-tarasec.co
 if command -v iptables-save >/dev/null 2>&1; then iptables-save > "$ROLLBACK_DIR/iptables.previous"; else rm -f "$ROLLBACK_DIR/iptables.previous"; fi
 if command -v ip6tables-save >/dev/null 2>&1; then ip6tables-save > "$ROLLBACK_DIR/ip6tables.previous"; else rm -f "$ROLLBACK_DIR/ip6tables.previous"; fi
 
+# A rerun may start while the TaraSec honeypot already owns TCP/22.
+# Snapshot that state and stop it before the temporary two-port sshd phase.
+if systemctl is-active --quiet "$HONEYPOT_SERVICE" 2>/dev/null; then
+    touch "$ROLLBACK_DIR/honeypot.was-active"
+else
+    rm -f "$ROLLBACK_DIR/honeypot.was-active"
+fi
+systemctl stop "$HONEYPOT_SERVICE" 2>/dev/null || true
+
 cat > "$ROLLBACK_SCRIPT" <<'EOF'
 #!/bin/bash
 set -e
 DROPIN="/etc/ssh/sshd_config.d/90-tarasec.conf"
 STATE="/var/lib/tarasec/ssh-rollback"
+HONEYPOT_SERVICE="tarasec-ssh-honeypot.service"
 if [ -s "$STATE/iptables.previous" ] && command -v iptables-restore >/dev/null 2>&1; then iptables-restore < "$STATE/iptables.previous"; fi
 if [ -s "$STATE/ip6tables.previous" ] && command -v ip6tables-restore >/dev/null 2>&1; then ip6tables-restore < "$STATE/ip6tables.previous" || true; fi
 if [ -f "$STATE/90-tarasec.conf.previous" ]; then cp -a "$STATE/90-tarasec.conf.previous" "$DROPIN"; else rm -f "$DROPIN"; fi
@@ -77,7 +88,12 @@ elif systemctl list-unit-files ssh.service >/dev/null 2>&1; then
 else
     systemctl restart sshd.service
 fi
-logger -t tarasec "TARASEC_SSH_ROLLBACK restored previous firewall and sshd configuration"
+if [ -f "$STATE/honeypot.was-active" ]; then
+    systemctl start "$HONEYPOT_SERVICE" 2>/dev/null || true
+else
+    systemctl stop "$HONEYPOT_SERVICE" 2>/dev/null || true
+fi
+logger -t tarasec "TARASEC_SSH_ROLLBACK restored previous firewall, sshd and honeypot state"
 EOF
 chmod 0755 "$ROLLBACK_SCRIPT"
 
@@ -129,8 +145,8 @@ Environment=TARASEC_SSH_HONEYPOT_PORT=$SSH_HONEYPOT_PORT
 EOF
 systemctl daemon-reload
 case "${SSH_HONEYPOT,,}" in
-    1|yes|true|on) systemctl enable --now tarasec-ssh-honeypot.service; echo "TaraSec SSH honeypot enabled on TCP/$SSH_HONEYPOT_PORT." ;;
-    *) systemctl disable --now tarasec-ssh-honeypot.service 2>/dev/null || true; echo "TaraSec SSH honeypot disabled by firewall policy." ;;
+    1|yes|true|on) systemctl enable --now "$HONEYPOT_SERVICE"; echo "TaraSec SSH honeypot enabled on TCP/$SSH_HONEYPOT_PORT." ;;
+    *) systemctl disable --now "$HONEYPOT_SERVICE" 2>/dev/null || true; echo "TaraSec SSH honeypot disabled by firewall policy." ;;
 esac
 
 if is_on "$SSH_FAILSAFE"; then
@@ -145,4 +161,4 @@ echo
 echo "SSH policy staged from $CONF."
 echo "  Real SSH: TCP/$SSH_PORT"
 echo "  Honeypot:  $SSH_HONEYPOT on TCP/$SSH_HONEYPOT_PORT"
-echo "  Rollback:  sshd + IPv4/IPv6 firewall snapshot"
+echo "  Rollback:  sshd + IPv4/IPv6 firewall + honeypot state snapshot"
