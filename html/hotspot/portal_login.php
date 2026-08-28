@@ -1,14 +1,15 @@
 <?php
 // TaraSec captive-portal account login.
-// Subscriber accounts are TaraSec accounts; radcheck is only a legacy fallback
-// while existing installations are migrated away from FreeRADIUS.
+// Hotspot access is deliberately separate from back-office administration:
+//   user               = TaraSec administrator/operator identities
+//   hotspotSubscriber  = captive-portal subscriber identities
+// Captive login MUST NOT fall back to user or legacy radcheck credentials.
 session_start();
 error_reporting(E_ALL);
 ini_set('display_errors', '0');
 
 require_once __DIR__ . '/basics.php';
 require_once __DIR__ . '/genlib.php';
-require_once __DIR__ . '/radiuslib.php';
 require_once __DIR__ . '/funcs.php';
 require_once __DIR__ . '/funcs2.php';
 
@@ -16,8 +17,6 @@ function portalReply($title, $message, $success = false, $fas = '')
 {
     if ($success && $fas !== '') {
         // openNDS ThemeSpec/FAS is served by the openNDS MHD listener on 2050.
-        // Port 80 belongs to Apache on TaraSec hosts, so omitting :2050 sends
-        // the browser to the wrong web server and leaves the client preauthenticated.
         header('Location: http://status.client:2050/opennds_preauth/?fas=' . rawurlencode($fas) . '&continue=clicked', true, 303);
         exit;
     }
@@ -45,50 +44,52 @@ $gatewayIp = ($setup && !empty($setup['internalIP'])) ? (string)$setup['internal
 $gatewayParts = explode('.', $gatewayIp); $clientParts = explode('.', $clientIp);
 if (count($gatewayParts) !== 4 || count($clientParts) !== 4 || array_slice($gatewayParts,0,3) !== array_slice($clientParts,0,3)) portalReply('Login failed', 'This login request did not originate from a TaraSec hotspot client address.');
 
-// A back-office administrator identity is never valid as a captive-portal subscriber,
-// even if an old FreeRADIUS installation contains a radcheck row with the same name.
+// Administrator identities are never hotspot identities. This explicit guard also
+// gives a clear error if somebody tries an administrator username.
 try {
     $admin = $db->fetch('select userId from user where username=:name and cast(isAdmin as unsigned)=1 limit 1', array(':name'=>$username), PDO::FETCH_ASSOC);
     if ($admin) portalReply('Login failed', 'This is an administrator account, not a hotspot subscriber account.');
 } catch (Throwable $e) { }
 
-$user = null;
 try {
     $user = $db->fetch("select username,password,confirmedTime,subscriptionType,expiryTime,giveHoursAfterLogin,quotaMB,coalesce(usageMB,0) usageMB,cast(enabled as unsigned) enabled from hotspotSubscriber where username=:name limit 1", array(':name'=>$username), PDO::FETCH_ASSOC);
-} catch (Throwable $e) { $user = null; }
-
-// Compatibility only: old installations may not have run migrate_accounts.sql yet.
-// Do not create new radcheck records. Once migrated, hotspotSubscriber wins.
-$legacy = false;
-if (!$user) {
-    try {
-        $r = $db->fetch("select id,username,value,confirmedTime,subscriptionType,expirytime,giveHoursAfterLogin,mbquota,coalesce(mbusage,0) mbusage,attribute,op from radcheck where username=:name and ((op=':=' and attribute='Cleartext-Password') or (op='==' and coalesce(attribute,'')='')) limit 1", array(':name'=>$username), PDO::FETCH_ASSOC);
-        if ($r) {
-            $legacy = true;
-            $user = array('username'=>$r['username'],'password'=>$r['value'],'confirmedTime'=>(((string)$r['op']==='==' && (string)$r['attribute']==='') ? 'legacy' : $r['confirmedTime']),'subscriptionType'=>$r['subscriptionType'],'expiryTime'=>$r['expirytime'],'giveHoursAfterLogin'=>$r['giveHoursAfterLogin'],'quotaMB'=>$r['mbquota'],'usageMB'=>$r['mbusage'],'enabled'=>1);
-        }
-    } catch (Throwable $e) { $user = null; }
+} catch (Throwable $e) {
+    $user = null;
 }
+
 if (!$user || !(int)$user['enabled'] || !hash_equals((string)$user['password'], $password)) portalReply('Login failed', 'Incorrect username or password.');
 if (empty($user['confirmedTime'])) portalReply('Account not confirmed', 'This hotspot account must be confirmed before it can be used.');
 
 $type=(string)$user['subscriptionType'];
+
+// Expiry subscriptions created for setup/testing start their clock on first login.
+// Use MySQL both to set and evaluate expiry so PHP/MySQL timezone differences cannot
+// incorrectly mark a freshly activated account as expired.
 if (($type==='limited'||$type==='expiry') && empty($user['expiryTime'])) {
     $hours=(int)($user['giveHoursAfterLogin']??0);
     if ($hours>0) {
-        if ($legacy) $db->execute('update radcheck set expirytime=DATE_ADD(NOW(), INTERVAL '.intval($hours).' HOUR) where username=:name',array(':name'=>$username));
-        else $db->execute('update hotspotSubscriber set expiryTime=DATE_ADD(NOW(), INTERVAL '.intval($hours).' HOUR) where username=:name',array(':name'=>$username));
-        $user['expiryTime']=date('Y-m-d H:i:s',time()+$hours*3600);
+        $db->execute('update hotspotSubscriber set expiryTime=DATE_ADD(NOW(), INTERVAL '.intval($hours).' HOUR) where username=:name and expiryTime is null',array(':name'=>$username));
     }
 }
-$quotaOk=((float)$user['usageMB'] < (float)$user['quotaMB']);
-$expiryOk=!empty($user['expiryTime']) && strtotime((string)$user['expiryTime'])>time();
+
+$validity = $db->fetch(
+    "select subscriptionType, quotaMB, coalesce(usageMB,0) usageMB, expiryTime, cast(expiryTime is not null and expiryTime > NOW() as unsigned) expiryOk from hotspotSubscriber where username=:name and cast(enabled as unsigned)=1 limit 1",
+    array(':name'=>$username),
+    PDO::FETCH_ASSOC
+);
+if (!$validity) portalReply('Access is not active','The hotspot subscriber account is not active.');
+
+$type=(string)$validity['subscriptionType'];
+$quotaOk=((float)$validity['usageMB'] < (float)$validity['quotaMB']);
+$expiryOk=((int)$validity['expiryOk']===1);
 $allowed=($type==='quota'?$quotaOk:($type==='expiry'?$expiryOk:($type==='limited'?$quotaOk&&$expiryOk:false)));
-if (!$allowed) { $db->execute('delete from access where ip=:ip',array(':ip'=>$clientIp)); portalReply('Access is not active','The account has expired or has no remaining quota.'); }
+if (!$allowed) {
+    $db->execute('delete from access where ip=:ip',array(':ip'=>$clientIp));
+    portalReply('Access is not active','The account has expired or has no remaining quota.');
+}
 
 $db->execute('update session set active=0, logouttime=NOW() where ip=:ip and active=1 and logouttime is null',array(':ip'=>$clientIp));
 $db->execute('insert into session (ip,username,logintime,lastrequest,active) values (:ip,:username,NOW(),NOW(),1)',array(':ip'=>$clientIp,':username'=>$username));
 $db->execute('insert into access (ip,hasaccess,updated) values (:ip,1,NOW()) on duplicate key update hasaccess=1,updated=NOW()',array(':ip'=>$clientIp));
-if ($legacy) $db->execute('update radcheck set last_login=NOW() where username=:name',array(':name'=>$username));
-else $db->execute('update hotspotSubscriber set lastLogin=NOW() where username=:name',array(':name'=>$username));
+$db->execute('update hotspotSubscriber set lastLogin=NOW() where username=:name',array(':name'=>$username));
 portalReply('Access confirmed','Your account is valid. Continue to authorize Internet access.',true,$fas);
