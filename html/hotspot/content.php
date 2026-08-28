@@ -2,33 +2,16 @@
 
 $bForceLogin = false;
 
-
-function getMainContent()
+function submitBackofficeAdminLogin()
 {
-	global $bForceLogin;
-
-//$pSystem = new CSystem();
-
-//function getSystem() {global $pSystem; return $pSystem;}
-//function getLanguageCode() {return "EN";}
-
-$szF = (isset($_GET)&&isset($_GET["f"])?$_GET["f"]:"");	//request("f"); //
-
-if ($szF == "main_subLogin")
-{
-	// The /hotspot back-office is an administrator interface. Administrator
-	// identities live in user/isAdmin and are deliberately separate from
-	// captive-portal subscribers (hotspotSubscriber) and legacy RADIUS users
-	// (radcheck). Keep this in sync with misc/tarasec-users.pl.
 	$szName = trim((string)request("name"));
 	$szPass = (string)request("pass");
 	$pDb = new CDb;
-	$cFlds = array(":name"=>$szName);
 	$cAdmin = false;
 	try {
 		$cAdmin = $pDb->fetch(
 			"select username,password from user where username=:name and cast(isAdmin as unsigned)=1 and (suspendedUntil is null or suspendedUntil < NOW()) limit 1",
-			$cFlds
+			array(":name"=>$szName)
 		);
 	} catch (Throwable $e) {
 		$cAdmin = false;
@@ -38,7 +21,7 @@ if ($szF == "main_subLogin")
 	{
 		print red("Error in username or password!")."<br><br>";
 		doLogin();
-		return;
+		return false;
 	}
 
 	$_SESSION["loggedin"] = true;
@@ -51,9 +34,24 @@ if ($szF == "main_subLogin")
 		);
 	} catch (Throwable $e) { }
 
-	// Continue directly to the normal back-office home page after login.
-	$szF = "main";
 	$_GET["f"] = "main";
+	return true;
+}
+
+function getMainContent()
+{
+	global $bForceLogin;
+
+$szF = (isset($_GET)&&isset($_GET["f"])?$_GET["f"]:"");
+
+if ($szF == "main_subLogin")
+{
+	// Fallback for callers that reach content.php directly. Normal index.php
+	// now handles this before menus are rendered, so admin state is available
+	// to the whole back-office page.
+	if (!submitBackofficeAdminLogin())
+		return;
+	$szF = "main";
 }
 else
 	if ($bForceLogin || !isset($_SESSION["loggedin"]))
@@ -62,50 +60,41 @@ else
 		{
 			case "main_login":
 				doLogin();
-				$_GET["f"] = "main";	//To prevent that it's displayed twice..
+				$_GET["f"] = "main";
 				break;
 
-			case "main_reg":			//Gets here by self registration.. not yet logged in
+			case "main_reg":
 				addUser();
-				return; 
-				
-			case "users_addSub":		//Gets here by self registration.. not yet logged in
+				return;
+
+			case "users_addSub":
 				userSubmitted();
 				return;
-				
-			case "users_confSub":		//Gets here by self registration.. not yet logged in
+
+			case "users_confSub":
 				confUserSubmitted();
-				return; 
+				return;
 
 			case "main_confCode":
 				confirmCode();
 				return;
 
 			case "main_logout":
-				//print "Got here now.... <br>";
-				//Otherwise session will not be ended and user not logged out...
 				break;
 
-			default: 
+			default:
 				if (quotaLessUserComingBack())
 					return;
 				else
 					doLogin();
-
 		}
-	
 	}
-
-//No longer true: When gets here, user is logged in (has valid session)
 
 if (loggedIn())
 {
-	// Check subscriber sessions only for non-superusers. Back-office admins do
-	// not consume hotspot quota and therefore do not have a RADIUS session.
 	if (!isSuperUser())
 		checkValidSession();
 }
-
 
 $cParts = explode("_", get("f"));
 if (sizeof($cParts))
@@ -116,56 +105,42 @@ if (sizeof($cParts))
 		case "fw":
 			require_once "fw.php";
 			fwMenu();
-			return;	//Exit function..
+			return;
 		case "uselog":
 			require_once "uselog.php";
 			uselogMenu();
-			return;	//Exit function..
-		default: 
-			break; 	//See processing below.
+			return;
+		default:
+			break;
 	}
 }
 
-//print "Here!";
-//return;
-
-
-//include "class/Db.class.php";
-
-
 $phpFileName = "xxx/".$szF.".php";
-
 if (file_exists($phpFileName))
 {
 	include $phpFileName;
-//	print "Func file exists..<br>";
-
 	if (function_exists($szF))
 		$szF();
-	else 
+	else
 		print "Error! Not able to launch this function!";
-
 	return;
 }
-
-
 
 switch ($szF)
 {
 	case "main_subLogin":
-		break; 	//Submit login handled above.
+		break;
 	case "main_logout":
-		logOut($bBefore = false);	//- Handled above
+		logOut($bBefore = false);
 		break;
 	case "main_login":
-		doLogin();	//Just testing... may give multiple login forms...
+		doLogin();
 		break;
 	case "users_list":
-	//case "":
 		listUsers();
 		break;
-	case "users_add":	//Superuser adds.
-	case "main_reg":		//Self registration
+	case "users_add":
+	case "main_reg":
 		addUser();
 		break;
 	case "users_addSub":
@@ -263,13 +238,9 @@ switch ($szF)
 	case "users":
 		print "Choose from menu to the left";
 		break;
-	default: 
+	default:
 		print "Unknown function: $szF";
 }
-
-//print "Should have printed";
-//printMenu();
-
 }
 
 ?>
