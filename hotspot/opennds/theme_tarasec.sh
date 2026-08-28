@@ -97,5 +97,5 @@ display_terms() {
 }
 
 session_length="0"; upload_rate="0"; download_rate="0"; upload_quota="0"; download_quota="0"
-quotas="$session_length $upload_rate $download_rate $upload_quota $down_quota"
+quotas="$session_length $upload_rate $download_rate $upload_quota $download_quota"
 ndscustomparams=""; ndscustomimages=""; ndscustomfiles=""; ndsparamlist="$ndsparamlist"; additionalthemevars=""; fasvarlist="$fasvarlist"; userinfo="$title"
