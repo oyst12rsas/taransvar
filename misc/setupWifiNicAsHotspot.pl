@@ -126,6 +126,15 @@ sh("nmcli connection up '$profile'");
 my $leases = wait_for_nm_lease_file($wifi_if);
 print "NetworkManager DHCP lease file: $leases\n";
 
+# A fresh database may contain no hotspot subscribers yet. The account helper
+# owns the migration/bootstrap logic and creates exactly one temporary setup
+# subscriber when none exists. ThemeSpec then displays that sole login on the
+# captive portal until another enabled subscriber is added.
+my $users_helper = "$Bin/tarasec-users.pl";
+die "Missing TaraSec account bootstrap helper: $users_helper\n" unless -f $users_helper;
+install_users_helper($users_helper);
+sh("perl '$users_helper'");
+
 my $helper = "$Bin/install_opennds.sh";
 die "Missing TaraSec openNDS installer: $helper\n" unless -f $helper;
 $ENV{TARASEC_HOTSPOT_IF} = $wifi_if;
@@ -159,3 +168,8 @@ print "Leases:  $leases\n";
 print "Profile: $profile\n";
 print "Portal:  TaraSec ThemeSpec active on openNDS\n";
 print "Sessions: disconnect watcher active\n";
+
+sub install_users_helper {
+    my ($src) = @_;
+    sh("install -m 0755 '$src' /usr/local/sbin/tarasec-users");
+}
