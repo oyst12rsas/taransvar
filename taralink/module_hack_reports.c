@@ -497,7 +497,6 @@ void checkHackReports()
 					addWarningRecord("******** ERROR ****** While updating internalInfections");
 					return;
 				}
-
 			} else {
 				printf("Creating new internalInfections record for %s:%s (internal ip: %u).\n", lpIp, (row[2]?row[2]:"(null)"), nInternaIpFromUnitPort);
 				strncpy(cWhat, "Not reg as infected. ", sizeof(cWhat) - strlen(cWhat) - 1);
@@ -626,11 +625,11 @@ void checkHackReports()
                 char systemError[700];
                 if (partnerDeliveryFailed && globalDeliveryFailed)
                     snprintf(systemError, sizeof(systemError),
-                             "Hack report delivery failed: %s:%s - %s; %s",
+                             "Hack report delivery failed: %.45s:%.10s - %.280s; %.280s",
                              row[3]?row[3]:"?", row[2]?row[2]:"?", partnerError, globalError);
                 else
                     snprintf(systemError, sizeof(systemError),
-                             "Hack report delivery failed: %s:%s - %s",
+                             "Hack report delivery failed: %.45s:%.10s - %.580s",
                              row[3]?row[3]:"?", row[2]?row[2]:"?",
                              partnerDeliveryFailed ? partnerError : globalError);
 
