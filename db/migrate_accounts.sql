@@ -33,6 +33,20 @@ CREATE TABLE IF NOT EXISTS `hotspotSubscriber` (
   UNIQUE KEY `hotspotSubscriber_legacyRadcheckId` (`legacyRadcheckId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- Repair the historical TaraSec hotspot seed which created username 'admin'
+-- in radcheck. Back-office administrators belong only in `user`.
+UPDATE `user`
+SET isAdmin=b'1', verified=b'1'
+WHERE username='admin'
+  AND NOT EXISTS (
+    SELECT 1 FROM (SELECT userId FROM `user` WHERE CAST(isAdmin AS UNSIGNED)=1 LIMIT 1) existing_admin
+  );
+
+INSERT INTO `user` (username,password,isAdmin,verified)
+SELECT 'admin', SUBSTRING(REPLACE(UUID(),'-',''),1,16), b'1', b'1'
+WHERE NOT EXISTS (SELECT 1 FROM `user` WHERE CAST(isAdmin AS UNSIGNED)=1)
+  AND NOT EXISTS (SELECT 1 FROM `user` WHERE username='admin');
+
 -- Administrator identities are never hotspot subscriber identities. Remove any
 -- old dual-use rows from both the new subscriber table and legacy FreeRADIUS.
 DELETE hs FROM hotspotSubscriber hs
@@ -41,6 +55,10 @@ WHERE CAST(u.isAdmin AS UNSIGNED)=1;
 
 DELETE r FROM radcheck r
 JOIN `user` u ON u.username=r.username
+WHERE CAST(u.isAdmin AS UNSIGNED)=1;
+
+DELETE rug FROM radusergroup rug
+JOIN `user` u ON u.username=rug.username
 WHERE CAST(u.isAdmin AS UNSIGNED)=1;
 
 -- Migrate legacy RADIUS credentials only when they do not collide with an administrator.
