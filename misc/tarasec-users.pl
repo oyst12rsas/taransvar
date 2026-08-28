@@ -64,8 +64,13 @@ sub migrate_radcheck {
 }
 sub cleanup_admin_subscribers {
  my($dbh)=@_;
- return unless table_exists($dbh,'hotspotSubscriber') && table_exists($dbh,'user');
- $dbh->do(q{DELETE hs FROM hotspotSubscriber hs JOIN user u ON u.username=hs.username WHERE CAST(u.isAdmin AS UNSIGNED)=1});
+ return unless table_exists($dbh,'user');
+ if (table_exists($dbh,'hotspotSubscriber')) {
+  $dbh->do(q{DELETE hs FROM hotspotSubscriber hs JOIN user u ON u.username=hs.username WHERE CAST(u.isAdmin AS UNSIGNED)=1});
+ }
+ if (table_exists($dbh,'radcheck')) {
+  $dbh->do(q{DELETE r FROM radcheck r JOIN user u ON u.username=r.username WHERE CAST(u.isAdmin AS UNSIGNED)=1});
+ }
 }
 sub ensure_initial_subscriber {
  my($dbh)=@_;
