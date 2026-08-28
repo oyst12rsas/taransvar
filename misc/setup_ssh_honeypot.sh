@@ -16,7 +16,6 @@ if [ "$(id -u)" -ne 0 ]; then
     echo "Run as root: sudo bash $0 [$CONF]" >&2
     exit 1
 fi
-
 if [ ! -r "$CONF" ]; then
     echo "Missing owner configuration: $CONF" >&2
     exit 1
@@ -24,7 +23,6 @@ fi
 
 # shellcheck disable=SC1090
 source "$CONF"
-
 SSH_PORT="${SSH_PORT:-48222}"
 SSH_HONEYPOT="${SSH_HONEYPOT:-on}"
 SSH_HONEYPOT_PORT="${SSH_HONEYPOT_PORT:-22}"
@@ -41,11 +39,7 @@ if [ "${SSH_HONEYPOT,,}" = "on" ] && [ "$SSH_PORT" -eq "$SSH_HONEYPOT_PORT" ]; t
     echo "Real SSH and honeypot cannot use the same port ($SSH_PORT)." >&2
     exit 1
 fi
-
-if ! command -v sshd >/dev/null 2>&1; then
-    echo "OpenSSH server is not installed." >&2
-    exit 1
-fi
+if ! command -v sshd >/dev/null 2>&1; then echo "OpenSSH server is not installed." >&2; exit 1; fi
 
 restart_sshd() {
     if systemctl list-unit-files ssh.service >/dev/null 2>&1; then
@@ -58,17 +52,25 @@ restart_sshd() {
     fi
 }
 
-is_on() {
-    case "${1,,}" in 1|yes|true|on) return 0 ;; *) return 1 ;; esac
-}
+is_on() { case "${1,,}" in 1|yes|true|on) return 0 ;; *) return 1 ;; esac; }
 
 mkdir -p "$SSHD_DROPIN_DIR" "$ROLLBACK_DIR" /usr/local/lib/tarasec
 
-# Save the previous TaraSec sshd drop-in so a failed VPS migration can restore it.
+# Snapshot both sshd and firewall state before touching a VPS management path.
 if [ -f "$SSHD_DROPIN" ]; then
     cp -a "$SSHD_DROPIN" "$ROLLBACK_DIR/90-tarasec.conf.previous"
 else
     rm -f "$ROLLBACK_DIR/90-tarasec.conf.previous"
+fi
+if command -v iptables-save >/dev/null 2>&1; then
+    iptables-save > "$ROLLBACK_DIR/iptables.previous"
+else
+    rm -f "$ROLLBACK_DIR/iptables.previous"
+fi
+if command -v ip6tables-save >/dev/null 2>&1; then
+    ip6tables-save > "$ROLLBACK_DIR/ip6tables.previous"
+else
+    rm -f "$ROLLBACK_DIR/ip6tables.previous"
 fi
 
 cat > "$ROLLBACK_SCRIPT" <<'EOF'
@@ -76,6 +78,16 @@ cat > "$ROLLBACK_SCRIPT" <<'EOF'
 set -e
 DROPIN="/etc/ssh/sshd_config.d/90-tarasec.conf"
 STATE="/var/lib/tarasec/ssh-rollback"
+
+# Restore the firewall first so the recovery SSH path is available before sshd
+# is restarted. Do not make an unavailable IPv6 restore prevent IPv4 recovery.
+if [ -s "$STATE/iptables.previous" ] && command -v iptables-restore >/dev/null 2>&1; then
+    iptables-restore < "$STATE/iptables.previous"
+fi
+if [ -s "$STATE/ip6tables.previous" ] && command -v ip6tables-restore >/dev/null 2>&1; then
+    ip6tables-restore < "$STATE/ip6tables.previous" || true
+fi
+
 if [ -f "$STATE/90-tarasec.conf.previous" ]; then
     cp -a "$STATE/90-tarasec.conf.previous" "$DROPIN"
 else
@@ -87,22 +99,21 @@ if systemctl list-unit-files ssh.service >/dev/null 2>&1; then
 else
     systemctl restart sshd.service
 fi
-logger -t tarasec "TARASEC_SSH_ROLLBACK restored previous sshd configuration"
+logger -t tarasec "TARASEC_SSH_ROLLBACK restored previous firewall and sshd configuration"
 EOF
 chmod 0755 "$ROLLBACK_SCRIPT"
 
 cat > "/etc/systemd/system/$ROLLBACK_SERVICE" <<EOF
 [Unit]
-Description=TaraSec SSH migration rollback
+Description=TaraSec SSH and firewall migration rollback
 
 [Service]
 Type=oneshot
 ExecStart=$ROLLBACK_SCRIPT
 EOF
-
 cat > "/etc/systemd/system/$ROLLBACK_TIMER" <<EOF
 [Unit]
-Description=TaraSec SSH migration rollback timer
+Description=TaraSec SSH and firewall migration rollback timer
 
 [Timer]
 OnActiveSec=${SSH_FAILSAFE_MINUTES}min
@@ -112,7 +123,6 @@ AccuracySec=5s
 [Install]
 WantedBy=timers.target
 EOF
-
 systemctl daemon-reload
 if is_on "$SSH_FAILSAFE"; then
     systemctl stop "$ROLLBACK_TIMER" 2>/dev/null || true
@@ -120,44 +130,31 @@ if is_on "$SSH_FAILSAFE"; then
     echo "Failsafe rollback armed for ${SSH_FAILSAFE_MINUTES} minutes."
 fi
 
-# Phase 1: listen on both the old conventional port and the new real port.
-# This preserves the current management path while the new port is validated.
+# Phase 1: keep the old management port while adding the new real SSH port.
 cat > "$SSHD_DROPIN" <<EOF
 # Managed by TaraSec. Owner policy remains in $CONF.
 Port $SSH_HONEYPOT_PORT
 Port $SSH_PORT
 EOF
-
-if ! sshd -t; then
-    echo "Two-port sshd configuration test failed; rollback remains armed." >&2
-    exit 1
-fi
+if ! sshd -t; then echo "Two-port sshd configuration test failed; rollback remains armed." >&2; exit 1; fi
 restart_sshd
-
 if ! ss -ltn | awk '{print $4}' | grep -Eq "[:.]$SSH_PORT$"; then
     echo "New SSH port $SSH_PORT is not listening; rollback remains armed." >&2
     exit 1
 fi
-
 echo "Phase 1 OK: sshd is listening on both TCP/$SSH_HONEYPOT_PORT and TCP/$SSH_PORT."
 
-# Phase 2: remove sshd from the honeypot port only after the new port is confirmed locally.
+# Phase 2: remove sshd from the future honeypot port only after local validation.
 cat > "$SSHD_DROPIN" <<EOF
 # Managed by TaraSec. Owner policy remains in $CONF.
 Port $SSH_PORT
 EOF
-
-if ! sshd -t; then
-    echo "Final sshd configuration test failed; rollback remains armed." >&2
-    exit 1
-fi
+if ! sshd -t; then echo "Final sshd configuration test failed; rollback remains armed." >&2; exit 1; fi
 restart_sshd
-
 if ! ss -ltn | awk '{print $4}' | grep -Eq "[:.]$SSH_PORT$"; then
     echo "Final SSH port $SSH_PORT is not listening; rollback remains armed." >&2
     exit 1
 fi
-
 echo "Real SSH configured for TCP/$SSH_PORT."
 
 install -m 0755 "$HONEYPOT_SRC" /usr/local/lib/tarasec/tarasec_ssh_honeypot.py
@@ -180,12 +177,11 @@ case "${SSH_HONEYPOT,,}" in
         ;;
 esac
 
-# The script can only validate local listening state. On a VPS, leave rollback
-# armed until the operator/management plane confirms a fresh connection on the
-# new port, then run: systemctl stop tarasec-ssh-rollback.timer
 if is_on "$SSH_FAILSAFE"; then
-    echo "IMPORTANT: rollback is still ARMED. Confirm a NEW SSH connection on TCP/$SSH_PORT."
-    echo "Then cancel rollback with: systemctl stop $ROLLBACK_TIMER"
+    echo "IMPORTANT: SSH/firewall rollback is still ARMED."
+    echo "Apply the TaraSec firewall, then confirm a NEW SSH connection on TCP/$SSH_PORT."
+    echo "Only after successful reconnection cancel rollback with:"
+    echo "  systemctl stop $ROLLBACK_TIMER"
 else
     echo "WARNING: SSH_FAILSAFE is disabled by owner policy."
 fi
@@ -194,4 +190,4 @@ echo
 echo "SSH policy staged."
 echo "  Real SSH: TCP/$SSH_PORT"
 echo "  Honeypot:  $SSH_HONEYPOT on TCP/$SSH_HONEYPOT_PORT"
-echo "Apply misc/firewall.sh as well so source restrictions match /etc/tarasec.conf."
+echo "  Rollback:  sshd + IPv4/IPv6 firewall snapshot"
