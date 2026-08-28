@@ -45,9 +45,40 @@ sub ensure_schema {
   campaignId smallint(5) unsigned DEFAULT NULL,enabled bit(1) NOT NULL DEFAULT b'1',legacyRadcheckId int(11) unsigned DEFAULT NULL,
   PRIMARY KEY(subscriberId),UNIQUE KEY hotspotSubscriber_username(username),UNIQUE KEY hotspotSubscriber_legacyRadcheckId(legacyRadcheckId)
  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci});
+
+ # Older hotspot installers created a captive-portal account literally named
+ # "admin" in radcheck. Some intermediate migrations then copied that row to
+ # hotspotSubscriber before a back-office administrator existed. Repair that
+ # state first so the identity is classified correctly before any subscriber
+ # migration occurs.
+ recover_legacy_admin($dbh);
  migrate_radcheck($dbh) if table_exists($dbh,'radcheck');
  cleanup_admin_subscribers($dbh);
  ensure_initial_subscriber($dbh);
+}
+sub recover_legacy_admin {
+ my($dbh)=@_;
+ return unless table_exists($dbh,'user');
+ my($admins)=$dbh->selectrow_array('SELECT COUNT(*) FROM user WHERE CAST(isAdmin AS UNSIGNED)=1');
+ return if $admins;
+
+ my $password;
+ if (table_exists($dbh,'hotspotSubscriber')) {
+  ($password)=$dbh->selectrow_array("SELECT password FROM hotspotSubscriber WHERE username='admin' ORDER BY subscriberId LIMIT 1");
+ }
+ if ((!defined($password) || $password eq '') && table_exists($dbh,'radcheck')) {
+  ($password)=$dbh->selectrow_array(q{SELECT value FROM radcheck WHERE username='admin' AND ((op=':=' AND attribute='Cleartext-Password') OR (op='==' AND COALESCE(attribute,'')='')) ORDER BY id LIMIT 1});
+ }
+ return unless defined($password) && length($password);
+
+ my($exists)=$dbh->selectrow_array("SELECT COUNT(*) FROM user WHERE username='admin'");
+ if ($exists) {
+  $dbh->do("UPDATE user SET isAdmin=b'1', verified=b'1' WHERE username='admin'");
+ } else {
+  my $s=$dbh->prepare("INSERT INTO user(username,password,isAdmin,verified) VALUES('admin',?,b'1',b'1')");
+  $s->execute($password);
+ }
+ print "Recovered legacy 'admin' identity as a back-office administrator.\n";
 }
 sub migrate_radcheck {
  my($dbh)=@_;
