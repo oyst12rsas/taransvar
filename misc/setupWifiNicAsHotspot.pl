@@ -133,12 +133,21 @@ $ENV{TARASEC_HOTSPOT_ADDR} = $addr;
 $ENV{TARASEC_HOTSPOT_NAME} = $ssid;
 sh("bash '$helper'");
 
+# Install the disconnect watcher only after the AP and openNDS are active.
+# This ordering is shared by Ubuntu and Raspberry Pi OS and avoids starting the
+# watcher against an interface that has not yet entered AP mode.
+my $watch_helper = "$Bin/install_wifi_session_watch.sh";
+die "Missing TaraSec Wi-Fi session watcher installer: $watch_helper\n" unless -f $watch_helper;
+sh("bash '$watch_helper'");
+
 my $status = `ndsctl status 2>&1`;
 die "TaraSec hotspot NOT complete: ndsctl status failed after portal installation.\n$status\n" if $? != 0;
 die "TaraSec hotspot NOT complete: custom ThemeSpec is not configured.\n"
     unless system("grep -q \"option themespec_path '/usr/lib/opennds/theme_tarasec.sh'\" /etc/config/opennds") == 0;
 die "TaraSec hotspot NOT complete: Apache captive login is not listening on 8080.\n"
     unless system("ss -lnt | grep -q ':8080 '") == 0;
+die "TaraSec hotspot NOT complete: Wi-Fi session watcher is not active.\n"
+    unless system("systemctl is-active --quiet tarasec-wifi-session-watch.service") == 0;
 
 print "\nTaraSec hotspot interface configured and custom captive portal enforced.\n";
 print "WAN:     $wan_if (left unchanged)\n";
@@ -149,3 +158,4 @@ print "DHCP:    NetworkManager shared mode\n";
 print "Leases:  $leases\n";
 print "Profile: $profile\n";
 print "Portal:  TaraSec ThemeSpec active on openNDS\n";
+print "Sessions: disconnect watcher active\n";
