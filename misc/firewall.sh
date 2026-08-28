@@ -1,15 +1,11 @@
 #!/bin/bash
 
 # TaraSec firewall configuration.
-# Machine/network defaults live in /etc/tarasecfw.conf.
-# Owner-controlled SSH policy lives in /etc/tarasec.conf. The existing
-# Gatekeeper ALLOW_SSH open/closed state remains operational and is not
-# overridden by the owner policy file.
+# All firewall and SSH policy is kept in /etc/tarasecfw.conf.
 
 set -e
 
 CONF="${1:-/etc/tarasecfw.conf}"
-OWNER_CONF="${TARASEC_CONF:-/etc/tarasec.conf}"
 
 if [ ! -f "$CONF" ]; then
     echo "Missing config: $CONF"
@@ -18,15 +14,6 @@ fi
 
 # shellcheck disable=SC1090
 source "$CONF"
-FIREWALL_ALLOW_SSH="${ALLOW_SSH:-1}"
-
-# Owner policy may define SSH_PORT, source restrictions, honeypot and recovery
-# policy, but actual ordinary open/closed state still comes from Gatekeeper.
-if [ -r "$OWNER_CONF" ]; then
-    # shellcheck disable=SC1090
-    source "$OWNER_CONF"
-fi
-ALLOW_SSH="$FIREWALL_ALLOW_SSH"
 
 SSH_PORT="${SSH_PORT:-22}"
 SSH_HONEYPOT="${SSH_HONEYPOT:-off}"
@@ -90,16 +77,11 @@ fi
 
 iptables -A INPUT -i lo -j ACCEPT
 
-# Recovery sources are evaluated first. On VPSs this prevents Gatekeeper or a
-# remote close command from cutting the only management path. The owner can
-# explicitly disable the protection with SSH_RECOVERY_PROTECT=off.
 if is_on "$SSH_RECOVERY_PROTECT" && [ -n "$SSH_RECOVERY_SOURCES" ]; then
     add_source_rules "$SSH_RECOVERY_SOURCES" "$SSH_PORT"
 fi
 
-# Ordinary SSH policy. Source restrictions apply when open. When closed, only
-# the protected recovery sources above can still reach the real SSH port.
-if [ "$ALLOW_SSH" = "1" ]; then
+if [ "${ALLOW_SSH:-1}" = "1" ]; then
     if [ -n "$SSH_ALLOWED_SOURCES" ]; then
         add_source_rules "$SSH_ALLOWED_SOURCES" "$SSH_PORT"
         iptables -A INPUT -p tcp --dport "$SSH_PORT" \
