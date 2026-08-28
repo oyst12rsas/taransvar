@@ -12,7 +12,7 @@ die "This command must be run as root. Use: sudo tarasec-users\n" if $> != 0;
 my $dbh=DBI->connect('DBI:mysql:database=taransvar','root','',{RaiseError=>1,PrintError=>0,AutoCommit=>1,mysql_enable_utf8mb4=>1})
     or die "Unable to connect to TaraSec database.\n";
 ensure_schema($dbh);
-if (defined $set_admin_password) { set_admin_password($dbh,$set_admin_password); exit 0; }
+if (defined $set_admin_password) { set_admin_password($dbh,$set_admin_password); ensure_schema($dbh); exit 0; }
 print "=== TARASEC ACCESS ACCOUNTS ===\n\n";
 show_admins($dbh); print "\n"; show_hotspot_users($dbh);
 print "\nAdmin passwords are never displayed.\nTo create the first administrator or reset an existing one:\n  sudo tarasec-users --set-admin-password\n";
@@ -46,16 +46,43 @@ sub ensure_schema {
   PRIMARY KEY(subscriberId),UNIQUE KEY hotspotSubscriber_username(username),UNIQUE KEY hotspotSubscriber_legacyRadcheckId(legacyRadcheckId)
  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci});
  migrate_radcheck($dbh) if table_exists($dbh,'radcheck');
+ cleanup_admin_subscribers($dbh);
+ ensure_initial_subscriber($dbh);
 }
 sub migrate_radcheck {
  my($dbh)=@_;
  my $sql=q{INSERT IGNORE INTO hotspotSubscriber
  (username,password,name,email,phone,createdTime,confirmedTime,lastLogin,subscriptionType,expiryTime,giveHoursAfterLogin,quotaMB,usageMB,campaignId,enabled,legacyRadcheckId)
- SELECT username,COALESCE(value,''),NULLIF(name,''),NULLIF(email,''),NULLIF(phone,''),createdTime,
- CASE WHEN op='==' AND COALESCE(attribute,'')='' THEN COALESCE(confirmedTime,createdTime) ELSE confirmedTime END,
- last_login,subscriptionType,expirytime,giveHoursAfterLogin,GREATEST(COALESCE(mbquota,0),0),GREATEST(COALESCE(mbusage,0),0),campaignid,b'1',id
- FROM radcheck WHERE (op=':=' AND attribute='Cleartext-Password') OR (op='==' AND COALESCE(attribute,'')='')};
+ SELECT r.username,COALESCE(r.value,''),NULLIF(r.name,''),NULLIF(r.email,''),NULLIF(r.phone,''),r.createdTime,
+ CASE WHEN r.op='==' AND COALESCE(r.attribute,'')='' THEN COALESCE(r.confirmedTime,r.createdTime) ELSE r.confirmedTime END,
+ r.last_login,r.subscriptionType,r.expirytime,r.giveHoursAfterLogin,GREATEST(COALESCE(r.mbquota,0),0),GREATEST(COALESCE(r.mbusage,0),0),r.campaignid,b'1',r.id
+ FROM radcheck r
+ LEFT JOIN user u ON u.username=r.username AND CAST(u.isAdmin AS UNSIGNED)=1
+ WHERE u.userId IS NULL
+   AND ((r.op=':=' AND r.attribute='Cleartext-Password') OR (r.op='==' AND COALESCE(r.attribute,'')=''))};
  eval{$dbh->do($sql)}; warn "Legacy radcheck migration skipped: $@" if $@ && $ENV{TARASEC_USERS_DEBUG};
+}
+sub cleanup_admin_subscribers {
+ my($dbh)=@_;
+ return unless table_exists($dbh,'hotspotSubscriber') && table_exists($dbh,'user');
+ $dbh->do(q{DELETE hs FROM hotspotSubscriber hs JOIN user u ON u.username=hs.username WHERE CAST(u.isAdmin AS UNSIGNED)=1});
+}
+sub ensure_initial_subscriber {
+ my($dbh)=@_;
+ my($n)=$dbh->selectrow_array('SELECT COUNT(*) FROM hotspotSubscriber WHERE CAST(enabled AS UNSIGNED)=1');
+ return if $n;
+ my $password=substr(random_hex(),0,8);
+ my $base='hotspot'; my $username=$base; my $i=1;
+ while ($dbh->selectrow_array('SELECT COUNT(*) FROM hotspotSubscriber WHERE username=?',undef,$username)) { $username=$base.(++$i); }
+ my $s=$dbh->prepare("INSERT INTO hotspotSubscriber(username,password,confirmedTime,subscriptionType,giveHoursAfterLogin,enabled) VALUES(?,?,NOW(),'expiry',24,b'1')");
+ $s->execute($username,$password);
+ print "Created initial hotspot subscriber '$username' for setup/testing.\n";
+}
+sub random_hex {
+ my $v='';
+ if (open my $fh,'<','/dev/urandom') { read($fh,my $b,16); close $fh; $v=unpack('H*',$b); }
+ $v ||= sprintf('%x%x',time(),int(rand(0xffffffff)));
+ return $v;
 }
 sub show_admins {
  my($dbh)=@_; print "Back-office administrators\n--------------------------\n";
