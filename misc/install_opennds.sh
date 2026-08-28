@@ -82,6 +82,7 @@ install -m 0755 "$REPO_ROOT/hotspot/opennds/access_policy.pl" /usr/lib/opennds/a
 install -m 0755 "$REPO_ROOT/hotspot/opennds/custombinauth.sh" /usr/lib/opennds/custombinauth.sh
 install -m 0755 "$REPO_ROOT/hotspot/opennds/tarasec-access-check" /usr/local/sbin/tarasec-access-check
 install -m 0755 "$REPO_ROOT/hotspot/opennds/tarasec-subscriber-logout" /usr/local/sbin/tarasec-subscriber-logout
+install -m 0755 "$REPO_ROOT/hotspot/opennds/tarasec-single-subscriber" /usr/local/sbin/tarasec-single-subscriber
 
 mkdir -p /var/www/html/hotspot
 cp -a "$REPO_ROOT/html/hotspot/." /var/www/html/hotspot/
