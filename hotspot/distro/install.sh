@@ -41,18 +41,31 @@ apt-get update
 
 # Ubuntu publishes mysql-server/mysql-client directly. Debian/Raspberry Pi OS
 # Bookworm normally provides MariaDB as the default MySQL-compatible server and
-# client instead. Select an available pair without changing the application,
-# which continues to use the standard mysql command/protocol.
+# client instead. apt-cache show is not sufficient here because Debian may know
+# about a package name even when it has no installable candidate. Require a real
+# candidate version before selecting a package pair.
+has_apt_candidate()
+{
+    local pkg="$1"
+    local candidate
+    candidate="$(apt-cache policy "$pkg" 2>/dev/null | awk '/Candidate:/ {print $2; exit}')"
+    [ -n "$candidate" ] && [ "$candidate" != "(none)" ]
+}
+
 DB_SERVER_PKG=""
 DB_CLIENT_PKG=""
-if apt-cache show mysql-server >/dev/null 2>&1 && apt-cache show mysql-client >/dev/null 2>&1; then
+if has_apt_candidate mysql-server && has_apt_candidate mysql-client; then
     DB_SERVER_PKG="mysql-server"
     DB_CLIENT_PKG="mysql-client"
-elif apt-cache show mariadb-server >/dev/null 2>&1 && apt-cache show mariadb-client >/dev/null 2>&1; then
+elif has_apt_candidate mariadb-server && has_apt_candidate mariadb-client; then
     DB_SERVER_PKG="mariadb-server"
     DB_CLIENT_PKG="mariadb-client"
 else
-    echo "ERROR: Neither MySQL nor MariaDB server/client packages are available from configured apt repositories." >&2
+    echo "ERROR: Neither MySQL nor MariaDB server/client packages have an installable candidate in the configured apt repositories." >&2
+    echo "mysql-server candidate: $(apt-cache policy mysql-server 2>/dev/null | awk '/Candidate:/ {print $2; exit}')" >&2
+    echo "mysql-client candidate: $(apt-cache policy mysql-client 2>/dev/null | awk '/Candidate:/ {print $2; exit}')" >&2
+    echo "mariadb-server candidate: $(apt-cache policy mariadb-server 2>/dev/null | awk '/Candidate:/ {print $2; exit}')" >&2
+    echo "mariadb-client candidate: $(apt-cache policy mariadb-client 2>/dev/null | awk '/Candidate:/ {print $2; exit}')" >&2
     exit 1
 fi
 
