@@ -1,13 +1,11 @@
 #!/usr/bin/perl
 use strict;
 use warnings;
+use FindBin qw($Bin);
 
 # Configure a Wi-Fi interface as a TaraSec captive-portal hotspot without
-# disturbing the currently active Internet uplink.
-#
-# NetworkManager owns AP/DHCP/DNS/NAT using ipv4.method shared.
-# openNDS enforces captive-portal access and reads NetworkManager's dnsmasq
-# lease file directly, avoiding a second competing dnsmasq instance.
+# disturbing the currently active Internet uplink. NetworkManager owns
+# AP/DHCP/DNS/NAT; misc/install_opennds.sh owns all captive-portal integration.
 
 my $wifi_if = shift @ARGV // '';
 my $requested_ssid = shift @ARGV // '';
@@ -24,110 +22,14 @@ sub valid_short_name {
     return $name =~ /^[A-Za-z0-9][A-Za-z0-9_-]{0,15}$/;
 }
 
-sub install_opennds {
-    return if system('command -v ndsctl >/dev/null 2>&1') == 0;
-    sh('apt-get update');
-    sh('DEBIAN_FRONTEND=noninteractive apt-get install -y opennds');
-    die "openNDS installation completed but ndsctl is unavailable.\n"
-        unless system('command -v ndsctl >/dev/null 2>&1') == 0;
-}
-
 sub wait_for_nm_lease_file {
     my ($ifname) = @_;
     my $leases = "/var/lib/NetworkManager/dnsmasq-$ifname.leases";
-
     for (1..20) {
         return $leases if -e $leases;
         sleep 1;
     }
-
     die "NetworkManager hotspot is up, but expected DHCP lease file '$leases' was not created.\n";
-}
-
-sub configure_opennds {
-    my ($ifname, $gateway_name, $leases) = @_;
-    my $legacy_conf = '/etc/opennds/opennds.conf';
-    my $conf = '/etc/config/opennds';
-
-    system('systemctl stop opennds >/dev/null 2>&1');
-    sh('mkdir -p /etc/config');
-
-    if (-f $conf && !-e "$conf.tarasec-before") {
-        sh("cp '$conf' '$conf.tarasec-before'");
-    } elsif (!-f $conf && -f $legacy_conf && !-e "$legacy_conf.tarasec-before") {
-        sh("cp '$legacy_conf' '$legacy_conf.tarasec-before'");
-    }
-
-    my $cfg = '';
-    if (-f $conf) {
-        open my $fh, '<', $conf or die "Unable to read $conf: $!\n";
-        local $/;
-        $cfg = <$fh>;
-        close $fh;
-    }
-
-    if ($cfg !~ /^\s*config\s+opennds\b/m) {
-        $cfg = "config opennds 'opennds'\n";
-        $cfg .= "\toption enabled '1'\n";
-    }
-
-    $cfg =~ s/^\s*GatewayInterface\s+.*\n//mig;
-    $cfg =~ s/^\s*GatewayName\s+.*\n//mig;
-
-    my %opts = (
-        gatewayinterface => $ifname,
-        gatewayname      => $gateway_name,
-        dhcp_leases_file => $leases,
-    );
-
-    for my $name (sort keys %opts) {
-        my $value = $opts{$name};
-        if ($cfg =~ /^\s*option\s+\Q$name\E\s+.*$/mi) {
-            $cfg =~ s/^\s*option\s+\Q$name\E\s+.*$/\toption $name '$value'/mi;
-        } else {
-            $cfg .= "\toption $name '$value'\n";
-        }
-    }
-
-    open my $out, '>', $conf or die "Unable to write $conf: $!\n";
-    print {$out} $cfg;
-    close $out;
-
-    for my $check (
-        [gatewayinterface => $ifname],
-        [gatewayname      => $gateway_name],
-        [dhcp_leases_file => $leases],
-    ) {
-        my ($name, $expected) = @$check;
-        my $parsed = `/usr/lib/opennds/libopennds.sh get_option_from_config $name 2>/dev/null`;
-        chomp $parsed;
-        die "openNDS config parser did not read $name '$expected' (got '$parsed').\n"
-            unless $parsed eq $expected;
-    }
-
-    sh('systemctl enable opennds');
-    sh('systemctl restart opennds');
-
-    my $status = '';
-    my $nds_ok = 0;
-    for (1..30) {
-        $status = `ndsctl status 2>&1`;
-        if ($? == 0) {
-            $nds_ok = 1;
-            last;
-        }
-        sleep 1;
-    }
-
-    my $active = system('systemctl is-active --quiet opennds') == 0;
-    if (!$active || !$nds_ok) {
-        print STDERR "\nopenNDS verification failed.\n";
-        print STDERR $status if $status ne '';
-        print STDERR "Check: journalctl -u opennds --no-pager -n 100\n";
-        die "TaraSec hotspot NOT complete: captive portal is not running.\n";
-    }
-
-    print "\nopenNDS captive portal verified on $ifname.\n";
 }
 
 if ($> != 0) {
@@ -137,7 +39,6 @@ if ($> != 0) {
 if (!$wifi_if) {
     chomp($wifi_if = `nmcli -t -f DEVICE,TYPE device status | awk -F: '\$2=="wifi" {print \$1; exit}'`);
 }
-
 die "No Wi-Fi interface found. Specify it as the first argument.\n" unless $wifi_if;
 die "NetworkManager is not running.\n"
     unless system('systemctl is-active --quiet NetworkManager') == 0;
@@ -213,8 +114,6 @@ if ($requested_ssid ne '') {
 }
 
 system('systemctl stop opennds >/dev/null 2>&1');
-# Remove only the TaraSec system-dnsmasq fragment left by earlier test builds.
-# Do not disable the host's dnsmasq service; it may be used by libvirt or other software.
 unlink '/etc/dnsmasq.d/tarasec-hotspot.conf' if -f '/etc/dnsmasq.d/tarasec-hotspot.conf';
 
 my $profile = "tarasec-hotspot-$wifi_if";
@@ -224,12 +123,24 @@ sh("nmcli connection add type wifi ifname '$wifi_if' con-name '$profile' autocon
 sh("nmcli connection modify '$profile' 802-11-wireless.mode ap ipv4.method shared ipv4.addresses '$addr' ipv6.method disabled connection.autoconnect-priority 100");
 sh("nmcli connection up '$profile'");
 
-install_opennds();
 my $leases = wait_for_nm_lease_file($wifi_if);
 print "NetworkManager DHCP lease file: $leases\n";
-configure_opennds($wifi_if, $ssid, $leases);
 
-print "\nTaraSec hotspot interface configured and captive portal enforced.\n";
+my $helper = "$Bin/install_opennds.sh";
+die "Missing TaraSec openNDS installer: $helper\n" unless -f $helper;
+$ENV{TARASEC_HOTSPOT_IF} = $wifi_if;
+$ENV{TARASEC_HOTSPOT_ADDR} = $addr;
+$ENV{TARASEC_HOTSPOT_NAME} = $ssid;
+sh("bash '$helper'");
+
+my $status = `ndsctl status 2>&1`;
+die "TaraSec hotspot NOT complete: ndsctl status failed after portal installation.\n$status\n" if $? != 0;
+die "TaraSec hotspot NOT complete: custom ThemeSpec is not configured.\n"
+    unless system("grep -q \"option themespec_path '/usr/lib/opennds/theme_tarasec.sh'\" /etc/config/opennds") == 0;
+die "TaraSec hotspot NOT complete: Apache captive login is not listening on 8080.\n"
+    unless system("ss -lnt | grep -q ':8080 '") == 0;
+
+print "\nTaraSec hotspot interface configured and custom captive portal enforced.\n";
 print "WAN:     $wan_if (left unchanged)\n";
 print "Hotspot: $wifi_if\n";
 print "SSID:    $ssid\n";
@@ -237,4 +148,4 @@ print "Address: $addr\n";
 print "DHCP:    NetworkManager shared mode\n";
 print "Leases:  $leases\n";
 print "Profile: $profile\n";
-print "Portal:  openNDS active and verified\n";
+print "Portal:  TaraSec ThemeSpec active on openNDS\n";
