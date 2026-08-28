@@ -3,7 +3,10 @@ set -euo pipefail
 
 IFACE="${TARASEC_HOTSPOT_IF:-}"
 CHECK_SECONDS="${TARASEC_WIFI_WATCH_INTERVAL:-1}"
-MISS_LIMIT="${TARASEC_WIFI_WATCH_MISSES:-2}"
+# A TaraSec hotspot login is connection-scoped: once an authenticated Wi-Fi
+# station disappears from the AP, invalidate it immediately. Two missed polls
+# left a race where a quick reconnect could reuse the previous authorization.
+MISS_LIMIT="${TARASEC_WIFI_WATCH_MISSES:-1}"
 
 if [ -z "$IFACE" ] && [ -r /etc/config/opennds ]; then
     IFACE="$(sed -n "s/^[[:space:]]*option[[:space:]]\+gatewayinterface[[:space:]]+'\([^']*\)'.*/\1/p" /etc/config/opennds | head -1)"
