@@ -135,6 +135,13 @@ die "Missing TaraSec account bootstrap helper: $users_helper\n" unless -f $users
 install_users_helper($users_helper);
 sh("perl '$users_helper'");
 
+# Hotspot reconfiguration must start with every client unauthenticated. The
+# access table is transient authorization state, not subscriber/account data.
+# Clear it before starting openNDS so a client that was authenticated before a
+# reinstall/reconfigure cannot be admitted automatically afterwards.
+sh(q{mysql taransvar -e "DELETE FROM access;"});
+print "Cleared previous captive-portal access authorizations.\n";
+
 my $helper = "$Bin/install_opennds.sh";
 die "Missing TaraSec openNDS installer: $helper\n" unless -f $helper;
 $ENV{TARASEC_HOTSPOT_IF} = $wifi_if;
