@@ -2,8 +2,9 @@
 
 # TaraSec firewall configuration.
 # Machine/network defaults live in /etc/tarasecfw.conf.
-# Owner-controlled SSH policy lives in /etc/tarasec.conf and overrides only
-# the SSH-related values below.
+# Owner-controlled SSH policy lives in /etc/tarasec.conf. The existing
+# Gatekeeper ALLOW_SSH open/closed state remains operational and is not
+# overridden by the owner policy file.
 
 set -e
 
@@ -17,17 +18,18 @@ fi
 
 # shellcheck disable=SC1090
 source "$CONF"
+FIREWALL_ALLOW_SSH="${ALLOW_SSH:-1}"
 
-# The owner config is the authority for SSH participation/policy. It is sourced
-# after tarasecfw.conf so these settings cannot be silently overridden by the
-# generated firewall config.
+# Owner policy may define SSH_PORT, SSH_ALLOWED_SOURCES, SSH_HONEYPOT and the
+# remote/broadcast policy, but actual open/closed state continues to come from
+# TaraSec's existing Gatekeeper-generated firewall configuration.
 if [ -r "$OWNER_CONF" ]; then
     # shellcheck disable=SC1090
     source "$OWNER_CONF"
 fi
+ALLOW_SSH="$FIREWALL_ALLOW_SSH"
 
 SSH_PORT="${SSH_PORT:-22}"
-ALLOW_SSH="${ALLOW_SSH:-1}"
 SSH_HONEYPOT="${SSH_HONEYPOT:-off}"
 SSH_HONEYPOT_PORT="${SSH_HONEYPOT_PORT:-22}"
 SSH_ALLOWED_SOURCES="${SSH_ALLOWED_SOURCES:-}"
