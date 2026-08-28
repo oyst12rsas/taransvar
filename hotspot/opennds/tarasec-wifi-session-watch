@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+IFACE="${TARASEC_HOTSPOT_IF:-}"
+CHECK_SECONDS="${TARASEC_WIFI_WATCH_INTERVAL:-3}"
+MISS_LIMIT="${TARASEC_WIFI_WATCH_MISSES:-2}"
+
+if [ -z "$IFACE" ] && [ -r /etc/config/opennds ]; then
+    IFACE="$(sed -n "s/^[[:space:]]*option[[:space:]]\+gatewayinterface[[:space:]]+'\([^']*\)'.*/\1/p" /etc/config/opennds | head -1)"
+fi
+
+if [ -z "$IFACE" ]; then
+    echo "No TaraSec hotspot interface configured" >&2
+    exit 1
+fi
+
+command -v iw >/dev/null 2>&1 || { echo "iw is required" >&2; exit 1; }
+command -v ndsctl >/dev/null 2>&1 || { echo "ndsctl is required" >&2; exit 1; }
+
+declare -A misses
+
+authenticated_clients() {
+    ndsctl status 2>/dev/null | awk '
+        /^  IP: / {
+            ip=$2
+            mac=$4
+        }
+        /^  State: Authenticated/ && ip != "" && mac != "" {
+            print ip, tolower(mac)
+            ip=""; mac=""
+        }
+    '
+}
+
+station_macs() {
+    iw dev "$IFACE" station dump 2>/dev/null | awk '/^Station / {print tolower($2)}'
+}
+
+while true; do
+    mapfile -t stations < <(station_macs)
+    declare -A present=()
+    for mac in "${stations[@]:-}"; do
+        [ -n "$mac" ] && present["$mac"]=1
+    done
+
+    declare -A seen_this_round=()
+    while read -r ip mac; do
+        [ -n "${ip:-}" ] && [ -n "${mac:-}" ] || continue
+        seen_this_round["$mac"]=1
+
+        if [ "${present[$mac]:-0}" = "1" ]; then
+            misses["$mac"]=0
+            continue
+        fi
+
+        misses["$mac"]=$(( ${misses[$mac]:-0} + 1 ))
+        if [ "${misses[$mac]}" -ge "$MISS_LIMIT" ]; then
+            logger -t tarasec-wifi-watch "authenticated client $ip/$mac disappeared from $IFACE; closing hotspot session"
+            /usr/local/sbin/tarasec-subscriber-logout "$ip" >/dev/null 2>&1 || \
+                logger -t tarasec-wifi-watch "failed to close hotspot session for $ip/$mac"
+            misses["$mac"]=0
+        fi
+    done < <(authenticated_clients)
+
+    for mac in "${!misses[@]}"; do
+        [ "${seen_this_round[$mac]:-0}" = "1" ] || unset 'misses[$mac]'
+    done
+
+    sleep "$CHECK_SECONDS"
+done
