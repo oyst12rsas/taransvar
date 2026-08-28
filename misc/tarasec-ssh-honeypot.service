@@ -1,0 +1,24 @@
+[Unit]
+Description=TaraSec SSH port 22 honeypot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=TARASEC_SSH_HONEYPOT_PORT=22
+ExecStart=/usr/local/lib/tarasec/tarasec_ssh_honeypot.py
+Restart=on-failure
+RestartSec=2
+User=root
+Group=root
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
