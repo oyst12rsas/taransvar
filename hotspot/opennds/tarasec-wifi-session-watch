@@ -2,7 +2,7 @@
 set -euo pipefail
 
 IFACE="${TARASEC_HOTSPOT_IF:-}"
-CHECK_SECONDS="${TARASEC_WIFI_WATCH_INTERVAL:-3}"
+CHECK_SECONDS="${TARASEC_WIFI_WATCH_INTERVAL:-1}"
 MISS_LIMIT="${TARASEC_WIFI_WATCH_MISSES:-2}"
 
 if [ -z "$IFACE" ] && [ -r /etc/config/opennds ]; then
@@ -39,7 +39,7 @@ station_macs() {
 while true; do
     mapfile -t stations < <(station_macs)
     declare -A present=()
-    for mac in "${stations[@]:-}"; do
+    for mac in "${stations[@]}"; do
         [ -n "$mac" ] && present["$mac"]=1
     done
 
