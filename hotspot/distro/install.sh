@@ -226,16 +226,14 @@ echo
 echo "Installing and enrolling TaraSec NetBird management..."
 bash "$REPO_ROOT/misc/install_netbird_management.sh"
 
-if [ -n "${TARASEC_HOTSPOT_IF:-}" ]; then
-    ADDR="${TARASEC_HOTSPOT_ADDR:-192.168.50.1/24}"
-    perl "$REPO_ROOT/misc/setupWifiNicAsHotspot.pl" \
-        "$TARASEC_HOTSPOT_IF" "${TARASEC_HOTSPOT_SSID:-}" "$ADDR"
-else
-    echo
-    echo "No hotspot Wi-Fi interface was supplied."
-    echo "Configure it with:"
-    echo "  sudo perl $REPO_ROOT/misc/setupWifiNicAsHotspot.pl <wifi-if>"
-fi
+echo
+echo "Configuring TaraSec Wi-Fi hotspot..."
+ADDR="${TARASEC_HOTSPOT_ADDR:-192.168.50.1/24}"
+# setupWifiNicAsHotspot.pl safely auto-detects a Wi-Fi interface when no
+# TARASEC_HOTSPOT_IF is supplied, and refuses to convert the active WAN/uplink.
+# This common path is used on Ubuntu and Raspberry Pi OS.
+perl "$REPO_ROOT/misc/setupWifiNicAsHotspot.pl" \
+    "${TARASEC_HOTSPOT_IF:-}" "${TARASEC_HOTSPOT_SSID:-}" "$ADDR"
 
 printf "\nInstall script is finished\n"
 printf "WAN configuration was preserved; openNDS controls captive access and NetBird wt0/wt* is management only.\n"
