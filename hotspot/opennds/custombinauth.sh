@@ -2,10 +2,9 @@
 # Included by openNDS stock binauth_log.sh. Preserve the stock wrapper so
 # auth_restore and normal openNDS accounting continue to work.
 #
-# IMPORTANT: do not delete TaraSec access on generic client_deauth events.
-# openNDS can emit those during normal captive-portal/authentication lifecycle
-# transitions. Explicit subscriber logout is handled only by
-# tarasec-subscriber-logout from portal_status.php.
+# TaraSec hotspot access is intentionally connection-scoped: when openNDS
+# acknowledges that a client has been deauthenticated, clear the TaraSec
+# access/session state so a later Wi-Fi reconnect must log in again.
 
 custombinauth_title="TaraSec access policy"
 custombinauth_description="Access-table authorization and per-client quota overrides"
@@ -23,4 +22,8 @@ if [ "${action:-}" = "auth_client" ] && [ -n "${clientip:-}" ] && [ -x "$POLICY"
         download_quota="${ts_down_quota:-0}"
         exitlevel=0
     fi
+fi
+
+if [ "${action:-}" = "client_deauth" ] && [ -n "${clientip:-}" ]; then
+    /usr/local/sbin/tarasec-subscriber-logout "$clientip" >/dev/null 2>&1 || true
 fi
