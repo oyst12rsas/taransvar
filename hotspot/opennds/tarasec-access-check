@@ -1,0 +1,22 @@
+#!/bin/bash
+# Return 0 only when the client IP has hasaccess=1 in TaraSec's access table.
+# Fail closed on malformed input, DB errors, missing table, or no matching row.
+set -u
+
+CLIENT_IP="${1:-}"
+DB_NAME="${TARASEC_ACCESS_DB:-taransvar}"
+MYSQL_CNF="${TARASEC_ACCESS_MYSQL_CNF:-/etc/tarasec/access-mysql.cnf}"
+
+case "$CLIENT_IP" in
+  ''|*[!0-9.]*) exit 1 ;;
+esac
+
+MYSQL=(mysql)
+if [ -r "$MYSQL_CNF" ]; then
+  MYSQL+=(--defaults-extra-file="$MYSQL_CNF")
+fi
+MYSQL+=(--batch --skip-column-names --raw "$DB_NAME")
+
+value=$("${MYSQL[@]}" -e "SELECT COALESCE(MAX(hasaccess),0) FROM access WHERE ip='${CLIENT_IP}'" 2>/dev/null) || exit 1
+value=$(printf '%s' "$value" | tr -d '[:space:]')
+[ "$value" = "1" ]
