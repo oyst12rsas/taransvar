@@ -76,6 +76,22 @@ if [ ! -x /usr/lib/opennds/client_params.sh ]; then
     exit 1
 fi
 
+# Remove systemd plumbing used by older TaraSec hotspot builds. Those units
+# forced openNDS toward the historical br-lan path and can survive a repository
+# upgrade. The current installer owns openNDS directly and must be authoritative.
+if [ -f /etc/systemd/system/opennds.service.d/10-tarasec-boot.conf ] || \
+   [ -f /etc/systemd/system/opennds.service.d/20-tarasec-captive-login.conf ] || \
+   [ -f /usr/local/sbin/tarasec-opennds-local-access ]; then
+    echo "Removing obsolete TaraSec openNDS service overrides..."
+    systemctl stop opennds >/dev/null 2>&1 || true
+    rm -f /etc/systemd/system/opennds.service.d/10-tarasec-boot.conf
+    rm -f /etc/systemd/system/opennds.service.d/20-tarasec-captive-login.conf
+    rm -f /usr/local/sbin/tarasec-opennds-local-access
+    rmdir /etc/systemd/system/opennds.service.d 2>/dev/null || true
+    systemctl daemon-reload
+    systemctl reset-failed opennds >/dev/null 2>&1 || true
+fi
+
 echo "Installing TaraSec captive-portal assets..."
 install -m 0755 "$REPO_ROOT/hotspot/opennds/theme_tarasec.sh" /usr/lib/opennds/theme_tarasec.sh
 install -m 0755 "$REPO_ROOT/hotspot/opennds/access_policy.pl" /usr/lib/opennds/access_policy.pl
