@@ -32,6 +32,131 @@ sub wait_for_nm_lease_file {
     die "NetworkManager hotspot is up, but expected DHCP lease file '$leases' was not created.\n";
 }
 
+sub slurp_file {
+    my ($path) = @_;
+    return '' unless -f $path;
+    open my $fh, '<', $path or die "Cannot read $path: $!\n";
+    local $/;
+    my $text = <$fh> // '';
+    close $fh;
+    return $text;
+}
+
+sub networkmanager_manages {
+    my ($ifname) = @_;
+    my $managed = `nmcli -g GENERAL.NM-MANAGED device show '$ifname' 2>/dev/null`;
+    chomp $managed;
+    return lc($managed) eq 'yes';
+}
+
+sub remove_interface_from_auto_line {
+    my ($line, $ifname) = @_;
+    return $line unless $line =~ /^(\s*)(auto|allow-hotplug)(\s+)(.*?)(\r?\n)?$/;
+    my ($indent, $kind, $space, $list, $nl) = ($1, $2, $3, $4, $5 // '');
+    my @ifs = grep { $_ ne $ifname } split /\s+/, $list;
+    return '' unless @ifs;
+    return $indent . $kind . $space . join(' ', @ifs) . $nl;
+}
+
+sub remove_static_interface_stanza {
+    my ($text, $ifname) = @_;
+    my @lines = split /(?<=\n)/, $text;
+    my @out;
+    my $removed = 0;
+
+    for (my $i = 0; $i < @lines; $i++) {
+        my $line = $lines[$i];
+
+        if ($line =~ /^\s*(?:auto|allow-hotplug)\s+/) {
+            my $new = remove_interface_from_auto_line($line, $ifname);
+            $removed = 1 if $new ne $line;
+            push @out, $new if $new ne '';
+            next;
+        }
+
+        if ($line =~ /^\s*iface\s+\Q$ifname\E\s+inet\s+static\s*(?:#.*)?(?:\r?\n)?$/) {
+            $removed = 1;
+            while ($i + 1 < @lines) {
+                my $next = $lines[$i + 1];
+                last if $next =~ /^\S/ && $next !~ /^#/;
+                $i++;
+            }
+            next;
+        }
+
+        push @out, $line;
+    }
+
+    return (join('', @out), $removed);
+}
+
+sub migrate_legacy_tarasec_hotspot {
+    my ($ifname) = @_;
+    return if networkmanager_manages($ifname);
+
+    print "\n$ifname is not currently managed by NetworkManager.\n";
+    print "Checking for a legacy TaraSec hostapd/ifupdown hotspot...\n";
+
+    my $hostapd_path = '/etc/hostapd/hostapd.conf';
+    my $interfaces_path = '/etc/network/interfaces';
+    my $hostapd = slurp_file($hostapd_path);
+    my $interfaces = slurp_file($interfaces_path);
+
+    my $hostapd_is_tarasec =
+        $hostapd =~ /^\s*interface\s*=\s*\Q$ifname\E\s*$/m &&
+        $hostapd =~ /^\s*ssid\s*=\s*TaraSec(?:[_-].*)?\s*$/mi;
+
+    my $static_is_tarasec =
+        $interfaces =~ /^\s*iface\s+\Q$ifname\E\s+inet\s+static\s*$/m &&
+        $interfaces =~ /^\s*address\s+192\.168\.50\.1(?:\/24)?\s*$/m;
+
+    die "$ifname is unmanaged, but the installer cannot prove that the existing networking is a legacy TaraSec hotspot. Refusing to modify it.\n"
+        unless $hostapd_is_tarasec && $static_is_tarasec;
+
+    print "Legacy TaraSec hotspot detected on $ifname; migrating it to NetworkManager.\n";
+
+    my $stamp = time();
+    my $interfaces_backup = "$interfaces_path.tarasec-legacy-$stamp";
+    open my $bfh, '>', $interfaces_backup
+        or die "Cannot create backup $interfaces_backup: $!\n";
+    print {$bfh} $interfaces;
+    close $bfh or die "Cannot close backup $interfaces_backup: $!\n";
+
+    my ($new_interfaces, $removed) = remove_static_interface_stanza($interfaces, $ifname);
+    die "Legacy TaraSec interface stanza was detected but could not be removed safely.\n" unless $removed;
+
+    open my $ifh, '>', $interfaces_path
+        or die "Cannot update $interfaces_path: $!\n";
+    print {$ifh} $new_interfaces;
+    close $ifh or die "Cannot close $interfaces_path: $!\n";
+
+    system('systemctl stop hostapd >/dev/null 2>&1');
+    system('systemctl disable hostapd >/dev/null 2>&1');
+    unlink '/etc/systemd/system/hostapd.service.d/10-tarasec-boot.conf'
+        if -f '/etc/systemd/system/hostapd.service.d/10-tarasec-boot.conf';
+
+    if (-f $hostapd_path) {
+        my $hostapd_backup = "$hostapd_path.tarasec-legacy-$stamp";
+        rename $hostapd_path, $hostapd_backup
+            or die "Cannot archive legacy TaraSec hostapd config to $hostapd_backup: $!\n";
+    }
+
+    unlink '/etc/dnsmasq.d/tarasec-hotspot.conf'
+        if -f '/etc/dnsmasq.d/tarasec-hotspot.conf';
+
+    system('systemctl daemon-reload >/dev/null 2>&1');
+    system("ip addr flush dev '$ifname' >/dev/null 2>&1");
+    system("ip link set '$ifname' down >/dev/null 2>&1");
+    sh("nmcli device set '$ifname' managed yes");
+    system('nmcli general reload >/dev/null 2>&1');
+    sleep 2;
+
+    die "Legacy TaraSec hotspot was removed, but NetworkManager still does not manage $ifname. Check NetworkManager unmanaged-device rules before continuing.\n"
+        unless networkmanager_manages($ifname);
+
+    print "Legacy TaraSec hotspot migration complete. Backup: $interfaces_backup\n";
+}
+
 if ($> != 0) {
     die "Run as root, for example: sudo perl misc/setupWifiNicAsHotspot.pl wlp5s0\n";
 }
@@ -112,6 +237,11 @@ if ($requested_ssid ne '') {
         }
     }
 }
+
+# Older TaraSec Raspberry Pi installations used hostapd plus a static
+# /etc/network/interfaces stanza. Convert that specific, positively identified
+# legacy configuration before asking NetworkManager to own the hotspot.
+migrate_legacy_tarasec_hotspot($wifi_if);
 
 system('systemctl stop opennds >/dev/null 2>&1');
 unlink '/etc/dnsmasq.d/tarasec-hotspot.conf' if -f '/etc/dnsmasq.d/tarasec-hotspot.conf';
