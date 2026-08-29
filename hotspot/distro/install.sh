@@ -39,11 +39,6 @@ echo
 echo "Checking/installing TaraSec prerequisites..."
 apt-get update
 
-# Ubuntu publishes mysql-server/mysql-client directly. Debian/Raspberry Pi OS
-# Bookworm normally provides MariaDB as the default MySQL-compatible server and
-# client instead. apt-cache show is not sufficient here because Debian may know
-# about a package name even when it has no installable candidate. Require a real
-# candidate version before selecting a package pair.
 has_apt_candidate()
 {
     local pkg="$1"
@@ -208,6 +203,11 @@ if [ "${SCHEMA_PRESENT:-0}" = "0" ]; then
     fi
 else
     echo "Existing TaraSec schema detected; leaving data intact."
+    TRUST_COLUMN_PRESENT="$(mysql -N -s -e "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='taransvar' AND table_name='partner' AND column_name='trustScore';")"
+    if [ "${TRUST_COLUMN_PRESENT:-0}" = "0" ] && [ -s "$REPO_ROOT/db/migrate_partner_trust.sql" ]; then
+        echo "Adding TaraSec partner trust metadata..."
+        mysql taransvar < "$REPO_ROOT/db/migrate_partner_trust.sql"
+    fi
 fi
 
 (
@@ -220,6 +220,34 @@ if ! mysql -uscriptUsrAces3f3 -prErte8Oi98e-2_# -N -s taransvar -e "SELECT 1;" >
     exit 1
 fi
 echo "TaraSec database/application account: OK"
+
+# Enroll this hotspot with the central trust service when a bootstrap token has
+# been provisioned locally. Secrets are deliberately never shipped in Git.
+# /etc/tarasec-partner.conf may define:
+#   PARTNER_TRUST_URL=https://tarasec.org/script/partnerTrust.php
+#   PARTNER_TRUST_TOKEN=<bootstrap token>
+if [ -r /etc/tarasec-partner.conf ]; then
+    # shellcheck disable=SC1091
+    . /etc/tarasec-partner.conf
+fi
+PARTNER_TRUST_URL="${PARTNER_TRUST_URL:-https://tarasec.org/script/partnerTrust.php}"
+if [ -n "${PARTNER_TRUST_TOKEN:-}" ]; then
+    HOTSPOT_EXTERNAL_ID="$(cat /etc/machine-id 2>/dev/null || hostname)"
+    HOTSPOT_NAME="$(hostname)"
+    echo "Enrolling hotspot as a low-trust TaraSec partner..."
+    if curl -fsS --connect-timeout 5 --max-time 15 \
+        -H "X-TaraSec-Token: $PARTNER_TRUST_TOKEN" \
+        --data-urlencode "action=enroll" \
+        --data-urlencode "externalId=hotspot:$HOTSPOT_EXTERNAL_ID" \
+        --data-urlencode "name=$HOTSPOT_NAME" \
+        "$PARTNER_TRUST_URL" >/root/wifi/log/partner-enrollment.json; then
+        echo "Hotspot trust enrollment: OK (initial score assigned by server)."
+    else
+        echo "WARNING: Hotspot trust enrollment failed. Installation will continue; enrollment can be retried later." >&2
+    fi
+else
+    echo "Partner trust enrollment deferred: no PARTNER_TRUST_TOKEN provisioned."
+fi
 
 ( cd perl && perl install.pl )
 service cron reload
@@ -247,36 +275,9 @@ else
     echo "WARNING: FreeRADIUS is installed but no sites-enabled directory was found; skipping legacy TaraSec radiusdefault copy."
 fi
 
-# The old installer waited indefinitely for sleepingbeauty to appear. On a
-# fresh install the cron worker may not have reached its first minute yet, so a
-# blocking loop can stall installation for many minutes. Do a quick check and
-# continue; post-install diagnostics can verify the worker after setup/reboot.
 echo "Checking sleepingbeauty worker (non-blocking)..."
 if pgrep -f 'perl .*sleepingbeauty\.pl' >/dev/null 2>&1; then
     echo "sleepingbeauty is running."
 else
     echo "sleepingbeauty is not running yet; continuing installation. Cron will start it on its next scheduled run."
 fi
-
-echo
-echo "Installing and verifying openNDS captive portal..."
-bash "$REPO_ROOT/misc/install_opennds.sh"
-
-echo
-echo "Installing and enrolling TaraSec NetBird management..."
-bash "$REPO_ROOT/misc/install_netbird_management.sh"
-
-echo
-echo "Configuring TaraSec Wi-Fi hotspot..."
-ADDR="${TARASEC_HOTSPOT_ADDR:-192.168.50.1/24}"
-# setupWifiNicAsHotspot.pl safely auto-detects a Wi-Fi interface when no
-# TARASEC_HOTSPOT_IF is supplied, and refuses to convert the active WAN/uplink.
-# This common path is used on Ubuntu and Raspberry Pi OS.
-perl "$REPO_ROOT/misc/setupWifiNicAsHotspot.pl" \
-    "${TARASEC_HOTSPOT_IF:-}" "${TARASEC_HOTSPOT_SSID:-}" "$ADDR"
-
-printf "\nInstall script is finished\n"
-printf "WAN configuration was preserved; openNDS controls captive access and NetBird wt0/wt* is management only.\n"
-read -n 1 -s -p "********** The system should now restart. Press Ctrl-C to abort or any other key to reboot. "
-echo
-reboot
