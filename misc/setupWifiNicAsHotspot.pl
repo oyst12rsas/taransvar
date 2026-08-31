@@ -2,6 +2,7 @@
 use strict;
 use warnings;
 use FindBin qw($Bin);
+use File::Path qw(make_path);
 
 # Configure a Wi-Fi interface as a TaraSec captive-portal hotspot without
 # disturbing the currently active Internet uplink. NetworkManager owns
@@ -111,12 +112,21 @@ ensure_wpa_supplicant();
 ensure_wifi_device_ready($wifi_if);
 system('systemctl stop opennds >/dev/null 2>&1'); unlink '/etc/dnsmasq.d/tarasec-hotspot.conf' if -f '/etc/dnsmasq.d/tarasec-hotspot.conf';
 my $profile="tarasec-hotspot-$wifi_if"; system("nmcli connection down '$profile' >/dev/null 2>&1"); system("nmcli connection delete '$profile' >/dev/null 2>&1"); sh("nmcli connection add type wifi ifname '$wifi_if' con-name '$profile' autoconnect yes ssid '$ssid'"); sh("nmcli connection modify '$profile' 802-11-wireless.mode ap ipv4.method shared ipv4.addresses '$addr' ipv6.method disabled connection.autoconnect-priority 100");
+my $hotspot_ip=$addr; $hotspot_ip =~ s{/.*$}{};
+my $nm_dns_dir='/etc/NetworkManager/dnsmasq-shared.d';
+make_path($nm_dns_dir,{mode=>0755}) unless -d $nm_dns_dir;
+my $status_client_conf="$nm_dns_dir/tarasec-status-client.conf";
+open my $dnsfh,'>',$status_client_conf or die "Cannot write $status_client_conf: $!\n";
+print {$dnsfh} "address=/status.client/$hotspot_ip\n";
+close $dnsfh or die "Cannot close $status_client_conf: $!\n";
+chmod 0644,$status_client_conf or die "Cannot set permissions on $status_client_conf: $!\n";
+print "Installed captive-portal DNS record: status.client -> $hotspot_ip\n";
 sh("nmcli connection up '$profile'");
 my $leases=wait_for_nm_lease_file($wifi_if); print "NetworkManager DHCP lease file: $leases\n";
 my $users_helper="$Bin/tarasec-users.pl"; die "Missing TaraSec account helper: $users_helper\n" unless -f $users_helper; install_users_helper($users_helper); sh('/usr/local/sbin/tarasec-users --ensure-schema');
 sh(q{mysql taransvar -e "DELETE FROM access;"}); print "Cleared previous captive-portal access authorizations.\n";
 my $helper="$Bin/install_opennds.sh"; die "Missing TaraSec openNDS installer: $helper\n" unless -f $helper; $ENV{TARASEC_HOTSPOT_IF}=$wifi_if; $ENV{TARASEC_HOTSPOT_ADDR}=$addr; $ENV{TARASEC_HOTSPOT_NAME}=$ssid; sh("bash '$helper'");
 my $watch_helper="$Bin/install_wifi_session_watch.sh"; die "Missing TaraSec Wi-Fi session watcher installer: $watch_helper\n" unless -f $watch_helper; sh("bash '$watch_helper'");
-my $status=`ndsctl status 2>&1`; die "TaraSec hotspot NOT complete: ndsctl status failed after portal installation.\n$status\n" if $? != 0; die "TaraSec hotspot NOT complete: custom ThemeSpec is not configured.\n" unless system("grep -q \"option themespec_path '/usr/lib/opennds/theme_tarasec.sh'\" /etc/config/opennds") == 0; die "TaraSec hotspot NOT complete: Apache captive login is not listening on 8080.\n" unless system("ss -lnt | grep -q ':8080 '") == 0; die "TaraSec hotspot NOT complete: Wi-Fi session watcher is not active.\n" unless system("systemctl is-active --quiet tarasec-wifi-session-watch.service") == 0;
+my $status=`ndsctl status 2>&1`; die "TaraSec hotspot NOT complete: ndsctl status failed after portal installation.\n$status\n" if $? != 0; die "TaraSec hotspot NOT complete: custom ThemeSpec is not configured.\n" unless system("grep -q \"option themespec_path '/usr/lib/opennds/theme_tarasec.sh'\" /etc/config/opennds") == 0; die "TaraSec hotspot NOT complete: Apache captive login is not listening on 8080.\n" unless system("ss -lnt | grep -q ':8080 '") == 0; die "TaraSec hotspot NOT complete: status.client does not resolve to $hotspot_ip through hotspot DNS.\n" unless system("TARASEC_EXPECTED_DNS_IP='$hotspot_ip' python3 '$Bin/check_hotspot_dns.py' '$hotspot_ip' status.client") == 0; die "TaraSec hotspot NOT complete: Wi-Fi session watcher is not active.\n" unless system("systemctl is-active --quiet tarasec-wifi-session-watch.service") == 0;
 print "\nTaraSec hotspot interface configured and custom captive portal enforced.\nWAN:     $wan_if (left unchanged)\nHotspot: $wifi_if\nSSID:    $ssid\nAddress: $addr\nDHCP:    NetworkManager shared mode\nLeases:  $leases\nProfile: $profile\nPortal:  TaraSec ThemeSpec active on openNDS\nSessions: disconnect watcher active\n";
 sub install_users_helper { my ($src)=@_; sh("install -m 0755 '$src' /usr/local/sbin/tarasec-users"); }
