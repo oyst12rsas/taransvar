@@ -25,8 +25,11 @@ function userList($nGroup, $nCamp, $nOffset) {
 	$szLimit = " limit $nInList ".(intval($nOffset)>0?"offset ".intval($nOffset)*$nInList:"");
 
 	$szSQL = "select H.username, H.quotaMB, round(coalesce(H.usageMB,0),1) as theusage, H.subscriptionType, H.expiryTime, cast(H.enabled as unsigned) as enabled, H.confirmedTime, UNIX_TIMESTAMP(H.expiryTime)-UNIX_TIMESTAMP(now()) as moreTime from hotspotSubscriber H $szJoinAndWhere order by H.username $szLimit";
+	// CDb::fetchNext() reuses the statement already held by the object. The
+	// count query above therefore needs a separate CDb instance from the list.
+	$pListDb = new CDb;
 
-	while ($cFetched = $pDb->fetchNext($szSQL, $cFlds))
+	while ($cFetched = $pListDb->fetchNext($szSQL, $cFlds))
 	{
 		$szSubType = (string)$cFetched["subscriptionType"];
 		$bEnabled = ((int)$cFetched["enabled"] === 1) && !empty($cFetched["confirmedTime"]);
