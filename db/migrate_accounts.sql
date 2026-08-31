@@ -61,20 +61,19 @@ DELETE rug FROM radusergroup rug
 JOIN `user` u ON u.username=rug.username
 WHERE CAST(u.isAdmin AS UNSIGNED)=1;
 
--- Migrate legacy RADIUS credentials only when they do not collide with an administrator.
+-- Only explicit FreeRADIUS Cleartext-Password rows are migrated. Historical
+-- blank-attribute op='==' rows may contain disposable/generated identities from
+-- older captive/self-registration flows and must not silently become current
+-- hotspot subscribers.
 INSERT IGNORE INTO hotspotSubscriber
 (username,password,name,email,phone,createdTime,confirmedTime,lastLogin,subscriptionType,expiryTime,giveHoursAfterLogin,quotaMB,usageMB,campaignId,enabled,legacyRadcheckId)
 SELECT r.username,COALESCE(r.value,''),NULLIF(r.name,''),NULLIF(r.email,''),NULLIF(r.phone,''),r.createdTime,
-       CASE WHEN r.op='==' AND COALESCE(r.attribute,'')='' THEN COALESCE(r.confirmedTime,r.createdTime) ELSE r.confirmedTime END,
+       COALESCE(r.confirmedTime,r.createdTime),
        r.last_login,r.subscriptionType,r.expirytime,r.giveHoursAfterLogin,GREATEST(COALESCE(r.mbquota,0),0),GREATEST(COALESCE(r.mbusage,0),0),r.campaignid,b'1',r.id
 FROM radcheck r
 LEFT JOIN `user` u ON u.username=r.username AND CAST(u.isAdmin AS UNSIGNED)=1
 WHERE u.userId IS NULL
-  AND ((r.op=':=' AND r.attribute='Cleartext-Password') OR (r.op='==' AND COALESCE(r.attribute,'')=''));
+  AND r.op=':=' AND r.attribute='Cleartext-Password';
 
--- A new hotspot needs one non-admin login for initial setup/testing. It is shown
--- by the captive portal only while it remains the sole enabled subscriber.
-INSERT INTO hotspotSubscriber
-(username,password,confirmedTime,subscriptionType,giveHoursAfterLogin,enabled)
-SELECT 'hotspot', SUBSTRING(REPLACE(UUID(),'-',''),1,8), NOW(), 'expiry', 24, b'1'
-WHERE NOT EXISTS (SELECT 1 FROM hotspotSubscriber WHERE CAST(enabled AS UNSIGNED)=1);
+-- Test hotspot accounts are intentionally not created here. Creation must happen
+-- only after the hotspot owner explicitly consents and chooses the quota/terms.
