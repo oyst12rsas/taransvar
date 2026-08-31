@@ -4,14 +4,23 @@ use warnings;
 use DBI;
 use Getopt::Long qw(GetOptions);
 
-my ($set_admin_password,$help);
-GetOptions('set-admin-password:s'=>\$set_admin_password,'help'=>\$help) or usage(1);
+my ($set_admin_password,$ensure_schema_only,$help);
+GetOptions(
+ 'set-admin-password:s'=>\$set_admin_password,
+ 'ensure-schema'=>\$ensure_schema_only,
+ 'help'=>\$help,
+) or usage(1);
 usage(0) if $help;
 die "This command must be run as root. Use: sudo tarasec-users\n" if $> != 0;
 
 my $dbh=DBI->connect('DBI:mysql:database=taransvar','root','',{RaiseError=>1,PrintError=>0,AutoCommit=>1,mysql_enable_utf8mb4=>1})
     or die "Unable to connect to TaraSec database.\n";
 ensure_schema($dbh);
+if ($ensure_schema_only) {
+ print "TaraSec account schema is ready.\n";
+ $dbh->disconnect;
+ exit 0;
+}
 if (defined $set_admin_password) { set_admin_password($dbh,$set_admin_password); ensure_schema($dbh); exit 0; }
 print "=== TARASEC ACCESS ACCOUNTS ===\n\n";
 show_admins($dbh); print "\n"; show_hotspot_users($dbh);
@@ -54,7 +63,6 @@ sub ensure_schema {
  recover_legacy_admin($dbh);
  migrate_radcheck($dbh) if table_exists($dbh,'radcheck');
  cleanup_admin_subscribers($dbh);
- ensure_initial_subscriber($dbh);
 }
 sub recover_legacy_admin {
  my($dbh)=@_;
@@ -67,7 +75,7 @@ sub recover_legacy_admin {
   ($password)=$dbh->selectrow_array("SELECT password FROM hotspotSubscriber WHERE username='admin' ORDER BY subscriberId LIMIT 1");
  }
  if ((!defined($password) || $password eq '') && table_exists($dbh,'radcheck')) {
-  ($password)=$dbh->selectrow_array(q{SELECT value FROM radcheck WHERE username='admin' AND ((op=':=' AND attribute='Cleartext-Password') OR (op='==' AND COALESCE(attribute,'')='')) ORDER BY id LIMIT 1});
+  ($password)=$dbh->selectrow_array(q{SELECT value FROM radcheck WHERE username='admin' AND op=':=' AND attribute='Cleartext-Password' ORDER BY id LIMIT 1});
  }
  return unless defined($password) && length($password);
 
@@ -82,15 +90,19 @@ sub recover_legacy_admin {
 }
 sub migrate_radcheck {
  my($dbh)=@_;
+ # Only migrate explicit FreeRADIUS password rows. Historical rows with blank
+ # attribute and op='==' were used by older captive/self-registration flows and
+ # can contain disposable/generated identities; they must not silently become
+ # current hotspot subscribers.
  my $sql=q{INSERT IGNORE INTO hotspotSubscriber
  (username,password,name,email,phone,createdTime,confirmedTime,lastLogin,subscriptionType,expiryTime,giveHoursAfterLogin,quotaMB,usageMB,campaignId,enabled,legacyRadcheckId)
  SELECT r.username,COALESCE(r.value,''),NULLIF(r.name,''),NULLIF(r.email,''),NULLIF(r.phone,''),r.createdTime,
- CASE WHEN r.op='==' AND COALESCE(r.attribute,'')='' THEN COALESCE(r.confirmedTime,r.createdTime) ELSE r.confirmedTime END,
+ COALESCE(r.confirmedTime,r.createdTime),
  r.last_login,r.subscriptionType,r.expirytime,r.giveHoursAfterLogin,GREATEST(COALESCE(r.mbquota,0),0),GREATEST(COALESCE(r.mbusage,0),0),r.campaignid,b'1',r.id
  FROM radcheck r
  LEFT JOIN user u ON u.username=r.username AND CAST(u.isAdmin AS UNSIGNED)=1
  WHERE u.userId IS NULL
-   AND ((r.op=':=' AND r.attribute='Cleartext-Password') OR (r.op='==' AND COALESCE(r.attribute,'')=''))};
+   AND r.op=':=' AND r.attribute='Cleartext-Password'};
  eval{$dbh->do($sql)}; warn "Legacy radcheck migration skipped: $@" if $@ && $ENV{TARASEC_USERS_DEBUG};
 }
 sub cleanup_admin_subscribers {
@@ -102,23 +114,6 @@ sub cleanup_admin_subscribers {
  if (table_exists($dbh,'radcheck')) {
   $dbh->do(q{DELETE r FROM radcheck r JOIN user u ON u.username=r.username WHERE CAST(u.isAdmin AS UNSIGNED)=1});
  }
-}
-sub ensure_initial_subscriber {
- my($dbh)=@_;
- my($n)=$dbh->selectrow_array('SELECT COUNT(*) FROM hotspotSubscriber WHERE CAST(enabled AS UNSIGNED)=1');
- return if $n;
- my $password=substr(random_hex(),0,8);
- my $base='hotspot'; my $username=$base; my $i=1;
- while ($dbh->selectrow_array('SELECT COUNT(*) FROM hotspotSubscriber WHERE username=?',undef,$username)) { $username=$base.(++$i); }
- my $s=$dbh->prepare("INSERT INTO hotspotSubscriber(username,password,confirmedTime,subscriptionType,giveHoursAfterLogin,enabled) VALUES(?,?,NOW(),'expiry',24,b'1')");
- $s->execute($username,$password);
- print "Created initial hotspot subscriber '$username' for setup/testing.\n";
-}
-sub random_hex {
- my $v='';
- if (open my $fh,'<','/dev/urandom') { read($fh,my $b,16); close $fh; $v=unpack('H*',$b); }
- $v ||= sprintf('%x%x',time(),int(rand(0xffffffff)));
- return $v;
 }
 sub show_admins {
  my($dbh)=@_; print "Back-office administrators\n--------------------------\n";
@@ -157,4 +152,4 @@ sub set_admin_password {
 sub choose_admin {my($a)=@_;print "Administrators:\n";for my $i(0..$#$a){printf "  %d) %s\n",$i+1,$a->[$i];}print "Select administrator: ";chomp(my $x=<STDIN>//'');die "Invalid selection.\n" if $x!~/^\d+$/||$x<1||$x>@$a;return $a->[$x-1];}
 sub read_hidden {my($p)=@_;print $p;system('stty','-echo')==0 or die "Unable to disable terminal echo.\n";my $v=<STDIN>;system('stty','echo');print "\n";defined $v or die "No password entered.\n";chomp $v;return $v;}
 sub sql_now {my @t=localtime();return sprintf('%04d-%02d-%02d %02d:%02d:%02d',$t[5]+1900,$t[4]+1,$t[3],$t[2],$t[1],$t[0]);}
-sub usage {my($e)=@_;print "Usage:\n  sudo tarasec-users\n  sudo tarasec-users --set-admin-password [USERNAME]\n\nThe first --set-admin-password creates the initial back-office administrator.\n";exit $e;}
+sub usage {my($e)=@_;print "Usage:\n  sudo tarasec-users\n  sudo tarasec-users --ensure-schema\n  sudo tarasec-users --set-admin-password [USERNAME]\n\n--ensure-schema creates/repairs the account tables without creating a test subscriber.\nThe first --set-admin-password creates the initial back-office administrator.\n";exit $e;}
