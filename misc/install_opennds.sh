@@ -243,8 +243,14 @@ EOF
         ip -4 addr show dev "$HOTSPOT_IF" >&2 || true
         exit 1
     fi
-    if ! ss -lnt | awk -v ip="$HOTSPOT_IP" '$4 == ip ":2050" {found=1} END {exit !found}'; then
-        echo "ERROR: openNDS is not listening on $HOTSPOT_IP:2050." >&2
+    # openNDS 10.1.0 may expose its HTTP listener as 0.0.0.0:2050 even
+    # though the daemon is configured for and enforcing on HOTSPOT_IF. Accept
+    # either a hotspot-IP-specific bind or an IPv4 wildcard bind on port 2050.
+    if ! ss -lnt | awk -v ip="$HOTSPOT_IP" '
+        $4 == ip ":2050" || $4 == "0.0.0.0:2050" || $4 == "*:2050" {found=1}
+        END {exit !found}
+    '; then
+        echo "ERROR: openNDS has no usable TCP 2050 listener for hotspot $HOTSPOT_IF ($HOTSPOT_IP)." >&2
         ss -lntp >&2 || true
         exit 1
     fi
