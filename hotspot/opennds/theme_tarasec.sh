@@ -74,6 +74,7 @@ $custom_inputs
 <script>(function(){try{var f=document.getElementById('tslogin'),u=document.getElementById('tsuser'),r=document.getElementById('tsremember'),k='tarasec_hotspot_username';var v=localStorage.getItem(k);if(v){u.value=v;}f.addEventListener('submit',function(){if(r.checked){localStorage.setItem(k,u.value);}else{localStorage.removeItem(k);}});}catch(e){}})();</script>
 <div class=\"note\"><b>Need access?</b><br>Available plans and payment options are shown below when online payment is configured. You can also ask the hotspot operator for access.</div>"
     read_terms
+    footer
 }
 
 thankyou_page() { authenticated_status_page; }
