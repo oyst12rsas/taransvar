@@ -39,11 +39,6 @@ echo
 echo "Checking/installing TaraSec prerequisites..."
 apt-get update
 
-# Ubuntu publishes mysql-server/mysql-client directly. Debian/Raspberry Pi OS
-# Bookworm normally provides MariaDB as the default MySQL-compatible server and
-# client instead. apt-cache show is not sufficient here because Debian may know
-# about a package name even when it has no installable candidate. Require a real
-# candidate version before selecting a package pair.
 has_apt_candidate()
 {
     local pkg="$1"
@@ -247,10 +242,6 @@ else
     echo "WARNING: FreeRADIUS is installed but no sites-enabled directory was found; skipping legacy TaraSec radiusdefault copy."
 fi
 
-# The old installer waited indefinitely for sleepingbeauty to appear. On a
-# fresh install the cron worker may not have reached its first minute yet, so a
-# blocking loop can stall installation for many minutes. Do a quick check and
-# continue; post-install diagnostics can verify the worker after setup/reboot.
 echo "Checking sleepingbeauty worker (non-blocking)..."
 if pgrep -f 'perl .*sleepingbeauty\.pl' >/dev/null 2>&1; then
     echo "sleepingbeauty is running."
@@ -266,14 +257,82 @@ echo
 echo "Installing and enrolling TaraSec NetBird management..."
 bash "$REPO_ROOT/misc/install_netbird_management.sh"
 
+# A hotspot-specific installation already represents explicit consent to enable
+# Wi-Fi. The general TaraSec install.sh asks the owner before invoking us.
+# Therefore the only account question here is whether a setup/test subscriber
+# should exist, and if so what quota the owner wants.
+CREATE_TEST_ACCOUNT=0
+TEST_QUOTA_MB=""
+echo
+read -p "Create a test Wi-Fi access account? [y/N]: " TEST_ACCOUNT_ANSWER
+case "$TEST_ACCOUNT_ANSWER" in
+    [yY][eE][sS]|[yY])
+        CREATE_TEST_ACCOUNT=1
+        while true; do
+            read -p "Test account quota (for example 500 MB, 2 GB, 10 GB) [10 GB]: " TEST_QUOTA_INPUT
+            TEST_QUOTA_INPUT="${TEST_QUOTA_INPUT:-10 GB}"
+            TEST_QUOTA_INPUT="$(printf '%s' "$TEST_QUOTA_INPUT" | tr '[:lower:]' '[:upper:]' | tr -d ' ')"
+            if [[ "$TEST_QUOTA_INPUT" =~ ^([0-9]+)MB$ ]]; then
+                TEST_QUOTA_MB="${BASH_REMATCH[1]}"
+            elif [[ "$TEST_QUOTA_INPUT" =~ ^([0-9]+)GB$ ]]; then
+                TEST_QUOTA_MB="$(( ${BASH_REMATCH[1]} * 1024 ))"
+            elif [[ "$TEST_QUOTA_INPUT" =~ ^[0-9]+$ ]]; then
+                TEST_QUOTA_MB="$TEST_QUOTA_INPUT"
+            else
+                echo "Please enter a quota such as 500 MB, 2 GB or 10240."
+                continue
+            fi
+            if [ "$TEST_QUOTA_MB" -le 0 ]; then
+                echo "Quota must be greater than zero."
+                continue
+            fi
+            break
+        done
+        ;;
+esac
+
+# setupWifiNicAsHotspot.pl currently bootstraps one setup subscriber when the
+# database has none. Record the state before running it so we can enforce the
+# owner's choice without touching pre-existing subscriber accounts.
+PREEXISTING_SUBSCRIBERS="$(mysql -N -s taransvar -e "SELECT COUNT(*) FROM hotspotSubscriber;" 2>/dev/null || echo 0)"
+PREEXISTING_SUBSCRIBERS="${PREEXISTING_SUBSCRIBERS:-0}"
+
 echo
 echo "Configuring TaraSec Wi-Fi hotspot..."
 ADDR="${TARASEC_HOTSPOT_ADDR:-192.168.50.1/24}"
-# setupWifiNicAsHotspot.pl safely auto-detects a Wi-Fi interface when no
-# TARASEC_HOTSPOT_IF is supplied, and refuses to convert the active WAN/uplink.
-# This common path is used on Ubuntu and Raspberry Pi OS.
 perl "$REPO_ROOT/misc/setupWifiNicAsHotspot.pl" \
     "${TARASEC_HOTSPOT_IF:-}" "${TARASEC_HOTSPOT_SSID:-}" "$ADDR"
+
+if [ "$PREEXISTING_SUBSCRIBERS" -eq 0 ]; then
+    BOOTSTRAP_USER="$(mysql -N -s taransvar -e "SELECT username FROM hotspotSubscriber ORDER BY subscriberId LIMIT 1;" 2>/dev/null || true)"
+    if [ "$CREATE_TEST_ACCOUNT" -eq 1 ]; then
+        if [ -z "$BOOTSTRAP_USER" ]; then
+            echo "ERROR: Test account requested, but the hotspot bootstrap did not create an account." >&2
+            exit 1
+        fi
+        mysql taransvar -e "UPDATE hotspotSubscriber SET subscriptionType='quota', quotaMB=${TEST_QUOTA_MB}, usageMB=0, expiryTime=NULL, giveHoursAfterLogin=NULL, confirmedTime=COALESCE(confirmedTime,NOW()), enabled=b'1' WHERE username='${BOOTSTRAP_USER}';"
+        echo "Test Wi-Fi account '$BOOTSTRAP_USER' configured with ${TEST_QUOTA_MB} MB quota."
+    else
+        if [ -n "$BOOTSTRAP_USER" ]; then
+            mysql taransvar -e "DELETE FROM hotspotSubscriber WHERE username='${BOOTSTRAP_USER}';"
+            echo "No test Wi-Fi account created (owner declined)."
+        fi
+    fi
+elif [ "$CREATE_TEST_ACCOUNT" -eq 1 ]; then
+    # Existing subscriber data is never modified. Create a separate test account.
+    TEST_USERNAME="hotspot-test"
+    N=1
+    while mysql -N -s taransvar -e "SELECT 1 FROM hotspotSubscriber WHERE username='${TEST_USERNAME}' LIMIT 1;" | grep -q 1; do
+        N=$((N + 1))
+        TEST_USERNAME="hotspot-test${N}"
+    done
+    TEST_PASSWORD="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 10)"
+    mysql taransvar -e "INSERT INTO hotspotSubscriber(username,password,confirmedTime,subscriptionType,quotaMB,usageMB,enabled) VALUES('${TEST_USERNAME}','${TEST_PASSWORD}',NOW(),'quota',${TEST_QUOTA_MB},0,b'1');"
+    echo "Created test Wi-Fi account '$TEST_USERNAME' with ${TEST_QUOTA_MB} MB quota."
+    echo "Test Wi-Fi password: $TEST_PASSWORD"
+else
+    echo "Existing hotspot subscribers preserved; no test account added."
+fi
 
 printf "\nInstall script is finished\n"
 printf "WAN configuration was preserved; openNDS controls captive access and NetBird wt0/wt* is management only.\n"
