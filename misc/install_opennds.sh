@@ -76,9 +76,6 @@ if [ ! -x /usr/lib/opennds/client_params.sh ]; then
     exit 1
 fi
 
-# Remove systemd plumbing used by older TaraSec hotspot builds. Those units
-# forced openNDS toward the historical br-lan path and can survive a repository
-# upgrade. The current installer owns openNDS directly and must be authoritative.
 if [ -f /etc/systemd/system/opennds.service.d/10-tarasec-boot.conf ] || \
    [ -f /etc/systemd/system/opennds.service.d/20-tarasec-captive-login.conf ] || \
    [ -f /usr/local/sbin/tarasec-opennds-local-access ]; then
@@ -151,9 +148,6 @@ apache2ctl configtest
 systemctl daemon-reload || true
 systemctl restart apache2
 
-# If no interface was supplied, use an existing TaraSec/openNDS interface only
-# when it already has the expected hotspot address. This prevents a fresh
-# install from starting openNDS before NetworkManager has brought the AP up.
 if [ -z "$HOTSPOT_IF" ] && [ -r /etc/config/opennds ]; then
     HOTSPOT_IF="$(sed -n "s/^[[:space:]]*option[[:space:]]\+gatewayinterface[[:space:]]+'\([^']*\)'.*/\1/p" /etc/config/opennds | head -1)"
 fi
@@ -206,10 +200,6 @@ EOF
 
     systemctl daemon-reload || true
     systemctl enable opennds 2>/dev/null || true
-
-    # openNDS 10.x may transiently return "already running" immediately after
-    # a clean stop, while systemd schedules a successful retry. Do not let
-    # set -e abort here; the readiness loop below is authoritative.
     systemctl stop opennds || true
     for _ in $(seq 1 20); do
         if ! pgrep -x opennds >/dev/null 2>&1; then
@@ -237,25 +227,25 @@ EOF
         exit 1
     fi
 
-    # Verify both config formats because package/source builds differ in which
-    # parser they expose. Do not require the daemon to echo rules in its journal:
-    # openNDS 10.1.0 consumes these rules without logging the UCI list entries.
     grep -q "option login_option_enabled '3'" /etc/config/opennds
     grep -q "option themespec_path '/usr/lib/opennds/theme_tarasec.sh'" /etc/config/opennds
     grep -q "list users_to_router 'allow tcp port 8080'" /etc/config/opennds
     grep -q 'FirewallRule allow tcp port 8080' /etc/opennds/opennds.conf
     ss -lnt | grep -q ':8080 '
-    ss -lnt | grep -q ':2050 '
 
-    # Confirm the live daemon is bound to the requested hotspot interface/IP.
     if ! ndsctl status 2>/dev/null | grep -q "$HOTSPOT_IF"; then
         echo "ERROR: openNDS is running but its status does not reference hotspot interface $HOTSPOT_IF." >&2
         ndsctl status >&2 || true
         exit 1
     fi
-    if ! journalctl -u opennds -n 120 --no-pager | grep -q "Interface $HOTSPOT_IF is at $HOTSPOT_IP"; then
-        echo "ERROR: openNDS did not confirm binding to $HOTSPOT_IF at $HOTSPOT_IP." >&2
-        journalctl -u opennds -n 60 --no-pager >&2 || true
+    if ! ip -4 addr show dev "$HOTSPOT_IF" | grep -Eq "[[:space:]]inet[[:space:]]+$HOTSPOT_IP/"; then
+        echo "ERROR: hotspot interface $HOTSPOT_IF no longer owns $HOTSPOT_IP." >&2
+        ip -4 addr show dev "$HOTSPOT_IF" >&2 || true
+        exit 1
+    fi
+    if ! ss -lnt | awk -v ip="$HOTSPOT_IP" '$4 == ip ":2050" {found=1} END {exit !found}'; then
+        echo "ERROR: openNDS is not listening on $HOTSPOT_IP:2050." >&2
+        ss -lntp >&2 || true
         exit 1
     fi
 
