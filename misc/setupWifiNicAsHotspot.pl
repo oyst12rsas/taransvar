@@ -98,11 +98,6 @@ sub ensure_nm_ifupdown_managed {
     return unless $text =~ /^\s*\[ifupdown\]\s*$/mi;
     return if $text =~ /^\s*managed\s*=\s*true\s*$/mi;
 
-    # On Raspberry Pi OS/Debian, managed=false means interfaces listed in
-    # /etc/network/interfaces are left to ifupdown. After removing TaraSec's
-    # wlan stanza there is no longer an ifupdown owner for wlan0, so allow
-    # NetworkManager to manage ifupdown-listed devices. This does not change
-    # any connection profile or default route; it only permits NM ownership.
     my $backup = "$nmconf.tarasec-before";
     if (!-f $backup) {
         open my $bfh, '>', $backup or die "Cannot create backup $backup: $!\n";
@@ -122,12 +117,53 @@ sub ensure_nm_ifupdown_managed {
     print "Updated NetworkManager ifupdown policy to managed=true (backup: $backup).\n";
 }
 
+sub interrupted_tarasec_migration_detected {
+    my ($ifname) = @_;
+    my @if_backups = glob('/etc/network/interfaces.tarasec-legacy-*');
+    my @hostapd_backups = glob('/etc/hostapd/hostapd.conf.tarasec-legacy-*');
+    return 0 unless @if_backups && @hostapd_backups;
+
+    my $current_interfaces = slurp_file('/etc/network/interfaces');
+    return 0 if $current_interfaces =~ /^\s*iface\s+\Q$ifname\E\s+inet\s+static\s*$/m;
+
+    for my $h (@hostapd_backups) {
+        my $text = slurp_file($h);
+        next unless $text =~ /^\s*interface\s*=\s*\Q$ifname\E\s*$/m;
+        next unless $text =~ /^\s*ssid\s*=\s*TaraSec(?:[_-].*)?\s*$/mi;
+        return 1;
+    }
+    return 0;
+}
+
+sub finish_nm_handoff {
+    my ($ifname) = @_;
+    ensure_nm_ifupdown_managed();
+    system('systemctl daemon-reload >/dev/null 2>&1');
+    system("ip addr flush dev '$ifname' >/dev/null 2>&1");
+    system("ip link set '$ifname' down >/dev/null 2>&1");
+    system('systemctl restart NetworkManager >/dev/null 2>&1');
+    sleep 3;
+    sh("nmcli device set '$ifname' managed yes");
+    system('nmcli general reload >/dev/null 2>&1');
+    sleep 2;
+
+    die "TaraSec hotspot migration reached NetworkManager handoff, but NetworkManager still does not manage $ifname.\n"
+        unless networkmanager_manages($ifname);
+}
+
 sub migrate_legacy_tarasec_hotspot {
     my ($ifname) = @_;
     return if networkmanager_manages($ifname);
 
     print "\n$ifname is not currently managed by NetworkManager.\n";
     print "Checking for a legacy TaraSec hostapd/ifupdown hotspot...\n";
+
+    if (interrupted_tarasec_migration_detected($ifname)) {
+        print "Interrupted TaraSec hotspot migration detected; resuming NetworkManager handoff.\n";
+        finish_nm_handoff($ifname);
+        print "Interrupted TaraSec hotspot migration completed.\n";
+        return;
+    }
 
     my $hostapd_path = '/etc/hostapd/hostapd.conf';
     my $interfaces_path = '/etc/network/interfaces';
@@ -176,18 +212,7 @@ sub migrate_legacy_tarasec_hotspot {
     unlink '/etc/dnsmasq.d/tarasec-hotspot.conf'
         if -f '/etc/dnsmasq.d/tarasec-hotspot.conf';
 
-    ensure_nm_ifupdown_managed();
-    system('systemctl daemon-reload >/dev/null 2>&1');
-    system("ip addr flush dev '$ifname' >/dev/null 2>&1");
-    system("ip link set '$ifname' down >/dev/null 2>&1");
-    system('systemctl restart NetworkManager >/dev/null 2>&1');
-    sleep 3;
-    sh("nmcli device set '$ifname' managed yes");
-    system('nmcli general reload >/dev/null 2>&1');
-    sleep 2;
-
-    die "Legacy TaraSec hotspot was removed, but NetworkManager still does not manage $ifname. Check NetworkManager unmanaged-device rules before continuing.\n"
-        unless networkmanager_manages($ifname);
+    finish_nm_handoff($ifname);
 
     print "Legacy TaraSec hotspot migration complete. Backup: $interfaces_backup\n";
 }
@@ -273,9 +298,6 @@ if ($requested_ssid ne '') {
     }
 }
 
-# Older TaraSec Raspberry Pi installations used hostapd plus a static
-# /etc/network/interfaces stanza. Convert that specific, positively identified
-# legacy configuration before asking NetworkManager to own the hotspot.
 migrate_legacy_tarasec_hotspot($wifi_if);
 
 system('systemctl stop opennds >/dev/null 2>&1');
@@ -291,15 +313,10 @@ sh("nmcli connection up '$profile'");
 my $leases = wait_for_nm_lease_file($wifi_if);
 print "NetworkManager DHCP lease file: $leases\n";
 
-# Install the account administration helper, but do not run it here. Subscriber
-# creation belongs to the caller/installer so a test account is never created
-# without the owner's explicit consent.
 my $users_helper = "$Bin/tarasec-users.pl";
 die "Missing TaraSec account helper: $users_helper\n" unless -f $users_helper;
 install_users_helper($users_helper);
 
-# Hotspot reconfiguration must start with every client unauthenticated. The
-# access table is transient authorization state, not subscriber/account data.
 sh(q{mysql taransvar -e "DELETE FROM access;"});
 print "Cleared previous captive-portal access authorizations.\n";
 
