@@ -75,6 +75,10 @@ if [ ! -x /usr/lib/opennds/client_params.sh ]; then
     echo "ERROR: openNDS installation did not install /usr/lib/opennds/client_params.sh." >&2
     exit 1
 fi
+if ! command -v nft >/dev/null 2>&1; then
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y nftables
+fi
 
 if [ -f /etc/systemd/system/opennds.service.d/10-tarasec-boot.conf ] || \
    [ -f /etc/systemd/system/opennds.service.d/20-tarasec-captive-login.conf ] || \
@@ -198,7 +202,79 @@ FirewallRuleSet users-to-router {
 }
 EOF
 
+    cat > /etc/tarasec/hotspot-dns.conf <<EOF
+HOTSPOT_IF=$HOTSPOT_IF
+HOTSPOT_IP=$HOTSPOT_IP
+EOF
+    chmod 0644 /etc/tarasec/hotspot-dns.conf
+
+    cat > /usr/local/sbin/tarasec-hotspot-dns-redirect <<'EOF'
+#!/bin/bash
+set -euo pipefail
+
+CONF=/etc/tarasec/hotspot-dns.conf
+TABLE=tarasec_hotspot_dns
+
+if [ "${1:-start}" = "stop" ]; then
+    nft delete table ip "$TABLE" 2>/dev/null || true
+    exit 0
+fi
+
+if [ ! -r "$CONF" ]; then
+    echo "Missing $CONF" >&2
+    exit 1
+fi
+. "$CONF"
+
+if [ -z "${HOTSPOT_IF:-}" ] || [ -z "${HOTSPOT_IP:-}" ]; then
+    echo "HOTSPOT_IF/HOTSPOT_IP missing from $CONF" >&2
+    exit 1
+fi
+
+if ! ip -4 addr show dev "$HOTSPOT_IF" 2>/dev/null | grep -Eq "[[:space:]]inet[[:space:]]+$HOTSPOT_IP/"; then
+    echo "$HOTSPOT_IF does not own $HOTSPOT_IP" >&2
+    exit 1
+fi
+
+if ! ss -lnut | awk -v ip="$HOTSPOT_IP" '$5 == ip ":53" {found=1} END {exit !found}'; then
+    echo "No local DNS listener on $HOTSPOT_IP:53" >&2
+    exit 1
+fi
+
+nft delete table ip "$TABLE" 2>/dev/null || true
+nft add table ip "$TABLE"
+nft "add chain ip $TABLE prerouting { type nat hook prerouting priority -110; policy accept; }"
+nft add rule ip "$TABLE" prerouting iifname "$HOTSPOT_IF" udp dport 53 dnat to "$HOTSPOT_IP:53"
+nft add rule ip "$TABLE" prerouting iifname "$HOTSPOT_IF" tcp dport 53 dnat to "$HOTSPOT_IP:53"
+EOF
+    chmod 0755 /usr/local/sbin/tarasec-hotspot-dns-redirect
+
+    cat > /etc/systemd/system/tarasec-hotspot-dns.service <<'EOF'
+[Unit]
+Description=TaraSec hotspot DNS interception
+After=NetworkManager.service network-online.target
+Wants=NetworkManager.service
+Before=opennds.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/tarasec-hotspot-dns-redirect start
+ExecStop=/usr/local/sbin/tarasec-hotspot-dns-redirect stop
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
     systemctl daemon-reload || true
+    systemctl enable tarasec-hotspot-dns.service >/dev/null
+    systemctl restart tarasec-hotspot-dns.service
+
+    if ! nft list table ip tarasec_hotspot_dns >/dev/null 2>&1; then
+        echo "ERROR: TaraSec hotspot DNS interception table was not created." >&2
+        exit 1
+    fi
+
     systemctl enable opennds 2>/dev/null || true
     systemctl stop opennds || true
     for _ in $(seq 1 20); do
@@ -260,6 +336,7 @@ EOF
     echo "  client network: $HOTSPOT_CIDR"
     echo "  ThemeSpec: /usr/lib/opennds/theme_tarasec.sh"
     echo "  TaraSec login: http://$HOTSPOT_IP:8080/hotspot/portal_login.php"
+    echo "  DNS interception: client TCP/UDP 53 -> $HOTSPOT_IP:53"
 else
     echo "openNDS and TaraSec portal assets are installed, but captive enforcement activation is deferred until the hotspot interface is up."
 fi
