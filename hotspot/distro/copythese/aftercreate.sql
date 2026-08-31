@@ -1,9 +1,19 @@
 use taransvar;
 
 -- Back-office administrators belong in `user`, never in FreeRADIUS/radcheck.
--- Keep this safe for older schemas by ensuring the discriminator exists first.
-ALTER TABLE `user`
-  ADD COLUMN IF NOT EXISTS `isAdmin` bit(1) NOT NULL DEFAULT b'0';
+-- MySQL does not support MariaDB's ADD COLUMN IF NOT EXISTS syntax, so use
+-- information_schema and dynamic SQL to keep this migration repeatable on both.
+SET @add_is_admin = IF(
+  EXISTS(
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='user' AND COLUMN_NAME='isAdmin'
+  ),
+  'SELECT 1',
+  'ALTER TABLE `user` ADD COLUMN `isAdmin` bit(1) NOT NULL DEFAULT b''0'''
+);
+PREPARE add_is_admin_stmt FROM @add_is_admin;
+EXECUTE add_is_admin_stmt;
+DEALLOCATE PREPARE add_is_admin_stmt;
 
 INSERT INTO `user` (username, password, isAdmin, verified)
 SELECT 'admin', SUBSTRING(REPLACE(UUID(),'-',''),1,16), b'1', b'1'
