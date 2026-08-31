@@ -86,6 +86,8 @@ echo
 echo "=== STOP TARASEC SERVICES ==="
 known_services=(
     tarasec-wifi-session-watch.service
+    tarasec-hotspot-dns.service
+    tarasec-opennds-dhcp-compat.service
     taransvar.service
     tarasec-management-firewall.service
     tarasec-hotspot.service
@@ -98,11 +100,15 @@ done
 
 rm -f \
     /etc/systemd/system/tarasec-wifi-session-watch.service \
+    /etc/systemd/system/tarasec-hotspot-dns.service \
+    /etc/systemd/system/tarasec-opennds-dhcp-compat.service \
     /etc/systemd/system/taransvar.service \
     /etc/systemd/system/tarasec-management-firewall.service \
     /etc/systemd/system/tarasec-hotspot.service \
     /etc/systemd/system/tarasec-hostapd-disconnect.service \
     /usr/local/sbin/tarasec-wifi-session-watch \
+    /usr/local/sbin/tarasec-hotspot-dns-redirect \
+    /usr/local/sbin/tarasec-opennds-dhcp-compat \
     /usr/local/sbin/tarasec-subscriber-logout \
     /usr/local/sbin/tarasec-access-check \
     /usr/local/sbin/tarasec-single-subscriber \
@@ -149,6 +155,16 @@ for table in filter nat mangle; do
         iptables -t "$table" -X "$chain" 2>/dev/null || true
     done < <(iptables -t "$table" -S 2>/dev/null | awk '/^-N TARASEC-/{print $2}')
 done
+
+nft delete table ip tarasec_hotspot_dns 2>/dev/null || true
+
+rm -f /etc/NetworkManager/dnsmasq-shared.d/tarasec-status-client.conf
+if [ -L /tmp/dhcp.leases ]; then
+    lease_target="$(readlink /tmp/dhcp.leases 2>/dev/null || true)"
+    case "$lease_target" in
+        /var/lib/NetworkManager/dnsmasq-*.leases) rm -f /tmp/dhcp.leases ;;
+    esac
+fi
 
 echo
 echo "=== RESET OPENNDS TARASEC CONFIGURATION ==="
@@ -248,17 +264,17 @@ fi
 
 echo
 echo "=== NETBIRD ==="
-if command -v netbird >/dev/null 2>&1; then
-    netbird down 2>/dev/null || true
-fi
 if [ "$PURGE_NETBIRD" -eq 1 ]; then
+    if command -v netbird >/dev/null 2>&1; then
+        netbird down 2>/dev/null || true
+    fi
     systemctl disable --now netbird.service 2>/dev/null || true
     if command -v apt-get >/dev/null 2>&1; then
         DEBIAN_FRONTEND=noninteractive apt-get purge -y netbird 2>/dev/null || true
     fi
     rm -rf /etc/netbird /var/lib/netbird /var/log/netbird
 else
-    echo "NetBird software preserved; local TaraSec enrollment state was removed."
+    echo "NetBird software, state and active connection preserved."
 fi
 
 echo
@@ -295,6 +311,9 @@ for p in \
     /etc/tarasec /root/wifi /root/setup /var/lib/tarasec /var/log/tarasec \
     /var/www/html/hotspot \
     /etc/systemd/system/tarasec-wifi-session-watch.service \
+    /etc/systemd/system/tarasec-hotspot-dns.service \
+    /etc/systemd/system/tarasec-opennds-dhcp-compat.service \
+    /etc/NetworkManager/dnsmasq-shared.d/tarasec-status-client.conf \
     /etc/apache2/conf-available/tarasec-captive-login.conf; do
     if [ -e "$p" ]; then
         echo "  $p"
@@ -345,6 +364,6 @@ if [ "$PURGE_PACKAGES" -eq 0 ]; then
     echo "Generic packages were intentionally preserved."
 fi
 if [ "$PURGE_NETBIRD" -eq 0 ]; then
-    echo "NetBird software was intentionally preserved, but this peer was disconnected."
+    echo "NetBird software, peer state and connection were intentionally preserved."
 fi
 echo "A remote NetBird peer record may still need deletion from the NetBird dashboard/API."
