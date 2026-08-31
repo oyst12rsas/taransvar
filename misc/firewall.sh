@@ -77,6 +77,23 @@ fi
 
 iptables -A INPUT -i lo -j ACCEPT
 
+# If the TaraSec hotspot is installed, its local captive services must remain
+# reachable even when the TaraSec host firewall has a default DROP policy.
+# Restrict these openings to the configured hotspot interface only.
+HOTSPOT_IF=""
+HOTSPOT_IP=""
+if [ -r /etc/tarasec/hotspot-dns.conf ]; then
+    # shellcheck disable=SC1091
+    source /etc/tarasec/hotspot-dns.conf
+fi
+if [ -n "${HOTSPOT_IF:-}" ] && ip link show "$HOTSPOT_IF" >/dev/null 2>&1; then
+    iptables -A INPUT -i "$HOTSPOT_IF" -p udp --dport 53 -j ACCEPT
+    iptables -A INPUT -i "$HOTSPOT_IF" -p tcp --dport 53 -j ACCEPT
+    iptables -A INPUT -i "$HOTSPOT_IF" -p udp --dport 67 -j ACCEPT
+    iptables -A INPUT -i "$HOTSPOT_IF" -p tcp --dport 2050 -j ACCEPT
+    iptables -A INPUT -i "$HOTSPOT_IF" -p tcp --dport 8080 -j ACCEPT
+fi
+
 if is_on "$SSH_RECOVERY_PROTECT" && [ -n "$SSH_RECOVERY_SOURCES" ]; then
     add_source_rules "$SSH_RECOVERY_SOURCES" "$SSH_PORT"
 fi
