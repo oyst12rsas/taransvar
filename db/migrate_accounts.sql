@@ -1,14 +1,40 @@
--- TaraSec account-model migration. Safe to run repeatedly.
-ALTER TABLE `user`
-  ADD COLUMN IF NOT EXISTS `isAdmin` bit(1) NOT NULL DEFAULT b'0',
-  ADD COLUMN IF NOT EXISTS `lastLogin` timestamp NULL DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS `lastLoginIp` int(10) unsigned DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS `loginFailsSinceSuccess` int(10) unsigned NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS `loginFailReportedTime` timestamp NULL DEFAULT NULL;
+-- TaraSec account-model migration. Safe to run repeatedly on both MySQL and
+-- MariaDB. MySQL does not support MariaDB's ADD COLUMN IF NOT EXISTS syntax.
+DROP PROCEDURE IF EXISTS add_column_if_missing;
+DELIMITER //
+CREATE PROCEDURE add_column_if_missing(
+  IN table_name_value varchar(64),
+  IN column_name_value varchar(64),
+  IN column_definition_value varchar(1000)
+)
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA=DATABASE()
+      AND TABLE_NAME=table_name_value
+      AND COLUMN_NAME=column_name_value
+  ) THEN
+    SET @add_column_sql = CONCAT(
+      'ALTER TABLE `', REPLACE(table_name_value, '`', '``'),
+      '` ADD COLUMN `', REPLACE(column_name_value, '`', '``'),
+      '` ', column_definition_value
+    );
+    PREPARE add_column_stmt FROM @add_column_sql;
+    EXECUTE add_column_stmt;
+    DEALLOCATE PREPARE add_column_stmt;
+  END IF;
+END//
+DELIMITER ;
 
-ALTER TABLE `setup`
-  ADD COLUMN IF NOT EXISTS `requireRegistration` bit(1) NOT NULL DEFAULT b'1',
-  ADD COLUMN IF NOT EXISTS `selfRegistration` bit(1) NOT NULL DEFAULT b'1';
+CALL add_column_if_missing('user', 'isAdmin', 'bit(1) NOT NULL DEFAULT b''0''');
+CALL add_column_if_missing('user', 'lastLogin', 'timestamp NULL DEFAULT NULL');
+CALL add_column_if_missing('user', 'lastLoginIp', 'int(10) unsigned DEFAULT NULL');
+CALL add_column_if_missing('user', 'loginFailsSinceSuccess', 'int(10) unsigned NOT NULL DEFAULT 0');
+CALL add_column_if_missing('user', 'loginFailReportedTime', 'timestamp NULL DEFAULT NULL');
+CALL add_column_if_missing('setup', 'requireRegistration', 'bit(1) NOT NULL DEFAULT b''1''');
+CALL add_column_if_missing('setup', 'selfRegistration', 'bit(1) NOT NULL DEFAULT b''1''');
+
+DROP PROCEDURE add_column_if_missing;
 
 CREATE TABLE IF NOT EXISTS `hotspotSubscriber` (
   `subscriberId` int(10) unsigned NOT NULL AUTO_INCREMENT,
