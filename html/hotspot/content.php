@@ -1,6 +1,8 @@
 <?php
 
 $bForceLogin = false;
+$bBackofficeLoginAttempted = false;
+$bBackofficeLoginSucceeded = false;
 
 function submitBackofficeAdminLogin()
 {
@@ -18,11 +20,7 @@ function submitBackofficeAdminLogin()
 	}
 
 	if (!$cAdmin || !isset($cAdmin["password"]) || !hash_equals((string)$cAdmin["password"], $szPass))
-	{
-		print red("Error in username or password!")."<br><br>";
-		doLogin();
 		return false;
-	}
 
 	$_SESSION["loggedin"] = true;
 	$_SESSION["user"] = (string)$cAdmin["username"];
@@ -39,22 +37,38 @@ function submitBackofficeAdminLogin()
 }
 
 // content.php is included near the top of hotspot/index.php. Process the
-// back-office login here, before index.php's legacy main_subLogin switch gets
-// a chance to call the old radcheck/subscriber authentication routine.
-if (request("f") == "main_subLogin" && !loggedIn())
-	submitBackofficeAdminLogin();
+// back-office login here so the page header sees the authenticated admin.
+if (request("f") == "main_subLogin" && !loggedIn() &&
+	isset($_SERVER["REQUEST_METHOD"]) && $_SERVER["REQUEST_METHOD"] == "POST")
+{
+	$bBackofficeLoginAttempted = true;
+	$bBackofficeLoginSucceeded = submitBackofficeAdminLogin();
+}
 
 function getMainContent()
 {
-	global $bForceLogin;
+	global $bForceLogin, $bBackofficeLoginAttempted, $bBackofficeLoginSucceeded;
 
 $szF = (isset($_GET)&&isset($_GET["f"])?$_GET["f"]:"");
 
 if ($szF == "main_subLogin")
 {
-	if (!submitBackofficeAdminLogin())
+	// Authentication was already attempted once when this file was included,
+	// before index.php renders the username in its header. Never pass this
+	// back-office route to the legacy RADIUS/subscriber login handler and never
+	// retry an empty POST after an administrator is already logged in.
+	if (loggedIn() || $bBackofficeLoginSucceeded)
+	{
+		$szF = "main";
+		$_GET["f"] = "main";
+	}
+	else
+	{
+		if ($bBackofficeLoginAttempted)
+			print red("Error in username or password!")."<br><br>";
+		doLogin();
 		return;
-	$szF = "main";
+	}
 }
 else
 	if ($bForceLogin || !isset($_SESSION["loggedin"]))
