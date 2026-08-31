@@ -3335,7 +3335,7 @@ function herIfOy($szMsg)
 
 function rand_string( $length ) 
 {
-    $chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";    
+    $chars = "23456789ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz";
     $str = "";
     $size = strlen( $chars );
     for( $i = 0; $i < $length; $i++ ) {
