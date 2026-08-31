@@ -113,7 +113,7 @@ system('systemctl stop opennds >/dev/null 2>&1'); unlink '/etc/dnsmasq.d/tarasec
 my $profile="tarasec-hotspot-$wifi_if"; system("nmcli connection down '$profile' >/dev/null 2>&1"); system("nmcli connection delete '$profile' >/dev/null 2>&1"); sh("nmcli connection add type wifi ifname '$wifi_if' con-name '$profile' autoconnect yes ssid '$ssid'"); sh("nmcli connection modify '$profile' 802-11-wireless.mode ap ipv4.method shared ipv4.addresses '$addr' ipv6.method disabled connection.autoconnect-priority 100");
 sh("nmcli connection up '$profile'");
 my $leases=wait_for_nm_lease_file($wifi_if); print "NetworkManager DHCP lease file: $leases\n";
-my $users_helper="$Bin/tarasec-users.pl"; die "Missing TaraSec account helper: $users_helper\n" unless -f $users_helper; install_users_helper($users_helper);
+my $users_helper="$Bin/tarasec-users.pl"; die "Missing TaraSec account helper: $users_helper\n" unless -f $users_helper; install_users_helper($users_helper); sh('/usr/local/sbin/tarasec-users --ensure-schema');
 sh(q{mysql taransvar -e "DELETE FROM access;"}); print "Cleared previous captive-portal access authorizations.\n";
 my $helper="$Bin/install_opennds.sh"; die "Missing TaraSec openNDS installer: $helper\n" unless -f $helper; $ENV{TARASEC_HOTSPOT_IF}=$wifi_if; $ENV{TARASEC_HOTSPOT_ADDR}=$addr; $ENV{TARASEC_HOTSPOT_NAME}=$ssid; sh("bash '$helper'");
 my $watch_helper="$Bin/install_wifi_session_watch.sh"; die "Missing TaraSec Wi-Fi session watcher installer: $watch_helper\n" unless -f $watch_helper; sh("bash '$watch_helper'");
