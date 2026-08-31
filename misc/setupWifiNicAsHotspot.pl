@@ -90,6 +90,38 @@ sub remove_static_interface_stanza {
     return (join('', @out), $removed);
 }
 
+sub ensure_nm_ifupdown_managed {
+    my $nmconf = '/etc/NetworkManager/NetworkManager.conf';
+    return unless -f $nmconf;
+
+    my $text = slurp_file($nmconf);
+    return unless $text =~ /^\s*\[ifupdown\]\s*$/mi;
+    return if $text =~ /^\s*managed\s*=\s*true\s*$/mi;
+
+    # On Raspberry Pi OS/Debian, managed=false means interfaces listed in
+    # /etc/network/interfaces are left to ifupdown. After removing TaraSec's
+    # wlan stanza there is no longer an ifupdown owner for wlan0, so allow
+    # NetworkManager to manage ifupdown-listed devices. This does not change
+    # any connection profile or default route; it only permits NM ownership.
+    my $backup = "$nmconf.tarasec-before";
+    if (!-f $backup) {
+        open my $bfh, '>', $backup or die "Cannot create backup $backup: $!\n";
+        print {$bfh} $text;
+        close $bfh or die "Cannot close backup $backup: $!\n";
+    }
+
+    if ($text =~ /^\s*managed\s*=\s*false\s*$/mi) {
+        $text =~ s/^(\s*managed\s*=\s*)false\s*$/${1}true/mi;
+    } else {
+        $text =~ s/(^\s*\[ifupdown\]\s*$)/$1\nmanaged=true/mi;
+    }
+
+    open my $fh, '>', $nmconf or die "Cannot update $nmconf: $!\n";
+    print {$fh} $text;
+    close $fh or die "Cannot close $nmconf: $!\n";
+    print "Updated NetworkManager ifupdown policy to managed=true (backup: $backup).\n";
+}
+
 sub migrate_legacy_tarasec_hotspot {
     my ($ifname) = @_;
     return if networkmanager_manages($ifname);
@@ -144,9 +176,12 @@ sub migrate_legacy_tarasec_hotspot {
     unlink '/etc/dnsmasq.d/tarasec-hotspot.conf'
         if -f '/etc/dnsmasq.d/tarasec-hotspot.conf';
 
+    ensure_nm_ifupdown_managed();
     system('systemctl daemon-reload >/dev/null 2>&1');
     system("ip addr flush dev '$ifname' >/dev/null 2>&1");
     system("ip link set '$ifname' down >/dev/null 2>&1");
+    system('systemctl restart NetworkManager >/dev/null 2>&1');
+    sleep 3;
     sh("nmcli device set '$ifname' managed yes");
     system('nmcli general reload >/dev/null 2>&1');
     sleep 2;
