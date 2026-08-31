@@ -256,19 +256,15 @@ sh("nmcli connection up '$profile'");
 my $leases = wait_for_nm_lease_file($wifi_if);
 print "NetworkManager DHCP lease file: $leases\n";
 
-# A fresh database may contain no hotspot subscribers yet. The account helper
-# owns the migration/bootstrap logic and creates exactly one temporary setup
-# subscriber when none exists. ThemeSpec then displays that sole login on the
-# captive portal until another enabled subscriber is added.
+# Install the account administration helper, but do not run it here. Subscriber
+# creation belongs to the caller/installer so a test account is never created
+# without the owner's explicit consent.
 my $users_helper = "$Bin/tarasec-users.pl";
-die "Missing TaraSec account bootstrap helper: $users_helper\n" unless -f $users_helper;
+die "Missing TaraSec account helper: $users_helper\n" unless -f $users_helper;
 install_users_helper($users_helper);
-sh("perl '$users_helper'");
 
 # Hotspot reconfiguration must start with every client unauthenticated. The
 # access table is transient authorization state, not subscriber/account data.
-# Clear it before starting openNDS so a client that was authenticated before a
-# reinstall/reconfigure cannot be admitted automatically afterwards.
 sh(q{mysql taransvar -e "DELETE FROM access;"});
 print "Cleared previous captive-portal access authorizations.\n";
 
@@ -279,9 +275,6 @@ $ENV{TARASEC_HOTSPOT_ADDR} = $addr;
 $ENV{TARASEC_HOTSPOT_NAME} = $ssid;
 sh("bash '$helper'");
 
-# Install the disconnect watcher only after the AP and openNDS are active.
-# This ordering is shared by Ubuntu and Raspberry Pi OS and avoids starting the
-# watcher against an interface that has not yet entered AP mode.
 my $watch_helper = "$Bin/install_wifi_session_watch.sh";
 die "Missing TaraSec Wi-Fi session watcher installer: $watch_helper\n" unless -f $watch_helper;
 sh("bash '$watch_helper'");
