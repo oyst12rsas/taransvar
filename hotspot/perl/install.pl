@@ -21,7 +21,7 @@ print "\n\n *********** install.pl **********************\n\n";
 
 my $cSetup = getSetup();
 
-my @chars = ("A".."Z", "a".."z", "0".."9");
+my @chars = split //, "23456789ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz";
 
 my $szSysSetupFile = $szSysRoot."setup.txt";
 
