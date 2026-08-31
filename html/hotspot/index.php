@@ -93,9 +93,6 @@ $szF = request("f");
 
 switch ($szF)
 {
-	case "main_subLogin":
-		submitLogin($bBefore = true);
-		break;
 	case 	"main_logout":
 		logOut($bBefore = true);	//- Handled above
 		break;
