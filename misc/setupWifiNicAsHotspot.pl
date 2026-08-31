@@ -28,19 +28,33 @@ sub ensure_nm_ifupdown_managed {
 }
 
 sub ensure_wpa_supplicant {
-    # NetworkManager requires a supplicant backend even when creating an AP.
-    # Some older Raspberry TaraSec images used hostapd directly and therefore
-    # have no working wpa_supplicant D-Bus service after migration.
-    my $ok = system('systemctl start wpa_supplicant.service >/dev/null 2>&1') == 0;
-    if (!$ok) {
+    # NetworkManager requires a supplicant backend even for AP mode. Older
+    # TaraSec Raspberry installs could mask this service while hostapd owned
+    # wlan0, so a migration must restore the normal package-provided unit.
+    my $load = `systemctl show -p LoadState --value wpa_supplicant.service 2>/dev/null`;
+    chomp $load;
+    if ($load eq 'masked') {
+        print "wpa_supplicant.service is masked; unmasking it for NetworkManager Wi-Fi support.\n";
+        sh('systemctl unmask wpa_supplicant.service');
+        system('systemctl daemon-reload >/dev/null 2>&1');
+    }
+
+    if (system('systemctl start wpa_supplicant.service >/dev/null 2>&1') != 0) {
         print "wpa_supplicant service is unavailable; installing/reinstalling it for NetworkManager Wi-Fi support.\n";
         sh('apt-get update');
-        sh('DEBIAN_FRONTEND=noninteractive apt-get install -y wpasupplicant');
+        sh('DEBIAN_FRONTEND=noninteractive apt-get install --reinstall -y wpasupplicant');
+        sh('systemctl unmask wpa_supplicant.service');
         system('systemctl daemon-reload >/dev/null 2>&1');
         sh('systemctl enable wpa_supplicant.service');
         sh('systemctl restart wpa_supplicant.service');
+    } else {
+        # Enabling is desirable but not required for this invocation; on
+        # Debian/Raspberry Pi the unit may be statically D-Bus activated.
+        system('systemctl enable wpa_supplicant.service >/dev/null 2>&1');
     }
-    die "wpa_supplicant is not active; NetworkManager cannot initialize Wi-Fi.\n" unless system('systemctl is-active --quiet wpa_supplicant.service') == 0;
+
+    die "wpa_supplicant is not active; NetworkManager cannot initialize Wi-Fi.\n"
+        unless system('systemctl is-active --quiet wpa_supplicant.service') == 0;
 }
 
 sub interrupted_tarasec_migration_detected { my ($ifname)=@_; my @if_backups=glob('/etc/network/interfaces.tarasec-legacy-*'); my @hostapd_backups=glob('/etc/hostapd/hostapd.conf.tarasec-legacy-*'); return 0 unless @if_backups && @hostapd_backups; my $current=slurp_file('/etc/network/interfaces'); return 0 if $current =~ /^\s*iface\s+\Q$ifname\E\s+inet\s+static\s*$/m; for my $h(@hostapd_backups){ my $text=slurp_file($h); next unless $text =~ /^\s*interface\s*=\s*\Q$ifname\E\s*$/m; next unless $text =~ /^\s*ssid\s*=\s*TaraSec(?:[_-].*)?\s*$/mi; return 1; } return 0; }
