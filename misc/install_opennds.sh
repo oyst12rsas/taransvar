@@ -165,6 +165,15 @@ fi
 if [ -n "$HOTSPOT_IF" ]; then
     echo "Configuring openNDS TaraSec ThemeSpec on $HOTSPOT_IF..."
     mkdir -p /etc/config /etc/opennds
+
+    # NetworkManager shared mode launches a per-interface dnsmasq using this
+    # directory. openNDS generates links to status.client, so this record is a
+    # required part of the portal rather than an optional convenience.
+    mkdir -p /etc/NetworkManager/dnsmasq-shared.d
+    cat > /etc/NetworkManager/dnsmasq-shared.d/tarasec-status-client.conf <<EOF
+address=/status.client/$HOTSPOT_IP
+EOF
+    chmod 0644 /etc/NetworkManager/dnsmasq-shared.d/tarasec-status-client.conf
     if [ -f /etc/config/opennds ] && [ ! -f /etc/config/opennds.tarasec-before ]; then
         cp -a /etc/config/opennds /etc/config/opennds.tarasec-before
     fi
@@ -332,6 +341,16 @@ EOF
         exit 1
     fi
 
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "ERROR: python3 is required for the captive DNS acceptance test." >&2
+        exit 1
+    fi
+    if ! TARASEC_EXPECTED_DNS_IP="$HOTSPOT_IP" python3 "$REPO_ROOT/misc/check_hotspot_dns.py" "$HOTSPOT_IP" status.client; then
+        echo "ERROR: status.client does not resolve to $HOTSPOT_IP through the hotspot DNS server." >&2
+        echo "The NetworkManager hotspot must be restarted after installing /etc/NetworkManager/dnsmasq-shared.d/tarasec-status-client.conf." >&2
+        exit 1
+    fi
+
     systemctl enable opennds 2>/dev/null || true
     systemctl stop opennds || true
     for _ in $(seq 1 20); do
@@ -395,6 +414,7 @@ EOF
     echo "  TaraSec login: http://$HOTSPOT_IP:8080/hotspot/portal_login.php"
     echo "  DHCP validation: NetworkManager leases exposed to openNDS"
     echo "  DNS interception: client TCP/UDP 53 -> $HOTSPOT_IP:53"
+    echo "  Portal DNS: status.client -> $HOTSPOT_IP"
 else
     echo "openNDS and TaraSec portal assets are installed, but captive enforcement activation is deferred until the hotspot interface is up."
 fi
