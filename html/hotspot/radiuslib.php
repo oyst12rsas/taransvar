@@ -125,8 +125,8 @@ function expired($szDate)
 	return strcmp($szDate ,getNow()) < 0;
 }
 
-//function random_str($length, $keyspace = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ')
-function random_str($length, $keyspace = '123456789abcdefghijkmnpqrtuwyABCDEFGHJKLMNPQRSTYZ')
+// Human-friendly credentials omit 0/O/o, 1/I/i/l/L.
+function random_str($length, $keyspace = '23456789ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz')
 {
     $str = '';
     $max = strlen($keyspace)-1;//mb_strlen($keyspace, '8bit') - 1;
