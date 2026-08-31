@@ -186,7 +186,7 @@ update setup set dbVersion = 61;
 #version 62 (260515)
 alter table partnerRouter add statusOk bit(1) not null default b'0' after handled;
 alter table partnerRouter add status varchar(255) not null default "" after statusOk;
-ALTER TABLE traffic ADD COLUMN IF NOT EXISTS tag int unsigned null;
+ALTER TABLE traffic ADD COLUMN tag int unsigned null;
 update setup set dbVersion = 62;
 
 #version 63 (260518)
