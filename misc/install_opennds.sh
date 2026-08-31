@@ -237,6 +237,9 @@ EOF
         exit 1
     fi
 
+    # Verify both config formats because package/source builds differ in which
+    # parser they expose. Do not require the daemon to echo rules in its journal:
+    # openNDS 10.1.0 consumes these rules without logging the UCI list entries.
     grep -q "option login_option_enabled '3'" /etc/config/opennds
     grep -q "option themespec_path '/usr/lib/opennds/theme_tarasec.sh'" /etc/config/opennds
     grep -q "list users_to_router 'allow tcp port 8080'" /etc/config/opennds
@@ -244,9 +247,14 @@ EOF
     ss -lnt | grep -q ':8080 '
     ss -lnt | grep -q ':2050 '
 
-    # Verify the running daemon actually consumed the active UCI-style rule.
-    if ! journalctl -u opennds -n 120 --no-pager | grep 'list users_to_router' | tail -1 | grep -q '8080'; then
-        echo "ERROR: openNDS is running but TCP 8080 is not present in its effective users_to_router rules." >&2
+    # Confirm the live daemon is bound to the requested hotspot interface/IP.
+    if ! ndsctl status 2>/dev/null | grep -q "$HOTSPOT_IF"; then
+        echo "ERROR: openNDS is running but its status does not reference hotspot interface $HOTSPOT_IF." >&2
+        ndsctl status >&2 || true
+        exit 1
+    fi
+    if ! journalctl -u opennds -n 120 --no-pager | grep -q "Interface $HOTSPOT_IF is at $HOTSPOT_IP"; then
+        echo "ERROR: openNDS did not confirm binding to $HOTSPOT_IF at $HOTSPOT_IP." >&2
         journalctl -u opennds -n 60 --no-pager >&2 || true
         exit 1
     fi
