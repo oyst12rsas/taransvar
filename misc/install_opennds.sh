@@ -202,6 +202,63 @@ FirewallRuleSet users-to-router {
 }
 EOF
 
+    # openNDS 10.1.0 on generic Linux documents dhcp_leases_file but its
+    # libopennds.sh dhcp_check() helper only searches hard-coded lease paths.
+    # Bridge NetworkManager's live hotspot lease database to the first path
+    # the helper actually checks. Do not overwrite an unrelated DHCP database.
+    cat > /etc/tarasec/opennds-dhcp-compat.conf <<EOF
+LEASE_FILE=$LEASE_FILE
+EOF
+    chmod 0644 /etc/tarasec/opennds-dhcp-compat.conf
+
+    cat > /usr/local/sbin/tarasec-opennds-dhcp-compat <<'EOF'
+#!/bin/bash
+set -euo pipefail
+CONF=/etc/tarasec/opennds-dhcp-compat.conf
+TARGET=/tmp/dhcp.leases
+
+[ -r "$CONF" ] || { echo "Missing $CONF" >&2; exit 1; }
+. "$CONF"
+[ -n "${LEASE_FILE:-}" ] || { echo "LEASE_FILE missing from $CONF" >&2; exit 1; }
+[ -e "$LEASE_FILE" ] || { echo "NetworkManager lease file not found: $LEASE_FILE" >&2; exit 1; }
+
+if [ -e "$TARGET" ] || [ -L "$TARGET" ]; then
+    if [ -L "$TARGET" ] && [ "$(readlink -f "$TARGET" 2>/dev/null || true)" = "$(readlink -f "$LEASE_FILE")" ]; then
+        exit 0
+    fi
+    echo "Refusing to replace unrelated DHCP database at $TARGET" >&2
+    exit 1
+fi
+
+ln -s "$LEASE_FILE" "$TARGET"
+EOF
+    chmod 0755 /usr/local/sbin/tarasec-opennds-dhcp-compat
+
+    cat > /etc/systemd/system/tarasec-opennds-dhcp-compat.service <<'EOF'
+[Unit]
+Description=TaraSec openNDS NetworkManager DHCP lease compatibility
+After=NetworkManager.service network-online.target
+Wants=NetworkManager.service
+Before=opennds.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/tarasec-opennds-dhcp-compat
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload || true
+    systemctl enable tarasec-opennds-dhcp-compat.service >/dev/null
+    systemctl restart tarasec-opennds-dhcp-compat.service
+
+    if [ ! -L /tmp/dhcp.leases ] || [ "$(readlink -f /tmp/dhcp.leases 2>/dev/null || true)" != "$(readlink -f "$LEASE_FILE")" ]; then
+        echo "ERROR: openNDS DHCP compatibility lease mapping was not created." >&2
+        exit 1
+    fi
+
     cat > /etc/tarasec/hotspot-dns.conf <<EOF
 HOTSPOT_IF=$HOTSPOT_IF
 HOTSPOT_IP=$HOTSPOT_IP
@@ -336,6 +393,7 @@ EOF
     echo "  client network: $HOTSPOT_CIDR"
     echo "  ThemeSpec: /usr/lib/opennds/theme_tarasec.sh"
     echo "  TaraSec login: http://$HOTSPOT_IP:8080/hotspot/portal_login.php"
+    echo "  DHCP validation: NetworkManager leases exposed to openNDS"
     echo "  DNS interception: client TCP/UDP 53 -> $HOTSPOT_IP:53"
 else
     echo "openNDS and TaraSec portal assets are installed, but captive enforcement activation is deferred until the hotspot interface is up."
