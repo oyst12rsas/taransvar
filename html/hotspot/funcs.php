@@ -671,8 +671,9 @@ function confUserSubmitted()
 		return;
 	
 	$cFlds = array(":user"=>$szName);
-	$szRegisterd = $pDb->getString("select username from radcheck where username = :user",$cFlds);
-	if (strlen($szRegisterd))
+	$szRegisterd = $pDb->getString("select username from hotspotSubscriber where username = :user",$cFlds);
+	$szAdministrator = $pDb->getString("select username from user where username = :user and cast(isAdmin as unsigned)=1",$cFlds);
+	if (strlen($szRegisterd) || strlen($szAdministrator))
 	{
 		print red("$szName is already registered. Please choose another name");
 		addUser();
@@ -726,8 +727,18 @@ function confUserSubmitted()
 		$szExtraFlds = $szExtraVals = "";
 	
 
-	$szSQL = "insert into radcheck (username, attribute, op, value, email, phone, confirmCode $szExtraFlds) values (:name, 'Cleartext-Password', ':=', :pass, :email, :phone, LEFT(UUID(), 5) $szExtraVals)";
-	//print "SQL: $szSQL<br>";
+	$szConfirmed = isSuperUser()?"now()":"NULL";
+	$szEnabled = isSuperUser()?"b'1'":"b'0'";
+	$szCanonicalSQL = "insert into hotspotSubscriber (username,password,email,phone,confirmedTime,subscriptionType,expiryTime,quotaMB,usageMB,enabled) values (:name,:pass,:email,:phone,$szConfirmed,:subtype,str_to_date(:expiry,'%Y-%m-%d %H:%i:%s'),:quota,0,$szEnabled)";
+	if (!isSuperUser())
+	{
+		$cParam = array_merge($cParam, array(":quota"=>0, ":expiry"=>null, ":subtype"=>"quota"));
+	}
+	$pDb->execute($szCanonicalSQL, $cParam);
+
+	// Keep an explicit FreeRADIUS compatibility row while legacy reports and
+	// group/campaign pages still consume it. It is not an admin account store.
+	$szSQL = "insert into radcheck (username, attribute, op, value, email, phone, confirmedTime, mbquota, expirytime, subscriptionType) values (:name, 'Cleartext-Password', ':=', :pass, :email, :phone, $szConfirmed, :quota, str_to_date(:expiry,'%Y-%m-%d %H:%i:%s'), :subtype)";
 	$pDb->execute($szSQL, $cParam);
 
 	$cParam = array(":name" => $szName);
@@ -785,6 +796,7 @@ function deleteUser()
 			h1("You may not delete this user because there is registered one or more logins. Better create new user");
 		else
 		{
+			$pDb->execute("delete from hotspotSubscriber where username = :user", $cFlds);
 			$pDb->execute("delete from radcheck where username = :user", $cFlds);
 			$pDb->execute("delete from radusergroup where username = :user", $cFlds);
 			h1("User is deleted");
