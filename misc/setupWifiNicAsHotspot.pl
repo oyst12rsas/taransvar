@@ -28,9 +28,6 @@ sub ensure_nm_ifupdown_managed {
 }
 
 sub ensure_wpa_supplicant {
-    # NetworkManager requires a supplicant backend even for AP mode. Older
-    # TaraSec Raspberry installs could mask this service while hostapd owned
-    # wlan0, so a migration must restore the normal package-provided unit.
     my $load = `systemctl show -p LoadState --value wpa_supplicant.service 2>/dev/null`;
     chomp $load;
     if ($load eq 'masked') {
@@ -38,7 +35,6 @@ sub ensure_wpa_supplicant {
         sh('systemctl unmask wpa_supplicant.service');
         system('systemctl daemon-reload >/dev/null 2>&1');
     }
-
     if (system('systemctl start wpa_supplicant.service >/dev/null 2>&1') != 0) {
         print "wpa_supplicant service is unavailable; installing/reinstalling it for NetworkManager Wi-Fi support.\n";
         sh('apt-get update');
@@ -48,13 +44,29 @@ sub ensure_wpa_supplicant {
         sh('systemctl enable wpa_supplicant.service');
         sh('systemctl restart wpa_supplicant.service');
     } else {
-        # Enabling is desirable but not required for this invocation; on
-        # Debian/Raspberry Pi the unit may be statically D-Bus activated.
         system('systemctl enable wpa_supplicant.service >/dev/null 2>&1');
     }
+    die "wpa_supplicant is not active; NetworkManager cannot initialize Wi-Fi.\n" unless system('systemctl is-active --quiet wpa_supplicant.service') == 0;
+}
 
-    die "wpa_supplicant is not active; NetworkManager cannot initialize Wi-Fi.\n"
-        unless system('systemctl is-active --quiet wpa_supplicant.service') == 0;
+sub ensure_wifi_device_ready {
+    my ($ifname)=@_;
+    for (1..5) {
+        my $state=`nmcli -g GENERAL.STATE device show '$ifname' 2>/dev/null`; chomp $state;
+        return if $state !~ /^20\b/;
+        sleep 1;
+    }
+    print "$ifname is still unavailable after wpa_supplicant recovery; restarting NetworkManager so it can reacquire the supplicant interface.\n";
+    sh('systemctl restart NetworkManager');
+    sleep 3;
+    sh("nmcli device set '$ifname' managed yes");
+    system('nmcli radio wifi on >/dev/null 2>&1');
+    for (1..20) {
+        my $state=`nmcli -g GENERAL.STATE device show '$ifname' 2>/dev/null`; chomp $state;
+        return if $state !~ /^20\b/;
+        sleep 1;
+    }
+    die "$ifname remains unavailable even though wpa_supplicant is active. Check NetworkManager journal for Wi-Fi backend errors.\n";
 }
 
 sub interrupted_tarasec_migration_detected { my ($ifname)=@_; my @if_backups=glob('/etc/network/interfaces.tarasec-legacy-*'); my @hostapd_backups=glob('/etc/hostapd/hostapd.conf.tarasec-legacy-*'); return 0 unless @if_backups && @hostapd_backups; my $current=slurp_file('/etc/network/interfaces'); return 0 if $current =~ /^\s*iface\s+\Q$ifname\E\s+inet\s+static\s*$/m; for my $h(@hostapd_backups){ my $text=slurp_file($h); next unless $text =~ /^\s*interface\s*=\s*\Q$ifname\E\s*$/m; next unless $text =~ /^\s*ssid\s*=\s*TaraSec(?:[_-].*)?\s*$/mi; return 1; } return 0; }
@@ -96,9 +108,9 @@ my $ssid; if($requested_ssid ne ''){ my $short=$requested_ssid; $short =~ s/^Tar
 
 migrate_legacy_tarasec_hotspot($wifi_if);
 ensure_wpa_supplicant();
+ensure_wifi_device_ready($wifi_if);
 system('systemctl stop opennds >/dev/null 2>&1'); unlink '/etc/dnsmasq.d/tarasec-hotspot.conf' if -f '/etc/dnsmasq.d/tarasec-hotspot.conf';
 my $profile="tarasec-hotspot-$wifi_if"; system("nmcli connection down '$profile' >/dev/null 2>&1"); system("nmcli connection delete '$profile' >/dev/null 2>&1"); sh("nmcli connection add type wifi ifname '$wifi_if' con-name '$profile' autoconnect yes ssid '$ssid'"); sh("nmcli connection modify '$profile' 802-11-wireless.mode ap ipv4.method shared ipv4.addresses '$addr' ipv6.method disabled connection.autoconnect-priority 100");
-for(1..15){ my $state=`nmcli -g GENERAL.STATE device show '$wifi_if' 2>/dev/null`; last if $state !~ /^20\b/; sleep 1; }
 sh("nmcli connection up '$profile'");
 my $leases=wait_for_nm_lease_file($wifi_if); print "NetworkManager DHCP lease file: $leases\n";
 my $users_helper="$Bin/tarasec-users.pl"; die "Missing TaraSec account helper: $users_helper\n" unless -f $users_helper; install_users_helper($users_helper);
