@@ -302,7 +302,9 @@ if [ "$CREATE_TEST_ACCOUNT" -eq 1 ]; then
         N=$((N + 1))
         TEST_USERNAME="hotspot-test${N}"
     done
-    TEST_PASSWORD="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 10)"
+    # Human-friendly credentials: omit 0/O/o, 1/I/i/l/L so characters remain
+    # distinguishable on phones, printed tickets and common sans-serif fonts.
+    TEST_PASSWORD="$(tr -dc '23456789ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz' </dev/urandom | head -c 10)"
     mysql taransvar -e "INSERT INTO hotspotSubscriber(username,password,confirmedTime,subscriptionType,quotaMB,usageMB,enabled) VALUES('${TEST_USERNAME}','${TEST_PASSWORD}',NOW(),'quota',${TEST_QUOTA_MB},0,b'1');"
     echo "Created test Wi-Fi account '$TEST_USERNAME' with ${TEST_QUOTA_MB} MB quota."
     echo "Test Wi-Fi password: $TEST_PASSWORD"
