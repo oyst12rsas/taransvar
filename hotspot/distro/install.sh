@@ -257,10 +257,8 @@ echo
 echo "Installing and enrolling TaraSec NetBird management..."
 bash "$REPO_ROOT/misc/install_netbird_management.sh"
 
-# A hotspot-specific installation already represents explicit consent to enable
-# Wi-Fi. The general TaraSec install.sh asks the owner before invoking us.
-# Therefore the only account question here is whether a setup/test subscriber
-# should exist, and if so what quota the owner wants.
+# Running this hotspot-specific installer is itself explicit consent to enable
+# Wi-Fi. The general TaraSec installer asks that question before invoking us.
 CREATE_TEST_ACCOUNT=0
 TEST_QUOTA_MB=""
 echo
@@ -291,35 +289,13 @@ case "$TEST_ACCOUNT_ANSWER" in
         ;;
 esac
 
-# setupWifiNicAsHotspot.pl currently bootstraps one setup subscriber when the
-# database has none. Record the state before running it so we can enforce the
-# owner's choice without touching pre-existing subscriber accounts.
-PREEXISTING_SUBSCRIBERS="$(mysql -N -s taransvar -e "SELECT COUNT(*) FROM hotspotSubscriber;" 2>/dev/null || echo 0)"
-PREEXISTING_SUBSCRIBERS="${PREEXISTING_SUBSCRIBERS:-0}"
-
 echo
 echo "Configuring TaraSec Wi-Fi hotspot..."
 ADDR="${TARASEC_HOTSPOT_ADDR:-192.168.50.1/24}"
 perl "$REPO_ROOT/misc/setupWifiNicAsHotspot.pl" \
     "${TARASEC_HOTSPOT_IF:-}" "${TARASEC_HOTSPOT_SSID:-}" "$ADDR"
 
-if [ "$PREEXISTING_SUBSCRIBERS" -eq 0 ]; then
-    BOOTSTRAP_USER="$(mysql -N -s taransvar -e "SELECT username FROM hotspotSubscriber ORDER BY subscriberId LIMIT 1;" 2>/dev/null || true)"
-    if [ "$CREATE_TEST_ACCOUNT" -eq 1 ]; then
-        if [ -z "$BOOTSTRAP_USER" ]; then
-            echo "ERROR: Test account requested, but the hotspot bootstrap did not create an account." >&2
-            exit 1
-        fi
-        mysql taransvar -e "UPDATE hotspotSubscriber SET subscriptionType='quota', quotaMB=${TEST_QUOTA_MB}, usageMB=0, expiryTime=NULL, giveHoursAfterLogin=NULL, confirmedTime=COALESCE(confirmedTime,NOW()), enabled=b'1' WHERE username='${BOOTSTRAP_USER}';"
-        echo "Test Wi-Fi account '$BOOTSTRAP_USER' configured with ${TEST_QUOTA_MB} MB quota."
-    else
-        if [ -n "$BOOTSTRAP_USER" ]; then
-            mysql taransvar -e "DELETE FROM hotspotSubscriber WHERE username='${BOOTSTRAP_USER}';"
-            echo "No test Wi-Fi account created (owner declined)."
-        fi
-    fi
-elif [ "$CREATE_TEST_ACCOUNT" -eq 1 ]; then
-    # Existing subscriber data is never modified. Create a separate test account.
+if [ "$CREATE_TEST_ACCOUNT" -eq 1 ]; then
     TEST_USERNAME="hotspot-test"
     N=1
     while mysql -N -s taransvar -e "SELECT 1 FROM hotspotSubscriber WHERE username='${TEST_USERNAME}' LIMIT 1;" | grep -q 1; do
@@ -331,7 +307,7 @@ elif [ "$CREATE_TEST_ACCOUNT" -eq 1 ]; then
     echo "Created test Wi-Fi account '$TEST_USERNAME' with ${TEST_QUOTA_MB} MB quota."
     echo "Test Wi-Fi password: $TEST_PASSWORD"
 else
-    echo "Existing hotspot subscribers preserved; no test account added."
+    echo "No test Wi-Fi account created. Existing subscriber accounts, if any, were preserved."
 fi
 
 printf "\nInstall script is finished\n"
