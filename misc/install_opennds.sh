@@ -385,9 +385,13 @@ EOF
     grep -q 'FirewallRule allow tcp port 8080' /etc/opennds/opennds.conf
     ss -lnt | grep -q ':8080 '
 
-    if ! ndsctl status 2>/dev/null | grep -q "$HOTSPOT_IF"; then
+    # Capture the complete status before matching it. With `set -o pipefail`,
+    # `grep -q` can close a live ndsctl pipe after the first match, causing
+    # ndsctl to receive SIGPIPE and making a valid status check fail.
+    NDS_STATUS="$(ndsctl status 2>/dev/null || true)"
+    if ! grep -q "$HOTSPOT_IF" <<<"$NDS_STATUS"; then
         echo "ERROR: openNDS is running but its status does not reference hotspot interface $HOTSPOT_IF." >&2
-        ndsctl status >&2 || true
+        printf '%s\n' "$NDS_STATUS" >&2
         exit 1
     fi
     if ! ip -4 addr show dev "$HOTSPOT_IF" | grep -Eq "[[:space:]]inet[[:space:]]+$HOTSPOT_IP/"; then
