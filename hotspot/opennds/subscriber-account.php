@@ -8,9 +8,11 @@ $db=subscriber_db();
 $subscriber=subscriber_require($db);
 $customerId=(int)$subscriber['customerId'];
 
-$stmt=$db->prepare("SELECT COALESCE(a.balanceCredits,0) balanceCredits,c.email,c.phone,c.created,c.lastLogin
+$stmt=$db->prepare("SELECT COALESCE(a.balanceCredits,0) balanceCredits,c.email,c.phone,c.created,c.lastLogin,
+                           f.creditLimitCredits,f.debtCredits,f.status creditStatus
                     FROM hotspotCustomer c
                     LEFT JOIN hotspotCreditAccount a ON a.customerId=c.customerId
+                    LEFT JOIN hotspotCreditFacility f ON f.customerId=c.customerId
                     WHERE c.customerId=? LIMIT 1");
 $stmt->bind_param('i',$customerId);
 $stmt->execute();
@@ -44,6 +46,11 @@ while ($row=$res->fetch_assoc()) {
     ];
 }
 
+$limit=(float)($account['creditLimitCredits'] ?? 0);
+$debt=(float)($account['debtCredits'] ?? 0);
+$status=(string)($account['creditStatus'] ?? 'disabled');
+$available=($status === 'active') ? max(0.0,round($limit-$debt,6)) : 0.0;
+
 subscriber_reply(200,[
     'ok'=>true,
     'customer_id'=>$customerId,
@@ -52,6 +59,14 @@ subscriber_reply(200,[
     'balance_credits'=>(string)$account['balanceCredits'],
     'created'=>$account['created'],
     'last_login'=>$account['lastLogin'],
+    'credit_facility'=>[
+        'status'=>$status,
+        'credit_limit_credits'=>number_format($limit,6,'.',''),
+        'debt_credits'=>number_format($debt,6,'.',''),
+        'available_credit'=>number_format($available,6,'.',''),
+        'draw_enabled'=>($status === 'active' && $available > 0.0000005),
+        'draw_endpoint'=>'subscriber-credit-draw.php'
+    ],
     'sessions'=>$sessions,
     'payment'=>[
         'enabled'=>false,
