@@ -295,6 +295,37 @@ ADDR="${TARASEC_HOTSPOT_ADDR:-192.168.50.1/24}"
 perl "$REPO_ROOT/misc/setupWifiNicAsHotspot.pl" \
     "${TARASEC_HOTSPOT_IF:-}" "${TARASEC_HOTSPOT_SSID:-}" "$ADDR"
 
+# The core TaraSec firewall may have been applied before the hotspot interface
+# and /etc/tarasec/hotspot-dns.conf existed. Reapply it now so a default-DROP
+# host can receive client DHCP/DNS and captive-portal traffic. Restart openNDS
+# afterwards because the firewall reload flushes its filter chains.
+if [ -f /etc/tarasecfw.conf ]; then
+    echo
+    echo "Reapplying TaraSec firewall with hotspot client allowances..."
+    bash "$REPO_ROOT/misc/firewall.sh"
+    systemctl restart opennds
+    for _ in $(seq 1 45); do
+        if systemctl is-active --quiet opennds && ndsctl status >/dev/null 2>&1; then
+            break
+        fi
+        sleep 1
+    done
+    if ! systemctl is-active --quiet opennds; then
+        echo "ERROR: openNDS did not recover after the TaraSec firewall reload." >&2
+        journalctl -u opennds -n 60 --no-pager >&2 || true
+        exit 1
+    fi
+
+    # shellcheck disable=SC1091
+    source /etc/tarasec/hotspot-dns.conf
+    iptables -C INPUT -i "$HOTSPOT_IF" -p udp --dport 53 -j ACCEPT
+    iptables -C INPUT -i "$HOTSPOT_IF" -p tcp --dport 53 -j ACCEPT
+    iptables -C INPUT -i "$HOTSPOT_IF" -p udp --dport 67 -j ACCEPT
+    iptables -C INPUT -i "$HOTSPOT_IF" -p tcp --dport 2050 -j ACCEPT
+    iptables -C INPUT -i "$HOTSPOT_IF" -p tcp --dport 8080 -j ACCEPT
+    echo "TaraSec firewall permits hotspot DHCP, DNS and captive-portal traffic on $HOTSPOT_IF."
+fi
+
 if [ "$CREATE_TEST_ACCOUNT" -eq 1 ]; then
     TEST_USERNAME="hotspot-test"
     N=1
