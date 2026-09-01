@@ -112,4 +112,16 @@ if (-f $roaming_schema) {
 	die "TaraSec hotspot roaming schema not found at $roaming_schema\n";
 }
 
+# Subscriber-facing Android/iOS clients use the same global customer and credit
+# records. Apply only the credential/token layer here; passwords themselves are
+# never created by the installer.
+my $subscriber_schema = '../opennds/subscriber-schema.sql';
+if (-f $subscriber_schema) {
+	print "Applying TaraSec subscriber app authentication schema...\n";
+	my $rc = system('mysql taransvar < '.$subscriber_schema);
+	die "Unable to import TaraSec subscriber authentication schema\n" if $rc != 0;
+} else {
+	die "TaraSec subscriber authentication schema not found at $subscriber_schema\n";
+}
+
 $conn->disconnect;
