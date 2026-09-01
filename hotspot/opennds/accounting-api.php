@@ -89,16 +89,6 @@ try {
     $newProvider=round((float)$session['providerCredits']+$reward,6);
     $exhausted=($newBalance <= 0.0000005 && $requestedCharge > 0.0);
 
-    $endedSql=$final || $exhausted ? ', endedAt=NOW()' : '';
-    $stmt=$db->prepare("UPDATE hotspotSession
-                        SET bytesUp=?,bytesDown=?,lastSeen=NOW(),chargedCredits=?,providerCredits=?{$endedSql}
-                        WHERE sessionId=?");
-    $stmt->bind_param('iidii',$bytesUp,$bytesDown,$newCharged,$newProvider,$sessionId);
-    // mysqli type 'd' is required for both decimal values; rebind correctly.
-    $stmt->bind_param('iid di', $bytesUp, $bytesDown, $newCharged, $newProvider, $sessionId);
-
-    // The space above is invalid in mysqli type strings; prepare a clean update.
-    $stmt->close();
     $sql="UPDATE hotspotSession SET bytesUp=?,bytesDown=?,lastSeen=NOW(),chargedCredits=?,providerCredits=?".
          (($final || $exhausted) ? ",endedAt=NOW()" : "")." WHERE sessionId=?";
     $stmt=$db->prepare($sql);
