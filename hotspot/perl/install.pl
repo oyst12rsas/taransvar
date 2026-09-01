@@ -124,4 +124,15 @@ if (-f $subscriber_schema) {
 	die "TaraSec subscriber authentication schema not found at $subscriber_schema\n";
 }
 
+# Credit facilities are optional and explicitly approved. The schema is safe to
+# apply everywhere; no subscriber receives borrowing capacity by default.
+my $facility_schema = '../opennds/credit-facility-schema.sql';
+if (-f $facility_schema) {
+	print "Applying TaraSec subscriber credit facility schema...\n";
+	my $rc = system('mysql taransvar < '.$facility_schema);
+	die "Unable to import TaraSec subscriber credit facility schema\n" if $rc != 0;
+} else {
+	die "TaraSec subscriber credit facility schema not found at $facility_schema\n";
+}
+
 $conn->disconnect;
