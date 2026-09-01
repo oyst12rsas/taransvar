@@ -1,6 +1,5 @@
--- TaraSec subscriber app authentication schema.
--- Repeatable on MySQL/MariaDB. Subscriber balances and usage remain in the
--- roaming schema; this file only adds credentials/session tokens for clients.
+-- TaraSec subscriber app authentication and local delivery cache schema.
+-- Financial/loan authority lives in the private tarasec_payment database.
 
 DROP PROCEDURE IF EXISTS tarasec_subscriber_add_column_if_missing;
 DELIMITER //
@@ -37,4 +36,16 @@ CREATE TABLE IF NOT EXISTS hotspotSubscriberToken (
     UNIQUE KEY uq_hotspotSubscriberToken_hash (tokenHash),
     KEY ix_hotspotSubscriberToken_customer (customerId, revokedAt, expiresAt),
     CONSTRAINT fk_hotspotSubscriberToken_customer FOREIGN KEY (customerId) REFERENCES hotspotCustomer(customerId)
+) ENGINE=InnoDB;
+
+-- This is not a financial ledger. It only proves that a central financial grant
+-- has already been delivered into the TaraSec spendable-credit cache.
+CREATE TABLE IF NOT EXISTS hotspotCreditGrantReceipt (
+    grantId CHAR(36) NOT NULL,
+    customerId BIGINT UNSIGNED NOT NULL,
+    amountCredits DECIMAL(20,6) NOT NULL,
+    appliedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (grantId),
+    KEY ix_hotspotCreditGrantReceipt_customer (customerId, appliedAt),
+    CONSTRAINT fk_hotspotCreditGrantReceipt_customer FOREIGN KEY (customerId) REFERENCES hotspotCustomer(customerId)
 ) ENGINE=InnoDB;
