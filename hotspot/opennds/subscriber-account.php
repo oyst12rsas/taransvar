@@ -3,16 +3,15 @@
 
 declare(strict_types=1);
 require_once __DIR__ . '/subscriber-api-common.php';
+require_once __DIR__ . '/payment-service-client.php';
 
 $db=subscriber_db();
 $subscriber=subscriber_require($db);
 $customerId=(int)$subscriber['customerId'];
 
-$stmt=$db->prepare("SELECT COALESCE(a.balanceCredits,0) balanceCredits,c.email,c.phone,c.created,c.lastLogin,
-                           f.creditLimitCredits,f.debtCredits,f.status creditStatus
+$stmt=$db->prepare("SELECT COALESCE(a.balanceCredits,0) balanceCredits,c.email,c.phone,c.created,c.lastLogin
                     FROM hotspotCustomer c
                     LEFT JOIN hotspotCreditAccount a ON a.customerId=c.customerId
-                    LEFT JOIN hotspotCreditFacility f ON f.customerId=c.customerId
                     WHERE c.customerId=? LIMIT 1");
 $stmt->bind_param('i',$customerId);
 $stmt->execute();
@@ -46,10 +45,27 @@ while ($row=$res->fetch_assoc()) {
     ];
 }
 
-$limit=(float)($account['creditLimitCredits'] ?? 0);
-$debt=(float)($account['debtCredits'] ?? 0);
-$status=(string)($account['creditStatus'] ?? 'disabled');
-$available=($status === 'active') ? max(0.0,round($limit-$debt,6)) : 0.0;
+$credit=[
+    'status'=>'unavailable',
+    'credit_limit_credits'=>'0.000000',
+    'debt_credits'=>'0.000000',
+    'available_credit'=>'0.000000',
+    'draw_enabled'=>false,
+    'draw_endpoint'=>'subscriber-credit-draw.php'
+];
+try {
+    $central=tarasec_payment_request('summary','GET',['subscriber_ref'=>(string)$customerId]);
+    $credit=[
+        'status'=>(string)$central['status'],
+        'credit_limit_credits'=>(string)$central['credit_limit'],
+        'debt_credits'=>(string)$central['debt'],
+        'available_credit'=>(string)$central['available_credit'],
+        'draw_enabled'=>(bool)$central['draw_enabled'],
+        'draw_endpoint'=>'subscriber-credit-draw.php'
+    ];
+} catch (Throwable $e) {
+    error_log('TaraSec central credit summary unavailable: '.$e->getMessage());
+}
 
 subscriber_reply(200,[
     'ok'=>true,
@@ -59,14 +75,7 @@ subscriber_reply(200,[
     'balance_credits'=>(string)$account['balanceCredits'],
     'created'=>$account['created'],
     'last_login'=>$account['lastLogin'],
-    'credit_facility'=>[
-        'status'=>$status,
-        'credit_limit_credits'=>number_format($limit,6,'.',''),
-        'debt_credits'=>number_format($debt,6,'.',''),
-        'available_credit'=>number_format($available,6,'.',''),
-        'draw_enabled'=>($status === 'active' && $available > 0.0000005),
-        'draw_endpoint'=>'subscriber-credit-draw.php'
-    ],
+    'credit_facility'=>$credit,
     'sessions'=>$sessions,
     'payment'=>[
         'enabled'=>false,
