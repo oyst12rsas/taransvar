@@ -67,7 +67,7 @@ try {
         'available_credit'=>(string)($central['available_credit']??'0.000000')
     ]);
 } catch(Throwable $e) {
-    try { if($db->errno===0) $db->rollback(); } catch(Throwable $ignored) {}
+    try { $db->rollback(); } catch(Throwable $ignored) {}
     error_log('TaraSec central credit draw failed: '.$e->getMessage());
     $reason=str_replace(' ','_',strtolower($e->getMessage()));
     subscriber_reply(502,['ok'=>false,'reason'=>$reason?:'central_credit_draw_failed']);
