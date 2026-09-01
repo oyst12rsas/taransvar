@@ -102,6 +102,12 @@ if (-f $roaming_schema) {
 	print "Applying TaraSec global subscriber credit/roaming schema...\n";
 	my $rc = system('mysql taransvar < '.$roaming_schema);
 	die "Unable to import TaraSec hotspot roaming schema\n" if $rc != 0;
+
+	# The first roaming pilot required hotspotSession.entitlementId. Credit-based
+	# sessions deliberately have no legacy time entitlement, so upgrades must
+	# relax that old NOT NULL constraint. This ALTER is safe to repeat.
+	$rc = system(q{mysql taransvar -e "ALTER TABLE hotspotSession MODIFY entitlementId BIGINT UNSIGNED NULL"});
+	die "Unable to migrate hotspotSession entitlementId for credit roaming\n" if $rc != 0;
 } else {
 	die "TaraSec hotspot roaming schema not found at $roaming_schema\n";
 }
