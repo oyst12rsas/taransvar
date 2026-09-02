@@ -1,11 +1,11 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/subscriber-api-common.php';
+require_once __DIR__ . '/../subscriber/subscriber-api-common.php';
 
 function identity_config(string $provider): array {
     $provider=strtolower($provider);
-    $callback=getenv('TARASEC_IDENTITY_CALLBACK') ?: 'https://tarasec.org/hotspot/opennds/identity-callback.php';
+    $callback=getenv('TARASEC_IDENTITY_CALLBACK') ?: 'https://tarasec.org/api/v1/identity/identity-callback.php';
     if ($provider === 'google') {
         return [
             'provider'=>'google',

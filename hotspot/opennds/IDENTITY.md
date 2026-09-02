@@ -1,5 +1,13 @@
 # TaraSec global identity
 
+Public URL ownership is deliberately separated:
+
+- `/hotspot/` is reserved for node-local hotspot administration and captive portal pages.
+- `/api/v1/subscriber/` is the central subscriber account API.
+- `/api/v1/identity/` is the central Google/Facebook identity API.
+
+A global subscriber token is never accepted as a node-management credential.
+
 TaraSec subscriber identity is global. Google and Facebook authenticate a stable
 provider account to the central TaraSec service. Hotspot nodes receive only a
 TaraSec subscriber token; provider access tokens and secrets never leave the
@@ -22,7 +30,7 @@ Configure these values in the central web server environment:
 
 Register this callback with both providers:
 
-`https://tarasec.org/hotspot/opennds/identity-callback.php`
+`https://tarasec.org/api/v1/identity/identity-callback.php`
 
 The Android pilot uses `tarasec://identity`. The callback returns a random,
 single-use code valid for two minutes. The app exchanges that code for a

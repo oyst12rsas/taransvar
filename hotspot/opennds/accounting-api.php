@@ -24,7 +24,7 @@ if ($gatewayKey === '' || $token === '' || $sessionId <= 0 || $bytesUp < 0 || $b
     reply(400, ['ok'=>false, 'reason'=>'missing_or_invalid_parameters']);
 }
 
-$dbBootstrap = getenv('TARASEC_DB_BOOTSTRAP') ?: __DIR__ . '/../../html/db_connect.php';
+$dbBootstrap = getenv('TARASEC_DB_BOOTSTRAP') ?: dirname(__DIR__, 3) . '/html/db_connect.php';
 if (!is_file($dbBootstrap)) reply(500, ['ok'=>false,'reason'=>'db_bootstrap_missing']);
 require_once $dbBootstrap;
 $db = $mysqli ?? $conn ?? $db ?? null;

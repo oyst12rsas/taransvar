@@ -12,7 +12,7 @@ function subscriber_reply(int $code, array $body): never {
 }
 
 function subscriber_db(): mysqli {
-    $dbBootstrap = getenv('TARASEC_DB_BOOTSTRAP') ?: __DIR__ . '/../../html/db_connect.php';
+    $dbBootstrap = getenv('TARASEC_DB_BOOTSTRAP') ?: dirname(__DIR__, 3) . '/html/db_connect.php';
     if (!is_file($dbBootstrap)) subscriber_reply(500, ['ok'=>false,'reason'=>'db_bootstrap_missing']);
     require $dbBootstrap;
     $handle = $mysqli ?? $conn ?? $db ?? null;
