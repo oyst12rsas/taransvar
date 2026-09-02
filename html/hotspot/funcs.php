@@ -1231,7 +1231,7 @@ function showUsageHistoryFor($szUser)
 		$szRows .= tr($szRow);
 	}
 
-	print "<br><br>".h1("Data Usage (in MB):").table(tr(th("Usage last week",2,'align="center"').th("&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;").th("Usage last 24 hours",2,'align="center"').th("&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;").th("Usage last hour",2,'align="center"')).tr(th("Time").th("Usage").th("&nbsp;").th("Time").th("Usage")).$szRows);
+	print "<br><br>".h1("Data Usage (in MB):").table(tr(th("Usage last week",2,'align="center"').th("&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;").th("Usage last 24 hours",2,'align="center"').th("&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;").th("Usage last hour",2,'align="center"')).tr(th("Time").th("Usage").th("&nbsp;").th("Time").th("Usage").th("&nbsp;").th("Time").th("Usage")).$szRows);
 }
 
 function checkSystemWarnings()

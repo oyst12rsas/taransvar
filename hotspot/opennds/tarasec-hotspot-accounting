@@ -32,6 +32,11 @@ my $insert = $dbh->prepare(q{
 my $add = $dbh->prepare(q{
     UPDATE hotspotSubscriber SET usageMB=usageMB+(?/1024.0) WHERE username=?
 });
+my $history = $dbh->prepare(q{
+    INSERT INTO userusage(user,ip,yyyymmddhh,mb)
+    VALUES(?,?,DATE_FORMAT(NOW(),'%Y-%m-%d %H:%i'),?/1024.0)
+    ON DUPLICATE KEY UPDATE mb=COALESCE(mb,0)+VALUES(mb)
+});
 my $touch = $dbh->prepare('UPDATE session SET lastrequest=NOW() WHERE sessionid=?');
 my $remaining = $dbh->prepare(
     'SELECT subscriptionType,quotaMB,usageMB FROM hotspotSubscriber WHERE username=?'
@@ -67,7 +72,10 @@ for my $client (values %{$data->{clients}}) {
 
         # openNDS cumulative session counters are KiB, while
         # hotspotSubscriber stores MiB.
-        $add->execute($delta_kib,$username) if $delta_kib > 0;
+        if ($delta_kib > 0) {
+            $add->execute($delta_kib,$username);
+            $history->execute($username,$ip,$delta_kib);
+        }
         $insert->execute($session_id,$up,$down);
         $touch->execute($session_id);
         $remaining->execute($username);
