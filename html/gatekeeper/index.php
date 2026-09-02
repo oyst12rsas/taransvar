@@ -1,6 +1,6 @@
 <?php
 session_start();
-$nRequiredDbVersion=82;	//NOTE! Make sure this line is always number 3 in the file because that's claimed below.
+$nRequiredDbVersion=83;	//NOTE! Make sure this line is always number 3 in the file because that's claimed below.
 
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
@@ -72,13 +72,9 @@ function printTitle()
 
 if ($bOk)
 {
-	if (intval($setupRow["dbVersion"])+0 != $nRequiredDbVersion)
+	if (intval($setupRow["dbVersion"])+0 < $nRequiredDbVersion)
 	{
-		if ($setupRow["dbVersion"]+0 < $nRequiredDbVersion)
-			print "Your database is not properly upgraded... you should run: sudo perl misc/system_diag.pl to upgrade to version $nRequiredDbVersion.";
-		else
-			print "Your database is newer than your script.<br>The most likely reason is that you didn't copy the files from the www directory to localhost (normally /var/www/html).<br>To avoid this message, you can also update the \$nRequiredDbVersion variable in line 3 or index.php.";
-			
+		print "Your database is not properly upgraded... you should run: sudo perl misc/system_diag.pl to upgrade to version $nRequiredDbVersion.";
 		print "<br><br>This script is made for version ".$nRequiredDbVersion.". Your database is version ".$setupRow["dbVersion"].". <br><br>Aborting...";
 		return;
 	}
