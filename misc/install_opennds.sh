@@ -293,8 +293,22 @@ EOF
     systemctl enable tarasec-opennds-dhcp-compat.service >/dev/null
     systemctl restart tarasec-opennds-dhcp-compat.service
 
+    # systemctl restart returns after the service process is launched, before
+    # its first two-second synchronization cycle necessarily creates TARGET.
+    # Wait briefly so slower Raspberry Pi storage is not reported as failure.
+    for _ in $(seq 1 20); do
+        if [ -f /tmp/dhcp.leases ] && [ -r /tmp/dhcp.leases ]; then
+            break
+        fi
+        if ! systemctl is-active --quiet tarasec-opennds-dhcp-compat.service; then
+            break
+        fi
+        sleep 0.25
+    done
     if [ ! -f /tmp/dhcp.leases ] || [ ! -r /tmp/dhcp.leases ]; then
         echo "ERROR: openNDS DHCP compatibility lease mapping was not created." >&2
+        systemctl status tarasec-opennds-dhcp-compat.service --no-pager >&2 || true
+        journalctl -u tarasec-opennds-dhcp-compat.service -n 40 --no-pager >&2 || true
         exit 1
     fi
 
