@@ -352,10 +352,7 @@ printf "WAN configuration was preserved; openNDS controls captive access and Net
 if lsmod | awk '{print $1}' | grep -qx tarakernel && \
    ! pgrep -x taralink >/dev/null 2>&1; then
     if [ -r /sys/module/tarakernel/parameters/fail_open_without_config ] && \
-       grep -Eiq '^(1|y|yes) -s -p "********** The system should now restart. Press Ctrl-C to abort or any other key to reboot. "
-echo
-reboot
- /sys/module/tarakernel/parameters/fail_open_without_config; then
+       grep -Eiq '^(1|y|yes)$' /sys/module/tarakernel/parameters/fail_open_without_config; then
         echo "tarakernel is fail-open without configuration; keeping it loaded while taralink is unavailable."
     else
         echo "Legacy fail-closed tarakernel detected without taralink; unloading it to preserve hotspot forwarding."
