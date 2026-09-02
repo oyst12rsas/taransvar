@@ -19,7 +19,7 @@ function users_show()
 	$pDb = new CDb;
 	$cFlds = array(":name" => $szUser);
 	$cFetched = $pDb->fetch(
-		"select username, confirmedTime, subscriptionType, expiryTime, quotaMB, coalesce(usageMB,0) as usageMB, round(coalesce(quotaMB,0)-coalesce(usageMB,0),1) as quotaLeft, cast(enabled as unsigned) as enabled from hotspotSubscriber where username=:name limit 1",
+		"select username, confirmedTime, subscriptionType, expiryTime, quotaMB, round(coalesce(usageMB,0),1) as usageMB, round(coalesce(quotaMB,0)-coalesce(usageMB,0),1) as quotaLeft, cast(enabled as unsigned) as enabled from hotspotSubscriber where username=:name limit 1",
 		$cFlds
 	);
 	if (!$cFetched)
