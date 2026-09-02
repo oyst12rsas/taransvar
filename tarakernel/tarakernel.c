@@ -114,6 +114,13 @@ static char *cBlockDescriptor[] = {"SERVERS","INFECTIONS","WHITE_LIST","BLACK_LI
 
 static struct _Setup *pSetup = NULL;
 
+/* Read-only capability flag used to distinguish this corrected fail-open build
+ * from legacy builds that dropped forwarded traffic without configuration. */
+static bool fail_open_without_config = true;
+module_param(fail_open_without_config, bool, 0444);
+MODULE_PARM_DESC(fail_open_without_config,
+	"Forward packets while taralink configuration is unavailable");
+
 #include "module_configuration.h"
 #include "module_store_configuration.h"
 #include "module_packet_interpreter.h"

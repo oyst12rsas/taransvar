@@ -346,18 +346,23 @@ fi
 printf "\nInstall script is finished\n"
 printf "WAN configuration was preserved; openNDS controls captive access and NetBird wt0/wt* is management only.\n"
 
-# tarakernel intentionally drops forwarded packets until taralink supplies its
-# configuration.  A hotspot-only installation may have the module left behind
-# without the controller, which would make portal authentication succeed while
-# all Internet traffic is silently discarded.  Keep that degraded combination
-# fail-open and let the full TaraSec installer activate both components
-# together when taralink is available.
+# Current tarakernel versions explicitly advertise that they fail open before
+# taralink supplies configuration. Keep those modules loaded so they can still
+# enforce invariant protections. Unload only a legacy fail-closed module.
 if lsmod | awk '{print $1}' | grep -qx tarakernel && \
    ! pgrep -x taralink >/dev/null 2>&1; then
-    echo "tarakernel is loaded without a running taralink; unloading it to preserve hotspot forwarding."
-    if ! modprobe -r tarakernel; then
-        echo "ERROR: unable to unload unconfigured tarakernel; hotspot forwarding would be blocked." >&2
-        exit 1
+    if [ -r /sys/module/tarakernel/parameters/fail_open_without_config ] && \
+       grep -Eiq '^(1|y|yes) -s -p "********** The system should now restart. Press Ctrl-C to abort or any other key to reboot. "
+echo
+reboot
+ /sys/module/tarakernel/parameters/fail_open_without_config; then
+        echo "tarakernel is fail-open without configuration; keeping it loaded while taralink is unavailable."
+    else
+        echo "Legacy fail-closed tarakernel detected without taralink; unloading it to preserve hotspot forwarding."
+        if ! modprobe -r tarakernel; then
+            echo "ERROR: unable to unload legacy unconfigured tarakernel; hotspot forwarding would be blocked." >&2
+            exit 1
+        fi
     fi
 fi
 
