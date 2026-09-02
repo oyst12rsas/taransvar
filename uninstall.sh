@@ -107,6 +107,7 @@ rm -f \
     /etc/systemd/system/tarasec-hotspot.service \
     /etc/systemd/system/tarasec-hostapd-disconnect.service \
     /usr/local/sbin/tarasec-wifi-session-watch \
+    /usr/local/sbin/tarasec-hotspot-accounting \
     /usr/local/sbin/tarasec-hotspot-dns-redirect \
     /usr/local/sbin/tarasec-opennds-dhcp-compat \
     /usr/local/sbin/tarasec-subscriber-logout \

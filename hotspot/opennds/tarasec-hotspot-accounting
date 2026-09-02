@@ -1,0 +1,92 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use DBI;
+use JSON::PP qw(decode_json);
+
+my $json = qx{ndsctl json 2>/dev/null};
+exit 0 if $? != 0 || $json eq '';
+my $data = eval { decode_json($json) };
+exit 0 if !$data || ref($data->{clients}) ne 'HASH';
+
+my $dbh = DBI->connect(
+    'DBI:mysql:database=taransvar;host=localhost', 'root', '',
+    { RaiseError => 1, PrintError => 0, AutoCommit => 1 }
+) or die "Unable to connect to TaraSec database\n";
+
+my $find = $dbh->prepare(q{
+    SELECT s.sessionid,s.username,h.subscriptionType,h.quotaMB,h.usageMB
+      FROM session s
+      JOIN hotspotSubscriber h ON h.username=s.username
+     WHERE s.ip=? AND s.active=1
+     ORDER BY s.sessionid DESC LIMIT 1
+});
+my $checkpoint = $dbh->prepare(
+    'SELECT uploadKiB,downloadKiB FROM hotspotUsageCheckpoint WHERE sessionId=? FOR UPDATE'
+);
+my $insert = $dbh->prepare(q{
+    INSERT INTO hotspotUsageCheckpoint(sessionId,uploadKiB,downloadKiB,updated)
+    VALUES(?,?,?,NOW())
+    ON DUPLICATE KEY UPDATE uploadKiB=VALUES(uploadKiB),downloadKiB=VALUES(downloadKiB),updated=NOW()
+});
+my $add = $dbh->prepare(q{
+    UPDATE hotspotSubscriber SET usageMB=usageMB+(?/1024.0) WHERE username=?
+});
+my $touch = $dbh->prepare('UPDATE session SET lastrequest=NOW() WHERE sessionid=?');
+my $remaining = $dbh->prepare(
+    'SELECT subscriptionType,quotaMB,usageMB FROM hotspotSubscriber WHERE username=?'
+);
+
+for my $client (values %{$data->{clients}}) {
+    next if ref($client) ne 'HASH' || ($client->{state} // '') ne 'Authenticated';
+    my $ip = $client->{ip} // '';
+    next if $ip !~ /\A(?:\d{1,3}\.){3}\d{1,3}\z/;
+    my $up = int($client->{upload_this_session} // 0);
+    my $down = int($client->{download_this_session} // 0);
+    next if $up < 0 || $down < 0;
+
+    eval {
+        $dbh->begin_work;
+        $find->execute($ip);
+        my ($session_id,$username) = $find->fetchrow_array;
+        if (!$session_id || !defined $username) {
+            $dbh->rollback;
+            next;
+        }
+
+        $checkpoint->execute($session_id);
+        my ($old_up,$old_down) = $checkpoint->fetchrow_array;
+        $old_up = 0 unless defined $old_up;
+        $old_down = 0 unless defined $old_down;
+
+        # A counter reset within the same DB session is treated as a new
+        # openNDS accounting epoch. Never subtract previously charged traffic.
+        my $delta_up = $up >= $old_up ? $up - $old_up : $up;
+        my $delta_down = $down >= $old_down ? $down - $old_down : $down;
+        my $delta_kib = $delta_up + $delta_down;
+
+        # openNDS cumulative session counters are KiB, while
+        # hotspotSubscriber stores MiB.
+        $add->execute($delta_kib,$username) if $delta_kib > 0;
+        $insert->execute($session_id,$up,$down);
+        $touch->execute($session_id);
+        $remaining->execute($username);
+        my ($type,$quota,$usage) = $remaining->fetchrow_array;
+        $dbh->commit;
+
+        if (($type // '') eq 'quota' && ($quota // 0) > 0 && ($usage // 0) >= $quota) {
+            system('/usr/local/sbin/tarasec-subscriber-logout',$ip);
+            logger("quota exhausted for $username at $ip");
+        }
+    };
+    if ($@) {
+        eval { $dbh->rollback };
+        logger("accounting failed for $ip: $@");
+    }
+}
+$dbh->disconnect;
+
+sub logger {
+    my ($message)=@_;
+    system('logger','-t','tarasec-hotspot-accounting',$message);
+}

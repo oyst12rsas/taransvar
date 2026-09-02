@@ -10,15 +10,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WATCH_SRC="$REPO_ROOT/hotspot/opennds/tarasec-wifi-session-watch"
 LOGOUT_SRC="$REPO_ROOT/hotspot/opennds/tarasec-subscriber-logout"
+ACCOUNTING_SRC="$REPO_ROOT/hotspot/opennds/tarasec-hotspot-accounting"
+USERS_SRC="$REPO_ROOT/misc/tarasec-users.pl"
 
 if [ ! -f "$WATCH_SRC" ]; then
     echo "ERROR: missing $WATCH_SRC" >&2
     exit 1
 fi
-if [ ! -f "$LOGOUT_SRC" ]; then
-    echo "ERROR: missing $LOGOUT_SRC" >&2
-    exit 1
-fi
+for required in "$LOGOUT_SRC" "$ACCOUNTING_SRC" "$USERS_SRC"; do
+    if [ ! -f "$required" ]; then
+        echo "ERROR: missing $required" >&2
+        exit 1
+    fi
+done
 
 if ! command -v iw >/dev/null 2>&1; then
     apt-get update
@@ -43,6 +47,9 @@ fi
 # install(1) sets the required runtime mode explicitly here.
 install -m 0755 "$WATCH_SRC" /usr/local/sbin/tarasec-wifi-session-watch
 install -m 0755 "$LOGOUT_SRC" /usr/local/sbin/tarasec-subscriber-logout
+install -m 0755 "$ACCOUNTING_SRC" /usr/local/sbin/tarasec-hotspot-accounting
+install -m 0755 "$USERS_SRC" /usr/local/sbin/tarasec-users
+/usr/local/sbin/tarasec-users --ensure-schema
 
 cat > /etc/systemd/system/tarasec-wifi-session-watch.service <<EOF
 [Unit]
