@@ -69,7 +69,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
     ca-certificates curl git perl python3 gnupg \
     network-manager iw rfkill iproute2 \
     apache2 "$DB_SERVER_PKG" "$DB_CLIENT_PKG" \
-    php libapache2-mod-php php-mysql \
+    php libapache2-mod-php php-mysql php-curl \
     cron \
     libdbi-perl libdbd-mysql-perl \
     freeradius freeradius-mysql

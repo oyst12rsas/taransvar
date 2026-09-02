@@ -1,6 +1,55 @@
 -- TaraSec subscriber app authentication and local delivery cache schema.
 -- Financial/loan authority lives in the private tarasec_payment database.
 
+
+-- Central TaraSec identity. Provider identities are stable subjects; email is
+-- an attribute and is never the sole provider-account key.
+CREATE TABLE IF NOT EXISTS tarasecIdentity (
+    identityId BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    primaryEmail VARCHAR(255) NULL,
+    emailVerifiedAt DATETIME NULL,
+    displayName VARCHAR(255) NULL,
+    created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(identityId),
+    KEY ix_tarasecIdentity_email(primaryEmail)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS tarasecIdentityProvider (
+    identityProviderId BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    identityId BIGINT UNSIGNED NOT NULL,
+    provider ENUM('google','facebook','email') NOT NULL,
+    providerSubject VARCHAR(255) NOT NULL,
+    emailAtProvider VARCHAR(255) NULL,
+    created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(identityProviderId),
+    UNIQUE KEY uq_identity_provider_subject(provider,providerSubject),
+    CONSTRAINT fk_identityProvider_identity FOREIGN KEY(identityId) REFERENCES tarasecIdentity(identityId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS tarasecOAuthState (
+    oauthStateId BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    stateHash CHAR(64) NOT NULL,
+    provider ENUM('google','facebook') NOT NULL,
+    appRedirect VARCHAR(255) NOT NULL,
+    created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expiresAt DATETIME NOT NULL,
+    usedAt DATETIME NULL,
+    PRIMARY KEY(oauthStateId),
+    UNIQUE KEY uq_oauth_state_hash(stateHash)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS tarasecIdentityCode (
+    identityCodeId BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    identityId BIGINT UNSIGNED NOT NULL,
+    codeHash CHAR(64) NOT NULL,
+    created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expiresAt DATETIME NOT NULL,
+    usedAt DATETIME NULL,
+    PRIMARY KEY(identityCodeId),
+    UNIQUE KEY uq_identity_code_hash(codeHash),
+    CONSTRAINT fk_identityCode_identity FOREIGN KEY(identityId) REFERENCES tarasecIdentity(identityId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 DROP PROCEDURE IF EXISTS tarasec_subscriber_add_column_if_missing;
 DELIMITER //
 CREATE PROCEDURE tarasec_subscriber_add_column_if_missing(IN p_table VARCHAR(64), IN p_column VARCHAR(64), IN p_definition TEXT)
@@ -17,6 +66,7 @@ BEGIN
 END//
 DELIMITER ;
 
+CALL tarasec_subscriber_add_column_if_missing('hotspotCustomer','identityId','BIGINT UNSIGNED NULL');
 CALL tarasec_subscriber_add_column_if_missing('hotspotCustomer','passwordHash','VARCHAR(255) NULL');
 CALL tarasec_subscriber_add_column_if_missing('hotspotCustomer','emailVerifiedAt','DATETIME NULL');
 CALL tarasec_subscriber_add_column_if_missing('hotspotCustomer','phoneVerifiedAt','DATETIME NULL');
@@ -49,3 +99,9 @@ CREATE TABLE IF NOT EXISTS hotspotCreditGrantReceipt (
     KEY ix_hotspotCreditGrantReceipt_customer (customerId, appliedAt),
     CONSTRAINT fk_hotspotCreditGrantReceipt_customer FOREIGN KEY (customerId) REFERENCES hotspotCustomer(customerId)
 ) ENGINE=InnoDB;
+
+SET @identity_unique_exists=(SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name='hotspotCustomer' AND index_name='uq_hotspotCustomer_identity');
+SET @identity_unique_sql=IF(@identity_unique_exists=0,'ALTER TABLE hotspotCustomer ADD UNIQUE KEY uq_hotspotCustomer_identity(identityId)','SELECT 1');
+PREPARE identity_unique_stmt FROM @identity_unique_sql;
+EXECUTE identity_unique_stmt;
+DEALLOCATE PREPARE identity_unique_stmt;
