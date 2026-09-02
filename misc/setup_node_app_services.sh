@@ -12,18 +12,6 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-python3 - "$GATEKEEPER_INDEX" <<'PY'
-from pathlib import Path
-import sys
-p=Path(sys.argv[1])
-s=p.read_text()
-old='if (intval($setupRow["dbVersion"])+0 != $nRequiredDbVersion)'
-new='if (intval($setupRow["dbVersion"])+0 < $nRequiredDbVersion)'
-if old in s:
-    s=s.replace(old,new,1)
-    p.write_text(s)
-PY
-
 mkdir -p "$RUNTIME_DIR"
 install -m 0755 "$ROOT_DIR/manager_requests.pl" "$RUNTIME_DIR/manager_requests.pl"
 install -m 0644 "$ROOT_DIR/systemd/tarasec-manager-requests.service" "$SYSTEMD_DIR/tarasec-manager-requests.service"
