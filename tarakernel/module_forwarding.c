@@ -83,8 +83,15 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 		
 	if (!bReceivedConfiguration)
 	{
-	    pr_info("tarakernel: Dropping forwarded package until configuration is received (please start taralink).\n");
-		return NF_DROP;
+		/*
+		 * Fail open while the userspace controller is unavailable.  Before
+		 * configuration arrives we do not know which destinations are TaraSec
+		 * partners, so tagging every Internet TCP packet would be unsafe.  The
+		 * userspace health reporter raises the degraded-assurance alert and
+		 * partner-aware severity-1 tagging resumes once configuration exists.
+		 */
+		pr_warn_ratelimited("tarakernel: Protection unavailable: taralink configuration has not been received; allowing forwarded traffic without TaraSec inspection.\n");
+		return NF_ACCEPT;
 	}
 	
 	if (!skb)
@@ -269,5 +276,4 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
         
 	return NF_ACCEPT;
 }
-
 

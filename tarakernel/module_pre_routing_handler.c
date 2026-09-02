@@ -422,7 +422,7 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 	if (!bReceivedConfiguration)
 	{
         //NOTE! IF YOU CHANGE THIS TEXT, THEN ALSO CHANGE IN crontasks.pl. IT'S LOOKING FOR IT
-		pr_info("tarakernel: Start taralink to send configuration! %s -> %s\n", pPacket->cSourceIp, pPacket->cDestIp); 
+		pr_warn_ratelimited("tarakernel: Protection unavailable: start taralink to send configuration; traffic is being allowed without TaraSec inspection.\n");
 		checkFree(pPacket, false /*bLeavingPostRouting*/);
 		return NF_ACCEPT;
 	}
@@ -866,4 +866,3 @@ static unsigned int module_ip4_post_routing_handler(void *priv, struct sk_buff *
 	checkFree(pPacket, true);	//Now leaving POST_ROUTING - so kfree the memory
     return NF_ACCEPT;
 }
-

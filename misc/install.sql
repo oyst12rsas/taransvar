@@ -354,8 +354,14 @@ update setup set dbVersion = 82;
 CREATE TRIGGER pendingWget_assistance_retry BEFORE UPDATE ON pendingWget FOR EACH ROW SET NEW.handled = IF(NEW.category = 'AssistanceRequest' AND NEW.reply IS NOT NULL AND TRIM(NEW.reply) <> 'ok', NULL, NEW.handled);
 update setup set dbVersion = 83;
 
+#version 84 (260902)
+#Keep unauthenticated ELABORATED_THREAT_INFO evidence distinct from trusted
+#partner reports so degraded-mode policies can assess it without granting trust.
+alter table hackReport modify hrCategory enum ('login_fail','tagged_traffic','from_dbserver', 'from_partner', 'ssh_fail', 'ssh_when_blocked', 'iptables', 'attack_severity_1', 'attack_severity_3', 'attack_severity_7', 'unverified_threat_info', 'other','demo');
+update setup set dbVersion = 84;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 84;
+#update setup set dbVersion = 85;
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 
 #can import DB changes automatically based on the content of this file...

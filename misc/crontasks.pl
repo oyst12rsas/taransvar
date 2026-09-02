@@ -166,23 +166,41 @@ sub reportStatus {
 	$json{"errSev"} = (defined $cSetup->{"systemErrorSeverity"}?$cSetup->{"systemErrorSeverity"}+0:0);
 	$json{"errAge"} = (defined $cSetup->{"systemErrorAge"}?$cSetup->{"systemErrorAge"}+0:-1);
 
-	$json{"knl"} = (moduleRunning("tarakernel")?"1":0);
-	if (!$json{"knl"}) {
-		#tarakerlen is not running.. try to start it. 
-		system ("modprobe tarakernel");
-		saveWarning("Tarakernel was not running when reporting status. Trying to start it\n");
-	}
-
-	#$json{"lnk"} = (programRunning("taralink")?"1":0);	
+	my $szTaralink = "/root/taransvar/taralink";
 	$json{"lnk"} = (programRunningLockFileHeld("/tmp/taralink.lock")?1:0);
-	if (!$json{"lnk"}) {
-		system("nohup /root/taransvar/taralink >>/tmp/taralink.log 2>&1 &");		
-		sleep(7);	#2 sec seemed not enoug (got "still not running after trying to start it")
-		if (programRunningLockFileHeld("/tmp/taralink.lock")) {
-			saveWarning("Taralink was not running when reporting status. Seems like managed to start it\n");
-		} else {
-			saveWarning("*** WARNING *** Taralink is still not running after trying to start it.\n");
+
+	# tarakernel deliberately fails closed until taralink sends its setup.  Never
+	# load (or leave loaded) the kernel module on installations that do not have
+	# a usable userspace controller: doing so blocks all routed/hotspot traffic.
+	if (!-x $szTaralink) {
+		if (moduleRunning("tarakernel")) {
+			system("modprobe -r tarakernel");
+			saveWarning("Tarakernel was unloaded because $szTaralink is unavailable; routed traffic remains enabled.\n");
 		}
+		setSystemError(8, "Protection degraded: Taralink is unavailable. Forwarded traffic is allowed without TaraSec inspection.");
+		$json{"knl"} = (moduleRunning("tarakernel")?"1":0);
+		$json{"lnk"} = 0;
+	} else {
+		if (!moduleRunning("tarakernel")) {
+			system("modprobe tarakernel");
+			saveWarning("Tarakernel was not running when reporting status. Trying to start it\n");
+		}
+
+		if (!$json{"lnk"}) {
+			system("nohup $szTaralink >>/tmp/taralink.log 2>&1 &");
+			sleep(7);	# Allow taralink to acquire its lock and configure tarakernel.
+			$json{"lnk"} = (programRunningLockFileHeld("/tmp/taralink.lock")?1:0);
+			if ($json{"lnk"}) {
+				saveWarning("Taralink was not running when reporting status. Seems like managed to start it\n");
+			} else {
+				# A fail-closed tarakernel without taralink breaks routers and
+				# hotspots. Prefer an explicit degraded/fail-open state.
+				system("modprobe -r tarakernel") if moduleRunning("tarakernel");
+				setSystemError(8, "Protection degraded: Taralink failed to start. Forwarded traffic is allowed without TaraSec inspection.");
+				saveWarning("*** WARNING *** Taralink failed to start; tarakernel was unloaded so routed traffic remains enabled.\n");
+			}
+		}
+		$json{"knl"} = (moduleRunning("tarakernel")?"1":0);
 	}
 
 #	$json{"cron"} = (programRunning("crontasks.pl")?"1":0);

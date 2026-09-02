@@ -578,10 +578,10 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 				int nActive = atoi(row[5]);
 				if (!nActive)
 				{
-					lpSendInfectionInfo = "N/A";
-					lpSendSeverity = "1";	//Send severity = 1 if inactive to let receiver block ssh and/other important ports.
+					lpSendInfectionInfo = "assurance_reduced:cleaning_unverified";
+					lpSendSeverity = "1";	//Severity 1 means reduced assurance; the elaborated UDP message carries the reason.
 					nActive = 1;			//If active = 0 is sent, then tarakernel will remove it from the list....
-					printf("Sending severity 1 for deactivated infection\n");
+					printf("Sending severity 1 for cleaning that is not yet verified\n");
 				}
 
 				printf("****** Active: %d (%s), info: %s, severity: %s. After: %s/%s\n", nActive, row[5], row[6], row[8], lpSendInfectionInfo, lpSendSeverity);

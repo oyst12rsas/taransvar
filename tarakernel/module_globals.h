@@ -65,7 +65,7 @@ union _showStatusBitsUnion
 //***************** WARNING ************ If changing this structure, then also change the php interpretation in gatekeeper/ajax/tagStatus.php */
 struct _Tag { //2 bytes - for use with the tcp_header->urg_ptr until we decide to increase TCP header size
 	unsigned int version_no : 2; //ØT 260323 3->2  //Set to TAG_VERSION_NO. Counting down in case field is used and hoping that it points to outside the block and programmers care to check.
-	unsigned int presumed_infected : 4; //ØT 260323 3->4 //0=No indication, 1=Wifi/VPN, 2=rough partner, 3=probably malconfig, 4=probably sporadic, 5=probably bot  
+	unsigned int presumed_infected : 4; //0=no indication; 1=reduced/unverified assurance (reason in elaborated UDP); higher values indicate increasing threat severity
 	//unsigned int botnet_id : 10;   //Assigned by Akili Bomba
         unsigned int owners_id : 10;
 };

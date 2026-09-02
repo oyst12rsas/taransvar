@@ -434,16 +434,19 @@ void registerRemoteInfection(u_int32_t nSenderIp, char *lpMessage)
     printf("About to interprete (but taralink doesn't know what to do with it yet...): %s\n", lpMessage);
 
     char cPrefix[100], cSourceIp[100], cInfo[255];
-    unsigned int sPort, dVersion, dInfected, dOwners_id, nInfectionId, nSeverity, nBotnetId; 
-    unsigned int nVersion,  nPresumeInfected, nOwnersId;
+    unsigned int sPort, dVersion, dInfected, dOwners_id, nInfectionId, nSeverity, nBotnetId;
+    unsigned int nVersion = 0, nPresumeInfected = 0, nOwnersId = 0;
 
-    int nFlds = sscanf(lpMessage, "%99[^ ] %99[^:]:%u^%u^%u^%u^%u^%u^%u^%255[^\n]", 
+    int nFlds = sscanf(lpMessage, "%99[^ ] %99[^:]:%u^%u^%u^%u^%u^%u^%u^%254[^\n]",
         cPrefix, cSourceIp, &sPort, &nVersion, &nPresumeInfected, &nOwnersId, &nInfectionId, &nSeverity, &nBotnetId, cInfo);
 
     if (nFlds == 10)
     {   
         if (strcmp(cPrefix, "ELABORATED_THREAT_INFO"))
+        {
             printf("**** ERROR *** Prefix is supposed to be ELABORATED_THREAT_INFO\n");
+			return;
+		}
 
         printf("Able to decode full record. Severity: %u\n", nSeverity);
 
@@ -456,7 +459,7 @@ void registerRemoteInfection(u_int32_t nSenderIp, char *lpMessage)
     }
     else
     {
-        nFlds = sscanf(lpMessage, "%99[^ ] %99[^:]:%u^%u^%u^%u^%255[^\n]", 
+        nFlds = sscanf(lpMessage, "%99[^ ] %99[^:]:%u^%u^%u^%u^%254[^\n]",
         cPrefix, cSourceIp, &sPort, &nInfectionId, &nSeverity, &nBotnetId, cInfo);
 
         if (nFlds != 7)
@@ -467,6 +470,21 @@ void registerRemoteInfection(u_int32_t nSenderIp, char *lpMessage)
         else
             printf("******** WARNING *** Decoded the shorter version... Check if ok.. Severity: %u\n", nSeverity);
     }
+
+	if (strcmp(cPrefix, "ELABORATED_THREAT_INFO"))
+	{
+		printf("Rejecting elaborated threat information with an invalid prefix\n");
+		return;
+	}
+
+	/* Match the compact tag field widths and reject obviously hostile values
+	 * before they can create persistent evidence records. The sender remains
+	 * unverified until normal partner authentication/corroboration succeeds. */
+	if (nVersion > 3 || nPresumeInfected > 15 || nSeverity > 15 || nOwnersId > 1023)
+	{
+		printf("Rejecting elaborated threat information with out-of-range fields\n");
+		return;
+	}
     
     char szSenderIp[INET_ADDRSTRLEN];
     u_int32_t nReversed = ntohl(nSenderIp); //Just for print
@@ -475,14 +493,22 @@ void registerRemoteInfection(u_int32_t nSenderIp, char *lpMessage)
 
     printf("Able to decode(from %s): %s:%d-%d-%d-%d, info: %s\n", szSenderIp, cSourceIp, sPort, nInfectionId, nSeverity, nBotnetId, cInfo);
 
-    uint32_t ip = strtoul(cSourceIp, NULL, 16);    
+    char *lpIpEnd = NULL;
+    unsigned long nParsedIp = strtoul(cSourceIp, &lpIpEnd, 16);
+    if (!cSourceIp[0] || !lpIpEnd || *lpIpEnd != '\0' || nParsedIp > UINT32_MAX)
+    {
+        printf("Rejecting elaborated threat information with an invalid source IP\n");
+        return;
+    }
+    uint32_t ip = (uint32_t)nParsedIp;
     //unsigned int ip = ntohl(addr.s_addr);
     //unsigned int ip = inet_addr(cSourceIp);   // or your actual value
     unsigned short port = sPort;
     //unsigned int sentByIp = ip;
 
-	//260807 - Save to hackReport here
-	insertHackReport(0 /*MYSQL *conn*/, ip, sPort, nSenderIp, "other", cInfo, nOwnersId, nInfectionId, nSeverity, nBotnetId);
+	// Preserve unauthenticated evidence without silently promoting the sender
+	// to a trusted partner. Policy/AI can corroborate or reject it later.
+	insertHackReport(0 /*MYSQL *conn*/, ip, sPort, nSenderIp, "unverified_threat_info", cInfo, nOwnersId, nInfectionId, nSeverity, nBotnetId);
 }
 
 void handle_udp(int udp_fd)

@@ -217,6 +217,7 @@ EOF
     # the helper actually checks. Do not overwrite an unrelated DHCP database.
     cat > /etc/tarasec/opennds-dhcp-compat.conf <<EOF
 LEASE_FILE=$LEASE_FILE
+HOTSPOT_IF=$HOTSPOT_IF
 EOF
     chmod 0644 /etc/tarasec/opennds-dhcp-compat.conf
 
@@ -229,17 +230,45 @@ TARGET=/tmp/dhcp.leases
 [ -r "$CONF" ] || { echo "Missing $CONF" >&2; exit 1; }
 . "$CONF"
 [ -n "${LEASE_FILE:-}" ] || { echo "LEASE_FILE missing from $CONF" >&2; exit 1; }
-[ -e "$LEASE_FILE" ] || { echo "NetworkManager lease file not found: $LEASE_FILE" >&2; exit 1; }
+[ -n "${HOTSPOT_IF:-}" ] || { echo "HOTSPOT_IF missing from $CONF" >&2; exit 1; }
 
-if [ -e "$TARGET" ] || [ -L "$TARGET" ]; then
-    if [ -L "$TARGET" ] && [ "$(readlink -f "$TARGET" 2>/dev/null || true)" = "$(readlink -f "$LEASE_FILE")" ]; then
-        exit 0
+sync_leases() {
+    local tmp expiry
+    tmp="$(mktemp /tmp/dhcp.leases.XXXXXX)"
+    expiry="$(( $(date +%s) + 3600 ))"
+
+    # NetworkManager keeps its shared-mode lease file below a root-only
+    # directory on some distributions. Copy the contents instead of exposing
+    # an unreadable symlink to openNDS.
+    if [ -r "$LEASE_FILE" ]; then
+        cat "$LEASE_FILE" > "$tmp"
     fi
-    echo "Refusing to replace unrelated DHCP database at $TARGET" >&2
-    exit 1
-fi
 
-ln -s "$LEASE_FILE" "$TARGET"
+    # Phones commonly retain a still-valid DHCP address while NetworkManager
+    # recreates an empty lease file. A reachable neighbour is sufficient for
+    # openNDS to admit the device to the portal; authentication is still
+    # required before forwarding is allowed.
+    ip neigh show dev "$HOTSPOT_IF" 2>/dev/null |
+        awk -v expiry="$expiry" '
+            $0 ~ /lladdr/ && $0 !~ /FAILED|INCOMPLETE/ {
+                for (i = 1; i <= NF; i++) {
+                    if ($i == "lladdr" && (i + 1) <= NF) {
+                        print expiry, $(i + 1), $1, "*", "01:" $(i + 1)
+                    }
+                }
+            }
+        ' >> "$tmp"
+
+    awk '!seen[$3]++' "$tmp" > "${tmp}.unique"
+    chmod 0644 "${tmp}.unique"
+    mv -f "${tmp}.unique" "$TARGET"
+    rm -f "$tmp"
+}
+
+while :; do
+    sync_leases
+    sleep 2
+done
 EOF
     chmod 0755 /usr/local/sbin/tarasec-opennds-dhcp-compat
 
@@ -251,9 +280,10 @@ Wants=NetworkManager.service
 Before=opennds.service
 
 [Service]
-Type=oneshot
+Type=simple
 ExecStart=/usr/local/sbin/tarasec-opennds-dhcp-compat
-RemainAfterExit=yes
+Restart=always
+RestartSec=2
 
 [Install]
 WantedBy=multi-user.target
@@ -263,7 +293,7 @@ EOF
     systemctl enable tarasec-opennds-dhcp-compat.service >/dev/null
     systemctl restart tarasec-opennds-dhcp-compat.service
 
-    if [ ! -L /tmp/dhcp.leases ] || [ "$(readlink -f /tmp/dhcp.leases 2>/dev/null || true)" != "$(readlink -f "$LEASE_FILE")" ]; then
+    if [ ! -f /tmp/dhcp.leases ] || [ ! -r /tmp/dhcp.leases ]; then
         echo "ERROR: openNDS DHCP compatibility lease mapping was not created." >&2
         exit 1
     fi
