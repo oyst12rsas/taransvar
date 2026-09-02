@@ -33,9 +33,9 @@ function users_show()
 
 	$szRows = tr(td("Enabled:").td(((int)$cFetched["enabled"] === 1)?"Yes":red("No"))) .
 		tr(td("Confirmed:").td(!empty($cFetched["confirmedTime"])?htmlspecialchars((string)$cFetched["confirmedTime"]):red("No"))) .
-		tr(td("Total quota:").td(htmlspecialchars((string)$cFetched["quotaMB"]),1,'align="right"')) .
-		tr(td("Total used:").td(htmlspecialchars((string)$cFetched["usageMB"]),1,'align="right"')) .
-		tr(td("Quota left:").td($szMbLeft,1,'align="right"').td("&nbsp;"));
+		tr(td("Total quota (MB):").td(htmlspecialchars((string)$cFetched["quotaMB"]),1,'align="right"')) .
+		tr(td("Total used (MB):").td(htmlspecialchars((string)$cFetched["usageMB"]),1,'align="right"')) .
+		tr(td("Quota left (MB):").td($szMbLeft,1,'align="right"').td("&nbsp;"));
 
 	$szRows .= tr(td('<form action="index.php?f=users_subQuota&name='.rawurlencode($szUser).'" method="post">Add quota (in MB) &nbsp;<input name="quota" size="12"><button type="submit">Submit</button></form>',2));
 
