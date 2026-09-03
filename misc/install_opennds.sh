@@ -196,6 +196,10 @@ config opennds 'opennds'
     list users_to_router 'allow tcp port 53'
     list users_to_router 'allow udp port 67'
     list users_to_router 'allow tcp port 8080'
+    # Bootstrap global sign-in without opening general Internet access.
+    # Keep this HTTPS-only: port 80 must remain captive for portal detection.
+    list walledgarden_fqdn_list 'tarasec.org accounts.google.com oauth2.googleapis.com www.googleapis.com ssl.gstatic.com accounts.googleusercontent.com'
+    list walledgarden_port_list '443'
 EOF
 
     cat > /etc/opennds/opennds.conf <<EOF
@@ -211,6 +215,8 @@ FirewallRuleSet users-to-router {
     FirewallRule allow udp port 67
     FirewallRule allow tcp port 8080
 }
+walledgarden_fqdn_list tarasec.org accounts.google.com oauth2.googleapis.com www.googleapis.com ssl.gstatic.com accounts.googleusercontent.com
+walledgarden_port_list 443
 EOF
 
     # openNDS 10.1.0 on generic Linux documents dhcp_leases_file but its
@@ -428,7 +434,95 @@ EOF
     grep -q "option login_option_enabled '3'" /etc/config/opennds
     grep -q "option themespec_path '/usr/lib/opennds/theme_tarasec.sh'" /etc/config/opennds
     grep -q "list users_to_router 'allow tcp port 8080'" /etc/config/opennds
+    grep -q "list walledgarden_fqdn_list 'tarasec.org accounts.google.com oauth2.googleapis.com www.googleapis.com ssl.gstatic.com accounts.googleusercontent.com'" /etc/config/opennds
+    grep -q "list walledgarden_port_list '443'" /etc/config/opennds
     grep -q 'FirewallRule allow tcp port 8080' /etc/opennds/opennds.conf
+    grep -q '^walledgarden_fqdn_list tarasec.org accounts.google.com oauth2.googleapis.com www.googleapis.com ssl.gstatic.com accounts.googleusercontent.com
+    ss -lnt | grep -q ':8080 '
+
+    # Capture the complete status before matching it. With `set -o pipefail`,
+    # `grep -q` can close a live ndsctl pipe after the first match, causing
+    # ndsctl to receive SIGPIPE and making a valid status check fail.
+    NDS_STATUS="$(ndsctl status 2>/dev/null || true)"
+    if ! grep -q "$HOTSPOT_IF" <<<"$NDS_STATUS"; then
+        echo "ERROR: openNDS is running but its status does not reference hotspot interface $HOTSPOT_IF." >&2
+        printf '%s\n' "$NDS_STATUS" >&2
+        exit 1
+    fi
+    if ! ip -4 addr show dev "$HOTSPOT_IF" | grep -Eq "[[:space:]]inet[[:space:]]+$HOTSPOT_IP/"; then
+        echo "ERROR: hotspot interface $HOTSPOT_IF no longer owns $HOTSPOT_IP." >&2
+        ip -4 addr show dev "$HOTSPOT_IF" >&2 || true
+        exit 1
+    fi
+    # openNDS 10.1.0 may expose its HTTP listener as 0.0.0.0:2050 even
+    # though the daemon is configured for and enforcing on HOTSPOT_IF. Accept
+    # either a hotspot-IP-specific bind or an IPv4 wildcard bind on port 2050.
+    if ! ss -lnt | awk -v ip="$HOTSPOT_IP" '
+        $4 == ip ":2050" || $4 == "0.0.0.0:2050" || $4 == "*:2050" {found=1}
+        END {exit !found}
+    '; then
+        echo "ERROR: openNDS has no usable TCP 2050 listener for hotspot $HOTSPOT_IF ($HOTSPOT_IP)." >&2
+        ss -lntp >&2 || true
+        exit 1
+    fi
+
+    echo "TaraSec captive portal configured:"
+    echo "  interface: $HOTSPOT_IF"
+    echo "  client network: $HOTSPOT_CIDR"
+    echo "  ThemeSpec: /usr/lib/opennds/theme_tarasec.sh"
+    echo "  TaraSec login: http://$HOTSPOT_IP:8080/hotspot/portal_login.php"
+    echo "  DHCP validation: NetworkManager leases exposed to openNDS"
+    echo "  DNS interception: client TCP/UDP 53 -> $HOTSPOT_IP:53"
+    echo "  Portal DNS: status.client -> $HOTSPOT_IP"
+else
+    echo "openNDS and TaraSec portal assets are installed, but captive enforcement activation is deferred until the hotspot interface is up."
+fi
+
+echo "openNDS/TaraSec captive portal installation complete."
+ /etc/opennds/opennds.conf
+    grep -q '^walledgarden_port_list 443
+    ss -lnt | grep -q ':8080 '
+
+    # Capture the complete status before matching it. With `set -o pipefail`,
+    # `grep -q` can close a live ndsctl pipe after the first match, causing
+    # ndsctl to receive SIGPIPE and making a valid status check fail.
+    NDS_STATUS="$(ndsctl status 2>/dev/null || true)"
+    if ! grep -q "$HOTSPOT_IF" <<<"$NDS_STATUS"; then
+        echo "ERROR: openNDS is running but its status does not reference hotspot interface $HOTSPOT_IF." >&2
+        printf '%s\n' "$NDS_STATUS" >&2
+        exit 1
+    fi
+    if ! ip -4 addr show dev "$HOTSPOT_IF" | grep -Eq "[[:space:]]inet[[:space:]]+$HOTSPOT_IP/"; then
+        echo "ERROR: hotspot interface $HOTSPOT_IF no longer owns $HOTSPOT_IP." >&2
+        ip -4 addr show dev "$HOTSPOT_IF" >&2 || true
+        exit 1
+    fi
+    # openNDS 10.1.0 may expose its HTTP listener as 0.0.0.0:2050 even
+    # though the daemon is configured for and enforcing on HOTSPOT_IF. Accept
+    # either a hotspot-IP-specific bind or an IPv4 wildcard bind on port 2050.
+    if ! ss -lnt | awk -v ip="$HOTSPOT_IP" '
+        $4 == ip ":2050" || $4 == "0.0.0.0:2050" || $4 == "*:2050" {found=1}
+        END {exit !found}
+    '; then
+        echo "ERROR: openNDS has no usable TCP 2050 listener for hotspot $HOTSPOT_IF ($HOTSPOT_IP)." >&2
+        ss -lntp >&2 || true
+        exit 1
+    fi
+
+    echo "TaraSec captive portal configured:"
+    echo "  interface: $HOTSPOT_IF"
+    echo "  client network: $HOTSPOT_CIDR"
+    echo "  ThemeSpec: /usr/lib/opennds/theme_tarasec.sh"
+    echo "  TaraSec login: http://$HOTSPOT_IP:8080/hotspot/portal_login.php"
+    echo "  DHCP validation: NetworkManager leases exposed to openNDS"
+    echo "  DNS interception: client TCP/UDP 53 -> $HOTSPOT_IP:53"
+    echo "  Portal DNS: status.client -> $HOTSPOT_IP"
+else
+    echo "openNDS and TaraSec portal assets are installed, but captive enforcement activation is deferred until the hotspot interface is up."
+fi
+
+echo "openNDS/TaraSec captive portal installation complete."
+ /etc/opennds/opennds.conf
     ss -lnt | grep -q ':8080 '
 
     # Capture the complete status before matching it. With `set -o pipefail`,
