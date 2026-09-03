@@ -15,7 +15,7 @@ if (!preg_match('/^[A-Za-z0-9_-]{40,64}$/',$code)) {
     echo json_encode(['ok'=>false,'reason'=>'invalid_code']);
     exit;
 }
-$command='sudo /usr/local/sbin/tarasec-global-bind '
+$command='/usr/bin/sudo -n /usr/local/sbin/tarasec-global-bind '
     .escapeshellarg($code).' '.escapeshellarg($clientIp).' 2>&1';
 $output=[]; $status=1;
 exec($command,$output,$status);
