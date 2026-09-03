@@ -36,7 +36,8 @@ if [ -x "$CENTRAL_CHECKER" ] && [ -r /tmp/dhcp.leases ]; then
     done < /tmp/dhcp.leases
 fi
 
-result=$("${MYSQL[@]}" 2>/dev/null <<SQL
+MYSQL_ERROR="$(mktemp /run/tarasec-access-mysql.XXXXXX)"
+result=$("${MYSQL[@]}" 2>"$MYSQL_ERROR" <<SQL
 START TRANSACTION;
 
 UPDATE hotspotSubscriber hs
@@ -84,10 +85,13 @@ SELECT COUNT(*) FROM access WHERE hasaccess=1;
 COMMIT;
 SQL
 ) || {
+    error="$(tr '\n' ' ' <"$MYSQL_ERROR" | cut -c1-500)"
+    rm -f "$MYSQL_ERROR"
     printf '{"ok":false,"valid":0,"reason":"mysql_refresh_failed"}\n' >"$OUT"
-    logger -t tarasec-access "access refresh failed"
+    logger -t tarasec-access "access refresh failed: $error"
     exit 1
 }
+rm -f "$MYSQL_ERROR"
 
 valid=$(printf '%s\n' "$result" | tail -1 | tr -cd '0-9')
 valid=${valid:-0}
