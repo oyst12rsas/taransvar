@@ -115,7 +115,7 @@ mkdir -p /etc/tarasec
 cat > /etc/tarasec/access-mysql.cnf <<'EOF'
 [client]
 user=scriptUsrAces3f3
-password=rErte8Oi98e-2_#
+password="rErte8Oi98e-2_#"
 host=localhost
 EOF
 chmod 0600 /etc/tarasec/access-mysql.cnf
