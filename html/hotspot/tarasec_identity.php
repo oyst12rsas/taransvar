@@ -30,10 +30,17 @@ foreach ($configPaths as $path) {
     }
 }
 
+$gatewayKey='';
+$gatewayKeyFile='/etc/tarasec/gateway-public-key';
+if (is_readable($gatewayKeyFile)) {
+    $gatewayKey=trim((string)file_get_contents($gatewayKeyFile));
+}
+
 echo json_encode([
     'ok' => true,
     'name' => $name,
     'role' => 'tarasec-hotspot',
     'service' => 'tarasec',
+    'gateway_key' => $gatewayKey,
     'server_time' => gmdate('c')
 ], JSON_UNESCAPED_SLASHES);
