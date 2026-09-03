@@ -100,6 +100,7 @@ install -m 0755 "$REPO_ROOT/hotspot/opennds/custombinauth.sh" /usr/lib/opennds/c
 install -m 0755 "$REPO_ROOT/hotspot/opennds/tarasec-access-check" /usr/local/sbin/tarasec-access-check
 install -m 0755 "$REPO_ROOT/hotspot/opennds/tarasec-subscriber-logout" /usr/local/sbin/tarasec-subscriber-logout
 install -m 0755 "$REPO_ROOT/hotspot/opennds/tarasec-single-subscriber" /usr/local/sbin/tarasec-single-subscriber
+install -m 0755 "$REPO_ROOT/hotspot/opennds/tarasec-global-bind" /usr/local/sbin/tarasec-global-bind
 
 mkdir -p /var/www/html/hotspot
 cp -a "$REPO_ROOT/html/hotspot/." /var/www/html/hotspot/
@@ -122,6 +123,7 @@ if ! command -v sudo >/dev/null 2>&1; then
 fi
 cat > /etc/sudoers.d/tarasec-hotspot-logout <<'EOF'
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/tarasec-subscriber-logout *
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/tarasec-global-bind *
 EOF
 chmod 0440 /etc/sudoers.d/tarasec-hotspot-logout
 visudo -cf /etc/sudoers.d/tarasec-hotspot-logout >/dev/null
