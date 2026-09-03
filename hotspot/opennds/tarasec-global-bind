@@ -25,4 +25,30 @@ if ! RESPONSE="$(curl -sS --connect-timeout 4 --max-time 10 \
     exit 1
 fi
 logger -t tarasec-global-bind "client=$CLIENT_IP mac=$MAC response=$RESPONSE"
+
+# Binding the global identity and authenticating the captive-portal client are
+# separate operations. Complete the local handoff here so app users do not
+# have to reopen the portal and press "Continue to Internet".
+if printf '%s' "$RESPONSE" | grep -Eq '"ok"[[:space:]]*:[[:space:]]*true' &&
+   printf '%s' "$RESPONSE" | grep -Eq '"bound"[[:space:]]*:[[:space:]]*true'; then
+    /usr/local/sbin/tarasec-access-refresh >/dev/null 2>&1 || true
+    if command -v ndsctl >/dev/null 2>&1; then
+        authenticated=0
+        for _ in $(seq 1 5); do
+            ndsctl auth "$CLIENT_IP" >/dev/null 2>&1 || true
+            state="$(ndsctl json "$CLIENT_IP" 2>/dev/null || true)"
+            if printf '%s' "$state" | grep -Eq '"state"[[:space:]]*:[[:space:]]*"Authenticated"'; then
+                authenticated=1
+                break
+            fi
+            sleep 1
+        done
+        if [ "$authenticated" -eq 1 ]; then
+            logger -t tarasec-global-bind "opennds authenticated client=$CLIENT_IP mac=$MAC"
+        else
+            logger -t tarasec-global-bind "opennds authentication pending client=$CLIENT_IP mac=$MAC"
+        fi
+    fi
+fi
+
 printf '%s\n' "$RESPONSE"
