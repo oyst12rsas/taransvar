@@ -533,7 +533,53 @@ EOF
     TARASEC_EXPECTED_DNS_IP="$TARASEC_PUBLIC_IP" python3 "$REPO_ROOT/misc/check_hotspot_dns.py" "$HOTSPOT_IP" tarasec.org
     sleep 1
     if ! nft list set ip nds_filter walledgarden 2>/dev/null | grep -q 'elements = {'; then
-        echo "ERROR: openNDS walled-garden set is empty after resolving tarasec.org through hotspot DNS." >&2
+        # The generated file can already be correct while NetworkManager's
+        # long-running shared-mode dnsmasq predates it. Reload the hotspot and
+        # rebuild openNDS once before treating an empty set as fatal.
+        echo "Reloading hotspot DNS because the openNDS walled-garden set is empty..."
+        HOTSPOT_CONNECTION="$(nmcli -g GENERAL.CONNECTION device show "$HOTSPOT_IF" 2>/dev/null | head -1)"
+        if [ -z "$HOTSPOT_CONNECTION" ] || [ "$HOTSPOT_CONNECTION" = "--" ]; then
+            echo "ERROR: unable to identify the active NetworkManager hotspot connection for $HOTSPOT_IF." >&2
+            exit 1
+        fi
+
+        systemctl stop opennds || true
+        nmcli connection down "$HOTSPOT_CONNECTION"
+        nmcli connection up "$HOTSPOT_CONNECTION"
+        for _ in $(seq 1 30); do
+            if ip -4 addr show dev "$HOTSPOT_IF" 2>/dev/null | grep -Eq "[[:space:]]inet[[:space:]]+$HOTSPOT_IP/" &&
+               ss -lnut | awk -v ip="$HOTSPOT_IP" '$5 == ip ":53" {found=1} END {exit !found}'; then
+                break
+            fi
+            sleep 1
+        done
+        if ! ip -4 addr show dev "$HOTSPOT_IF" 2>/dev/null | grep -Eq "[[:space:]]inet[[:space:]]+$HOTSPOT_IP/"; then
+            echo "ERROR: hotspot $HOTSPOT_IF did not recover $HOTSPOT_IP after DNS reload." >&2
+            exit 1
+        fi
+
+        systemctl restart tarasec-opennds-dhcp-compat.service
+        systemctl restart tarasec-hotspot-dns.service
+        systemctl start opennds || true
+        NDS_READY=0
+        for _ in $(seq 1 45); do
+            if systemctl is-active --quiet opennds && ndsctl status >/dev/null 2>&1; then
+                NDS_READY=1
+                break
+            fi
+            sleep 1
+        done
+        if [ "$NDS_READY" -ne 1 ]; then
+            echo "ERROR: openNDS did not recover after reloading hotspot DNS." >&2
+            journalctl -u opennds -n 60 --no-pager >&2 || true
+            exit 1
+        fi
+
+        TARASEC_EXPECTED_DNS_IP="$TARASEC_PUBLIC_IP" python3 "$REPO_ROOT/misc/check_hotspot_dns.py" "$HOTSPOT_IP" tarasec.org
+        sleep 1
+    fi
+    if ! nft list set ip nds_filter walledgarden 2>/dev/null | grep -q 'elements = {'; then
+        echo "ERROR: openNDS walled-garden set is still empty after reloading hotspot DNS." >&2
         echo "NetworkManager dnsmasq did not load $WALLEDGARDEN_DNSMASQ." >&2
         nft list set ip nds_filter walledgarden >&2 || true
         exit 1
