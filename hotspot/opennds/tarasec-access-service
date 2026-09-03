@@ -3,7 +3,7 @@
 set -u
 
 REFRESHER="${TARASEC_ACCESS_REFRESHER:-/usr/local/sbin/tarasec-access-refresh}"
-INTERVAL="${TARASEC_ACCESS_REFRESH_INTERVAL:-2}"
+INTERVAL="${TARASEC_ACCESS_REFRESH_INTERVAL:-5}"
 failures=0
 
 trap 'exit 0' TERM INT
