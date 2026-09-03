@@ -61,6 +61,14 @@ sub ensure_schema {
   PRIMARY KEY(sessionId)
  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci});
 
+ $dbh->do(q{CREATE TABLE IF NOT EXISTS hotspotGlobalUsageCheckpoint (
+  deviceKey varchar(17) NOT NULL, centralSessionId bigint unsigned NOT NULL,
+  customerId bigint unsigned NOT NULL, clientIp char(15) NOT NULL,
+  uploadKiB bigint unsigned NOT NULL DEFAULT 0, downloadKiB bigint unsigned NOT NULL DEFAULT 0,
+  updated timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY(deviceKey), KEY hotspotGlobalUsageCheckpoint_session(centralSessionId)
+ ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci});
+
  # Older hotspot installers created a captive-portal account literally named
  # "admin" in radcheck. Some intermediate migrations then copied that row to
  # hotspotSubscriber before a back-office administrator existed. Repair that
