@@ -69,27 +69,6 @@ if (!$nCount) {
 	print "hotspot setup already imported so skipping..\n";
 }
 
-my $roaming_schema = '../opennds/schema.sql';
-if (-f $roaming_schema) {
-	print "Applying TaraSec global subscriber credit/roaming schema...\n";
-	my $rc = system('mysql taransvar < '.$roaming_schema);
-	die "Unable to import TaraSec hotspot roaming schema\n" if $rc != 0;
-	$rc = system(q{mysql taransvar -e "ALTER TABLE hotspotSession MODIFY entitlementId BIGINT UNSIGNED NULL"});
-	die "Unable to migrate hotspotSession entitlementId for credit roaming\n" if $rc != 0;
-} else {
-	die "TaraSec hotspot roaming schema not found at $roaming_schema\n";
-}
-
-# Subscriber authentication and the idempotent local grant-receipt cache remain
-# in core TaraSec. Credit limits, debt and financial ledgers are intentionally
-# NOT installed here; they belong only to the private tarasec_payment DB server.
-my $subscriber_schema = '../opennds/subscriber-schema.sql';
-if (-f $subscriber_schema) {
-	print "Applying TaraSec subscriber app authentication schema...\n";
-	my $rc = system('mysql taransvar < '.$subscriber_schema);
-	die "Unable to import TaraSec subscriber authentication schema\n" if $rc != 0;
-} else {
-	die "TaraSec subscriber authentication schema not found at $subscriber_schema\n";
-}
-
+# Global identity, roaming, accounting and financial schemas are server-owned.
+# Ordinary TaraSec clients install only their local hotspot database.
 $conn->disconnect;

@@ -16,7 +16,7 @@ The maintained install path is:
 sudo bash hotspot/distro/install.sh
 ```
 
-The installer calls `misc/install_opennds.sh` and `misc/setupWifiNicAsHotspot.pl`. It also applies `hotspot/opennds/schema.sql` on both fresh installs and upgrades.
+The installer calls `misc/install_opennds.sh` and `misc/setupWifiNicAsHotspot.pl`. Global subscriber/accounting schemas are installed only on the DB server from the private `tarasec_payment` repository.
 
 ## TaraSec subscriber model
 
@@ -53,8 +53,8 @@ Create `/etc/tarasec/access.env` mode 0600 on a gateway participating in the cen
 ```sh
 TARASEC_GATEWAY_KEY='registered-hotspot-id'
 TARASEC_GATEWAY_TOKEN='secret-issued-at-registration'
-TARASEC_ACCESS_URL='https://tarasec.org/hotspot/opennds/access-api.php'
-TARASEC_ACCOUNTING_URL='https://tarasec.org/hotspot/opennds/accounting-api.php'
+TARASEC_ACCESS_URL='https://tarasec.org/api/v1/subscriber/access-api.php'
+TARASEC_ACCOUNTING_URL='https://tarasec.org/api/v1/subscriber/accounting-api.php'
 ```
 
 Do not put the plain token in the database. `hotspotGateway.apiTokenHash` stores its SHA-256 hash.

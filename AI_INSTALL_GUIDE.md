@@ -70,9 +70,7 @@ Relevant maintained files:
 - `html/hotspot/portal_login.php`
 - `html/hotspot/portal_status.php`
 - `hotspot/opennds/ACCESS_SYSTEM.md`
-- `hotspot/opennds/schema.sql`
 - `hotspot/opennds/tarasec-access.sh`
-- `hotspot/opennds/access-api.php`
 
 `misc/install_opennds.sh`:
 

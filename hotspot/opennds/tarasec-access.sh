@@ -18,7 +18,7 @@ json=$(curl -fsS --connect-timeout 3 --max-time 7 \
   -H "X-TaraSec-Token: ${TARASEC_GATEWAY_TOKEN:-}" \
   --data-urlencode "device_key=$CLIENT_MAC" \
   --data-urlencode "client_ip=$CLIENT_IP" \
-  "${TARASEC_ACCESS_URL:-https://tarasec.org/hotspot/opennds/access-api.php}" 2>/dev/null) || {
+  "${TARASEC_ACCESS_URL:-https://tarasec.org/api/v1/subscriber/access-api.php}" 2>/dev/null) || {
     logger -t tarasec-access "access lookup failed for $CLIENT_MAC/$CLIENT_IP"
     echo "deauth"
     exit 0
