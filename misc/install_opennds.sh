@@ -98,6 +98,8 @@ install -m 0755 "$REPO_ROOT/hotspot/opennds/theme_tarasec.sh" /usr/lib/opennds/t
 install -m 0755 "$REPO_ROOT/hotspot/opennds/access_policy.pl" /usr/lib/opennds/access_policy.pl
 install -m 0755 "$REPO_ROOT/hotspot/opennds/custombinauth.sh" /usr/lib/opennds/custombinauth.sh
 install -m 0755 "$REPO_ROOT/hotspot/opennds/tarasec-access-check" /usr/local/sbin/tarasec-access-check
+install -m 0755 "$REPO_ROOT/hotspot/opennds/tarasec-access-refresh" /usr/local/sbin/tarasec-access-refresh
+install -m 0755 "$REPO_ROOT/hotspot/opennds/tarasec-access-service" /usr/local/sbin/tarasec-access-service
 install -m 0755 "$REPO_ROOT/hotspot/opennds/tarasec-subscriber-logout" /usr/local/sbin/tarasec-subscriber-logout
 install -m 0755 "$REPO_ROOT/hotspot/opennds/tarasec-single-subscriber" /usr/local/sbin/tarasec-single-subscriber
 install -m 0755 "$REPO_ROOT/hotspot/opennds/tarasec-global-bind" /usr/local/sbin/tarasec-global-bind
@@ -124,9 +126,45 @@ fi
 cat > /etc/sudoers.d/tarasec-hotspot-logout <<'EOF'
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/tarasec-subscriber-logout *
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/tarasec-global-bind *
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/tarasec-access-refresh
 EOF
 chmod 0440 /etc/sudoers.d/tarasec-hotspot-logout
 visudo -cf /etc/sudoers.d/tarasec-hotspot-logout >/dev/null
+
+# Ubuntu's hardened Apache unit hides sudoers from the service mount namespace.
+# Keep its other inaccessible paths while allowing sudo to read the narrowly
+# scoped TaraSec helper policy above.
+mkdir -p /etc/systemd/system/apache2.service.d
+cat > /etc/systemd/system/apache2.service.d/tarasec-sudo.conf <<'EOF'
+[Service]
+InaccessiblePaths=
+InaccessiblePaths=/boot
+InaccessiblePaths=/root
+InaccessiblePaths=-/etc/ssh
+InaccessiblePaths=-/etc/apt
+InaccessiblePaths=-/etc/.git
+InaccessiblePaths=-/etc/.svn
+EOF
+
+cat > /etc/systemd/system/tarasec-access.service <<'EOF'
+[Unit]
+Description=TaraSec hotspot access-table authority
+After=mariadb.service mysql.service
+Before=opennds.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/tarasec-access-service
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable tarasec-access.service >/dev/null
+systemctl restart tarasec-access.service
 
 HOTSPOT_PREFIX="${HOTSPOT_ADDR#*/}"
 IFS=. read -r h1 h2 h3 h4 <<<"$HOTSPOT_IP"
@@ -208,7 +246,7 @@ config opennds 'opennds'
     option gatewayname '$HOTSPOT_NAME'
     option login_option_enabled '3'
     option themespec_path '/usr/lib/opennds/theme_tarasec.sh'
-    option dhcp_leases_file '$LEASE_FILE'
+    option dhcp_leases_file '/tmp/dhcp.leases'
     list users_to_router 'allow udp port 53'
     list users_to_router 'allow tcp port 53'
     list users_to_router 'allow udp port 67'
