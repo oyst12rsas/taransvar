@@ -61,72 +61,26 @@ if (!$user || !hash_equals((string)$user['password'], $password)) portalReply('L
 if (!(int)$user['enabled']) portalReply('Account disabled', 'This hotspot account is currently disabled. Please contact the hotspot operator.');
 if (empty($user['confirmedTime'])) portalReply('Account not confirmed', 'This hotspot account must be confirmed before it can be used.');
 
-$type=(string)$user['subscriptionType'];
-
-// Expiry subscriptions created for setup/testing start their clock on first login.
-// Use MySQL both to set and evaluate expiry so PHP/MySQL timezone differences cannot
-// incorrectly mark a freshly activated account as expired.
-if (($type==='limited'||$type==='expiry') && empty($user['expiryTime'])) {
-    $hours=(int)($user['giveHoursAfterLogin']??0);
-    if ($hours>0) {
-        $db->execute('update hotspotSubscriber set expiryTime=DATE_ADD(NOW(), INTERVAL '.intval($hours).' HOUR) where username=:name and expiryTime is null',array(':name'=>$username));
-    }
-}
-
-$validity = $db->fetch(
-    "select subscriptionType, quotaMB, coalesce(usageMB,0) usageMB, expiryTime, cast(expiryTime is not null and expiryTime > NOW() as unsigned) expiryOk from hotspotSubscriber where username=:name and cast(enabled as unsigned)=1 limit 1",
-    array(':name'=>$username),
-    PDO::FETCH_ASSOC
-);
-if (!$validity) portalReply('Access unavailable','The hotspot subscriber account is not currently active. Please contact the hotspot operator.');
-
-$type=(string)$validity['subscriptionType'];
-$quotaMB=(float)$validity['quotaMB'];
-$usageMB=(float)$validity['usageMB'];
-$quotaOk=($usageMB < $quotaMB);
-$hasExpiry=!empty($validity['expiryTime']);
-$expiryOk=((int)$validity['expiryOk']===1);
-$allowed=($type==='quota'?$quotaOk:($type==='expiry'?$expiryOk:($type==='limited'?$quotaOk&&$expiryOk:false)));
-if (!$allowed) {
-    $db->execute('delete from access where ip=:ip',array(':ip'=>$clientIp));
-
-    if ($type==='quota') {
-        if ($quotaMB <= 0) {
-            portalReply('No data quota assigned','This account does not currently have a data quota. Please contact the hotspot operator to add access.');
-        }
-        portalReply('Data quota used','This account has used its available data quota. Please renew or add more data to continue.');
-    }
-
-    if ($type==='expiry') {
-        if (!$hasExpiry) {
-            portalReply('No access period assigned','This account does not currently have an active access period. Please contact the hotspot operator to add access.');
-        }
-        portalReply('Access period expired','This account\'s access period has expired. Please renew it to continue using the Internet.');
-    }
-
-    if ($type==='limited') {
-        if (!$hasExpiry && $quotaMB <= 0) {
-            portalReply('No access assigned','This account has neither an active access period nor a data quota. Please contact the hotspot operator to add access.');
-        }
-        if (!$hasExpiry) {
-            portalReply('No access period assigned','This account has a data quota but no active access period. Please contact the hotspot operator to add or renew the access period.');
-        }
-        if (!$expiryOk) {
-            portalReply('Access period expired','This account\'s access period has expired. Please renew it to continue using the Internet.');
-        }
-        if ($quotaMB <= 0) {
-            portalReply('No data quota assigned','This account has an active access period but no data quota. Please contact the hotspot operator to add data.');
-        }
-        if (!$quotaOk) {
-            portalReply('Data quota used','This account has used its available data quota. Please renew or add more data to continue.');
-        }
-    }
-
-    portalReply('Access unavailable','The account is not currently permitted to use this hotspot. Please contact the hotspot operator.');
-}
-
+// Authentication ends here. Access policy is owned by tarasec-access-refresh,
+// the same producer used by tarasec-access.service. The portal creates the
+// connection-scoped session and asks that authority to reconcile access.
 $db->execute('update session set active=0, logouttime=NOW() where ip=:ip and active=1 and logouttime is null',array(':ip'=>$clientIp));
 $db->execute('insert into session (ip,username,logintime,lastrequest,active) values (:ip,:username,NOW(),NOW(),1)',array(':ip'=>$clientIp,':username'=>$username));
-$db->execute('insert into access (ip,hasaccess,updated) values (:ip,1,NOW()) on duplicate key update hasaccess=1,updated=NOW()',array(':ip'=>$clientIp));
+
+$output=[];
+$status=1;
+exec('/usr/bin/sudo -n /usr/local/sbin/tarasec-access-refresh 2>&1',$output,$status);
+if ($status!==0) {
+    $db->execute('update session set active=0,logouttime=NOW() where ip=:ip and active=1 and logouttime is null',array(':ip'=>$clientIp));
+    portalReply('Access unavailable','The hotspot access service could not evaluate this account. Please try again.');
+}
+
+$access=$db->fetch('select hasaccess from access where ip=:ip and hasaccess=1 limit 1',array(':ip'=>$clientIp),PDO::FETCH_ASSOC);
+if (!$access) {
+    $db->execute('update session set active=0,logouttime=NOW() where ip=:ip and active=1 and logouttime is null',array(':ip'=>$clientIp));
+    exec('/usr/bin/sudo -n /usr/local/sbin/tarasec-access-refresh >/dev/null 2>&1');
+    portalReply('Access unavailable','This account does not currently have hotspot access. Please contact the hotspot operator to renew or add access.');
+}
+
 $db->execute('update hotspotSubscriber set lastLogin=NOW() where username=:name',array(':name'=>$username));
 portalReply('Access confirmed','Your account is valid. Continue to authorize Internet access.',true,$fas);
