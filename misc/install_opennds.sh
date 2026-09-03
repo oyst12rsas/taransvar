@@ -98,6 +98,7 @@ install -m 0755 "$REPO_ROOT/hotspot/opennds/theme_tarasec.sh" /usr/lib/opennds/t
 install -m 0755 "$REPO_ROOT/hotspot/opennds/access_policy.pl" /usr/lib/opennds/access_policy.pl
 install -m 0755 "$REPO_ROOT/hotspot/opennds/custombinauth.sh" /usr/lib/opennds/custombinauth.sh
 install -m 0755 "$REPO_ROOT/hotspot/opennds/tarasec-access-check" /usr/local/sbin/tarasec-access-check
+install -m 0755 "$REPO_ROOT/hotspot/opennds/tarasec-access.sh" /usr/local/sbin/tarasec-central-access-check
 install -m 0755 "$REPO_ROOT/hotspot/opennds/tarasec-access-refresh" /usr/local/sbin/tarasec-access-refresh
 install -m 0755 "$REPO_ROOT/hotspot/opennds/tarasec-access-service" /usr/local/sbin/tarasec-access-service
 install -m 0755 "$REPO_ROOT/hotspot/opennds/tarasec-subscriber-logout" /usr/local/sbin/tarasec-subscriber-logout
