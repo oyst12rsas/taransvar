@@ -480,11 +480,7 @@ EOF
     grep -q 'FirewallRule allow tcp port 8080' /etc/opennds/opennds.conf
     grep -Fqx 'walledgarden_fqdn_list tarasec.org accounts.google.com oauth2.googleapis.com www.googleapis.com ssl.gstatic.com accounts.googleusercontent.com' /etc/opennds/opennds.conf
     grep -Fqx 'walledgarden_port_list 443' /etc/opennds/opennds.conf
-    grep -Fqx 'nftset=/tarasec.org/accounts.google.com/oauth2.googleapis.com.com/www.googleapis.com.com/ssl.gstatic.com/accounts.googleusercontent.com/4#ip#nds_filter#walledgarden' "$WALLEDGARDEN_DNSMASQ" 2>/dev/null || {
-        # Use the correct literal below; this branch also guards accidental
-        # corruption of the NetworkManager-specific mapping.
-        grep -Fqx 'nftset=/tarasec.org/accounts.google.com/oauth2.googleapis.com/www.googleapis.com/ssl.gstatic.com/accounts.googleusercontent.com/4#ip#nds_filter#walledgarden' "$WALLEDGARDEN_DNSMASQ"
-    }
+    grep -Fqx 'nftset=/tarasec.org/accounts.google.com/oauth2.googleapis.com/www.googleapis.com/ssl.gstatic.com/accounts.googleusercontent.com/4#ip#nds_filter#walledgarden' "$WALLEDGARDEN_DNSMASQ"
     ss -lnt | grep -q ':8080 '
 
     # Resolve through the hotspot dnsmasq to populate the dynamic nft set,
