@@ -21,6 +21,84 @@ if [ -r "$MYSQL_CNF" ]; then
 fi
 MYSQL+=(--batch --skip-column-names --raw "$DB_NAME")
 
+# Global TaraSec identities are keyed by device MAC rather than a local
+# hotspotSubscriber row. Resolve currently observed clients through the central
+# access API and add allowed IPs to the same transaction as local subscribers.
+central_access_sql=""
+CENTRAL_CHECKER="${TARASEC_CENTRAL_ACCESS_CHECKER:-/usr/local/sbin/tarasec-central-access-check}"
+if [ -x "$CENTRAL_CHECKER" ] && [ -r /tmp/dhcp.leases ]; then
+    while read -r _expiry mac ip _rest; do
+        [[ "$mac" =~ ^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$ ]] || continue
+        [[ "$ip" =~ ^([0-9]{1,3}\\.){3}[0-9]{1,3}$ ]] || continue
+        if [ "$("$CENTRAL_CHECKER" "$mac" "$ip" 2>/dev/null)" = "auth" ]; then
+            central_access_sql+="INSERT IGNORE INTO tarasec_valid_access(ip) VALUES ('$ip');"$("${MYSQL[@]}" 2>/dev/null <<'SQL'
+START TRANSACTION;
+
+UPDATE hotspotSubscriber hs
+JOIN (
+    SELECT DISTINCT username
+      FROM session
+     WHERE active=1 AND logouttime IS NULL
+) active_session ON active_session.username=hs.username
+   SET hs.expiryTime=DATE_ADD(NOW(), INTERVAL hs.giveHoursAfterLogin HOUR)
+ WHERE hs.subscriptionType IN ('expiry','limited')
+   AND hs.expiryTime IS NULL
+   AND COALESCE(hs.giveHoursAfterLogin,0)>0;
+
+CREATE TEMPORARY TABLE tarasec_valid_access (
+    ip varchar(45) NOT NULL PRIMARY KEY
+) ENGINE=MEMORY;
+
+$central_access_sql
+INSERT IGNORE INTO tarasec_valid_access(ip)
+SELECT DISTINCT s.ip
+  FROM session s
+  JOIN hotspotSubscriber hs ON hs.username=s.username
+  LEFT JOIN user admin_user
+    ON admin_user.username=hs.username
+   AND CAST(admin_user.isAdmin AS UNSIGNED)=1
+ WHERE s.active=1
+   AND s.logouttime IS NULL
+   AND s.lastrequest>DATE_SUB(NOW(),INTERVAL 1 HOUR)
+   AND s.ip REGEXP '^[0-9]{1,3}(\\.[0-9]{1,3}){3}$'
+   AND CAST(hs.enabled AS UNSIGNED)=1
+   AND hs.confirmedTime IS NOT NULL
+   AND admin_user.userId IS NULL
+   AND CASE hs.subscriptionType
+       WHEN 'quota' THEN COALESCE(hs.usageMB,0)<COALESCE(hs.quotaMB,0)
+       WHEN 'expiry' THEN hs.expiryTime IS NOT NULL AND hs.expiryTime>NOW()
+       WHEN 'limited' THEN COALESCE(hs.usageMB,0)<COALESCE(hs.quotaMB,0)
+                           AND hs.expiryTime IS NOT NULL
+                           AND hs.expiryTime>NOW()
+       ELSE 0
+   END;
+
+INSERT INTO access(ip,hasaccess,updated)
+SELECT ip,1,NOW() FROM tarasec_valid_access
+ON DUPLICATE KEY UPDATE hasaccess=1,updated=NOW();
+
+DELETE access_row
+  FROM access access_row
+  LEFT JOIN tarasec_valid_access valid_row ON valid_row.ip=access_row.ip
+ WHERE valid_row.ip IS NULL;
+
+SELECT COUNT(*) FROM tarasec_valid_access;
+COMMIT;
+SQL
+) || {
+    printf '{"ok":false,"valid":0,"reason":"mysql_refresh_failed"}\n' >"$OUT"
+    logger -t tarasec-access "access refresh failed"
+    exit 1
+}
+
+valid=$(printf '%s\n' "$result" | tail -1 | tr -cd '0-9')
+valid=${valid:-0}
+printf '{"ok":true,"valid":%d}\n' "$valid" >"$OUT"
+\\n'
+        fi
+    done < /tmp/dhcp.leases
+fi
+
 result=$("${MYSQL[@]}" 2>/dev/null <<'SQL'
 START TRANSACTION;
 
