@@ -6,21 +6,32 @@ use DBI;
 my $dbh = eval {
     DBI->connect(
         'DBI:mysql:database=taransvar;host=localhost',
-        'scriptUsrAces3f3',
-        'rErte8Oi98e-2_#',
-        { RaiseError => 1, PrintError => 0, AutoCommit => 1, mysql_enable_utf8mb4 => 1 }
+        undef,
+        undef,
+        {
+            RaiseError => 1,
+            PrintError => 0,
+            AutoCommit => 1,
+            mysql_enable_utf8mb4 => 1,
+            mysql_read_default_file => '/etc/tarasec/access-mysql.cnf',
+        }
     )
 };
 exit 0 unless $dbh;
 
+# Password disclosure is a setup convenience, not an access-policy decision.
+# Count every enabled hotspot identity, including administrator collisions, so
+# credentials disappear as soon as a second usable login exists. A sole
+# administrator identity is never displayed.
 my $sth = eval {
     my $s = $dbh->prepare(q{
-        SELECT hs.username, hs.password
+        SELECT hs.username,
+               hs.password,
+               COALESCE(MAX(CAST(u.isAdmin AS UNSIGNED)),0) AS is_admin
           FROM hotspotSubscriber hs
-          LEFT JOIN user u
-            ON u.username=hs.username AND CAST(u.isAdmin AS UNSIGNED)=1
+          LEFT JOIN user u ON u.username=hs.username
          WHERE CAST(hs.enabled AS UNSIGNED)=1
-           AND u.userId IS NULL
+         GROUP BY hs.subscriberId,hs.username,hs.password
          ORDER BY hs.subscriberId
          LIMIT 2
     });
@@ -35,6 +46,7 @@ while (my $row = $sth->fetchrow_hashref) {
 }
 $dbh->disconnect;
 exit 0 unless @rows == 1;
+exit 0 if $rows[0]{is_admin};
 
 sub h {
     my ($v) = @_;
@@ -49,4 +61,4 @@ sub h {
 
 my $u = h($rows[0]{username});
 my $p = h($rows[0]{password});
-print qq{<div class="note"><b>Hotspot test login</b><br>There is currently only one hotspot account, so its credentials are shown here for setup/testing.<br><b>Username:</b> <code>$u</code><br><b>Password:</b> <code>$p</code><br><span class="small">This notice disappears automatically when a second enabled hotspot account is created.</span></div>};
+print qq{<div class="note"><b>Hotspot test login</b><br>There is currently only one enabled hotspot account, so its credentials are shown here for setup/testing.<br><b>Username:</b> <code>$u</code><br><b>Password:</b> <code>$p</code><br><span class="small">This notice disappears automatically when a second enabled hotspot account is created.</span></div>};
