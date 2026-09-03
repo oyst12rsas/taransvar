@@ -176,6 +176,23 @@ if [ -n "$HOTSPOT_IF" ]; then
 address=/status.client/$HOTSPOT_IP
 EOF
     chmod 0644 /etc/NetworkManager/dnsmasq-shared.d/tarasec-status-client.conf
+
+    # openNDS normally writes this directive to /etc/dnsmasq.conf. A
+    # NetworkManager shared hotspot runs its own dnsmasq and reads this
+    # directory instead, so install the nftset mapping where that instance
+    # can see it.
+    WALLEDGARDEN_DNSMASQ=/etc/NetworkManager/dnsmasq-shared.d/tarasec-walledgarden.conf
+    WALLEDGARDEN_DNSMASQ_CHANGED=0
+    WALLEDGARDEN_DNSMASQ_TMP="$(mktemp)"
+    cat > "$WALLEDGARDEN_DNSMASQ_TMP" <<'EOF'
+nftset=/tarasec.org/accounts.google.com/oauth2.googleapis.com/www.googleapis.com/ssl.gstatic.com/accounts.googleusercontent.com/4#ip#nds_filter#walledgarden
+EOF
+    if [ ! -f "$WALLEDGARDEN_DNSMASQ" ] || ! cmp -s "$WALLEDGARDEN_DNSMASQ_TMP" "$WALLEDGARDEN_DNSMASQ"; then
+        install -m 0644 "$WALLEDGARDEN_DNSMASQ_TMP" "$WALLEDGARDEN_DNSMASQ"
+        WALLEDGARDEN_DNSMASQ_CHANGED=1
+    fi
+    rm -f "$WALLEDGARDEN_DNSMASQ_TMP"
+
     if [ -f /etc/config/opennds ] && [ ! -f /etc/config/opennds.tarasec-before ]; then
         cp -a /etc/config/opennds /etc/config/opennds.tarasec-before
     fi
@@ -218,6 +235,30 @@ FirewallRuleSet users-to-router {
 walledgarden_fqdn_list tarasec.org accounts.google.com oauth2.googleapis.com www.googleapis.com ssl.gstatic.com accounts.googleusercontent.com
 walledgarden_port_list 443
 EOF
+
+    # dnsmasq reads nftset directives only when its process starts. Cycle only
+    # the hotspot connection, and only when the generated mapping changed.
+    # Existing Wi-Fi clients must reconnect after this one-time configuration.
+    if [ "$WALLEDGARDEN_DNSMASQ_CHANGED" -eq 1 ]; then
+        HOTSPOT_CONNECTION="$(nmcli -g GENERAL.CONNECTION device show "$HOTSPOT_IF" 2>/dev/null | head -1)"
+        if [ -z "$HOTSPOT_CONNECTION" ] || [ "$HOTSPOT_CONNECTION" = "--" ]; then
+            echo "ERROR: unable to identify the active NetworkManager hotspot connection for $HOTSPOT_IF." >&2
+            exit 1
+        fi
+        echo "Restarting hotspot DNS to activate TaraSec identity bootstrap..."
+        nmcli connection down "$HOTSPOT_CONNECTION"
+        nmcli connection up "$HOTSPOT_CONNECTION"
+        for _ in $(seq 1 20); do
+            if ip -4 addr show dev "$HOTSPOT_IF" 2>/dev/null | grep -Eq "[[:space:]]inet[[:space:]]+$HOTSPOT_IP/"; then
+                break
+            fi
+            sleep 1
+        done
+        if ! ip -4 addr show dev "$HOTSPOT_IF" 2>/dev/null | grep -Eq "[[:space:]]inet[[:space:]]+$HOTSPOT_IP/"; then
+            echo "ERROR: hotspot $HOTSPOT_IF did not recover $HOTSPOT_IP after DNS restart." >&2
+            exit 1
+        fi
+    fi
 
     # openNDS 10.1.0 on generic Linux documents dhcp_leases_file but its
     # libopennds.sh dhcp_check() helper only searches hard-coded lease paths.
@@ -439,7 +480,29 @@ EOF
     grep -q 'FirewallRule allow tcp port 8080' /etc/opennds/opennds.conf
     grep -Fqx 'walledgarden_fqdn_list tarasec.org accounts.google.com oauth2.googleapis.com www.googleapis.com ssl.gstatic.com accounts.googleusercontent.com' /etc/opennds/opennds.conf
     grep -Fqx 'walledgarden_port_list 443' /etc/opennds/opennds.conf
+    grep -Fqx 'nftset=/tarasec.org/accounts.google.com/oauth2.googleapis.com.com/www.googleapis.com.com/ssl.gstatic.com/accounts.googleusercontent.com/4#ip#nds_filter#walledgarden' "$WALLEDGARDEN_DNSMASQ" 2>/dev/null || {
+        # Use the correct literal below; this branch also guards accidental
+        # corruption of the NetworkManager-specific mapping.
+        grep -Fqx 'nftset=/tarasec.org/accounts.google.com/oauth2.googleapis.com/www.googleapis.com/ssl.gstatic.com/accounts.googleusercontent.com/4#ip#nds_filter#walledgarden' "$WALLEDGARDEN_DNSMASQ"
+    }
     ss -lnt | grep -q ':8080 '
+
+    # Resolve through the hotspot dnsmasq to populate the dynamic nft set,
+    # then require at least one address. A configured but empty set blocks
+    # exactly the sign-in bootstrap this installation is meant to provide.
+    TARASEC_PUBLIC_IP="$(getent ahostsv4 tarasec.org | awk 'NR == 1 {print $1}')"
+    if [ -z "$TARASEC_PUBLIC_IP" ]; then
+        echo "ERROR: unable to resolve tarasec.org for the walled-garden self-test." >&2
+        exit 1
+    fi
+    TARASEC_EXPECTED_DNS_IP="$TARASEC_PUBLIC_IP" python3 "$REPO_ROOT/misc/check_hotspot_dns.py" "$HOTSPOT_IP" tarasec.org
+    sleep 1
+    if ! nft list set ip nds_filter walledgarden 2>/dev/null | grep -q 'elements = {'; then
+        echo "ERROR: openNDS walled-garden set is empty after resolving tarasec.org through hotspot DNS." >&2
+        echo "NetworkManager dnsmasq did not load $WALLEDGARDEN_DNSMASQ." >&2
+        nft list set ip nds_filter walledgarden >&2 || true
+        exit 1
+    fi
 
     # Capture the complete status before matching it. With `set -o pipefail`,
     # `grep -q` can close a live ndsctl pipe after the first match, causing
