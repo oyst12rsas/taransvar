@@ -13,4 +13,16 @@ CLIENT_IP="${2:-}"
 . "$HOTSPOT_CONFIG"
 MAC="$(ip neigh show to "$CLIENT_IP" dev "$HOTSPOT_IF" 2>/dev/null | awk '/lladdr/ {for(i=1;i<=NF;i++) if($i=="lladdr"){print tolower($(i+1));exit}}')"
 [[ "$MAC" =~ ^([0-9a-f]{2}:){5}[0-9a-f]{2}$ ]] || { echo '{"ok":false,"reason":"client_mac_not_observed"}'; exit 1; }
-exec curl -sS --connect-timeout 4 --max-time 10   -H "X-TaraSec-Gateway-Key: $TARASEC_GATEWAY_KEY"   -H "X-TaraSec-Token: $TARASEC_GATEWAY_TOKEN"   --data-urlencode "code=$CODE"   --data-urlencode "device_key=$MAC"   "${TARASEC_BIND_URL:-https://tarasec.org/api/v1/subscriber/device-bind.php}"
+RESPONSE=""
+if ! RESPONSE="$(curl -sS --connect-timeout 4 --max-time 10 \
+    -H "X-TaraSec-Gateway-Key: $TARASEC_GATEWAY_KEY" \
+    -H "X-TaraSec-Token: $TARASEC_GATEWAY_TOKEN" \
+    --data-urlencode "code=$CODE" \
+    --data-urlencode "device_key=$MAC" \
+    "${TARASEC_BIND_URL:-https://tarasec.org/api/v1/subscriber/device-bind.php}")"; then
+    logger -t tarasec-global-bind "central request failed for client $CLIENT_IP mac $MAC"
+    echo '{"ok":false,"reason":"central_service_unavailable"}'
+    exit 1
+fi
+logger -t tarasec-global-bind "client=$CLIENT_IP mac=$MAC response=$RESPONSE"
+printf '%s\n' "$RESPONSE"
