@@ -11,13 +11,14 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WATCH_SRC="$REPO_ROOT/hotspot/opennds/tarasec-wifi-session-watch"
 LOGOUT_SRC="$REPO_ROOT/hotspot/opennds/tarasec-subscriber-logout"
 ACCOUNTING_SRC="$REPO_ROOT/hotspot/opennds/tarasec-hotspot-accounting"
+CENTRAL_SRC="$REPO_ROOT/hotspot/opennds/tarasec-access.sh"
 USERS_SRC="$REPO_ROOT/misc/tarasec-users.pl"
 
 if [ ! -f "$WATCH_SRC" ]; then
     echo "ERROR: missing $WATCH_SRC" >&2
     exit 1
 fi
-for required in "$LOGOUT_SRC" "$ACCOUNTING_SRC" "$USERS_SRC"; do
+for required in "$LOGOUT_SRC" "$ACCOUNTING_SRC" "$CENTRAL_SRC" "$USERS_SRC"; do
     if [ ! -f "$required" ]; then
         echo "ERROR: missing $required" >&2
         exit 1
@@ -44,10 +45,13 @@ if [ -z "$HOTSPOT_IF" ] || ! ip link show "$HOTSPOT_IF" >/dev/null 2>&1; then
 fi
 
 # Repository files do not need their executable bit preserved by GitHub.
-# install(1) sets the required runtime mode explicitly here.
+# install(1) sets the required runtime mode explicitly here. Keep the central
+# helper in the same update unit as accounting because commuter accounting uses
+# its --json/--account modes.
 install -m 0755 "$WATCH_SRC" /usr/local/sbin/tarasec-wifi-session-watch
 install -m 0755 "$LOGOUT_SRC" /usr/local/sbin/tarasec-subscriber-logout
 install -m 0755 "$ACCOUNTING_SRC" /usr/local/sbin/tarasec-hotspot-accounting
+install -m 0755 "$CENTRAL_SRC" /usr/local/sbin/tarasec-central-access-check
 install -m 0755 "$USERS_SRC" /usr/local/sbin/tarasec-users
 /usr/local/sbin/tarasec-users --ensure-schema
 
