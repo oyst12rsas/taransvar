@@ -1,0 +1,25 @@
+#!/bin/bash
+# Dedicated access-table reconciler. Replaces sleepingbeauty for hotspot access.
+set -u
+
+REFRESHER="${TARASEC_ACCESS_REFRESHER:-/usr/local/sbin/tarasec-access-refresh}"
+INTERVAL="${TARASEC_ACCESS_REFRESH_INTERVAL:-2}"
+failures=0
+
+trap 'exit 0' TERM INT
+
+while :; do
+    if "$REFRESHER"; then
+        if [ "$failures" -gt 0 ]; then
+            logger -t tarasec-access "access refresh recovered after $failures failure(s)"
+        fi
+        failures=0
+    else
+        failures=$((failures+1))
+        if [ "$failures" -eq 1 ] || [ $((failures % 30)) -eq 0 ]; then
+            logger -t tarasec-access "access refresh failure count=$failures"
+        fi
+    fi
+    sleep "$INTERVAL" &
+    wait $!
+done
