@@ -90,7 +90,7 @@ function users_list()
 	if (!isSuperUser())
 		return;
 	print table(tr(td(h1("Registered users:"))));
-	print '<p><a href="index.php?f=users_pricing"><b>Hotspot pricing / demo packages</b></a></p>';
+	print '<p><a href="index.php?f=users_pricing"><b>Hotspot pricing / demo packages</b></a> &nbsp; · &nbsp; <a href="index.php?f=users_earnings"><b>Roaming earnings</b></a></p>';
 	userList(-1, -1, request("o"));
 }
 
