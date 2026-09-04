@@ -41,14 +41,29 @@ my $touch = $dbh->prepare('UPDATE session SET lastrequest=NOW() WHERE sessionid=
 my $remaining = $dbh->prepare(
     'SELECT subscriptionType,quotaMB,usageMB FROM hotspotSubscriber WHERE username=?'
 );
+my $roaming = $dbh->prepare(
+    'SELECT customerId FROM hotspotRoamingBinding WHERE deviceKey=? LIMIT 1'
+);
+my $earning_config = $dbh->prepare(q{
+    SELECT roamingPriceKshPerMiB,networkFeePercent,currency,CAST(isDemo AS UNSIGNED)
+      FROM hotspotEarningConfig WHERE configId=1
+});
+my $earning = $dbh->prepare(q{
+    INSERT INTO hotspotEarning(
+        sessionId,customerId,deviceKey,usageMiB,grossAmount,networkFee,netAmount,currency,settlementStatus,isDemo
+    ) VALUES(?,?,?,?,?,?,?,?, 'pending', ?)
+});
 
-for my $client (values %{$data->{clients}}) {
+for my $client_key (keys %{$data->{clients}}) {
+    my $client = $data->{clients}{$client_key};
     next if ref($client) ne 'HASH' || ($client->{state} // '') ne 'Authenticated';
     my $ip = $client->{ip} // '';
     next if $ip !~ /\A(?:\d{1,3}\.){3}\d{1,3}\z/;
     my $up = int($client->{upload_this_session} // 0);
     my $down = int($client->{download_this_session} // 0);
     next if $up < 0 || $down < 0;
+    my $device_key = lc($client->{mac} // $client_key // '');
+    $device_key = '' unless $device_key =~ /\A(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\z/;
 
     eval {
         $dbh->begin_work;
@@ -75,6 +90,27 @@ for my $client (values %{$data->{clients}}) {
         if ($delta_kib > 0) {
             $add->execute($delta_kib,$username);
             $history->execute($username,$ip,$delta_kib);
+
+            # Only globally-bound devices accrue roaming/operator earnings.
+            # Local subscribers remain normal local hotspot traffic.
+            if ($device_key ne '') {
+                $roaming->execute($device_key);
+                my ($customer_id) = $roaming->fetchrow_array;
+                if (defined $customer_id || $roaming->rows > 0) {
+                    $earning_config->execute();
+                    my ($rate,$fee_percent,$currency,$is_demo) = $earning_config->fetchrow_array;
+                    if (defined $rate && $rate >= 0) {
+                        my $usage_mib = $delta_kib / 1024.0;
+                        my $gross = $usage_mib * $rate;
+                        my $fee = $gross * (($fee_percent // 0) / 100.0);
+                        my $net = $gross - $fee;
+                        $earning->execute(
+                            $session_id,$customer_id,$device_key,$usage_mib,$gross,$fee,$net,
+                            ($currency // 'KES'),($is_demo ? 1 : 0)
+                        );
+                    }
+                }
+            }
         }
         $insert->execute($session_id,$up,$down);
         $touch->execute($session_id);
