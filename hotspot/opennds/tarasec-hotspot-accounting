@@ -3,6 +3,12 @@ use strict;
 use warnings;
 use DBI;
 use JSON::PP qw(decode_json);
+use Fcntl qw(:flock);
+
+# The Wi-Fi watcher is the normal caller, but serialize manual/overlapping runs
+# too. Otherwise the same openNDS delta could be submitted twice.
+open my $lock, '>>', '/run/tarasec-hotspot-accounting.lock' or exit 0;
+flock($lock, LOCK_EX) or exit 0;
 
 my $json = qx{ndsctl json 2>/dev/null};
 exit 0 if $? != 0 || $json eq '';
@@ -41,8 +47,20 @@ my $touch = $dbh->prepare('UPDATE session SET lastrequest=NOW() WHERE sessionid=
 my $remaining = $dbh->prepare(
     'SELECT subscriptionType,quotaMB,usageMB FROM hotspotSubscriber WHERE username=?'
 );
+my $global_checkpoint = $dbh->prepare(q{
+    SELECT centralSessionId,customerId,uploadKiB,downloadKiB
+      FROM hotspotGlobalUsageCheckpoint WHERE deviceKey=?
+});
+my $global_insert = $dbh->prepare(q{
+    INSERT INTO hotspotGlobalUsageCheckpoint
+      (deviceKey,centralSessionId,customerId,clientIp,uploadKiB,downloadKiB,updated)
+    VALUES(?,?,?,?,?,?,NOW())
+    ON DUPLICATE KEY UPDATE centralSessionId=VALUES(centralSessionId),customerId=VALUES(customerId),
+      clientIp=VALUES(clientIp),uploadKiB=VALUES(uploadKiB),downloadKiB=VALUES(downloadKiB),updated=NOW()
+});
 
-for my $client (values %{$data->{clients}}) {
+for my $client_key (keys %{$data->{clients}}) {
+    my $client = $data->{clients}{$client_key};
     next if ref($client) ne 'HASH' || ($client->{state} // '') ne 'Authenticated';
     my $ip = $client->{ip} // '';
     next if $ip !~ /\A(?:\d{1,3}\.){3}\d{1,3}\z/;
@@ -50,49 +68,116 @@ for my $client (values %{$data->{clients}}) {
     my $down = int($client->{download_this_session} // 0);
     next if $up < 0 || $down < 0;
 
-    eval {
-        $dbh->begin_work;
-        $find->execute($ip);
-        my ($session_id,$username) = $find->fetchrow_array;
-        if (!$session_id || !defined $username) {
-            $dbh->rollback;
-            next;
-        }
+    # Local hotspot subscribers keep the existing quota/accounting path.
+    $find->execute($ip);
+    my ($session_id,$username) = $find->fetchrow_array;
+    if ($session_id && defined $username) {
+        eval {
+            $dbh->begin_work;
+            $checkpoint->execute($session_id);
+            my ($old_up,$old_down) = $checkpoint->fetchrow_array;
+            $old_up = 0 unless defined $old_up;
+            $old_down = 0 unless defined $old_down;
 
-        $checkpoint->execute($session_id);
-        my ($old_up,$old_down) = $checkpoint->fetchrow_array;
+            # A counter reset within the same DB session is treated as a new
+            # openNDS accounting epoch. Never subtract previously charged traffic.
+            my $delta_up = $up >= $old_up ? $up - $old_up : $up;
+            my $delta_down = $down >= $old_down ? $down - $old_down : $down;
+            my $delta_kib = $delta_up + $delta_down;
+
+            # openNDS cumulative session counters are KiB, while
+            # hotspotSubscriber and userusage store MiB.
+            if ($delta_kib > 0) {
+                $add->execute($delta_kib,$username);
+                $history->execute($username,$ip,$delta_kib);
+            }
+            $insert->execute($session_id,$up,$down);
+            $touch->execute($session_id);
+            $remaining->execute($username);
+            my ($type,$quota,$usage) = $remaining->fetchrow_array;
+            $dbh->commit;
+
+            if (($type // '') eq 'quota' && ($quota // 0) > 0 && ($usage // 0) >= $quota) {
+                system('/usr/local/sbin/tarasec-subscriber-logout',$ip);
+                logger("quota exhausted for $username at $ip");
+            }
+        };
+        if ($@) {
+            eval { $dbh->rollback };
+            logger("local accounting failed for $ip: $@");
+        }
+        next;
+    }
+
+    # A global TaraSec commuter is intentionally not a local hotspotSubscriber
+    # and has no local session row. Resolve the MAC against the central access
+    # service to obtain the global session/customer IDs created for this hotspot.
+    my $mac = lc($client->{mac} // $client_key // '');
+    next if $mac !~ /\A(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\z/;
+    my $access = helper_json('--json',$mac,$ip);
+    next if !$access || !$access->{allow};
+    my $central_session = int($access->{session_id} // 0);
+    my $customer_id = int($access->{customer_id} // 0);
+    next if $central_session <= 0 || $customer_id <= 0;
+
+    $global_checkpoint->execute($mac);
+    my ($old_central_session,$old_customer,$old_up,$old_down) = $global_checkpoint->fetchrow_array;
+    if (!defined($old_central_session) || $old_central_session != $central_session) {
+        $old_up = 0;
+        $old_down = 0;
+    } else {
         $old_up = 0 unless defined $old_up;
         $old_down = 0 unless defined $old_down;
+    }
 
-        # A counter reset within the same DB session is treated as a new
-        # openNDS accounting epoch. Never subtract previously charged traffic.
-        my $delta_up = $up >= $old_up ? $up - $old_up : $up;
-        my $delta_down = $down >= $old_down ? $down - $old_down : $down;
-        my $delta_kib = $delta_up + $delta_down;
+    # openNDS can reset its connection counters while the central TaraSec
+    # session is still open. Convert each epoch to deltas before posting it.
+    my $delta_up_kib = $up >= $old_up ? $up - $old_up : $up;
+    my $delta_down_kib = $down >= $old_down ? $down - $old_down : $down;
+    my $delta_kib = $delta_up_kib + $delta_down_kib;
+    my $central;
+    if ($delta_kib > 0) {
+        $central = helper_json('--account',$central_session,$delta_up_kib * 1024,$delta_down_kib * 1024);
+        if (!$central || !$central->{ok}) {
+            logger("central accounting failed for customer $customer_id at $ip; usage retained for retry");
+            next;
+        }
+    }
 
-        # openNDS cumulative session counters are KiB, while
-        # hotspotSubscriber stores MiB.
+    eval {
+        $dbh->begin_work;
+        $global_insert->execute($mac,$central_session,$customer_id,$ip,$up,$down);
         if ($delta_kib > 0) {
-            $add->execute($delta_kib,$username);
-            $history->execute($username,$ip,$delta_kib);
+            my $label = 'TaraSec #'.$customer_id;
+            $history->execute($label,$ip,$delta_kib);
         }
-        $insert->execute($session_id,$up,$down);
-        $touch->execute($session_id);
-        $remaining->execute($username);
-        my ($type,$quota,$usage) = $remaining->fetchrow_array;
         $dbh->commit;
-
-        if (($type // '') eq 'quota' && ($quota // 0) > 0 && ($usage // 0) >= $quota) {
-            system('/usr/local/sbin/tarasec-subscriber-logout',$ip);
-            logger("quota exhausted for $username at $ip");
-        }
     };
     if ($@) {
         eval { $dbh->rollback };
-        logger("accounting failed for $ip: $@");
+        logger("commuter history accounting failed for $ip: $@");
+        next;
+    }
+
+    if ($central && exists($central->{allow}) && !$central->{allow}) {
+        system('/usr/local/sbin/tarasec-subscriber-logout',$ip);
+        logger("global TaraSec credit exhausted for customer $customer_id at $ip");
     }
 }
 $dbh->disconnect;
+
+sub helper_json {
+    my (@args)=@_;
+    my $helper='/usr/local/sbin/tarasec-central-access-check';
+    return undef if !-x $helper;
+    open my $fh, '-|', $helper, @args or return undef;
+    local $/;
+    my $output=<$fh> // '';
+    my $closed=close $fh;
+    return undef if !$closed || $output eq '';
+    my $parsed=eval { decode_json($output) };
+    return $parsed && ref($parsed) eq 'HASH' ? $parsed : undef;
+}
 
 sub logger {
     my ($message)=@_;
