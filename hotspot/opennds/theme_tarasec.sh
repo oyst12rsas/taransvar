@@ -82,7 +82,7 @@ thankyou_page() { authenticated_status_page; }
 landing_page() {
     configure_log_location; . "$mountpoint/ndscids/ndsinfo"; auth_log
     if [ "$ndsstatus" = "authenticated" ]; then
-        echo "<div class=\"ok\">Internet access enabled</div><p>You can close this window and continue using the Internet.</p>"
+        echo "<div class=\"ok\">Hotspot access authorized</div><p>This hotspot has authorized this device. This does not verify that the public Internet is reachable.</p><p>You can close this window and try browsing. The TaraSec app performs a separate Internet connectivity check.</p>"
         footer
     else
         echo "<div class=\"bad\">Connection was not authorized</div><p>The request may have timed out. Please try again.</p><form><input class=\"btn\" type=\"button\" value=\"Try again\" onClick=\"location.href='http://$gatewayfqdn'\"></form>"
