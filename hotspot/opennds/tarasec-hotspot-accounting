@@ -42,7 +42,7 @@ my $remaining = $dbh->prepare(
     'SELECT subscriptionType,quotaMB,usageMB FROM hotspotSubscriber WHERE username=?'
 );
 my $roaming = $dbh->prepare(
-    'SELECT customerId FROM hotspotRoamingBinding WHERE deviceKey=? LIMIT 1'
+    'SELECT 1,customerId FROM hotspotRoamingBinding WHERE deviceKey=? LIMIT 1'
 );
 my $earning_config = $dbh->prepare(q{
     SELECT roamingPriceKshPerMiB,networkFeePercent,currency,CAST(isDemo AS UNSIGNED)
@@ -95,8 +95,8 @@ for my $client_key (keys %{$data->{clients}}) {
             # Local subscribers remain normal local hotspot traffic.
             if ($device_key ne '') {
                 $roaming->execute($device_key);
-                my ($customer_id) = $roaming->fetchrow_array;
-                if (defined $customer_id || $roaming->rows > 0) {
+                my ($is_roaming,$customer_id) = $roaming->fetchrow_array;
+                if ($is_roaming) {
                     $earning_config->execute();
                     my ($rate,$fee_percent,$currency,$is_demo) = $earning_config->fetchrow_array;
                     if (defined $rate && $rate >= 0) {
