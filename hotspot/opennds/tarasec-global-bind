@@ -31,6 +31,22 @@ logger -t tarasec-global-bind "client=$CLIENT_IP mac=$MAC response=$RESPONSE"
 # have to reopen the portal and press "Continue to Internet".
 if printf '%s' "$RESPONSE" | grep -Eq '"ok"[[:space:]]*:[[:space:]]*true' &&
    printf '%s' "$RESPONSE" | grep -Eq '"bound"[[:space:]]*:[[:space:]]*true'; then
+    # Persist a local, privacy-minimal marker that this device was authenticated
+    # through TaraSec's global subscriber service. The accounting worker uses
+    # this to separate roaming/external traffic from locally-created users.
+    CUSTOMER_ID="$(printf '%s' "$RESPONSE" | perl -MJSON::PP -0777 -ne '
+        eval { my $j=decode_json($_); my $v=$j->{customer_id}//$j->{customerId}//""; print $v if $v =~ /^[A-Za-z0-9_.:@-]{1,128}$/; };
+    ' 2>/dev/null || true)"
+    if command -v mysql >/dev/null 2>&1; then
+        if [ -n "$CUSTOMER_ID" ]; then
+            mysql taransvar -e "INSERT INTO hotspotRoamingBinding(deviceKey,customerId,source,boundTime,lastSeen) VALUES('$MAC','$CUSTOMER_ID','global',NOW(),NOW()) ON DUPLICATE KEY UPDATE customerId=VALUES(customerId),source='global',lastSeen=NOW();" >/dev/null 2>&1 || \
+                logger -t tarasec-global-bind "unable to record roaming binding for mac $MAC"
+        else
+            mysql taransvar -e "INSERT INTO hotspotRoamingBinding(deviceKey,customerId,source,boundTime,lastSeen) VALUES('$MAC',NULL,'global',NOW(),NOW()) ON DUPLICATE KEY UPDATE source='global',lastSeen=NOW();" >/dev/null 2>&1 || \
+                logger -t tarasec-global-bind "unable to record roaming binding for mac $MAC"
+        fi
+    fi
+
     /usr/local/sbin/tarasec-access-refresh >/dev/null 2>&1 || true
     if command -v ndsctl >/dev/null 2>&1; then
         authenticated=0
