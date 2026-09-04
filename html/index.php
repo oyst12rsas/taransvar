@@ -178,9 +178,6 @@ $monthlyPlans = array_filter($plans, function($plan) {
                             <?php else: ?>
                                 <a href="#" class="btn btn-link text-primary" data-bs-toggle="modal" data-bs-target="#loginModal">Login Now <i class="fas fa-arrow-right"></i></a>
                             <?php endif; ?>
-                            <div class="mt-2">
-                                <a href="community-hotspots.php" class="btn btn-link text-primary">Community hotspot groups <i class="fas fa-arrow-right"></i></a>
-                            </div>
                         </div>
                     </div>
                 </div>
