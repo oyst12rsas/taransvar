@@ -25,8 +25,6 @@ function userList($nGroup, $nCamp, $nOffset) {
 	$szLimit = " limit $nInList ".(intval($nOffset)>0?"offset ".intval($nOffset)*$nInList:"");
 
 	$szSQL = "select H.username, H.quotaMB, round(coalesce(H.usageMB,0),1) as theusage, H.subscriptionType, H.expiryTime, cast(H.enabled as unsigned) as enabled, H.confirmedTime, UNIX_TIMESTAMP(H.expiryTime)-UNIX_TIMESTAMP(now()) as moreTime from hotspotSubscriber H $szJoinAndWhere order by H.username $szLimit";
-	// CDb::fetchNext() reuses the statement already held by the object. The
-	// count query above therefore needs a separate CDb instance from the list.
 	$pListDb = new CDb;
 
 	while ($cFetched = $pListDb->fetchNext($szSQL, $cFlds))
@@ -92,6 +90,7 @@ function users_list()
 	if (!isSuperUser())
 		return;
 	print table(tr(td(h1("Registered users:"))));
+	print '<p><a href="index.php?f=users_pricing"><b>Hotspot pricing / demo packages</b></a></p>';
 	userList(-1, -1, request("o"));
 }
 
