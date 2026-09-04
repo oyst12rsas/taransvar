@@ -61,7 +61,10 @@ denied_page() {
     loginbase="$(hotspot_web_base)"
     sole_login="$(/usr/local/sbin/tarasec-single-subscriber 2>/dev/null || true)"
     echo "<div class=\"bad\">Internet access is not active</div><p>This device does not currently have access on this hotspot.</p>
-<div class=\"note\"><b>Already have a hotspot account?</b><br>Log in below. Your subscription or quota determines whether Internet access is granted.</div>
+<div class=\"note\"><b>Global TaraSec account</b><br>If you use a global TaraSec account, open the TaraSec app and choose <b>Use this account on current hotspot</b>.</div>
+<a class=\"btn btn2\" href=\"tarasec://identity\">Open the TaraSec app</a>
+<h2 style=\"margin-top:24px\">Local hotspot account</h2>
+<p>Or log in for local access with the username and password below. Your local subscription or quota determines whether hotspot access is authorized.</p>
 $sole_login
 <form id=\"tslogin\" action=\"$loginbase/portal_login.php\" method=\"post\">
 <input type=\"hidden\" name=\"client_ip\" value=\"$clientip\">
