@@ -1,13 +1,16 @@
 #!/bin/bash
 # Maintain TaraSec's access table from local and global hotspot identities.
-# This is the access-producing part of legacy db.pl. It deliberately does not
-# touch firewall rules or default policies; openNDS enforces the resulting rows.
+# This is the access-producing part of legacy db.pl. After the table is
+# reconciled, clients that already have valid TaraSec access are handed
+# straight through openNDS; explicit login/connect is the user's request for
+# Internet access and must not require a second "Continue to Internet" click.
 set -uo pipefail
 
 DB_NAME="${TARASEC_ACCESS_DB:-taransvar}"
 MYSQL_CNF="${TARASEC_ACCESS_MYSQL_CNF:-/etc/tarasec/access-mysql.cnf}"
 OUT="${TARASEC_ACCESS_REFRESH_STATE:-/run/tarasec-access-refresh.json}"
 LOCK="${TARASEC_ACCESS_REFRESH_LOCK:-/run/tarasec-access-refresh.lock}"
+ACCESS_CHECKER="${TARASEC_ACCESS_CHECKER:-/usr/local/sbin/tarasec-access-check}"
 
 exec 9>"$LOCK"
 if ! flock -w 5 9; then
@@ -95,4 +98,44 @@ rm -f "$MYSQL_ERROR"
 
 valid=$(printf '%s\n' "$result" | tail -1 | tr -cd '0-9')
 valid=${valid:-0}
-printf '{"ok":true,"valid":%d}\n' "$valid" >"$OUT"
+
+grant_checked=0
+granted=0
+grant_errors=0
+
+# A successful TaraSec login, global binding, or reconnect with still-valid
+# access already expresses the user's intent to get online. Do not stop an
+# entitled client at a second confirmation page. Only Preauthenticated clients
+# are touched here; clients without access remain captive as before.
+if command -v ndsctl >/dev/null 2>&1 && [ -x "$ACCESS_CHECKER" ]; then
+    NDS_TMP="$(mktemp /run/tarasec-access-nds.XXXXXX)"
+    if ndsctl json >"$NDS_TMP" 2>/dev/null; then
+        while IFS=$'\t' read -r mac ip state; do
+            [ -n "$mac" ] || continue
+            [ -n "$ip" ] || continue
+            [ "$state" = "Preauthenticated" ] || continue
+            grant_checked=$((grant_checked+1))
+
+            if "$ACCESS_CHECKER" "$ip" >/dev/null 2>&1; then
+                if ndsctl auth "$ip" >/dev/null 2>&1; then
+                    granted=$((granted+1))
+                    logger -t tarasec-access "authenticated $mac/$ip: TaraSec access is valid"
+                else
+                    grant_errors=$((grant_errors+1))
+                    logger -t tarasec-access "FAILED to authenticate $mac/$ip despite valid TaraSec access"
+                fi
+            fi
+        done < <(python3 - "$NDS_TMP" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding='utf-8') as f:
+    data = json.load(f)
+for mac, client in data.get('clients', {}).items():
+    print(f"{mac}\t{client.get('ip','')}\t{client.get('state','')}")
+PY
+)
+    fi
+    rm -f "$NDS_TMP"
+fi
+
+printf '{"ok":true,"valid":%d,"grant_checked":%d,"granted":%d,"grant_errors":%d}\n' \
+    "$valid" "$grant_checked" "$granted" "$grant_errors" >"$OUT"
