@@ -68,13 +68,15 @@ update_identity_walled_garden() {
 
     echo "Configuring pre-login TaraSec/Google identity access on $hotspot_if..."
 
-    # Keep this list intentionally narrow. It is only enough to load TaraSec's
-    # identity service and complete Google OAuth while the client is still
-    # captive. Normal Internet access remains blocked until hotspot login.
-    local fqdn_list="tarasec.org accounts.google.com oauth2.googleapis.com www.googleapis.com ssl.gstatic.com www.gstatic.com accounts.googleusercontent.com apis.google.com"
+    # These parent domains intentionally cover only TaraSec and the resources
+    # required by Google's identity UI. dnsmasq domain matching includes
+    # subdomains, so gstatic.com also covers ssl.gstatic.com, etc. General
+    # google.com is deliberately not opened.
+    local fqdn_list="tarasec.org accounts.google.com oauth2.googleapis.com googleapis.com gstatic.com googleusercontent.com apis.google.com"
 
-    # NetworkManager shared mode starts its own dnsmasq. openNDS needs DNS
-    # answers for the allowed FQDNs placed into its walledgarden nft set.
+    # NetworkManager shared mode starts its own dnsmasq. Resolved A records for
+    # the identity domains are inserted into the openNDS nftables walledgarden
+    # set. Cigar's dnsmasq 2.90 supports nftset directly.
     local dnsmasq_dir=/etc/NetworkManager/dnsmasq-shared.d
     local dnsmasq_file="$dnsmasq_dir/tarasec-walledgarden.conf"
     local dnsmasq_tmp
@@ -82,7 +84,7 @@ update_identity_walled_garden() {
     mkdir -p "$dnsmasq_dir"
     dnsmasq_tmp="$(mktemp)"
     cat > "$dnsmasq_tmp" <<'EOF'
-nftset=/tarasec.org/accounts.google.com/oauth2.googleapis.com/www.googleapis.com/ssl.gstatic.com/www.gstatic.com/accounts.googleusercontent.com/apis.google.com/4#ip#nds_filter#walledgarden
+nftset=/tarasec.org/accounts.google.com/oauth2.googleapis.com/googleapis.com/gstatic.com/googleusercontent.com/apis.google.com/4#ip#nds_filter#walledgarden
 EOF
     if [ ! -f "$dnsmasq_file" ] || ! cmp -s "$dnsmasq_tmp" "$dnsmasq_file"; then
         install -m 0644 "$dnsmasq_tmp" "$dnsmasq_file"
@@ -142,8 +144,6 @@ EOF
             systemctl restart opennds
         fi
     else
-        # No hotspot/DNS cycle occurred, so reload openNDS explicitly to pick up
-        # changed walled-garden directives.
         if systemctl is-active --quiet opennds; then
             systemctl restart opennds
         else
@@ -155,6 +155,31 @@ EOF
         echo "ERROR: openNDS did not become active after identity-bootstrap update." >&2
         systemctl status opennds --no-pager -l >&2 || true
         return 1
+    fi
+
+    # Prime the hotspot dnsmasq after openNDS has recreated its walledgarden
+    # set. Without this, the set starts empty and the first captive browser can
+    # stall before enough identity DNS lookups have populated it.
+    if command -v getent >/dev/null 2>&1; then
+        echo "Priming identity DNS entries into the openNDS walled garden..."
+        for host in \
+            tarasec.org \
+            accounts.google.com \
+            oauth2.googleapis.com \
+            apis.google.com \
+            www.googleapis.com \
+            ssl.gstatic.com \
+            www.gstatic.com \
+            lh3.googleusercontent.com
+        do
+            if command -v dig >/dev/null 2>&1; then
+                dig +time=2 +tries=1 +short @192.168.50.1 "$host" A >/dev/null 2>&1 || true
+            elif command -v nslookup >/dev/null 2>&1; then
+                nslookup "$host" 192.168.50.1 >/dev/null 2>&1 || true
+            else
+                getent ahostsv4 "$host" >/dev/null 2>&1 || true
+            fi
+        done
     fi
 
     echo "Pre-login identity access configured."
