@@ -15,10 +15,10 @@ RESPONSE="$(curl -sS --connect-timeout 4 --max-time 10 \
     -H "X-TaraSec-Gateway-Key: $TARASEC_GATEWAY_KEY" \
     -H "X-TaraSec-Token: $TARASEC_GATEWAY_TOKEN" \
     --data-urlencode "device_key=${MAC,,}" \
-    --data-urlencode "ip=$IP" \
+    --data-urlencode "client_ip=$IP" \
     "${TARASEC_ACCESS_URL:-https://tarasec.org/api/v1/subscriber/access-api.php}" 2>/dev/null || true)"
 
-if printf '%s' "$RESPONSE" | grep -Eq '"(auth|hasaccess|allowed)"[[:space:]]*:[[:space:]]*(true|1)|"status"[[:space:]]*:[[:space:]]*"auth"'; then
+if printf '%s' "$RESPONSE" | grep -Eq '"(auth|hasaccess|allow|allowed)"[[:space:]]*:[[:space:]]*(true|1)|"status"[[:space:]]*:[[:space:]]*"auth"'; then
     echo auth
     exit 0
 fi
