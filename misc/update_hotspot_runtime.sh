@@ -116,8 +116,9 @@ EOF
         rm -f "$nds_tmp"
     fi
 
-    # dnsmasq reads nftset directives only at startup. Cycle the hotspot only
-    # when its mapping changed, then restart openNDS after the interface returns.
+    # dnsmasq reads nftset directives only at startup. Cycling the NetworkManager
+    # hotspot also causes openNDS/systemd to stop and start. Do not immediately
+    # issue a second restart or it can race the first openNDS shutdown/startup.
     if [ "$dnsmasq_changed" -eq 1 ] && command -v nmcli >/dev/null 2>&1; then
         local connection=""
         connection="$(nmcli -g GENERAL.CONNECTION device show "$hotspot_if" 2>/dev/null | head -1 || true)"
@@ -125,19 +126,35 @@ EOF
             echo "Restarting hotspot DNS for identity bootstrap..."
             nmcli connection down "$connection" >/dev/null
             nmcli connection up "$connection" >/dev/null
-            for _ in $(seq 1 20); do
-                if ip link show "$hotspot_if" 2>/dev/null | grep -q 'state UP'; then
+            for _ in $(seq 1 30); do
+                if ip link show "$hotspot_if" 2>/dev/null | grep -q 'state UP' && \
+                   systemctl is-active --quiet opennds; then
                     break
                 fi
                 sleep 1
             done
+            if ! systemctl is-active --quiet opennds; then
+                echo "openNDS has not returned yet; asking systemd to start it once..."
+                systemctl start opennds
+            fi
         else
             echo "WARNING: could not identify active NetworkManager hotspot connection; DNS mapping will take effect on its next restart." >&2
+            systemctl restart opennds
+        fi
+    else
+        # No hotspot/DNS cycle occurred, so reload openNDS explicitly to pick up
+        # changed walled-garden directives.
+        if systemctl is-active --quiet opennds; then
+            systemctl restart opennds
+        else
+            systemctl start opennds
         fi
     fi
 
-    if systemctl is-active --quiet opennds; then
-        systemctl restart opennds
+    if ! systemctl is-active --quiet opennds; then
+        echo "ERROR: openNDS did not become active after identity-bootstrap update." >&2
+        systemctl status opennds --no-pager -l >&2 || true
+        return 1
     fi
 
     echo "Pre-login identity access configured."
