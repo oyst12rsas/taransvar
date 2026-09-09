@@ -35,7 +35,13 @@ install_ai_worker() {
 
 case "$ROLE" in
     db)
-        install -d -m 0750 /var/log/tarasec
+        install -d -o root -g syslog -m 0750 /var/log/tarasec
+        if [ ! -e /var/log/tarasec/remote.log ]; then
+            install -o syslog -g adm -m 0640 /dev/null /var/log/tarasec/remote.log
+        else
+            chown syslog:adm /var/log/tarasec/remote.log
+            chmod 0640 /var/log/tarasec/remote.log
+        fi
         install -d -m 0750 /var/lib/tarasec
         install_rsyslog_conf \
             "$SCRIPT_DIR/rsyslog/30-tarasec-db-receiver.conf.example" \
