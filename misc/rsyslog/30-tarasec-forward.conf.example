@@ -8,8 +8,6 @@
 # Once taralink's sender provenance handling is fixed, TCP/5514 can become the
 # only transport and the DB receiver can relay locally without losing sensor identity.
 
-module(load="omfwd")
-
 template(name="TaraSecForwardFormat" type="string"
          string="<%pri%>1 %timestamp:::date-rfc3339% %hostname% %programname% - - %msg%\n")
 
