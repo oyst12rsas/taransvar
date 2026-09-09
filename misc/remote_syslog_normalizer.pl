@@ -115,6 +115,8 @@ while (1) {
         eval { handle_line($line); 1 } or warn "remote syslog normalize failed: $@\n";
         next;
     }
-    clearerr($fh);
+    # A successful seek clears Perl's EOF state so newly appended records can
+    # be read without closing and reopening the archive.
+    seek($fh, 0, 1) or die "Cannot clear EOF state for $logFile: $!\n";
     sleep 1;
 }
