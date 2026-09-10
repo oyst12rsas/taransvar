@@ -9,6 +9,7 @@ include "genlib.php";
 require_once "Basic.class.php";
 include "System.class.php";
 include "dbfunc.php";
+require_once "../taraLib.php";
 
 /*if (file_exists("../Db.class.php"))
     include "../Db.class.php";
@@ -20,7 +21,7 @@ if (!function_exists("isAjax"))
     function isAjax() {return true;}
 }
 
-function reportHacking() {}
+// taraLib.php provides reportHacking().
 
 function experiencingDbConnectionTrouble()
 {
@@ -28,18 +29,7 @@ function experiencingDbConnectionTrouble()
 	return false;
 }
 
-function getSenderIp() 
-{
-	if (!empty($_SERVER['HTTP_CLIENT_IP'])) {
-		$ip = $_SERVER['HTTP_CLIENT_IP'];
-	} elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) 
-	{
-    		$ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
-	} else {
-    		$ip = $_SERVER['REMOTE_ADDR'];
- 	}
- 	return $ip;
-} 
+// taraLib.php provides the canonical, non-spoofable getSenderIp().
 
 
 function myId() 

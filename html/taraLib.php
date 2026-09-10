@@ -58,8 +58,15 @@ function logMsg($szMsg)
 	$stmt->execute();
 }
 
-function reportHacking($szCode, $szMsg)
+function reportHacking($szCode, $szMsg = null)
 {
+	// Legacy callers pass only a message; retain that API while keeping the
+	// newer code/message form used by TaraSec reporting.
+	if ($szMsg === null) {
+		$szMsg = $szCode;
+		$szCode = "";
+	}
+
 	require_once "../script/getUrl.php";
 	require_once "../script/getSenderIp.php";
 	$szSenderIp = getSenderIp();
