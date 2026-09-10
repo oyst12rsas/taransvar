@@ -44,6 +44,9 @@ function demoPublicSession(array $row): array
         'username' => (string)$row['username'],
         'attempts' => (int)$row['attempts'],
         'expires' => (string)$row['expires'],
+        // Let clients show a timezone-independent live countdown. The DB
+        // remains authoritative and status polling corrects any clock drift.
+        'seconds_remaining' => max(0, strtotime((string)$row['expires']) - time()),
         'completed' => $row['completed'] === null ? null : (string)$row['completed'],
         'node_a_observed' => !empty($row['nodeAEvidenceId']),
         'unit_marked' => !empty($row['demoInfectionObserved']) || in_array((string)$row['state'], ['demo_infected','awaiting_node_b','cleared','owner_clear_required'], true),
