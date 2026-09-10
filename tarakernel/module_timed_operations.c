@@ -1,5 +1,12 @@
 //module_timed_operations.h
 
+/*
+ * Policy rejections use their own queue so an accepted packet with the same
+ * tuple cannot be coalesced into a rejection before the report is flushed.
+ * module_forwarding.c is included later in tarakernel.c and uses this queue.
+ */
+static struct _ipPort2 cPendingRejectedReportArr[C_TRAFFIC_REPORT_ARRAY_SIZE];
+
 void reportInfectionsList(void);
 void reportInfectionsList(void)
 {
@@ -57,62 +64,71 @@ void doPointerTest(void);
 #define N_SENDBUF_SIZE 2000
 //#define N_SENDBUF_SIZE 200
 
-bool getTrafficReport(char *lpSendBuf, int bufSize);
-bool getTrafficReport(char *lpSendBuf, int bufSize)
+static int appendTrafficQueue(char *lpSendBuf, int bufSize,
+                              struct _ipPort2 *pQueue, int nQueueSize)
 {
-    pSetup->bTrafficReportsBeingHandled = true;
-	strcpy(lpSendBuf, C_TRAFFIC_REPORT_PREFIX);
-
     int n;
+    int nWritten = 0;
 
-    for (n = 0; n < C_TRAFFIC_REPORT_ARRAY_SIZE; n++)
+    for (n = 0; n < nQueueSize; n++)
     {
-    	if (!pSetup->cPendingIncomingReportArr[n].sIp)
-            break;
-                
-        struct _ipPort2 *pRec = &pSetup->cPendingIncomingReportArr[n];
+        struct _ipPort2 *pRec = &pQueue[n];
         char cThisNode[150];
+        int nMaxWrite;
 
-        /*
-         * Seventh field is the traffic action. Legacy reports had six fields;
-         * 0 means ordinary observed/accepted traffic and 1 means tarakernel
-         * rejected the packet. The gateway does not know whether a flow is a
-         * demo; dbserver is responsible for correlating it with demo state.
-         */
+        if (!pRec->sIp)
+            break;
+
         snprintf(cThisNode, sizeof(cThisNode), "%08X-%X-%08X-%X-%X-%X-%X^",
                  swappedEndian(pRec->sIp), pRec->sPort,
                  swappedEndian(pRec->dIp), pRec->dPort,
                  pRec->nCount, pRec->nTag, pRec->nAction);
 
-        int nMaxWrite = N_SENDBUF_SIZE - strlen(lpSendBuf);
-
-        if (nMaxWrite <= strlen(cThisNode)+strlen("EOF"))
+        nMaxWrite = bufSize - strlen(lpSendBuf);
+        if (nMaxWrite <= strlen(cThisNode) + strlen("EOF"))
         {
-            pr_info("tarakernel: ******* WARNING ******* Buffer is too small to hold traffic info.. Increase from current %d or chop it up.\n", N_SENDBUF_SIZE);
+            pr_info("tarakernel: ******* WARNING ******* Buffer is too small to hold more traffic info; remaining records will be sent on the next report.\n");
             break;
         }
 
-		strcpy(lpSendBuf+strlen(lpSendBuf), cThisNode);
-
-        memset(&pSetup->cPendingIncomingReportArr[n], 0,
-               sizeof(pSetup->cPendingIncomingReportArr[n]));
-    }
-        
-    if (n == 0)
-	{
-
-    	if (pSetup->cShowInstructions.bits.doReportTraffic)
-    	    if (pSetup->cShowInstructions.bits.showOther)
-                pr_info("tarakernel: No traffic to report to taralink...\n");
-        pSetup->bTrafficReportsBeingHandled = false;
-        return 0;
+        strcpy(lpSendBuf + strlen(lpSendBuf), cThisNode);
+        memset(pRec, 0, sizeof(*pRec));
+        nWritten++;
     }
 
-    strcpy(lpSendBuf+strlen(lpSendBuf), "EOF");
-    pSetup->bTrafficReportsBeingHandled = false;
-	return true;
+    return nWritten;
 }
 
+bool getTrafficReport(char *lpSendBuf, int bufSize);
+bool getTrafficReport(char *lpSendBuf, int bufSize)
+{
+    int nWritten = 0;
+
+    pSetup->bTrafficReportsBeingHandled = true;
+    strcpy(lpSendBuf, C_TRAFFIC_REPORT_PREFIX);
+
+    /* Ordinary observations keep action 0; policy rejections are action 1. */
+    nWritten += appendTrafficQueue(lpSendBuf, bufSize,
+                                   pSetup->cPendingIncomingReportArr,
+                                   C_TRAFFIC_REPORT_ARRAY_SIZE);
+    nWritten += appendTrafficQueue(lpSendBuf, bufSize,
+                                   cPendingRejectedReportArr,
+                                   C_TRAFFIC_REPORT_ARRAY_SIZE);
+
+    if (!nWritten)
+    {
+        if (pSetup->cShowInstructions.bits.doReportTraffic &&
+            pSetup->cShowInstructions.bits.showOther)
+            pr_info("tarakernel: No traffic to report to taralink...\n");
+
+        pSetup->bTrafficReportsBeingHandled = false;
+        return false;
+    }
+
+    strcpy(lpSendBuf + strlen(lpSendBuf), "EOF");
+    pSetup->bTrafficReportsBeingHandled = false;
+    return true;
+}
 
 bool trafficReportToTaralinkFound(int nProcessId)
 {
@@ -164,19 +180,22 @@ void sendTrafficReport()
 
     char *lpSendBuf = kmalloc(N_SENDBUF_SIZE, GFP_KERNEL);
 
-    if (getTrafficReport(lpSendBuf, N_SENDBUF_SIZE))
-    {
-    	send_to_user(lpSendBuf);
-    }
+    if (lpSendBuf && getTrafficReport(lpSendBuf, N_SENDBUF_SIZE))
+        send_to_user(lpSendBuf);
 
-	kfree(lpSendBuf);
-    pSetup->bSendTrafficReport = false;     
+    kfree(lpSendBuf);
+
+    /* Keep the timer armed if either queue still contains unsent records. */
+    pSetup->bSendTrafficReport =
+        pSetup->cPendingIncomingReportArr[0].sIp ||
+        cPendingRejectedReportArr[0].sIp;
 }
 
 void checkTimedOperation(void)
 {
     if (pSetup->bSendTrafficReport ||
-        pSetup->cPendingIncomingReportArr[0].sIp)
+        pSetup->cPendingIncomingReportArr[0].sIp ||
+        cPendingRejectedReportArr[0].sIp)
     {
         sendTrafficReport();
         return;
