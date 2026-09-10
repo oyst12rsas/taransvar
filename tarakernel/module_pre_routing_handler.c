@@ -641,7 +641,10 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 			//Check tagging based on DSCP part of ToS (Type of Service)
 			uint8_t dscp = getDscp(pPacket);
 			
-			if (dscp)
+			/* TaraSec reserves DSCP values 11 through 16 for its tags.
+			 * Other non-zero values (for example EF/46) belong to normal QoS
+			 * and must not be interpreted as a TaraSec severity or cleared. */
+			if (dscp >= 11 && dscp <= 16)
 			{
 				bool bBlock = dscp > pSetup->nBlockIncomingTaggedTrafficLevel;
 

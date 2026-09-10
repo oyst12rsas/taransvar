@@ -200,7 +200,15 @@ static unsigned int readAdminSshPortFromConfig(void)
         while (*p == ' ' || *p == '\t')
             p++;
 
-        if (sscanf(p, "%u %c", &configuredPort, &extra) == 1 &&
+        int parsed;
+        if (*p == '"')
+            parsed = sscanf(p, "\"%u\" %c", &configuredPort, &extra);
+        else if (*p == '\'')
+            parsed = sscanf(p, "'%u' %c", &configuredPort, &extra);
+        else
+            parsed = sscanf(p, "%u %c", &configuredPort, &extra);
+
+        if (parsed == 1 &&
             configuredPort >= 1 && configuredPort <= 65535)
             port = configuredPort;
         else
@@ -796,7 +804,10 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 			{
 				if (nPosLeft < 15)
 					break;
-				sprintf(cReply+strlen(cReply), "PARTNER|");
+				snprintf(cReply+strlen(cReply), nPosLeft, "PARTNER|");
+				/* The append pointer moved; do not pass the old, larger
+				 * capacity to the next snprintf call. */
+				nPosLeft = sizeof(cReply)-strlen(cReply)-1;
 			}
 
 			printf("Partner found : %s-%s\n", row[0], row[1]);
