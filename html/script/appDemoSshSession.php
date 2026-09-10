@@ -46,7 +46,7 @@ function demoPublicSession(array $row): array
         'expires' => (string)$row['expires'],
         // Let clients show a timezone-independent live countdown. The DB
         // remains authoritative and status polling corrects any clock drift.
-        'seconds_remaining' => max(0, strtotime((string)$row['expires']) - time()),
+        'seconds_remaining' => max(0, (int)($row['secondsRemaining'] ?? 0)),
         'completed' => $row['completed'] === null ? null : (string)$row['completed'],
         'node_a_observed' => !empty($row['nodeAEvidenceId']),
         'unit_marked' => !empty($row['demoInfectionObserved']) || in_array((string)$row['state'], ['demo_infected','awaiting_node_b','cleared','owner_clear_required'], true),
@@ -239,7 +239,7 @@ try {
         if ($sessionId === false) demoReply(400, ['ok' => false, 'error' => 'Valid session_id required']);
         if (strlen($sessionToken) < 32) demoReply(403, ['ok' => false, 'error' => 'Session token required']);
         $accessHash = hash('sha256', $sessionToken);
-        $stmt = $conn->prepare("SELECT s.*,INET_NTOA(d.nodeAIp) node_a,d.nodeAPort,INET_NTOA(n.ip) node_b,n.port nodeBPort,n.username FROM demoSshSession s JOIN demoSshSetup d ON d.demoSshSetupId=s.demoSshSetupId JOIN demoSshNodeB n ON n.demoSshNodeBId=s.demoSshNodeBId WHERE s.demoSshSessionId=? AND s.accessTokenHash=? LIMIT 1");
+        $stmt = $conn->prepare("SELECT s.*,GREATEST(0,TIMESTAMPDIFF(SECOND,NOW(),s.expires)) secondsRemaining,INET_NTOA(d.nodeAIp) node_a,d.nodeAPort,INET_NTOA(n.ip) node_b,n.port nodeBPort,n.username FROM demoSshSession s JOIN demoSshSetup d ON d.demoSshSetupId=s.demoSshSetupId JOIN demoSshNodeB n ON n.demoSshNodeBId=s.demoSshNodeBId WHERE s.demoSshSessionId=? AND s.accessTokenHash=? LIMIT 1");
         $stmt->bind_param('is', $sessionId, $accessHash);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
@@ -293,9 +293,14 @@ try {
                     ? ($nodeAEvidence ? 'Node A report received; waiting for gateway infection update' : 'Gateway infection update received; waiting for Node A report')
                     : 'Waiting for Node A rejection report');
         }
-        if (strtotime((string)$row['expires']) <= time() && in_array($row['state'], ['awaiting_node_a','demo_infected','awaiting_node_b'], true)) {
+        // MySQL created the expiry using NOW(), so MySQL must also decide
+        // whether it has passed. Parsing its timezone-less timestamp in PHP
+        // made sessions expire immediately when PHP and MySQL timezones differed.
+        if ((int)$row['secondsRemaining'] <= 0 && in_array($row['state'], ['awaiting_node_a','demo_infected','awaiting_node_b'], true)) {
             $stmt = $conn->prepare("UPDATE demoSshSession SET state='expired',completed=NOW(),lastSeen=NOW() WHERE demoSshSessionId=?");
-            $stmt->bind_param('i', $sessionId); $stmt->execute(); $stmt->close(); $row['state'] = 'expired'; $row['completed'] = gmdate('Y-m-d H:i:s');
+            $stmt->bind_param('i', $sessionId); $stmt->execute(); $stmt->close();
+            $row['state'] = 'expired';
+            $row['secondsRemaining'] = 0;
         }
         demoReply(200, ['ok' => true, 'session' => demoPublicSession($row)]);
     }
