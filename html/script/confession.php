@@ -58,6 +58,9 @@ try {
      */
     if ($sender !== $ip) {
         if (!$delegated) {
+            error_log('Rejected mismatched confession sender=' . $sender
+                . ' claimedSource=' . $ip . ':' . $port
+                . ' reason=delegation-not-declared');
             $conn->close();
             confessionFail(403, 'confession sender does not match reported source');
         }
@@ -70,6 +73,8 @@ try {
         $stmt->close();
 
         if (!$trustedGateway) {
+            error_log('Rejected delegated confession from untrusted gateway=' . $sender
+                . ' claimedSource=' . $ip . ':' . $port);
             $conn->close();
             confessionFail(403, 'delegated confession sender is not a trusted gateway');
         }
