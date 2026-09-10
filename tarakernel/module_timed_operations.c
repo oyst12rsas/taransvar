@@ -73,16 +73,24 @@ static int appendTrafficQueue(char *lpSendBuf, int bufSize,
     for (n = 0; n < nQueueSize; n++)
     {
         struct _ipPort2 *pRec = &pQueue[n];
-        char cThisNode[150];
+        char cThisNode[180];
         int nMaxWrite;
 
         if (!pRec->sIp)
             break;
 
-        snprintf(cThisNode, sizeof(cThisNode), "%08X-%X-%08X-%X-%X-%X-%X^",
+        /*
+         * Extended format:
+         * ipFrom-portFrom-ipTo-portTo-count-tag-action-reason-severity-threshold^
+         * All numeric fields remain hexadecimal, matching the legacy format.
+         */
+        snprintf(cThisNode, sizeof(cThisNode),
+                 "%08X-%X-%08X-%X-%X-%X-%X-%X-%X-%X^",
                  swappedEndian(pRec->sIp), pRec->sPort,
                  swappedEndian(pRec->dIp), pRec->dPort,
-                 pRec->nCount, pRec->nTag, pRec->nAction);
+                 pRec->nCount, pRec->nTag, pRec->nAction,
+                 pRec->nRejectReason, pRec->nDecisionSeverity,
+                 pRec->nDecisionThreshold);
 
         nMaxWrite = bufSize - strlen(lpSendBuf);
         if (nMaxWrite <= strlen(cThisNode) + strlen("EOF"))
@@ -107,7 +115,6 @@ bool getTrafficReport(char *lpSendBuf, int bufSize)
     pSetup->bTrafficReportsBeingHandled = true;
     strcpy(lpSendBuf, C_TRAFFIC_REPORT_PREFIX);
 
-    /* Ordinary observations keep action 0; policy rejections are action 1. */
     nWritten += appendTrafficQueue(lpSendBuf, bufSize,
                                    pSetup->cPendingIncomingReportArr,
                                    C_TRAFFIC_REPORT_ARRAY_SIZE);
