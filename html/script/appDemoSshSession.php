@@ -28,9 +28,13 @@ function demoPost(): array
 
 function demoBearer(): string
 {
+    // Prefer the explicit sensor header. Reverse proxies may preserve an
+    // unrelated or rewritten Authorization value while forwarding this
+    // application-specific header unchanged.
+    $sensorToken = trim((string)($_SERVER['HTTP_X_TARASEC_TOKEN'] ?? ''));
+    if ($sensorToken !== '') return $sensorToken;
     $header = (string)($_SERVER['HTTP_AUTHORIZATION'] ?? '');
-    if (preg_match('/^Bearer\s+(.+)$/i', $header, $m)) return trim($m[1]);
-    return trim((string)($_SERVER['HTTP_X_TARASEC_TOKEN'] ?? ''));
+    return preg_match('/^Bearer\s+(.+)$/i', $header, $m) ? trim($m[1]) : '';
 }
 
 function demoPublicSession(array $row): array
