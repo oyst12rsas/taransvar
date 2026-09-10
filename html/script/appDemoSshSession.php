@@ -46,7 +46,7 @@ function demoPublicSession(array $row): array
         'node_a_port' => (int)$row['nodeAPort'],
         'node_b' => (string)$row['node_b'],
         'node_b_port' => (int)$row['nodeBPort'],
-        'username' => (string)$row['username'],
+        'username' => 'demo-' . (int)$row['demoSshSessionId'],
         'attempts' => (int)$row['attempts'],
         'expires' => (string)$row['expires'],
         'completed' => $row['completed'] === null ? null : (string)$row['completed']
@@ -135,7 +135,7 @@ try {
         $stmt->execute();
         $stmt->close();
         $conn->commit();
-        demoReply(201, ['ok' => true, 'session_id' => $sessionId, 'session_token' => $accessToken, 'state' => 'awaiting_node_a', 'node_a' => $setup['node_a'], 'node_a_port' => (int)$setup['nodeAPort'], 'node_b' => $node['node_b'], 'node_b_port' => (int)$node['nodeBPort'], 'username' => $node['username'], 'password' => $node['passwordPlain'], 'credential_generation' => (int)$node['credentialGeneration'], 'expires_in' => $ttl]);
+        demoReply(201, ['ok' => true, 'session_id' => $sessionId, 'session_token' => $accessToken, 'state' => 'awaiting_node_a', 'node_a' => $setup['node_a'], 'node_a_port' => (int)$setup['nodeAPort'], 'node_b' => $node['node_b'], 'node_b_port' => (int)$node['nodeBPort'], 'username' => 'demo-' . $sessionId, 'password' => $node['passwordPlain'], 'credential_generation' => (int)$node['credentialGeneration'], 'expires_in' => $ttl]);
     }
 
     if ($action === 'validate') {
@@ -161,7 +161,11 @@ try {
         if (!hash_equals((string)$node['node_b'], $sender)) {
             error_log("SSH demo sensor authenticated through proxy sender=$sender node_b={$node['node_b']}");
         }
-        $passwordOk = hash_equals((string)$node['username'], $username) && hash_equals((string)$node['passwordHash'], hash('sha256', $password));
+        $sessionHint = null;
+        if (preg_match('/^demo-([1-9][0-9]*)$/', $username, $sessionMatch)) {
+            $sessionHint = (int)$sessionMatch[1];
+        }
+        $passwordOk = $sessionHint !== null && hash_equals((string)$node['passwordHash'], hash('sha256', $password));
 
         // The normalized Node B observation may already carry TaraSec's unit
         // attribution. Match the complete tuple; never equate a shared IP with
@@ -185,7 +189,11 @@ try {
 
         $resolvedUnitId = $nodeBEvidence && $nodeBEvidence['resolvedUnitId'] !== null ? (int)$nodeBEvidence['resolvedUnitId'] : null;
         $sql = "SELECT s.*,INET_NTOA(d.nodeAIp) node_a,d.nodeAPort FROM demoSshSession s JOIN demoSshSetup d ON d.demoSshSetupId=s.demoSshSetupId WHERE s.demoSshNodeBId=? AND s.credentialGeneration=? AND s.state IN ('awaiting_node_a','demo_infected','awaiting_node_b') AND s.expires>NOW()";
-        if ($resolvedUnitId !== null) {
+        if ($sessionHint !== null) {
+            $sql .= " AND s.demoSshSessionId=? ORDER BY s.created DESC LIMIT 1 FOR UPDATE";
+            $stmt = $conn->prepare($sql); $stmt->bind_param('iii', $node['demoSshNodeBId'], $node['credentialGeneration'], $sessionHint);
+            $correlation = 'session_username';
+        } elseif ($resolvedUnitId !== null) {
             $sql .= " AND s.unitId=? ORDER BY s.created DESC LIMIT 2 FOR UPDATE";
             $stmt = $conn->prepare($sql); $stmt->bind_param('iii', $node['demoSshNodeBId'], $node['credentialGeneration'], $resolvedUnitId);
             $correlation = 'unit';
@@ -209,8 +217,9 @@ try {
         $state = $row ? (string)$row['state'] : 'awaiting_attribution';
         if ($row) {
             $attempts = (int)$row['attempts'] + 1;
-            $stmt = $conn->prepare("SELECT syslogThreatId FROM syslogThreat WHERE src_ip=? AND dst_ip=INET_ATON(?) AND dst_port=? AND is_attack<>0 AND created>=? ORDER BY syslogThreatId DESC LIMIT 1");
-            $stmt->bind_param('isis', $row['sourceIp'], $row['node_a'], $row['nodeAPort'], $row['created']);
+            $nodeAUsername = '%"username":"demo-' . $sessionId . '"%';
+            $stmt = $conn->prepare("SELECT t.syslogThreatId FROM syslogThreat t JOIN syslog l ON l.syslogId=t.syslogId WHERE t.dst_ip=INET_ATON(?) AND t.dst_port=? AND t.is_attack<>0 AND t.created>=? AND l.message LIKE ? ORDER BY t.syslogThreatId DESC LIMIT 1");
+            $stmt->bind_param('siss', $row['node_a'], $row['nodeAPort'], $row['created'], $nodeAUsername);
             $stmt->execute(); $nodeA = $stmt->get_result()->fetch_assoc(); $stmt->close();
             // Locate the active infection created during this session. Never
             // clear an older record, even when it belongs to the same unit or
