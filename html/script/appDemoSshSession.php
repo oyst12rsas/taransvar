@@ -256,11 +256,25 @@ try {
         // replying. The Android client polls this endpoint; without this step
         // the row remains awaiting_node_a even after the DB has the evidence.
         if (in_array($row['state'], ['awaiting_node_a','demo_infected','awaiting_node_b'], true)) {
-            $stmt = $conn->prepare("SELECT t.syslogThreatId FROM syslogThreat t JOIN demoSshSession s ON s.demoSshSessionId=? WHERE t.dst_ip=INET_ATON(?) AND t.dst_port=? AND t.is_attack<>0 AND t.created>=s.created AND (t.src_ip=s.sourceIp OR (s.unitId IS NOT NULL AND COALESCE(t.confirmed_unit_id,t.unit_id)=s.unitId)) ORDER BY t.syslogThreatId DESC LIMIT 1");
+            $stmt = $conn->prepare("SELECT t.syslogThreatId,COALESCE(t.confirmed_unit_id,t.unit_id) resolvedUnitId FROM syslogThreat t JOIN demoSshSession s ON s.demoSshSessionId=? WHERE t.dst_ip=INET_ATON(?) AND t.dst_port=? AND t.is_attack<>0 AND t.created>=s.created AND (t.src_ip=s.sourceIp OR (s.unitId IS NOT NULL AND COALESCE(t.confirmed_unit_id,t.unit_id)=s.unitId)) ORDER BY t.syslogThreatId DESC LIMIT 1");
             $stmt->bind_param('isi', $sessionId, $row['node_a'], $row['nodeAPort']);
             $stmt->execute();
             $nodeAEvidence = $stmt->get_result()->fetch_assoc();
             $stmt->close();
+
+            // Registration sees the standard gateway's NetBird address, so the
+            // session may not have a unit yet. The normal Node A report and
+            // gateway confession resolve the actual unit behind NAT. Bind that
+            // confessed unit to this session before looking for its infection
+            // or correlating the later Node B tuple.
+            if ($row['unitId'] === null && $nodeAEvidence && $nodeAEvidence['resolvedUnitId'] !== null) {
+                $resolvedNodeAUnitId = (int)$nodeAEvidence['resolvedUnitId'];
+                $stmt = $conn->prepare("UPDATE demoSshSession SET unitId=?,lastSeen=NOW() WHERE demoSshSessionId=? AND unitId IS NULL");
+                $stmt->bind_param('ii', $resolvedNodeAUnitId, $sessionId);
+                $stmt->execute();
+                $stmt->close();
+                $row['unitId'] = $resolvedNodeAUnitId;
+            }
 
             $stmt = $conn->prepare("SELECT i.infectionId FROM internalInfections i JOIN demoSshSession s ON s.demoSshSessionId=? WHERE i.active=b'1' AND COALESCE(i.lastSeen,i.inserted)>=s.created AND (i.ip=s.sourceIp OR (s.unitId IS NOT NULL AND i.unitId=s.unitId)) ORDER BY i.infectionId DESC LIMIT 1");
             $stmt->bind_param('i', $sessionId);
