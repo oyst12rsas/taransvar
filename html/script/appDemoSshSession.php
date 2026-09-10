@@ -90,15 +90,20 @@ try {
         $node = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$node) { $conn->rollback(); demoReply(404, ['ok' => false, 'error' => 'Node B unavailable']); }
-        $stmt = $conn->prepare("SELECT COUNT(*) activeCount FROM demoSshSession WHERE demoSshNodeBId=? AND state IN ('awaiting_node_a','demo_infected','awaiting_node_b') AND expires>NOW()");
-        $stmt->bind_param('i', $setup['demoSshNodeBId']);
-        $stmt->execute();
-        $activeCount = (int)$stmt->get_result()->fetch_assoc()['activeCount'];
-        $stmt->close();
-        if ($activeCount === 0 || !$node['username'] || !$node['passwordPlain'] || !$node['passwordHash']) {
-            $node['username'] = 'demo';
-            $node['passwordPlain'] = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-            $node['passwordHash'] = hash('sha256', $node['passwordPlain']);
+        // The honeypot credential is intentionally public and stable. The
+        // per-node bearer token authenticates the sensor; rotating a fake SSH
+        // password only makes the classroom demonstration harder to operate.
+        $fixedUsername = 'demo';
+        $fixedPassword = '1';
+        $fixedHash = hash('sha256', $fixedPassword);
+        if (
+            !hash_equals((string)($node['username'] ?? ''), $fixedUsername) ||
+            !hash_equals((string)($node['passwordPlain'] ?? ''), $fixedPassword) ||
+            !hash_equals((string)($node['passwordHash'] ?? ''), $fixedHash)
+        ) {
+            $node['username'] = $fixedUsername;
+            $node['passwordPlain'] = $fixedPassword;
+            $node['passwordHash'] = $fixedHash;
             $node['credentialGeneration'] = (int)$node['credentialGeneration'] + 1;
             $stmt = $conn->prepare("UPDATE demoSshNodeB SET username=?,passwordPlain=?,passwordHash=?,credentialGeneration=?,credentialCreated=NOW() WHERE demoSshNodeBId=?");
             $stmt->bind_param('sssii', $node['username'], $node['passwordPlain'], $node['passwordHash'], $node['credentialGeneration'], $node['demoSshNodeBId']);
