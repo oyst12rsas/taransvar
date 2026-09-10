@@ -8,6 +8,8 @@ import os
 import socket
 import socketserver
 import threading
+import ipaddress
+from urllib.parse import urlsplit
 import time
 import urllib.error
 import urllib.request
@@ -31,6 +33,20 @@ PASSWORD_HASH = os.environ.get("TARASEC_SSH_HONEYPOT_PASSWORD_HASH", "").lower()
 DEMO_PORT = int(os.environ.get("TARASEC_SSH_HONEYPOT_DEMO_PORT", "0"))
 DEMO_DB_URL = os.environ.get("TARASEC_SSH_HONEYPOT_DEMO_DB_URL", "").strip()
 DEMO_NODE_TOKEN = os.environ.get("TARASEC_SSH_HONEYPOT_DEMO_NODE_TOKEN", "")
+
+
+def demo_db_url_allowed(value):
+    """Require TLS except for a literal address inside NetBird's CGNAT range."""
+    try:
+        parsed = urlsplit(value)
+        if parsed.scheme == "https":
+            return True
+        if parsed.scheme != "http" or not parsed.hostname:
+            return False
+        address = ipaddress.ip_address(parsed.hostname)
+        return address in ipaddress.ip_network("100.64.0.0/10")
+    except ValueError:
+        return False
 
 
 def parse_ports(spec):
@@ -311,8 +327,11 @@ if __name__ == "__main__":
     if DEMO_PORT:
         if DEMO_PORT not in PORTS:
             raise SystemExit("demo port must also be included in TARASEC_SSH_HONEYPOT_PORTS")
-        if not DEMO_DB_URL.startswith("https://"):
-            raise SystemExit("demo challenge validation requires an HTTPS DB URL")
+        if not demo_db_url_allowed(DEMO_DB_URL):
+            raise SystemExit(
+                "demo validation requires HTTPS or HTTP to a literal NetBird "
+                "address in 100.64.0.0/10"
+            )
         if len(DEMO_NODE_TOKEN) < 32:
             raise SystemExit("demo challenge validation requires a node token of at least 32 characters")
     servers = [ThreadedServer((HOST, port), Handler) for port in PORTS]

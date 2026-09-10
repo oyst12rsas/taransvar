@@ -77,7 +77,13 @@ expand_honeypot_ports
 if [ "$SSH_HONEYPOT_DEMO_PORT" != "0" ]; then
     [[ "$SSH_HONEYPOT_DEMO_PORT" =~ ^[0-9]+$ ]] && [ "$SSH_HONEYPOT_DEMO_PORT" -ge 1 ] && [ "$SSH_HONEYPOT_DEMO_PORT" -le 65535 ] || { echo "Invalid SSH_HONEYPOT_DEMO_PORT" >&2; exit 1; }
     [[ " ${SSH_HONEYPOT_PORT_LIST[*]} " == *" $SSH_HONEYPOT_DEMO_PORT "* ]] || { echo "Demo port must be included in SSH_HONEYPOT_PORTS" >&2; exit 1; }
-    [[ "$SSH_HONEYPOT_DEMO_DB_URL" == https://* ]] || { echo "Demo mode requires an HTTPS SSH_HONEYPOT_DEMO_DB_URL" >&2; exit 1; }
+    # Plain HTTP is permitted only to a literal NetBird/CGNAT address.
+    # This preserves the observed NetBird sender identity used for Demo 2
+    # correlation without allowing credentials over arbitrary public HTTP.
+    [[ "$SSH_HONEYPOT_DEMO_DB_URL" == https://* || "$SSH_HONEYPOT_DEMO_DB_URL" =~ ^http://100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}([/:]|$) ]] || {
+        echo "Demo mode requires HTTPS or HTTP to a literal NetBird address in 100.64.0.0/10" >&2
+        exit 1
+    }
     [ "${#SSH_HONEYPOT_DEMO_NODE_TOKEN}" -ge 32 ] || { echo "Demo mode requires a node token of at least 32 characters" >&2; exit 1; }
 fi
 if ! command -v sshd >/dev/null 2>&1; then echo "OpenSSH server is not installed." >&2; exit 1; fi
