@@ -71,6 +71,26 @@ if (filter_var($sender, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
 try {
     $conn = getConnection();
 
+    if ($action === 'eligibility') {
+        $stmt = $conn->prepare("SELECT why FROM internalInfections WHERE ip=INET_ATON(?) AND active=b'1' AND severity>1 ORDER BY infectionId DESC LIMIT 1");
+        $stmt->bind_param('s', $sender);
+        $stmt->execute();
+        $infection = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        $eligible = !$infection;
+        $demoResetAvailable = $infection && str_starts_with((string)$infection['why'], 'DEMO:');
+        demoReply(200, [
+            'ok' => true,
+            'eligible' => $eligible,
+            'next' => $eligible ? 'demo' : 'remediation',
+            'demo_reset_available' => (bool)$demoResetAvailable,
+            // Do not disclose infection state to an unauthenticated demo caller.
+            'message' => $eligible
+                ? 'This unit may start the demonstration'
+                : 'This unit needs a security review before the demonstration can start'
+        ]);
+    }
+
     if ($action === 'create') {
         if ($method !== 'POST') demoReply(405, ['ok' => false, 'error' => 'POST required']);
         $setupId = filter_var($input['setup_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
@@ -89,9 +109,14 @@ try {
         $stmt->execute();
         $infection = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if ($infection && !str_starts_with((string)$infection['why'], 'DEMO:')) {
+        if ($infection) {
             $conn->rollback();
-            demoReply(409, ['ok' => false, 'error' => 'Device has non-demo infection evidence; owner clearance is required']);
+            demoReply(409, [
+                'ok' => false,
+                'error' => 'Security review required before this demonstration can start',
+                'remediation_required' => true,
+                'demo_reset_available' => str_starts_with((string)$infection['why'], 'DEMO:')
+            ]);
         }
 
         // Lock Node B while deciding whether to reuse or rotate its credential.
