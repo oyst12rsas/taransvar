@@ -105,7 +105,7 @@ try {
         $node['passwordHash'] = hash('sha256', $node['passwordPlain']);
         $node['credentialGeneration'] = max(1, (int)$node['credentialGeneration']);
         $stmt = $conn->prepare("UPDATE demoSshNodeB SET username=?,passwordPlain=?,passwordHash=?,credentialGeneration=?,credentialCreated=COALESCE(credentialCreated,NOW()) WHERE demoSshNodeBId=? AND (username<>? OR passwordPlain<>? OR passwordHash<>? OR credentialGeneration<>?)");
-        $stmt->bind_param('sssisssi', $node['username'], $node['passwordPlain'], $node['passwordHash'], $node['credentialGeneration'], $node['demoSshNodeBId'], $node['username'], $node['passwordPlain'], $node['passwordHash'], $node['credentialGeneration']);
+        $stmt->bind_param('sssiisssi', $node['username'], $node['passwordPlain'], $node['passwordHash'], $node['credentialGeneration'], $node['demoSshNodeBId'], $node['username'], $node['passwordPlain'], $node['passwordHash'], $node['credentialGeneration']);
         $stmt->execute();
         $stmt->close();
         $accessToken = bin2hex(random_bytes(24));
