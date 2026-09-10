@@ -23,13 +23,12 @@ static void reportRejectedTraffic(struct _PacketInspection *pPacket)
 
 	for (n = 0; n < C_TRAFFIC_REPORT_ARRAY_SIZE; n++)
 	{
-		struct _ipPort2 *pRec = &pSetup->cPendingIncomingReportArr[n];
+		struct _ipPort2 *pRec = &cPendingRejectedReportArr[n];
 
 		if (pRec->sIp == pPacket->ip_header->saddr &&
 			pRec->dIp == pPacket->ip_header->daddr &&
 			pRec->sPort == pPacket->sPort &&
-			pRec->dPort == pPacket->dPort &&
-			pRec->nAction == e_TrafficRejected)
+			pRec->dPort == pPacket->dPort)
 		{
 			pRec->nCount++;
 			if (pPacket->tcp_header->urg_ptr || !pRec->nTag)
@@ -52,7 +51,7 @@ static void reportRejectedTraffic(struct _PacketInspection *pPacket)
 
 	if (n == C_TRAFFIC_REPORT_ARRAY_SIZE)
 	{
-		pr_warn_ratelimited("tarakernel: traffic report queue full; unable to record rejected packet\n");
+		pr_warn_ratelimited("tarakernel: rejected-traffic report queue full; unable to record rejected packet\n");
 		return;
 	}
 
