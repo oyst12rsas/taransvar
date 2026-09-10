@@ -10,11 +10,15 @@ struct _tagSpecification {
 
 /*
  * Record a policy decision made by tarakernel itself. This deliberately says
- * only what the gateway knows: the packet was rejected. Demo/test ownership is
- * not inferred here; dbserver correlates the ordinary traffic tuple with a
- * demo that was registered centrally.
+ * only what the gateway knows: why it rejected the packet and the local
+ * severity/threshold used for that decision. Demo/test ownership is not
+ * inferred here; dbserver correlates the traffic tuple with a demo that was
+ * registered centrally.
  */
-static void reportRejectedTraffic(struct _PacketInspection *pPacket)
+static void reportRejectedTraffic(struct _PacketInspection *pPacket,
+                                  uint8_t nRejectReason,
+                                  uint16_t nDecisionSeverity,
+                                  uint16_t nDecisionThreshold)
 {
 	int n;
 
@@ -28,7 +32,10 @@ static void reportRejectedTraffic(struct _PacketInspection *pPacket)
 		if (pRec->sIp == pPacket->ip_header->saddr &&
 			pRec->dIp == pPacket->ip_header->daddr &&
 			pRec->sPort == pPacket->sPort &&
-			pRec->dPort == pPacket->dPort)
+			pRec->dPort == pPacket->dPort &&
+			pRec->nRejectReason == nRejectReason &&
+			pRec->nDecisionSeverity == nDecisionSeverity &&
+			pRec->nDecisionThreshold == nDecisionThreshold)
 		{
 			pRec->nCount++;
 			if (pPacket->tcp_header->urg_ptr || !pRec->nTag)
@@ -45,6 +52,9 @@ static void reportRejectedTraffic(struct _PacketInspection *pPacket)
 			pRec->nCount = 1;
 			pRec->nTag = pPacket->tcp_header->urg_ptr;
 			pRec->nAction = e_TrafficRejected;
+			pRec->nRejectReason = nRejectReason;
+			pRec->nDecisionSeverity = nDecisionSeverity;
+			pRec->nDecisionThreshold = nDecisionThreshold;
 			break;
 		}
 	}
@@ -84,7 +94,10 @@ int checkFixTagging(struct _PacketInspection *pPacket, bool bForwarding, const s
 			if (!dropFromLogging(pPacket))
 				pr_info("tarakernel: %s: TARGET HAS REQUESTED ASSISTANCE! DROPPING PACKAGE FROM INFECTED: %s->%s, request: %d, this IP: %d\n", lpPrOrFw, pPacket->cSourceIp, pPacket->cDestIp, nRequestedAssistance, nSenderIsInfected);
 
-			reportRejectedTraffic(pPacket);
+			reportRejectedTraffic(pPacket,
+			                      e_TrafficRejectAssistanceThresholdExceeded,
+			                      pInfected ? pInfected->nSeverity : nSenderIsInfected,
+			                      nRequestedAssistance);
 			return NF_DROP;
 		}
 		else
@@ -179,7 +192,10 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 	if (pPacket->dPort == pSetup->nAdminSshPort && pInfected && pInfected->nSeverity > pSetup->nBlockSshThreshold)
 	{
 		pr_info("tarakernel: FW: Dropping traffic from infected unit to protected SSH port %u %s:%d -> %s:%d (severity/threshold: %d/%d)\n", pSetup->nAdminSshPort, pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort, pInfected->nSeverity, pSetup->nBlockSshThreshold);
-		reportRejectedTraffic(pPacket);
+		reportRejectedTraffic(pPacket,
+		                      e_TrafficRejectSshThresholdExceeded,
+		                      pInfected->nSeverity,
+		                      pSetup->nBlockSshThreshold);
 		return NF_DROP;
 	}
 
