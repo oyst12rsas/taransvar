@@ -30,7 +30,18 @@
 #define C_TIMER_INTERVAL_MILLISECONDS 0
 #define C_TIMER_INTERVAL_SECONDS 5
 
-enum et_CheckType {e_PossiblePartner}; 
+enum et_CheckType {e_PossiblePartner};
+
+enum et_TrafficAction {
+    e_TrafficObserved = 0,
+    e_TrafficRejected = 1
+};
+
+enum et_TrafficRejectReason {
+    e_TrafficRejectNone = 0,
+    e_TrafficRejectAssistanceThresholdExceeded = 1,
+    e_TrafficRejectSshThresholdExceeded = 2
+};
 
 
 struct _showStatusBits 
@@ -79,6 +90,10 @@ union _TagUnion {
 struct _ipPort2 {
     uint32_t sIp, dIp;
     uint16_t sPort, dPort, nCount;
+    uint8_t nAction; // et_TrafficAction; 0 keeps legacy observed/accepted semantics
+    uint8_t nRejectReason; // et_TrafficRejectReason
+    uint16_t nDecisionSeverity; // Full local severity used by tarakernel policy
+    uint16_t nDecisionThreshold; // Threshold that caused rejection
 
     union {
         struct _Tag cTag;

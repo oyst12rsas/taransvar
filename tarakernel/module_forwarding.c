@@ -8,6 +8,67 @@ struct _tagSpecification {
 	unsigned int botNetId;	//Assigned by AkiliBomba
 };
 
+/*
+ * Record a policy decision made by tarakernel itself. This deliberately says
+ * only what the gateway knows: why it rejected the packet and the local
+ * severity/threshold used for that decision. Demo/test ownership is not
+ * inferred here; dbserver correlates the traffic tuple with a demo that was
+ * registered centrally.
+ */
+static void reportRejectedTraffic(struct _PacketInspection *pPacket,
+                                  uint8_t nRejectReason,
+                                  uint16_t nDecisionSeverity,
+                                  uint16_t nDecisionThreshold)
+{
+	int n;
+
+	if (!pPacket || !pSetup)
+		return;
+
+	for (n = 0; n < C_TRAFFIC_REPORT_ARRAY_SIZE; n++)
+	{
+		struct _ipPort2 *pRec = &cPendingRejectedReportArr[n];
+
+		if (pRec->sIp == pPacket->ip_header->saddr &&
+			pRec->dIp == pPacket->ip_header->daddr &&
+			pRec->sPort == pPacket->sPort &&
+			pRec->dPort == pPacket->dPort &&
+			pRec->nRejectReason == nRejectReason &&
+			pRec->nDecisionSeverity == nDecisionSeverity &&
+			pRec->nDecisionThreshold == nDecisionThreshold)
+		{
+			pRec->nCount++;
+			if (pPacket->tcp_header->urg_ptr || !pRec->nTag)
+				pRec->nTag = pPacket->tcp_header->urg_ptr;
+			break;
+		}
+
+		if (!pRec->sIp)
+		{
+			pRec->sIp = pPacket->ip_header->saddr;
+			pRec->dIp = pPacket->ip_header->daddr;
+			pRec->sPort = pPacket->sPort;
+			pRec->dPort = pPacket->dPort;
+			pRec->nCount = 1;
+			pRec->nTag = pPacket->tcp_header->urg_ptr;
+			pRec->nAction = e_TrafficRejected;
+			pRec->nRejectReason = nRejectReason;
+			pRec->nDecisionSeverity = nDecisionSeverity;
+			pRec->nDecisionThreshold = nDecisionThreshold;
+			break;
+		}
+	}
+
+	if (n == C_TRAFFIC_REPORT_ARRAY_SIZE)
+	{
+		pr_warn_ratelimited("tarakernel: rejected-traffic report queue full; unable to record rejected packet\n");
+		return;
+	}
+
+	/* Rejections are security-significant; do not wait for normal batching. */
+	scheduleImmediateTrafficReport();
+}
+
 int checkFixTagging(struct _PacketInspection *pPacket, bool bForwarding, const struct nf_hook_state *state)
 {
 	char *lpPrOrFw = (bForwarding?"FW":"PR");
@@ -33,8 +94,10 @@ int checkFixTagging(struct _PacketInspection *pPacket, bool bForwarding, const s
 			if (!dropFromLogging(pPacket))
 				pr_info("tarakernel: %s: TARGET HAS REQUESTED ASSISTANCE! DROPPING PACKAGE FROM INFECTED: %s->%s, request: %d, this IP: %d\n", lpPrOrFw, pPacket->cSourceIp, pPacket->cDestIp, nRequestedAssistance, nSenderIsInfected);
 
-			//kfree(pPacket); Being done by caller...
-			//checkFree(pPacket..)		Being done by caller...
+			reportRejectedTraffic(pPacket,
+			                      e_TrafficRejectAssistanceThresholdExceeded,
+			                      pInfected ? pInfected->nSeverity : nSenderIsInfected,
+			                      nRequestedAssistance);
 			return NF_DROP;
 		}
 		else
@@ -59,8 +122,8 @@ int checkFixTagging(struct _PacketInspection *pPacket, bool bForwarding, const s
 							pInfected?pInfected->nSeverity:0 );
 	}
 	else
-  		if (!bCommentPrinted) //Already printed on this package... no need for more.	
-       		if (pSetup->cShowInstructions.bits.showForwardPartner)
+ 		if (!bCommentPrinted)
+      		if (pSetup->cShowInstructions.bits.showForwardPartner)
 				if (!dropFromLogging(pPacket))
 					pr_info("tarakernel: %s: to partner - %s - TAGGING DISABLED\n", lpPrOrFw, cInfectionStatus);
 
@@ -100,10 +163,7 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 		return NF_ACCEPT;
 	}
 
-	//Just checking if mark is set in PRE_ROUTING
-
 	#ifdef ALTERNATIVE_TAGGING
-	
 	struct nf_conn *ct;
 	enum ip_conntrack_info ctinfo;
 
@@ -120,24 +180,26 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 		pr_info("tarakernel: ****** ERROR - Unable to get conntrack info\n");
 	#endif
 
-	//pPacket = (struct _PacketInspection *)kmalloc(sizeof(struct _PacketInspection), GFP_KERNEL);
-	//initPacket(pPacket, skb, state);
 	struct _PacketInspection *pPacket = getPacketInfo(priv, skb, state);
 
 	testing("FW", pPacket);
 
 	if (pPacket->ip_header->protocol != IPPROTO_TCP)
-		return NF_ACCEPT;	//260320 - not sure about this......
+		return NF_ACCEPT;
 
-	struct _InfectionSpecification *pInfected = isInfected(pPacket->ip_header->saddr);	//Check if packet is from infected unit in my subnet
+	struct _InfectionSpecification *pInfected = isInfected(pPacket->ip_header->saddr);
 
 	if (pPacket->dPort == pSetup->nAdminSshPort && pInfected && pInfected->nSeverity > pSetup->nBlockSshThreshold)
 	{
 		pr_info("tarakernel: FW: Dropping traffic from infected unit to protected SSH port %u %s:%d -> %s:%d (severity/threshold: %d/%d)\n", pSetup->nAdminSshPort, pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort, pInfected->nSeverity, pSetup->nBlockSshThreshold);
+		reportRejectedTraffic(pPacket,
+		                      e_TrafficRejectSshThresholdExceeded,
+		                      pInfected->nSeverity,
+		                      pSetup->nBlockSshThreshold);
 		return NF_DROP;
 	}
 
-    checkThatTcp(pPacket,"start of forward handler");	//260320 - asdf... got problem with this....
+    checkThatTcp(pPacket,"start of forward handler");
 
 	if (pPacket->tcp_header->urg)
 		if (pSetup->cShowInstructions.bits.showUrgentPtrUsage)
@@ -145,19 +207,16 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 
 	if (isPartner(pPacket->ip_header->daddr))
 	{
-		//Packet from our own subnet going to a partner and their subnet.
 		bool bForwarding = true;
-		int nRetval = checkFixTagging(pPacket, bForwarding, state);	//state may be NF_INET_FORWARD??
+		int nRetval = checkFixTagging(pPacket, bForwarding, state);
 
 		tk_debug(3, "FW: Forwarding to partner after tagging: %s->%s, tag=%04X\n", pPacket->cSourceIp, pPacket->cDestIp, pPacket->tcp_header->urg_ptr);
 
 		#ifdef ALTERNATIVE_TAGGING
-
-		//For now, always set this for test..
 		bool set_tsval = 1;
-		bool set_tsecr = 0;	//Don't know what we can use this for.
+		bool set_tsecr = 0;
 
-		__be32 new_tsval_be = 0b011111;	//6 bit
+		__be32 new_tsval_be = 0b011111;
         __be32 new_tsecr_be;
 
 		__be32 tsval_be, tsecr_be;
@@ -181,7 +240,6 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 
 		checkFree(pPacket, nRetval != NF_ACCEPT /*bLeavingPostRouting*/);
 
-		//ØT - need to check why unable to get the tag...
 		union _TagUnion cUnion;
 		cUnion.nTag = pPacket->tcp_header->urg_ptr;
 		tk_debug(3, "FW: outbound tag %pI4:%d -> %pI4:%d tag=%u severity=%u packet_tag=%u\n", 
@@ -192,27 +250,21 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 
 	if (isPartner(pPacket->ip_header->saddr)) 	
 	{
-		//Inbound traffic from partner.. Check if tagged
-		//unsigned int nTag = tcp_header->urg_ptr;
-		//struct _Tag cTag;
 		union _TagUnion cUnion;
-		
-		//cTag = 	(struct _Tag)tcp_header->urg_ptr;
 		cUnion.nTag = pPacket->tcp_header->urg_ptr;
 		if (pSetup->cShowInstructions.bits.showForwardPartner)
 			if (!dropFromLogging(pPacket))
-	  			pr_info("tarakernel: FW from partner: %s->%s: Tag: (%04X)\n", pPacket->cSourceIp, pPacket->cDestIp, pPacket->tcp_header->urg_ptr);
-  			
+	 			pr_info("tarakernel: FW from partner: %s->%s: Tag: (%04X)\n", pPacket->cSourceIp, pPacket->cDestIp, pPacket->tcp_header->urg_ptr);
+ 			
 		if (pPacket->tcp_header->urg_ptr)
-  			pSetup->cGlobalStatistics.nFromPartnerTagged++;
+ 			pSetup->cGlobalStatistics.nFromPartnerTagged++;
 		else
-  			pSetup->cGlobalStatistics.nFromPartnerUntagged++;
+ 			pSetup->cGlobalStatistics.nFromPartnerUntagged++;
 
 		if (clearIncomingTag(pPacket))
 		{
-			pPacket->tcp_header->urg_ptr = 0;  //Remove the tag when forwarded to subnet.. This is confidential information..
-			pPacket->tcp_header->urg = 0;		//260318 This may have been forgotten elsewhere....
-	    	//recalcChecksum(pPacket);	//ØT 260318 - Seems like lots of packets get lost with this enabled...
+			pPacket->tcp_header->urg_ptr = 0;
+			pPacket->tcp_header->urg = 0;
 			checkFree(pPacket, false /*bLeavingPostRouting*/);
 		}
 		else	
@@ -221,19 +273,11 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 		return NF_ACCEPT;
 	}	    
 
-	//To check traffic between two nodes in local network running through router, get rid of the rest... 
-  	//#define C_INTERNAL_IP "192.168"
-	//if (strstr(lpIpFrom,C_INTERNAL_IP) != lpIpFrom || strstr(lpIpTo,C_INTERNAL_IP) != lpIpTo)
-
 	bool bDMine = isMeOrMine(pPacket->ip_header->daddr);
 	bool bSMine = isMeOrMine(pPacket->ip_header->saddr);
 
 	if (!bDMine||!bSMine)
 	{
-		//This is not traffic between two units in local network...
-		//kfree(lpIpFrom);
-		//kfree(lpIpTo);
-		
 		unsigned int nCheckIfPortForwarding = (bDMine?pPacket->dPort:(bSMine?pPacket->dPort:0)); 
 		bool bPortForwarded = 0;
 		if (nCheckIfPortForwarding)
@@ -243,19 +287,16 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 				bPortForwarded = 1;
 				if (pSetup->cShowInstructions.bits.showOther)
 					if (!dropFromLogging(pPacket))
-						pr_info("tarakernel: Traffic with forwarded port: %s:%d->%s:%d\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort);///%s\n", ipFrom, ipTo);
+						pr_info("tarakernel: Traffic with forwarded port: %s:%d->%s:%d\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort);
 			}
 		}
 		
 		pSetup->cGlobalStatistics.nForwarded++;
 		if (!bPortForwarded && pSetup->cShowInstructions.bits.showForwardNonPartner)
 			if (!dropFromLogging(pPacket))
-				pr_info("tarakernel: FW Forward (to or from non-partner) %s:%d->%s:%d\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort);///%s\n", ipFrom, ipTo);
+				pr_info("tarakernel: FW Forward (to or from non-partner) %s:%d->%s:%d\n", pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort);
 		return NF_ACCEPT;
 	}
-
-	//NOTE! Gets here when it's not traffic from or to partner and not traffic between two nodes in the internal network. 
-	//Meaning it's traffic between sub net and non-partnering.... 
 
 	{
 		u32 nBigEndian = swappedEndian(pSetup->nMyIp); 
@@ -276,4 +317,3 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
         
 	return NF_ACCEPT;
 }
-

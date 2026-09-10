@@ -100,6 +100,11 @@ static unsigned int queueRetransmit(struct sk_buff *skb, const struct nf_hook_st
 
 static int send_udp_json(__be32 daddr, __be16 dport, const char *json);
 
+static void reportRejectedTraffic(struct _PacketInspection *pPacket,
+                                  uint8_t nRejectReason,
+                                  uint16_t nDecisionSeverity,
+                                  uint16_t nDecisionThreshold);
+
 void checkThatTcp(struct _PacketInspection *pPacket, char *lpFromWhere);	//260320 - asdf... got problem with this....
 //static void send_to_user(const char *msg);
 

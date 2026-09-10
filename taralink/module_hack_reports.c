@@ -179,6 +179,43 @@ static int sendReportToGlobalDbServersVerified(
     return allOk;
 }
 
+static int sendConfessionToGlobalDbServersVerified(
+    _GlobalServers *cGlobalDb,
+    const char *szParams,
+    const char *cMyIp,
+    char *errorBuf,
+    size_t errorBufSize)
+{
+    int allOk = 1;
+
+    if (errorBuf && errorBufSize)
+        errorBuf[0] = 0;
+
+    for (int n = 0; n < 3; n++) {
+        const char *globalIp = cGlobalDb->ip[n];
+        if (!globalIp || !*globalIp || strlen(globalIp) < 7)
+            continue;
+
+        if (cMyIp && !strcmp(globalIp, cMyIp))
+            continue;
+
+        char url[700];
+        snprintf(url, sizeof(url), "http://%s/script/config_update.php?%s",
+                 globalIp, szParams);
+
+        char reply[500];
+        if (!reportHttpGetOk(url, reply, sizeof(reply))) {
+            allOk = 0;
+            if (errorBuf && errorBufSize)
+                snprintf(errorBuf, errorBufSize,
+                         "global DB %s rejected confession: %.300s",
+                         globalIp, reply);
+        }
+    }
+
+    return allOk;
+}
+
 uint32_t getIpOfRegisteredPartnerRouter(
     MYSQL *conn,
     uint32_t ip,
@@ -559,16 +596,38 @@ void checkHackReports()
 				}
 			}
 
-			char szParams[200];
-			sprintf(szParams, "f=confession&ip=%s&port=%s&ourid=%d", row[3], row[2], nUnitId);
-			sendToGlogalDbServers(&cGlobalDb, szParams, nMyIp, cMyIp);
+			char szParams[240];
+			char confessionError[500];
+			sprintf(szParams,
+			        "f=confession&delegated=1&ip=%s&port=%s&ourid=%d",
+			        row[3], row[2], nUnitId);
 
-			sprintf(cSQL, "update hackReport set sentGlobalDB = now(), status = concat(status, '(confessed)') where reportId = %d", atoi(row[0]));
+			if (sendConfessionToGlobalDbServersVerified(
+			        &cGlobalDb, szParams, cMyIp,
+			        confessionError, sizeof(confessionError)))
+			{
+				sprintf(cSQL,
+				        "update hackReport set sentGlobalDB = now(), status = concat(status, '(confessed)') where reportId = %d",
+				        atoi(row[0]));
 
-			if (mysql_query(localUpdate, cSQL)) {
-				fprintf(stderr, "******** ERROR ****** While updating hackReport: %s\n", mysql_error(localUpdate));
-				addWarningRecord("******** ERROR ****** While updating hackReport");
-				return;
+				if (mysql_query(localUpdate, cSQL)) {
+					fprintf(stderr, "******** ERROR ****** While updating hackReport: %s\n", mysql_error(localUpdate));
+					addWarningRecord("******** ERROR ****** While updating hackReport");
+					return;
+				}
+				clearHackReportDeliverySystemError();
+			}
+			else
+			{
+				char systemError[700];
+				snprintf(systemError, sizeof(systemError),
+				         "Hack report delivery failed: %.45s:%.10s - %.580s",
+				         row[3]?row[3]:"?", row[2]?row[2]:"?",
+				         confessionError);
+				setTaralinkSystemError(systemError, 7);
+				addWarningRecord(systemError);
+				increaseSendAttemptCount(atoi(row[0]));
+				bUpdateHandled = 0;
 			}
 		}
 		else

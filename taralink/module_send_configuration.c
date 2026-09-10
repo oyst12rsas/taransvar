@@ -200,7 +200,9 @@ static unsigned int readAdminSshPortFromConfig(void)
         while (*p == ' ' || *p == '\t')
             p++;
 
-        if (sscanf(p, "%u %c", &configuredPort, &extra) == 1 &&
+        if ((sscanf(p, "%u %c", &configuredPort, &extra) == 1 ||
+             sscanf(p, "\"%u\" %c", &configuredPort, &extra) == 1 ||
+             sscanf(p, "'%u' %c", &configuredPort, &extra) == 1) &&
             configuredPort >= 1 && configuredPort <= 65535)
             port = configuredPort;
         else
