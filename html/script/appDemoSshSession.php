@@ -94,21 +94,20 @@ try {
         $node = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$node) { $conn->rollback(); demoReply(404, ['ok' => false, 'error' => 'Node B unavailable']); }
-        $stmt = $conn->prepare("SELECT COUNT(*) activeCount FROM demoSshSession WHERE demoSshNodeBId=? AND state IN ('awaiting_node_a','demo_infected','awaiting_node_b') AND expires>NOW()");
-        $stmt->bind_param('i', $setup['demoSshNodeBId']);
+        // Node B intentionally uses one stable classroom credential for every
+        // concurrent tester. Do not rotate or personalize it: legitimate users
+        // may share a service credential, and TaraSec must distinguish their
+        // traffic by the complete IP/port tuple resolved through conntrack to
+        // the true unit. The honeypot is non-executing, so this credential does
+        // not grant access to a real account or shell.
+        $node['username'] = 'demo';
+        $node['passwordPlain'] = '1';
+        $node['passwordHash'] = hash('sha256', $node['passwordPlain']);
+        $node['credentialGeneration'] = max(1, (int)$node['credentialGeneration']);
+        $stmt = $conn->prepare("UPDATE demoSshNodeB SET username=?,passwordPlain=?,passwordHash=?,credentialGeneration=?,credentialCreated=COALESCE(credentialCreated,NOW()) WHERE demoSshNodeBId=? AND (username<>? OR passwordPlain<>? OR passwordHash<>? OR credentialGeneration<>?)");
+        $stmt->bind_param('sssisssi', $node['username'], $node['passwordPlain'], $node['passwordHash'], $node['credentialGeneration'], $node['demoSshNodeBId'], $node['username'], $node['passwordPlain'], $node['passwordHash'], $node['credentialGeneration']);
         $stmt->execute();
-        $activeCount = (int)$stmt->get_result()->fetch_assoc()['activeCount'];
         $stmt->close();
-        if ($activeCount === 0 || !$node['username'] || !$node['passwordPlain'] || !$node['passwordHash']) {
-            $node['username'] = 'demo';
-            $node['passwordPlain'] = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-            $node['passwordHash'] = hash('sha256', $node['passwordPlain']);
-            $node['credentialGeneration'] = (int)$node['credentialGeneration'] + 1;
-            $stmt = $conn->prepare("UPDATE demoSshNodeB SET username=?,passwordPlain=?,passwordHash=?,credentialGeneration=?,credentialCreated=NOW() WHERE demoSshNodeBId=?");
-            $stmt->bind_param('sssii', $node['username'], $node['passwordPlain'], $node['passwordHash'], $node['credentialGeneration'], $node['demoSshNodeBId']);
-            $stmt->execute();
-            $stmt->close();
-        }
         $accessToken = bin2hex(random_bytes(24));
         $accessHash = hash('sha256', $accessToken);
         $ttl = max(60, min(300, (int)$setup['challengeTtlSeconds']));
