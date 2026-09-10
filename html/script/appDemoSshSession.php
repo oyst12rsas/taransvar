@@ -44,7 +44,11 @@ function demoPublicSession(array $row): array
         'username' => (string)$row['username'],
         'attempts' => (int)$row['attempts'],
         'expires' => (string)$row['expires'],
-        'completed' => $row['completed'] === null ? null : (string)$row['completed']
+        'completed' => $row['completed'] === null ? null : (string)$row['completed'],
+        'node_a_observed' => !empty($row['nodeAEvidenceId']),
+        'unit_marked' => !empty($row['demoInfectionObserved']),
+        'node_b_observed' => !empty($row['nodeBEvidenceId']),
+        'progress_message' => (string)($row['progressMessage'] ?? '')
     ];
 }
 
@@ -239,6 +243,54 @@ try {
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$row) demoReply(404, ['ok' => false, 'error' => 'Demo session not found']);
+        // Reconcile asynchronous Node A/gateway reports into the session before
+        // replying. The Android client polls this endpoint; without this step
+        // the row remains awaiting_node_a even after the DB has the evidence.
+        if (in_array($row['state'], ['awaiting_node_a','demo_infected','awaiting_node_b'], true)) {
+            $stmt = $conn->prepare("SELECT t.syslogThreatId FROM syslogThreat t JOIN demoSshSession s ON s.demoSshSessionId=? WHERE t.dst_ip=INET_ATON(?) AND t.dst_port=? AND t.is_attack<>0 AND t.created>=s.created AND (t.src_ip=s.sourceIp OR (s.unitId IS NOT NULL AND COALESCE(t.confirmed_unit_id,t.unit_id)=s.unitId)) ORDER BY t.syslogThreatId DESC LIMIT 1");
+            $stmt->bind_param('isi', $sessionId, $row['node_a'], $row['nodeAPort']);
+            $stmt->execute();
+            $nodeAEvidence = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+
+            $stmt = $conn->prepare("SELECT i.infectionId FROM internalInfections i JOIN demoSshSession s ON s.demoSshSessionId=? WHERE i.active=b'1' AND COALESCE(i.lastSeen,i.inserted)>=s.created AND (i.ip=s.sourceIp OR (s.unitId IS NOT NULL AND i.unitId=s.unitId)) ORDER BY i.infectionId DESC LIMIT 1");
+            $stmt->bind_param('i', $sessionId);
+            $stmt->execute();
+            $demoInfection = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+
+            $nextState = $row['state'];
+            if ($nodeAEvidence && $demoInfection) {
+                $nextState = 'awaiting_node_b';
+            } elseif ($nodeAEvidence || $demoInfection) {
+                $nextState = 'demo_infected';
+            }
+            $nodeAEvidenceId = $nodeAEvidence ? (int)$nodeAEvidence['syslogThreatId'] : null;
+            if ($nextState !== $row['state'] || ($nodeAEvidenceId && empty($row['nodeAEvidenceId']))) {
+                $previousState = (string)$row['state'];
+                $stmt = $conn->prepare("UPDATE demoSshSession SET state=?,nodeAEvidenceId=COALESCE(nodeAEvidenceId,?),lastSeen=NOW() WHERE demoSshSessionId=?");
+                $stmt->bind_param('sii', $nextState, $nodeAEvidenceId, $sessionId);
+                $stmt->execute();
+                $stmt->close();
+                if ($nextState !== $previousState) {
+                    $details = $nextState === 'awaiting_node_b'
+                        ? 'Node A rejection and unit infection observed'
+                        : ($nodeAEvidence ? 'Node A rejection observed; awaiting infection report' : 'Unit infection observed; awaiting Node A report');
+                    $stmt = $conn->prepare("INSERT INTO demoSshEvent(demoSshSessionId,eventType,sourceIp,syslogThreatId,details) VALUES(?,'node_a_observed',INET_ATON(?),?,?)");
+                    $stmt->bind_param('isis', $sessionId, $sender, $nodeAEvidenceId, $details);
+                    $stmt->execute();
+                    $stmt->close();
+                }
+                $row['state'] = $nextState;
+                if ($nodeAEvidenceId) $row['nodeAEvidenceId'] = $nodeAEvidenceId;
+            }
+            $row['demoInfectionObserved'] = $demoInfection ? 1 : 0;
+            $row['progressMessage'] = $nextState === 'awaiting_node_b'
+                ? 'Node A and gateway reports received; continue with Node B'
+                : ($nextState === 'demo_infected'
+                    ? ($nodeAEvidence ? 'Node A report received; waiting for gateway infection update' : 'Gateway infection update received; waiting for Node A report')
+                    : 'Waiting for Node A rejection report');
+        }
         if (strtotime((string)$row['expires']) <= time() && in_array($row['state'], ['awaiting_node_a','demo_infected','awaiting_node_b'], true)) {
             $stmt = $conn->prepare("UPDATE demoSshSession SET state='expired',completed=NOW(),lastSeen=NOW() WHERE demoSshSessionId=?");
             $stmt->bind_param('i', $sessionId); $stmt->execute(); $stmt->close(); $row['state'] = 'expired'; $row['completed'] = gmdate('Y-m-d H:i:s');
