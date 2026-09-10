@@ -12,6 +12,12 @@ set -euo pipefail
 # original TCP port. Conntrack keeps the DNAT mapping for subsequent packets.
 # Source NAT on the NetBird egress makes return traffic use the overlay too.
 #
+# Scope of this first implementation:
+#   public partner-router IP -> that router's NetBird IP.
+# It is suitable for services handled by the partner router itself (for example
+# TaraSec/demo/honeypot services). Routing onward to an arbitrary client behind
+# that partner requires a separate destination/port -> internal-unit mapping.
+#
 # Requirements:
 #   - migration db/migrate_partnerrouter_netbird_routing.sql applied
 #   - nft, mysql and ip commands available
@@ -62,8 +68,6 @@ mapfile -t ROUTES < <(
 
 emit_ruleset() {
     cat <<EOF
-flush table ip $NFT_TABLE
-
 table ip $NFT_TABLE {
     chain prerouting {
         type nat hook prerouting priority dstnat; policy accept;
@@ -108,7 +112,8 @@ if [[ "$DRY_RUN" == "1" ]]; then
     exit 0
 fi
 
-# Delete old table if present. Ignore the expected "not found" result.
+# Replace the generated table atomically enough for this small rule set: remove
+# the previous TaraSec-owned table, then load the complete replacement.
 nft delete table ip "$NFT_TABLE" 2>/dev/null || true
 
 if ((${#ROUTES[@]} == 0)); then
