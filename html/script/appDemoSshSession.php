@@ -26,10 +26,15 @@ function demoPost(): array
     return $_POST;
 }
 
-function demoBearer(): string
+function demoNodeToken(): string
 {
-    $header = (string)($_SERVER['HTTP_AUTHORIZATION'] ?? '');
-    return preg_match('/^Bearer\s+(.+)$/i', $header, $m) ? trim($m[1]) : '';
+    // Some Apache/PHP configurations intentionally omit Authorization from
+    // $_SERVER. Prefer a purpose-specific sensor header and retain Bearer as
+    // compatibility fallback.
+    $nodeHeader = trim((string)($_SERVER['HTTP_X_TARASEC_NODE_TOKEN'] ?? ''));
+    if ($nodeHeader !== '') return $nodeHeader;
+    $authorization = (string)($_SERVER['HTTP_AUTHORIZATION'] ?? '');
+    return preg_match('/^Bearer\s+(.+)$/i', $authorization, $m) ? trim($m[1]) : '';
 }
 
 function demoPublicSession(array $row): array
@@ -151,7 +156,7 @@ try {
         $stmt->execute();
         $node = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if (!$node || !hash_equals((string)$node['sensorTokenHash'], hash('sha256', demoBearer()))) { $conn->rollback(); demoReply(403, ['ok' => false, 'error' => 'Sensor authentication failed']); }
+        if (!$node || !hash_equals((string)$node['sensorTokenHash'], hash('sha256', demoNodeToken()))) { $conn->rollback(); demoReply(403, ['ok' => false, 'error' => 'Sensor authentication failed']); }
         $passwordOk = hash_equals((string)$node['username'], $username) && hash_equals((string)$node['passwordHash'], hash('sha256', $password));
 
         // The normalized Node B observation may already carry TaraSec's unit

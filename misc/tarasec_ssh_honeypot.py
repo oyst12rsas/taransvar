@@ -111,6 +111,9 @@ def validate_demo(context, username, password):
         data=body,
         method="POST",
         headers={
+            # Dedicated header survives Apache/PHP configurations that
+            # strip Authorization before populating the PHP environment.
+            "X-TaraSec-Node-Token": DEMO_NODE_TOKEN,
             "Authorization": f"Bearer {DEMO_NODE_TOKEN}",
             "Content-Type": "application/json",
             "Accept": "application/json",
