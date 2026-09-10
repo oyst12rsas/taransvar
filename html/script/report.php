@@ -94,6 +94,9 @@ try {
     }
 
     if (!$trustedSender) {
+        error_log('Rejected hack report from untrusted sender=' . $sender
+            . ' claimedSource=' . $ip . ':' . $port
+            . ' category=' . $category);
         $conn->close();
         reportFail(403, 'untrusted sender');
     }
