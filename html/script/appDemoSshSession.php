@@ -143,12 +143,19 @@ try {
         if (!preg_match('/^[A-Za-z0-9_-]{1,16}$/', $username) || filter_var($sourceIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false || $sourcePort === false || $destinationPort === false) demoReply(400, ['ok' => false, 'error' => 'Invalid challenge report']);
 
         $conn->begin_transaction();
-        $stmt = $conn->prepare("SELECT demoSshNodeBId,INET_NTOA(ip) node_b,port nodeBPort,sensorTokenHash,username,passwordHash,credentialGeneration FROM demoSshNodeB WHERE ip=INET_ATON(?) AND port=? AND active=b'1' FOR UPDATE");
-        $stmt->bind_param('si', $sender, $destinationPort);
+        // The public HTTPS bridge hides the sensor's NetBird source address.
+        // Authenticate Node B by its unique bearer-token hash and demo port;
+        // retain the observed HTTP sender only for diagnostics.
+        $sensorTokenHash = hash('sha256', demoBearer());
+        $stmt = $conn->prepare("SELECT demoSshNodeBId,INET_NTOA(ip) node_b,port nodeBPort,sensorTokenHash,username,passwordHash,credentialGeneration FROM demoSshNodeB WHERE port=? AND sensorTokenHash=? AND active=b'1' FOR UPDATE");
+        $stmt->bind_param('is', $destinationPort, $sensorTokenHash);
         $stmt->execute();
         $node = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if (!$node || !hash_equals((string)$node['sensorTokenHash'], hash('sha256', demoBearer()))) { $conn->rollback(); demoReply(403, ['ok' => false, 'error' => 'Sensor authentication failed']); }
+        if (!$node) { $conn->rollback(); error_log("SSH demo sensor authentication rejected sender=$sender destination_port=$destinationPort"); demoReply(403, ['ok' => false, 'error' => 'Sensor authentication failed']); }
+        if (!hash_equals((string)$node['node_b'], $sender)) {
+            error_log("SSH demo sensor authenticated through proxy sender=$sender node_b={$node['node_b']}");
+        }
         $passwordOk = hash_equals((string)$node['username'], $username) && hash_equals((string)$node['passwordHash'], hash('sha256', $password));
 
         // The normalized Node B observation may already carry TaraSec's unit
