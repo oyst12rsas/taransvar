@@ -29,7 +29,8 @@ function demoPost(): array
 function demoBearer(): string
 {
     $header = (string)($_SERVER['HTTP_AUTHORIZATION'] ?? '');
-    return preg_match('/^Bearer\s+(.+)$/i', $header, $m) ? trim($m[1]) : '';
+    if (preg_match('/^Bearer\s+(.+)$/i', $header, $m)) return trim($m[1]);
+    return trim((string)($_SERVER['HTTP_X_TARASEC_TOKEN'] ?? ''));
 }
 
 function demoPublicSession(array $row): array
