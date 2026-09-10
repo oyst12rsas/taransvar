@@ -136,6 +136,44 @@ static int parseTrafficField(const char *value, unsigned long *out, unsigned lon
     return 1;
 }
 
+static void queueRejectedHackReport(MYSQL *conn,
+                                    unsigned long ipFrom,
+                                    unsigned long portFrom,
+                                    unsigned long ipTo,
+                                    unsigned long portTo,
+                                    unsigned long tag)
+{
+    union _TagUnion cUnion;
+    char info[220];
+    struct in_addr destination;
+    char destinationIp[INET_ADDRSTRLEN] = "unknown";
+
+    cUnion.nTag = (uint16_t)tag;
+    destination.s_addr = htonl((uint32_t)ipTo);
+    inet_ntop(AF_INET, &destination, destinationIp, sizeof(destinationIp));
+
+    /*
+     * This prefix is intentionally factual, not DEMO:. The rejecting gateway
+     * cannot know whether the flow belongs to a demo. Existing hack-report
+     * forwarding carries this record to the configured global DB server(s),
+     * where the central demo registration can be used for correlation.
+     */
+    snprintf(info, sizeof(info),
+             "TARAKERNEL_REJECTED: destination=%s:%lu",
+             destinationIp, portTo);
+
+    insertHackReport(conn,
+                     (uint32_t)ipFrom,
+                     (unsigned short)portFrom,
+                     0 /* nSenderIp */,
+                     "iptables",
+                     info,
+                     cUnion.cTag.owners_id,
+                     0 /* nInfectionId */,
+                     cUnion.cTag.presumed_infected,
+                     0 /* nBotnetId */);
+}
+
 void handleTrafficReportFromKernel(char *lpPayload, int nDataLength)
 {
     MYSQL *conn = getConnection();
@@ -146,6 +184,8 @@ void handleTrafficReportFromKernel(char *lpPayload, int nDataLength)
     int nUpdates = 0;
     char *saveRecord = NULL;
     char *record = strtok_r(lpPayload, "^", &saveRecord);
+
+    (void)nDataLength;
 
     while (record && strcmp(record, "EOF")) {
         char backup[220];
@@ -246,8 +286,17 @@ void handleTrafficReportFromKernel(char *lpPayload, int nDataLength)
                         mysql_error(conn), sql);
         }
 
-        /* Preserve the existing tag -> hackReport consistency check. */
-        checkUpdateHackReport(conn, fields[0], fields[1], fields[5]);
+        if (action == e_TrafficRejected) {
+            /*
+             * Turn the rejection into the normal hack-report delivery path so
+             * it is retried and reaches configured global DB server(s). No
+             * demo marker is added here.
+             */
+            queueRejectedHackReport(conn, ipFrom, portFrom, ipTo, portTo, tag);
+        } else {
+            /* Preserve the existing tag -> hackReport consistency check. */
+            checkUpdateHackReport(conn, fields[0], fields[1], fields[5]);
+        }
 
         /* Preserve internal infection lastSeen maintenance. */
         snprintf(sql, sizeof(sql),
