@@ -121,8 +121,10 @@ try {
         $unitRow = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if ($unitRow) $unitId = (int)$unitRow['unitId'];
-        $stmt = $conn->prepare("INSERT INTO demoSshSession(demoSshSetupId,demoSshNodeBId,sourceIp,unitId,credentialGeneration,accessTokenHash,expires) VALUES(?,?,INET_ATON(?),?,?,?,TIMESTAMPADD(SECOND,?,NOW()))");
-        $stmt->bind_param('iisiisi', $setupId, $node['demoSshNodeBId'], $sender, $unitId, $node['credentialGeneration'], $accessHash, $ttl);
+        // Demo 2 has a fixed classroom window. Keep the interval literal:
+        // this MariaDB deployment evaluated bound interval values as zero.
+        $stmt = $conn->prepare("INSERT INTO demoSshSession(demoSshSetupId,demoSshNodeBId,sourceIp,unitId,credentialGeneration,accessTokenHash,expires) VALUES(?,?,INET_ATON(?),?,?,?,DATE_ADD(NOW(),INTERVAL 30 MINUTE))");
+        $stmt->bind_param('iisiis', $setupId, $node['demoSshNodeBId'], $sender, $unitId, $node['credentialGeneration'], $accessHash);
         $stmt->execute();
         $sessionId = (int)$conn->insert_id;
         $stmt->close();
