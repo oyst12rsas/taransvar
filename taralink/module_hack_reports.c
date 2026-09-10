@@ -559,16 +559,58 @@ void checkHackReports()
 				}
 			}
 
-			char szParams[200];
-			sprintf(szParams, "f=confession&ip=%s&port=%s&ourid=%d", row[3], row[2], nUnitId);
-			sendToGlogalDbServers(&cGlobalDb, szParams, nMyIp, cMyIp);
+			/*
+			 * A tarakernel policy rejection is an observation made by this
+			 * gateway, not a confession sent directly by the rejected source.
+			 */
+			if (row[8] && !strncmp(row[8], "TARAKERNEL_REJECTED_", strlen("TARAKERNEL_REJECTED_")))
+			{
+				char szParams[700];
+				char czCodedWhat[520];
+				char deliveryError[500];
+				urlencode(row[8], czCodedWhat, sizeof(czCodedWhat));
+				snprintf(szParams, sizeof(szParams),
+				         "ip=%s&port=%s&wt=%s&code=iptables&ourid=%d",
+				         row[3], row[2], czCodedWhat, nUnitId);
 
-			sprintf(cSQL, "update hackReport set sentGlobalDB = now(), status = concat(status, '(confessed)') where reportId = %d", atoi(row[0]));
+				if (sendReportToGlobalDbServersVerified(&cGlobalDb, szParams, cMyIp,
+				                                        deliveryError, sizeof(deliveryError)))
+				{
+					sprintf(cSQL,
+					        "update hackReport set sentGlobalDB = now() where reportId = %d",
+					        atoi(row[0]));
+					if (mysql_query(localUpdate, cSQL)) {
+						fprintf(stderr, "******** ERROR ****** While updating hackReport: %s\n", mysql_error(localUpdate));
+						addWarningRecord("******** ERROR ****** Taralink: While updating hackReport");
+						return;
+					}
+					clearHackReportDeliverySystemError();
+				}
+				else
+				{
+					char systemError[700];
+					snprintf(systemError, sizeof(systemError),
+					         "Hack report delivery failed: %.45s:%.10s - %.580s",
+					         row[3]?row[3]:"?", row[2]?row[2]:"?", deliveryError);
+					setTaralinkSystemError(systemError, 7);
+					addWarningRecord(systemError);
+					increaseSendAttemptCount(atoi(row[0]));
+					bUpdateHandled = 0;
+				}
+			}
+			else
+			{
+				char szParams[200];
+				sprintf(szParams, "f=confession&ip=%s&port=%s&ourid=%d", row[3], row[2], nUnitId);
+				sendToGlogalDbServers(&cGlobalDb, szParams, nMyIp, cMyIp);
 
-			if (mysql_query(localUpdate, cSQL)) {
-				fprintf(stderr, "******** ERROR ****** While updating hackReport: %s\n", mysql_error(localUpdate));
-				addWarningRecord("******** ERROR ****** While updating hackReport");
-				return;
+				sprintf(cSQL, "update hackReport set sentGlobalDB = now(), status = concat(status, '(confessed)') where reportId = %d", atoi(row[0]));
+
+				if (mysql_query(localUpdate, cSQL)) {
+					fprintf(stderr, "******** ERROR ****** While updating hackReport: %s\n", mysql_error(localUpdate));
+					addWarningRecord("******** ERROR ****** While updating hackReport");
+					return;
+				}
 			}
 		}
 		else
