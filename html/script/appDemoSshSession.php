@@ -46,7 +46,7 @@ function demoPublicSession(array $row): array
         'expires' => (string)$row['expires'],
         'completed' => $row['completed'] === null ? null : (string)$row['completed'],
         'node_a_observed' => !empty($row['nodeAEvidenceId']),
-        'unit_marked' => !empty($row['demoInfectionObserved']),
+        'unit_marked' => !empty($row['demoInfectionObserved']) || in_array((string)$row['state'], ['demo_infected','awaiting_node_b','cleared','owner_clear_required'], true),
         'node_b_observed' => !empty($row['nodeBEvidenceId']),
         'progress_message' => (string)($row['progressMessage'] ?? '')
     ];
