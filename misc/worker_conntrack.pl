@@ -172,8 +172,12 @@ sub	handleLine {
 		if ($szSourceIp ne $szRetDestIp)
 		{
 			$szInternalIp = $szSourceIp;
-			$nInternalPort = $nSourcePort;
-			print "NAT for $szSourceIp:$nInternalPort\n";
+			# For outbound SNAT, receivers observe the translated source port
+			# in the reply tuple's destination port. Store that public port
+			# against the internal unit; storing $nSourcePort loses the mapping
+			# whenever NAT rewrites the port and prevents exact attribution.
+			$nInternalPort = $nRetDestPort;
+			print "NAT for $szSourceIp:$nSourcePort uses external port $nInternalPort\n";
 		}
 		else 
 		{
