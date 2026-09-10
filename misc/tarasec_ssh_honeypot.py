@@ -96,6 +96,7 @@ def validate_demo(context, username, password):
         method="POST",
         headers={
             "Authorization": f"Bearer {DEMO_NODE_TOKEN}",
+            "X-TaraSec-Token": DEMO_NODE_TOKEN,
             "Content-Type": "application/json",
             "Accept": "application/json",
         },
