@@ -384,7 +384,7 @@ create table demoSshSetup (
 	nodeAIp int unsigned not null,
 	nodeAPort smallint unsigned not null default 22,
 	demoSshNodeBId int unsigned not null,
-	challengeTtlSeconds smallint unsigned not null default 180,
+	challengeTtlSeconds smallint unsigned not null default 1800,
 	active bit(1) not null default b'1',
 	created timestamp not null default current_timestamp,
 	primary key(demoSshSetupId),
@@ -450,8 +450,15 @@ alter table syslogThreat add demoSshSessionId bigint unsigned null;
 alter table syslogThreat add key idx_syslogThreat_demoSshSession(demoSshSessionId);
 update setup set dbVersion = 85;
 
+#version 86 (260910)
+#Demo 2 is taught step-by-step and may be run by a whole class concurrently.
+#Raise the standard session window from three minutes to thirty minutes.
+alter table demoSshSetup modify challengeTtlSeconds smallint unsigned not null default 1800;
+update demoSshSetup set challengeTtlSeconds = 1800 where challengeTtlSeconds = 180;
+update setup set dbVersion = 86;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 86;
+#update setup set dbVersion = 87;
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 
 #can import DB changes automatically based on the content of this file...
