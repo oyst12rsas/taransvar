@@ -110,7 +110,7 @@ try {
         $stmt->close();
         $accessToken = bin2hex(random_bytes(24));
         $accessHash = hash('sha256', $accessToken);
-        $ttl = max(60, min(300, (int)$setup['challengeTtlSeconds']));
+        // Classroom demonstrations need enough time for instruction and many\n        // concurrent students to complete both SSH steps.\n        $ttl = max(60, min(1800, (int)$setup['challengeTtlSeconds']));
         $unitId = null;
         $stmt = $conn->prepare("SELECT unitId FROM unit WHERE ipAddress=INET_ATON(?) ORDER BY lastSeen DESC,unitId DESC LIMIT 1");
         $stmt->bind_param('s', $sender);
