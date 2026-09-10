@@ -30,7 +30,12 @@
 #define C_TIMER_INTERVAL_MILLISECONDS 0
 #define C_TIMER_INTERVAL_SECONDS 5
 
-enum et_CheckType {e_PossiblePartner}; 
+enum et_CheckType {e_PossiblePartner};
+
+enum et_TrafficAction {
+    e_TrafficObserved = 0,
+    e_TrafficRejected = 1
+};
 
 
 struct _showStatusBits 
@@ -79,6 +84,7 @@ union _TagUnion {
 struct _ipPort2 {
     uint32_t sIp, dIp;
     uint16_t sPort, dPort, nCount;
+    uint8_t nAction; // et_TrafficAction; 0 keeps legacy observed/accepted semantics
 
     union {
         struct _Tag cTag;
