@@ -796,7 +796,10 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 			{
 				if (nPosLeft < 15)
 					break;
-				sprintf(cReply+strlen(cReply), "PARTNER|");
+				snprintf(cReply+strlen(cReply), nPosLeft, "PARTNER|");
+				// The append pointer moved after adding the section header. Recompute
+				// the actual remaining capacity before passing it to snprintf.
+				nPosLeft = sizeof(cReply)-strlen(cReply)-1;
 			}
 
 			printf("Partner found : %s-%s\n", row[0], row[1]);
