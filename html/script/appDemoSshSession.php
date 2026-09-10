@@ -159,8 +159,11 @@ try {
         if (!$node || !hash_equals((string)$node['sensorTokenHash'], hash('sha256', demoNodeToken()))) { $conn->rollback(); demoReply(403, ['ok' => false, 'error' => 'Sensor authentication failed']); }
         $passwordOk = hash_equals((string)$node['username'], $username) && hash_equals((string)$node['passwordHash'], hash('sha256', $password));
 
-        // The normalized Node B observation may already carry TaraSec's unit
-        // attribution. Match the complete tuple; never equate a shared IP with
+        // The normalized Node B observation may carry unit attribution in
+        // syslogThreat. The normal report/confession protocol instead records
+        // the authoritative owner unit in hackReport.remoteUnitId, so use that
+        // as the fallback for the same source IP and translated port.
+        // Match the complete tuple; never equate a shared IP with
         // a unit when concurrent sessions make that ambiguous.
         // ssh_session_connect is emitted before authentication calls this
         // endpoint, but rsyslog and conntrack attribution are asynchronous.
@@ -169,7 +172,7 @@ try {
         // needlessly reduced to the ambiguous source-IP fallback below.
         $nodeBEvidence = null;
         for ($wait = 0; $wait < 8; $wait++) {
-            $stmt = $conn->prepare("SELECT syslogThreatId,COALESCE(confirmed_unit_id,unit_id) resolvedUnitId FROM syslogThreat WHERE src_ip=INET_ATON(?) AND src_port=? AND dst_ip=INET_ATON(?) AND dst_port=? AND created>=NOW()-INTERVAL 2 MINUTE ORDER BY syslogThreatId DESC LIMIT 1");
+            $stmt = $conn->prepare("SELECT t.syslogThreatId,COALESCE(t.confirmed_unit_id,t.unit_id,(SELECT hr.remoteUnitId FROM hackReport hr WHERE hr.ip=t.src_ip AND hr.port=t.src_port AND hr.ownerConfirmedTime IS NOT NULL AND hr.remoteUnitId IS NOT NULL AND COALESCE(hr.lastSeen,hr.created)>=NOW()-INTERVAL 2 MINUTE ORDER BY hr.reportId DESC LIMIT 1)) resolvedUnitId FROM syslogThreat t WHERE t.src_ip=INET_ATON(?) AND t.src_port=? AND t.dst_ip=INET_ATON(?) AND t.dst_port=? AND t.created>=NOW()-INTERVAL 2 MINUTE ORDER BY t.syslogThreatId DESC LIMIT 1");
             $stmt->bind_param('sisi', $sourceIp, $sourcePort, $node['node_b'], $destinationPort);
             $stmt->execute();
             $candidate = $stmt->get_result()->fetch_assoc();
@@ -256,7 +259,7 @@ try {
         // replying. The Android client polls this endpoint; without this step
         // the row remains awaiting_node_a even after the DB has the evidence.
         if (in_array($row['state'], ['awaiting_node_a','demo_infected','awaiting_node_b'], true)) {
-            $stmt = $conn->prepare("SELECT t.syslogThreatId,COALESCE(t.confirmed_unit_id,t.unit_id) resolvedUnitId FROM syslogThreat t JOIN demoSshSession s ON s.demoSshSessionId=? WHERE t.dst_ip=INET_ATON(?) AND t.dst_port=? AND t.is_attack<>0 AND t.created>=s.created AND (t.src_ip=s.sourceIp OR (s.unitId IS NOT NULL AND COALESCE(t.confirmed_unit_id,t.unit_id)=s.unitId)) ORDER BY t.syslogThreatId DESC LIMIT 1");
+            $stmt = $conn->prepare("SELECT t.syslogThreatId,COALESCE(t.confirmed_unit_id,t.unit_id,(SELECT hr.remoteUnitId FROM hackReport hr WHERE hr.ip=t.src_ip AND hr.port=t.src_port AND hr.ownerConfirmedTime IS NOT NULL AND hr.remoteUnitId IS NOT NULL AND COALESCE(hr.lastSeen,hr.created)>=s.created ORDER BY hr.reportId DESC LIMIT 1)) resolvedUnitId FROM syslogThreat t JOIN demoSshSession s ON s.demoSshSessionId=? WHERE t.dst_ip=INET_ATON(?) AND t.dst_port=? AND t.is_attack<>0 AND t.created>=s.created AND (t.src_ip=s.sourceIp OR (s.unitId IS NOT NULL AND COALESCE(t.confirmed_unit_id,t.unit_id,(SELECT hr2.remoteUnitId FROM hackReport hr2 WHERE hr2.ip=t.src_ip AND hr2.port=t.src_port AND hr2.ownerConfirmedTime IS NOT NULL AND hr2.remoteUnitId IS NOT NULL AND COALESCE(hr2.lastSeen,hr2.created)>=s.created ORDER BY hr2.reportId DESC LIMIT 1))=s.unitId)) ORDER BY t.syslogThreatId DESC LIMIT 1");
             $stmt->bind_param('isi', $sessionId, $row['node_a'], $row['nodeAPort']);
             $stmt->execute();
             $nodeAEvidence = $stmt->get_result()->fetch_assoc();
