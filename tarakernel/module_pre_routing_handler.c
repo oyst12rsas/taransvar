@@ -512,6 +512,10 @@ static unsigned int module_ip4_pre_routing_handler(void *priv, struct sk_buff *s
 	if (pPacket->dPort == pSetup->nAdminSshPort && pInfected && pInfected->nSeverity > pSetup->nBlockSshThreshold)
 	{
 		pr_info("tarakernel: PR: Dropping traffic from infected unit to protected SSH port %u %s:%d -> %s:%d (severity/threshold: %d/%d)\n", pSetup->nAdminSshPort, pPacket->cSourceIp, pPacket->sPort, pPacket->cDestIp, pPacket->dPort, pInfected->nSeverity, pSetup->nBlockSshThreshold);
+		reportRejectedTraffic(pPacket,
+		                      e_TrafficRejectSshThresholdExceeded,
+		                      pInfected->nSeverity,
+		                      pSetup->nBlockSshThreshold);
 		return NF_DROP;
 	}
 
