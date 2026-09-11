@@ -284,9 +284,9 @@ td {
 	}
 </script>
 <script type="text/javascript" src="std.js"></script>
-<script type="text/javascript" src="lib.js"></script>
+<script type="text/javascript" src="lib.js?v=20260911-2"></script>
 <script type="text/javascript" src="lib2.js"></script>
-<script type="text/javascript" src="gatekeeper.js"></script>
+<script type="text/javascript" src="gatekeeper.js?v=20260911-2"></script>
 <script>
 var cJsonParam = new Object;
 </script>
