@@ -1,17 +1,17 @@
 <?php
 
-// Demo hub. The original functional browser demo is preserved verbatim in
-// demoOriginal.php. Using ?f=demo&view=browser loads that implementation
-// directly, so its existing behaviour remains unchanged.
-if (isset($_GET['view']) && $_GET['view'] === 'browser')
-{
-    include_once __DIR__."/demoOriginal.php";
-    return;
-}
-
+// Demo hub. The original functional browser demo is preserved in
+// demoOriginal.php and exposed through its own entry point.
 function demo()
 {
     global $setupRow;
+
+    if (isset($_GET['view']) && $_GET['view'] === 'browser')
+    {
+        require_once __DIR__."/demoOriginal.php";
+        demoBrowser();
+        return;
+    }
     $isDbServer = isset($setupRow['isDbServer']) && ((int)$setupRow['isDbServer'] === 1);
 ?>
 <style>
