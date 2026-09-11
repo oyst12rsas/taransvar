@@ -28,7 +28,7 @@ fi
 
 apt-get install -y apache2 perl libdbd-mysql-perl libmariadb-dev libmnl-dev
 apt-get install -y php libapache2-mod-php php-mysql php-curl
-apt-get install -y gcc make curl libcurl4-openssl-dev dhcpdump net-tools conntrack
+apt-get install -y gcc make pkg-config curl libcurl4-openssl-dev libcjson-dev dhcpdump net-tools conntrack
 apt-get install -y libdbi-perl libdbd-mysql-perl libjson-perl conntrack dhcpdump isc-dhcp-server
 apt-get install -y curl libcurl4-openssl-dev whois iptables libcjson-dev ipset
 
