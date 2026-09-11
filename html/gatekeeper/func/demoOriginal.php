@@ -114,7 +114,7 @@ function isLanSide($szIP)
 	return false;
 }
 
-function demo()
+function demoBrowser()
 {
 ?>
 <script>
