@@ -21,7 +21,8 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 [ -x "$ROOT/taralink/taralink" ] || { echo "Build taralink first" >&2; exit 1; }
 [ -f "$ROOT/tarakernel/tarakernel.ko" ] || { echo "Build tarakernel for $(uname -r) first" >&2; exit 1; }
 
-ssh_port="$(sshd -T 2>/dev/null | awk '$1=="port"{print $2; exit}')"
+sshd_settings="$(sshd -T 2>/dev/null)"
+ssh_port="$(awk '$1=="port" && !found { print $2; found=1 }' <<< "$sshd_settings")"
 [ -n "$ssh_port" ] || { echo "Unable to determine sshd port" >&2; exit 1; }
 if ! awk -F= -v p="$ssh_port" '
     /^[[:space:]]*SSH_PORT[[:space:]]*=/ {
