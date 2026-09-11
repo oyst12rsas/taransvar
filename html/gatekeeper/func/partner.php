@@ -23,17 +23,17 @@ function partner()
         	print "<table>";
 	        //$szSQL = "select inet_ntoa(ip) as ip, inet_ntoa(nettmask) as nettmask from partnerRouter where partnerId = ".$_GET["id"];
     	    //Intended to print the ip and nettmask hexadecimalt  $szSQL = 
-        	$szSQL = "select routerId, hex(ip) as ip, inet_ntoa(ip) as aip, hex(nettmask) as nettmask from partnerRouter where partnerId = ".$_GET["id"];
+        	$szSQL = "select routerId, hex(ip) as ip, inet_ntoa(ip) as aip, hex(nettmask) as nettmask, coalesce(inet_ntoa(taggedTrafficRoute),'') as taggedRoute, taggedTrafficRouteUpdated from partnerRouter where partnerId = ".$_GET["id"];
 		    $result = $conn->query($szSQL); 
 
 		    if ($result->num_rows > 0) 
 			{
-	        	print ('<tr><th colspan="2">Registered routers</th></tr>');
+	        	print ('<tr><th colspan="6">Registered routers</th></tr><tr><th>Public destination</th><th>IP (hex)</th><th>Netmask (hex)</th><th>Tagged route</th><th>Updated</th><th>Actions</th></tr>');
 	            while ($row = $result->fetch_assoc()) 
 			    {
-        			print '<tr><td>'.$row["aip"].'</td><td>'.$row["ip"].'</td><td>'.$row["nettmask"].'</td><td>';
+        			print '<tr><td>'.$row["aip"].'</td><td>'.$row["ip"].'</td><td>'.$row["nettmask"].'</td><td>'.($row["taggedRoute"] ?: "Normal public route").'</td><td>'.($row["taggedTrafficRouteUpdated"] ?: "-").'</td><td>';
 					if (isAdmin())
-						print '<a href="index.php?f=delRouter&id='.$row["routerId"].'">[Delete]</a>';
+						print '<a href="index.php?f=editRouter&id='.$row["routerId"].'">[Edit route]</a> <a href="index.php?f=delRouter&id='.$row["routerId"].'">[Delete]</a>';
 							else
 								print "&nbsp;";
 					print '</td></tr>';
