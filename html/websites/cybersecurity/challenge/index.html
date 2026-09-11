@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>TaraSec Challenge</title>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <meta name="description" content="Join the TaraSec Pizza Challenge: test cooperative cybersecurity, challenge the implementation, and help improve Internet security.">
+
+    <link href="../img/favicon.ico" rel="icon">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.10.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.4.1/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="../lib/animate/animate.min.css" rel="stylesheet">
+    <link href="../lib/owlcarousel/assets/owl.carousel.min.css" rel="stylesheet">
+    <link href="../lib/lightbox/css/lightbox.min.css" rel="stylesheet">
+    <link href="../css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        .challenge-hero {
+            background: linear-gradient(rgba(6, 19, 35, .86), rgba(6, 19, 35, .86)), url('../img/carousel-1.jpg') center center/cover;
+            min-height: 520px;
+            display: flex;
+            align-items: center;
+        }
+        .challenge-badge {
+            display: inline-block;
+            background: #dc3545;
+            color: #fff;
+            font-weight: 700;
+            padding: .55rem 1rem;
+            border-radius: 999px;
+            letter-spacing: .04em;
+            text-transform: uppercase;
+        }
+        .challenge-card {
+            height: 100%;
+            border: 0;
+            border-radius: 1rem;
+            box-shadow: 0 .5rem 1.5rem rgba(0,0,0,.09);
+        }
+        .step-number {
+            width: 3rem;
+            height: 3rem;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.25rem;
+        }
+        .callout {
+            border-left: 5px solid var(--bs-primary);
+            background: #f7f9fb;
+        }
+        .pizza-box {
+            border: 2px dashed #dc3545;
+            border-radius: 1rem;
+            background: #fff8f8;
+        }
+        .code-like {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+            background: #0b1727;
+            color: #d9f7ef;
+            border-radius: .75rem;
+            padding: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div id="spinner" class="show bg-white position-fixed translate-middle w-100 vh-100 top-50 start-50 d-flex align-items-center justify-content-center">
+        <div class="spinner-border position-relative text-primary" style="width: 6rem; height: 6rem;" role="status"></div>
+        <img src="../img/logospinner.png" alt="Loading" class="position-absolute top-50 start-50 translate-middle" style="width: 3rem; height: 3rem;">
+    </div>
+
+    <div class="container-fluid py-4 px-5 wow fadeIn" data-wow-delay="0.1s">
+        <div class="row align-items-center top-bar">
+            <div class="col-lg-4 col-md-12 text-center text-lg-start">
+                <a href="../index.html" class="navbar-brand m-0 p-0 logo-container">
+                    <img src="../img/ablogo.png" alt="TaraSec" class="logo">
+                </a>
+            </div>
+            <div class="col-lg-8 col-md-7 d-none d-lg-block">
+                <div class="row">
+                    <div class="col-6">
+                        <div class="info-item">
+                            <div class="icon-container"><div class="icon-wrapper"><i class="fas fa-shield-alt"></i></div></div>
+                            <div class="text-container">
+                                <p class="info-title">TaraSec</p>
+                                <h6 class="info-value">Cooperative cybersecurity</h6>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="info-item">
+                            <div class="icon-container"><div class="icon-wrapper"><i class="fas fa-users"></i></div></div>
+                            <div class="text-container">
+                                <p class="info-title">Challenge</p>
+                                <h6 class="info-value">Students welcome</h6>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <nav class="navbar navbar-expand-lg bg-primary navbar-dark sticky-top py-lg-0 px-lg-5 wow fadeIn" data-wow-delay="0.1s">
+        <a href="#" class="navbar-brand ms-3 d-lg-none">MENU</a>
+        <button type="button" class="navbar-toggler me-3" data-bs-toggle="collapse" data-bs-target="#navbarCollapse">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarCollapse">
+            <div class="navbar-nav me-auto p-3 p-lg-0">
+                <a href="../index.html" class="nav-item nav-link">Home</a>
+                <a href="../about.html" class="nav-item nav-link">About Us</a>
+                <a href="../project.html" class="nav-item nav-link">Contribute</a>
+                <a href="./" class="nav-item nav-link active">Challenge</a>
+                <a href="../contact.html" class="nav-item nav-link">Contact Us</a>
+            </div>
+            <a href="#join" class="custom-get-started-btn">Join the Challenge</a>
+        </div>
+    </nav>
+
+    <section class="challenge-hero text-white">
+        <div class="container py-5">
+            <div class="row align-items-center">
+                <div class="col-lg-8">
+                    <span class="challenge-badge mb-4">Student Pizza Challenge</span>
+                    <h1 class="display-3 text-white mb-4">Can you challenge TaraSec?</h1>
+                    <p class="fs-4 mb-4">We are not asking you to trust our cybersecurity idea. We are asking you to test it, attack the demo, question the design and help us make it better.</p>
+                    <p class="fs-5 mb-4">TaraSec explores a simple governance idea: networks should cooperate when they see abusive traffic, so an attacker stopped by one participant becomes less useful against the next.</p>
+                    <div class="d-flex flex-wrap gap-3">
+                        <a href="#join" class="btn btn-danger rounded-pill py-3 px-5">Join the Pizza Challenge</a>
+                        <a href="#how" class="btn btn-outline-light rounded-pill py-3 px-5">How it works</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="py-5">
+        <div class="container py-4">
+            <div class="text-center mb-5">
+                <h6 class="section-title bg-white text-primary d-inline-block mb-3">The idea</h6>
+                <h2 class="display-6">Internet does not only need more security technology. It needs better cooperation.</h2>
+                <p class="lead mt-3">Firewalls already stop attacks every day. TaraSec asks what happens if that knowledge is shared safely with other participating networks.</p>
+            </div>
+            <div class="row g-4">
+                <div class="col-md-4">
+                    <div class="card challenge-card p-4">
+                        <i class="bi bi-shield-check text-primary mb-3" style="font-size:3rem"></i>
+                        <h4>1. A network rejects abuse</h4>
+                        <p class="mb-0">A participating firewall sees traffic it considers malicious or unacceptable and rejects it.</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card challenge-card p-4">
+                        <i class="bi bi-broadcast text-primary mb-3" style="font-size:3rem"></i>
+                        <h4>2. Partners learn from it</h4>
+                        <p class="mb-0">The event can be reported through TaraSec so cooperating participants have more context about later traffic from the same source.</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card challenge-card p-4">
+                        <i class="bi bi-graph-down text-primary mb-3" style="font-size:3rem"></i>
+                        <h4>3. Attacks become less profitable</h4>
+                        <p class="mb-0">The goal is not surveillance. The goal is to reduce the value of compromised machines and repeated abusive traffic.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="how" class="py-5 bg-light">
+        <div class="container py-4">
+            <div class="row align-items-center g-5">
+                <div class="col-lg-6">
+                    <h6 class="section-title bg-white text-primary d-inline-block mb-3">How the event works</h6>
+                    <h2 class="display-6 mb-4">Bring a phone. We bring a TaraSec hotspot.</h2>
+                    <div class="d-flex mb-4">
+                        <span class="step-number bg-primary text-white me-3">1</span>
+                        <div><h5>Connect</h5><p>Join the local TaraSec event hotspot or the event network shown by the organiser.</p></div>
+                    </div>
+                    <div class="d-flex mb-4">
+                        <span class="step-number bg-primary text-white me-3">2</span>
+                        <div><h5>Open the challenge</h5><p>The TaraSec app can surface an active nearby event. You can also start here at <strong>tarasec.org/challenge</strong>.</p></div>
+                    </div>
+                    <div class="d-flex mb-4">
+                        <span class="step-number bg-primary text-white me-3">3</span>
+                        <div><h5>Test the demo</h5><p>Follow the event instructions and try the permitted challenge actions against the designated demo systems only.</p></div>
+                    </div>
+                    <div class="d-flex">
+                        <span class="step-number bg-primary text-white me-3">4</span>
+                        <div><h5>Challenge the concept</h5><p>Find weaknesses, false assumptions, privacy problems, routing issues or a better implementation. A successful criticism is useful research input.</p></div>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="pizza-box p-5 text-center">
+                        <i class="fas fa-pizza-slice text-danger mb-4" style="font-size:5rem"></i>
+                        <h2>Why pizza?</h2>
+                        <p class="lead">Because security testing is more interesting when it is social.</p>
+                        <p>The event format is intended for universities and student communities: short introduction, hands-on challenge, discussion and pizza.</p>
+                        <p class="mb-0"><strong>The challenge is about learning and testing, not attacking unrelated systems.</strong></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="py-5">
+        <div class="container py-4">
+            <div class="row g-4">
+                <div class="col-lg-7">
+                    <div class="callout p-4 h-100">
+                        <h3>What should you challenge?</h3>
+                        <p>Everything that matters: whether cooperative tagging is useful, whether false positives can be controlled, whether privacy is protected, whether NAT and mobile networks can participate, whether routing works at scale, and whether the incentives make sense for ISPs.</p>
+                        <p class="mb-0">TaraSec is a reference implementation, not a claim that our current code is the final answer. If students, researchers, ISPs or open-source developers build a better implementation of the cooperative model, that is a success.</p>
+                    </div>
+                </div>
+                <div class="col-lg-5">
+                    <div class="code-like h-100">
+                        <strong>Challenge rules</strong><br><br>
+                        ✓ Use only the systems designated by the event organiser.<br>
+                        ✓ Follow the challenge instructions and scope.<br>
+                        ✓ Report unexpected behaviour and weaknesses.<br>
+                        ✓ Question both the software and the idea.<br>
+                        ✗ Do not attack third-party networks, accounts or devices.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="join" class="py-5 bg-dark text-white">
+        <div class="container py-4 text-center">
+            <h6 class="section-title bg-dark text-primary d-inline-block mb-3">Join</h6>
+            <h2 class="display-5 text-white mb-4">See a TaraSec Pizza Challenge nearby?</h2>
+            <p class="lead mb-4">Connect to the event hotspot, open the TaraSec app if available, or keep this page open for instructions from the organiser.</p>
+            <p class="mb-4">Universities, student organisations and security groups can also host a challenge. TaraSec is designed to be tested openly.</p>
+            <div class="d-flex justify-content-center flex-wrap gap-3">
+                <a href="../project.html" class="btn btn-primary rounded-pill py-3 px-5">Contribute to TaraSec</a>
+                <a href="https://github.com/oyst12rsas/taransvar" class="btn btn-outline-light rounded-pill py-3 px-5">View the source code</a>
+            </div>
+        </div>
+    </section>
+
+    <div class="container-fluid bg-dark text-body footer pt-5 wow fadeIn" data-wow-delay="0.1s">
+        <div class="container py-5">
+            <div class="row g-5">
+                <div class="col-lg-4 col-md-6">
+                    <img src="../img/logo-w.png" alt="Taransvar" class="logo mb-3">
+                    <p>TaraSec is developed by Taransvar, a non-profit organisation exploring cooperative cybersecurity and socially useful Internet infrastructure.</p>
+                </div>
+                <div class="col-lg-4 col-md-6">
+                    <h5 class="text-light mb-4">Quick Links</h5>
+                    <a class="btn btn-link" href="../index.html">Home</a>
+                    <a class="btn btn-link" href="../about.html">About Us</a>
+                    <a class="btn btn-link" href="../project.html">Contribute</a>
+                    <a class="btn btn-link" href="./">Challenge</a>
+                </div>
+                <div class="col-lg-4 col-md-6">
+                    <h5 class="text-light mb-4">Challenge TaraSec</h5>
+                    <p>Read the code. Test the demo. Question the assumptions. Suggest something better.</p>
+                </div>
+            </div>
+        </div>
+        <div class="container-fluid copyright">
+            <div class="container">
+                <div class="row">
+                    <div class="col-md-6 text-center text-md-start mb-3 mb-md-0">&copy; <a href="../index.html">Taransvar</a>, All Right Reserved.</div>
+                    <div class="col-md-6 text-center text-md-end">tarasec.org/challenge</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <a href="#" class="btn btn-lg btn-primary btn-lg-square rounded-circle back-to-top"><i class="bi bi-arrow-up"></i></a>
+
+    <script src="https://code.jquery.com/jquery-3.4.1.min.js"></script>
+    <script src="../js/bootstrap.bundle.min.js"></script>
+    <script src="../lib/wow/wow.min.js"></script>
+    <script src="../lib/easing/easing.min.js"></script>
+    <script src="../lib/waypoints/waypoints.min.js"></script>
+    <script src="../lib/counterup/counterup.min.js"></script>
+    <script src="../lib/owlcarousel/owl.carousel.min.js"></script>
+    <script src="../lib/lightbox/js/lightbox.min.js"></script>
+    <script src="../js/main.js"></script>
+    <script src="../js/script.js"></script>
+</body>
+</html>
