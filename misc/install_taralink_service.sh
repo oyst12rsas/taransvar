@@ -45,5 +45,21 @@ touch /etc/tarasec/taralink-managed-by-systemd
 systemctl daemon-reload
 systemctl enable taralink.service
 if [ "$START_NOW" -eq 1 ]; then
-    systemctl restart taralink.service
+    # Stop both a previous systemd instance and the historical nohup-managed
+    # process before starting the canonical service. The taralink lock prevents
+    # two instances, so leaving the legacy process alive would make migration fail.
+    systemctl stop taralink.service 2>/dev/null || true
+    legacy_pids="$(pgrep -x taralink || true)"
+    if [ -n "$legacy_pids" ]; then
+        kill -TERM $legacy_pids
+        for attempt in $(seq 1 20); do
+            pgrep -x taralink >/dev/null || break
+            sleep 1
+        done
+        if pgrep -x taralink >/dev/null; then
+            echo "Existing taralink process did not terminate" >&2
+            exit 1
+        fi
+    fi
+    systemctl start taralink.service
 fi
