@@ -397,6 +397,8 @@ CREATE TABLE `partnerRouter` (
   `partnerId` int(11) NOT NULL,
   `ip` int(10) unsigned NOT NULL,
   `nettmask` int(10) unsigned NOT NULL,
+  `taggedTrafficRoute` int(10) unsigned DEFAULT NULL,
+  `taggedTrafficRouteUpdated` timestamp NULL DEFAULT NULL,
   `handled` bit(1) DEFAULT NULL,
   `demoStatusReceived` timestamp NULL DEFAULT NULL,
   `demoStatusReplied` timestamp NULL DEFAULT NULL,
