@@ -27,6 +27,24 @@ if ($infectedParam !== '0' && $infectedParam !== '1') {
 
 $wantInfected = $infectedParam === '1';
 $isDemo = ((string)($_POST['demo'] ?? '0') === '1');
+$demoSeverity = null;
+if (isset($_POST['severity'])) {
+    if (!$isDemo) {
+        controlFail(400, 'severity override is demo-only');
+    }
+    $demoSeverity = filter_var($_POST['severity'], FILTER_VALIDATE_INT, [
+        'options' => ['min_range' => 0, 'max_range' => 10]
+    ]);
+    if ($demoSeverity === false) {
+        controlFail(400, 'severity must be between 0 and 10');
+    }
+    if ((int)$demoSeverity === 0) {
+        $wantInfected = false;
+    } else {
+        $wantInfected = true;
+    }
+}
+
 $sender = getSenderIp();
 
 if (filter_var($sender, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
@@ -53,7 +71,7 @@ try {
     $stmt->close();
 
     $infectionId = $row ? (int)$row['infectionId'] : 0;
-    $severity = 3;
+    $severity = $demoSeverity !== null ? (int)$demoSeverity : 3;
     // This text is carried in TaraSec's elaborated threat-info exchange. The
     // receiver uses the stable DEMO prefix to classify the resulting report.
     $why = $isDemo
@@ -121,7 +139,9 @@ try {
         'requested' => 'clean',
         'client_ip' => $sender,
         'infectionId' => $infectionId,
+        'severity' => 0,
         'changed' => $changed,
+        'demo' => $isDemo,
         'message' => $infectionId > 0 ? 'This device is marked clean on the local TaraSec gateway' : 'This device had no infection record'
     ], JSON_UNESCAPED_SLASHES);
 } catch (Throwable $e) {
