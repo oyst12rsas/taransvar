@@ -9,16 +9,13 @@ function main()
 		return;
 	}
 
+	// Keep Home focused on operational information. Demo activity belongs under
+	// the existing top-level Demo menu choice.
 	$bIsDbServer = ((int)$setupRow['isDbServer'] === 1);
 	if ($bIsDbServer)
 	{
 		require_once("func/dbServer.php");
 		dbServer();
-
-		// The DB server is the central authority for demo sessions, so Home gives
-		// operators a compact view of both live demos and completed history.
-		require_once("func/dbServerDemos.php");
-		dbServerDemos();
 	}
 
 	// Administrators can see recent manager requests on Home, including
