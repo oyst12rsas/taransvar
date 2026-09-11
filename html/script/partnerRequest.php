@@ -51,14 +51,13 @@ try {
     if (!senderIsConfiguredGlobalDb($conn, $senderIp)) { http_response_code(403); exit("unregistered global DB"); }
 
     if ($active === 0) {
-        // A release is matched to the same requester/category.  Marking the
-        // local record inactive makes taralink send an ASSIST entry with
-        // active=0, which tells tarakernel to remove the request.
-        $stmt = $conn->prepare("UPDATE assistanceRequest SET active=b'0', handled=b'0', sentPartners=b'1', handlingComment='Released by global DB' WHERE purpose='fromPartner' AND ip=inet_aton(?) AND port=? AND category=? AND active=b'1'");
-        $stmt->bind_param("sis", $requestedIp, $port, $category);
+        // handled=NULL is the established incremental-configuration marker.
+        // taralink therefore sends active=0 to tarakernel on its next setup tick.
+        $stmt = $conn->prepare("UPDATE assistanceRequest SET active=b'0', handled=NULL, sentPartners=b'1', handlingComment='Released by global DB' WHERE purpose='fromPartner' AND ip=inet_aton(?) AND port=? AND category=? AND senderIp=inet_aton(?) AND active=b'1'");
+        $stmt->bind_param("siss", $requestedIp, $port, $category, $senderIp);
         $stmt->execute(); $stmt->close();
     } else {
-        $sql = "insert into assistanceRequest (purpose, ip, port, senderIp, senderPort, category, requestQuality, wantSpoofed, comment, fromOther, handled, active) values ('fromPartner', inet_aton(?), ?, inet_aton(?), ?, ?, ?, ?, 'From DB server', b'1', b'0', b'1')";
+        $sql = "insert into assistanceRequest (purpose, ip, port, senderIp, senderPort, category, requestQuality, wantSpoofed, comment, fromOther, handled, active) values ('fromPartner', inet_aton(?), ?, inet_aton(?), ?, ?, ?, ?, 'From DB server', b'1', NULL, b'1')";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param("sisisii", $requestedIp, $port, $senderIp, $senderPort, $category, $requestQuality, $wantSpoofed);
         $stmt->execute(); $stmt->close();
