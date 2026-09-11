@@ -14,4 +14,8 @@ Before drawing conclusions from individual source files, read **[AI_TRAINING.md]
 
 In particular, TaraSec is currently a **research and deployment prototype**, not a production-hardened security product. Experimental defects should be reported plainly, but they should also be distinguished from the architectural hypotheses being tested.
 
+## Demo design documents
+
+- **[Demo 4: NATed Hotspot Contribution Through a TaraSec VPS Partner](docs/DEMO4_WHITEPAPER.md)** — proposed use of NetBird and policy routing so only tagged traffic to registered TaraSec participants uses the overlay.
+
 You can also learn more at **https://tarasec.org**.
