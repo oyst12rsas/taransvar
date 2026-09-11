@@ -105,7 +105,11 @@ function initUpdater()
 //	szUpdateRoutine = szRoutine;
 
 	myUpdaterFunction();
-	const intervalId = setInterval(myUpdaterFunction, 5000);
+
+	// Only pages with a live table need recurring updates. Ordinary pages keep
+	// the global tag indicator, but do not poll forever in every open tab.
+	if (typeof szUpdateRoutine !== 'undefined')
+		setInterval(myUpdaterFunction, 5000);
 
 /*	document.addEventListener("DOMContentLoaded", function () {
 
