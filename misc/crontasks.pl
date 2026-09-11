@@ -192,7 +192,8 @@ sub reportStatus {
 			saveWarning("Tarakernel was not running when reporting status. Trying to start it\n");
 		}
 
-		if (!$json{"lnk"}) {
+		if (!$json{"lnk"} && !-e "/etc/tarasec/taralink-managed-by-systemd") {
+			# systemd owns restart policy on standardized installations.
 			system("nohup $szTaralink >>/tmp/taralink.log 2>&1 &");
 			sleep(7);	# Allow taralink to acquire its lock and configure tarakernel.
 			$json{"lnk"} = (programRunningLockFileHeld("/tmp/taralink.lock")?1:0);
