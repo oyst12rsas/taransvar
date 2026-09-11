@@ -242,6 +242,13 @@ Before implementation, the following should be decided:
 
 ## Current status
 
-This document records the agreed architecture and demonstration objective. It does not claim that the complete Demo 4 routing chain is already implemented.
+The following foundation was added on 2026-09-11:
 
-The next engineering step is to inventory the current tarakernel tagging, taralink route distribution, NetBird configuration and partner schema, then implement the smallest end-to-end path between one NATed hotspot and one VPS partner.
+- database version 87 adds `partnerRouter.taggedTrafficRoute` and `taggedTrafficRouteUpdated`;
+- Gatekeeper can set, display, edit and disable the route;
+- `/script/appDemo4.php` exposes configured routes to registered TaraSec gateways;
+- the Android app contains a Demo 4 panel that displays the DB-authoritative route configuration.
+
+The complete packet-routing chain is **not yet implemented**. In particular, the app's route display does not prove that taralink installed a policy route.
+
+The next engineering step is to make taralink consume the authorized route list, install the marked `wt0` routing policy atomically, report its applied state, and then add end-to-end clean/infected path verification.
