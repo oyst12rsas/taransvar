@@ -1,0 +1,17 @@
+[Unit]
+Description=TaraSec node reporting and coordination
+Wants=network-online.target
+After=network-online.target netbird.service
+ConditionPathExists=/usr/local/sbin/taralink
+
+[Service]
+Type=simple
+User=root
+ExecStartPre=/sbin/modprobe tarakernel
+ExecStart=/usr/local/sbin/taralink
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target
