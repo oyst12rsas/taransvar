@@ -482,7 +482,7 @@ function doRequestData(szEvent, szParam)
     var szJson = "&modjson="+JSON.stringify(cParJson);
 
     //Should start using sendXml() instead.... 
-    xmlhttp = getXML();
+    var xmlhttp = getXML();
     
     var cSysStatus = document.getElementById("sysStatus");
     var szSysStatus = "";//(cSysStatus?cSysStatus.innerHTML:"N/A"); 150215
