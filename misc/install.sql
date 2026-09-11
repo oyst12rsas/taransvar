@@ -457,8 +457,15 @@ alter table demoSshSetup modify challengeTtlSeconds smallint unsigned not null d
 update demoSshSetup set challengeTtlSeconds = 1800 where challengeTtlSeconds = 180;
 update setup set dbVersion = 86;
 
+#version 87 (260911)
+#Demo 4: route tagged traffic for registered partner destinations through a
+#TaraSec/NetBird next hop. NULL means normal public routing only.
+alter table partnerRouter add taggedTrafficRoute int unsigned null after nettmask;
+alter table partnerRouter add taggedTrafficRouteUpdated timestamp null after taggedTrafficRoute;
+update setup set dbVersion = 87;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 87;
+#update setup set dbVersion = 88;
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 
 #can import DB changes automatically based on the content of this file...
