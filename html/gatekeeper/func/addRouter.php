@@ -2,48 +2,54 @@
 
 function addRouter()
 {
-	if (!isAdmin())
-		return;
-	
-	if (isset($_GET["submit"]))
-	{
-		if (filter_var(trim($_GET['ip']), FILTER_VALIDATE_IP) && filter_var(trim($_GET['nett']), FILTER_VALIDATE_IP)) 
-		{
-			$conn=getConnection();
-			/*$szSQL = "insert into partnerRouter(partnerId, ip, nettmask) values (?,INET_ATON(?),INET_ATON(?))";
-			$stmt = $conn->prepare($szSQL);
-			$stmt->bind_param("iss", $nId, $szIp, $szNett);
-			$nId = $_GET['id'];
-			$szIp = trim($_GET['ip']);
-			$szNett = trim($_GET['nett']);
-	                $stmt->execute();*/
-	                $nId = $_GET['id']+0;
-			$szSQL = "insert into partnerRouter(partnerId, ip, nettmask) values (".$nId.",INET_ATON('".trim($_GET['ip'])."'),INET_ATON('".trim($_GET['nett'])."'))";
-			//print "$szSQL<br>";
-	                $result = $conn->query($szSQL);
-	                if (!$result)
-	                {
-	                	print "***** SQL FAILED ******<br><br>";
-	                }
-	                else
-	                {
-				print "Think it's saved now.........<br><br>";
-				print '<a href="index.php?f=partner&id='.$_GET['id'].'">Back to partner</a>';
-				return;
-			}
-	        }
-	        else
-	        {
-	        	print "Error in IP address or netmask:<br>IP: ".$_GET['ip']."<br>Nett: ".$_GET['nett']."<br>";
-	        }
-		
-	}
+    if (!isAdmin())
+        return;
 
+    $partnerId = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+    $ip = isset($_GET['ip']) ? trim($_GET['ip']) : "";
+    $netmask = isset($_GET['nett']) ? trim($_GET['nett']) : "";
+    $taggedRoute = isset($_GET['taggedRoute']) ? trim($_GET['taggedRoute']) : "";
+
+    if (isset($_GET["submit"]))
+    {
+        $validDestination = filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4);
+        $validNetmask = filter_var($netmask, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4);
+        $validTaggedRoute = $taggedRoute === "" ||
+            filter_var($taggedRoute, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4);
+
+        if ($partnerId > 0 && $validDestination && $validNetmask && $validTaggedRoute)
+        {
+            $conn = getConnection();
+            $sql = "insert into partnerRouter " .
+                "(partnerId, ip, nettmask, taggedTrafficRoute, taggedTrafficRouteUpdated) " .
+                "values (?, INET_ATON(?), INET_ATON(?), INET_ATON(NULLIF(?,'')), " .
+                "case when ?='' then null else now() end)";
+            $stmt = $conn->prepare($sql);
+            $stmt->bind_param("issss", $partnerId, $ip, $netmask, $taggedRoute, $taggedRoute);
+            $ok = $stmt->execute();
+            $stmt->close();
+            $conn->close();
+
+            if ($ok)
+            {
+                print "Router saved.<br><br>";
+                print '<a href="index.php?f=partner&id='.$partnerId.'">Back to partner</a>';
+                return;
+            }
+            print "***** SQL FAILED ******<br><br>";
+        }
+        else
+        {
+            print "Invalid partner, destination IP, netmask or tagged-traffic route.<br>";
+        }
+    }
 ?>
 <form action="index.php"><table>
-<tr><td>IP</td><td><input name="ip" value="<?php print (isset($_GET['ip'])?$_GET['ip']:"");  ?>"></td></tr>
-<tr><td>Nettmask</td><td><input name="nett" value="<?php print (isset($_GET['nett'])?$_GET['nett']:"");  ?>"></td></tr>
-<tr><td>&nbsp;</td><td><input name="f" type="hidden" value="addRouter"><input type="submit" name="submit" value="Submit"><input type="hidden" name="id" value="<?php print $_GET['id']; ?>"></td></tr>
+<tr><td>Public destination IP</td><td><input name="ip" value="<?php print htmlspecialchars($ip, ENT_QUOTES, 'UTF-8'); ?>"></td></tr>
+<tr><td>Netmask</td><td><input name="nett" value="<?php print htmlspecialchars($netmask, ENT_QUOTES, 'UTF-8'); ?>"></td></tr>
+<tr><td>Tagged traffic route</td><td><input name="taggedRoute" value="<?php print htmlspecialchars($taggedRoute, ENT_QUOTES, 'UTF-8'); ?>" placeholder="NetBird IPv4, blank for normal route"></td></tr>
+<tr><td colspan="2">Demo 4 uses this NetBird next hop only for tagged traffic to this registered destination. Blank disables special routing.</td></tr>
+<tr><td>&nbsp;</td><td><input name="f" type="hidden" value="addRouter"><input type="submit" name="submit" value="Submit"><input type="hidden" name="id" value="<?php print $partnerId; ?>"></td></tr>
 </table></form>
 <?php
 }
