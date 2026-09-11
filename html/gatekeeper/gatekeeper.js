@@ -94,17 +94,18 @@ function myUpdaterFunction() {
             cReportId = "NAN";
             //console.log("No rows or no table header.. Can't read id of row 2 of "+szUpdateRoutine+"Tbl");
         }
-    	request(szUpdateRoutine,"id="+cReportId);
+    	doRequestData(szUpdateRoutine,"id="+cReportId);
     }
 
-    request("tagStatus", "");
+    doRequestData("tagStatus", "");
 }
 
 function initUpdater()
 {
 //	szUpdateRoutine = szRoutine;
 
-	const intervalId = setInterval(myUpdaterFunction, 1000);
+	myUpdaterFunction();
+	const intervalId = setInterval(myUpdaterFunction, 5000);
 
 /*	document.addEventListener("DOMContentLoaded", function () {
 
