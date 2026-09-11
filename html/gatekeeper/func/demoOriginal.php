@@ -161,7 +161,11 @@ function toggleText(link) {
 
 			$data = json_decode($result['output'], true);
 
-			if (isset($data["error"]))
+			if (!is_array($data))
+			{
+				print "<tr><td colspan=\"2\"><font color=\"red\">The gateway returned an empty or invalid unit-IP response. Please refresh once; if it continues, check config_update.php on the gateway.</font></td></tr>";
+			}
+			else if (isset($data["error"]))
 			{
 				//print "An error occurred..<br>";
 				if (isset($data["found"]) && !strcmp($data["found"], "-1"))
