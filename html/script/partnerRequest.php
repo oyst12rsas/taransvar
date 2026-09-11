@@ -57,7 +57,10 @@ try {
         $stmt->bind_param("siss", $requestedIp, $port, $category, $senderIp);
         $stmt->execute(); $stmt->close();
     } else {
-        $sql = "insert into assistanceRequest (purpose, ip, port, senderIp, senderPort, category, requestQuality, wantSpoofed, comment, fromOther, handled, active) values ('fromPartner', inet_aton(?), ?, inet_aton(?), ?, ?, ?, ?, 'From DB server', b'1', NULL, b'1')";
+        // This request has already been distributed by the global DB. Keep it
+        // out of checkRequestAssistance() while leaving handled=NULL so the
+        // incremental setup pass immediately delivers it to tarakernel.
+        $sql = "insert into assistanceRequest (purpose, ip, port, senderIp, senderPort, category, requestQuality, wantSpoofed, comment, fromOther, handled, sentPartners, active) values ('fromPartner', inet_aton(?), ?, inet_aton(?), ?, ?, ?, ?, 'From DB server', b'1', NULL, b'1', b'1')";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param("sisisii", $requestedIp, $port, $senderIp, $senderPort, $category, $requestQuality, $wantSpoofed);
         $stmt->execute(); $stmt->close();
