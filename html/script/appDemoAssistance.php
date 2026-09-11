@@ -30,23 +30,24 @@ function session3(mysqli $c, int $sid): ?array {
     return ['session_id'=>(int)$r['sessionId'],'name'=>(string)$r['name'],'threshold'=>(int)$r['threshold'],'state'=>(string)$r['state'],'block_at'=>(string)($r['blockAt']??''),'seconds_remaining'=>(int)$r['remaining'],'participants'=>$p,'summary'=>['participants'=>count($p),'blocked'=>$blocked,'allowed'=>$allowed]];
 }
 
-$a=strtolower(trim((string)($_REQUEST['action']??'current'))); $b=body3();
+$a=strtolower(trim((string)($_REQUEST['action']??'list'))); $b=body3();
 try {
     $c=getConnection(); $c->query("SET time_zone='+00:00'");
     if($a==='create'){
         $name=trim((string)($b['name']??'Community infection exercise')); $threshold=(int)($b['threshold']??7); $delay=(int)($b['delay_seconds']??120);
-        if($name===''||mb_strlen($name)>120||$threshold<0||$threshold>10||$delay<10||$delay>3600) reply3(400,['ok'=>false,'error'=>'invalid_demo_settings']);
+        if($name===''||mb_strlen($name)>120||$threshold<0||$threshold>10||$delay<15||$delay>300) reply3(400,['ok'=>false,'error'=>'invalid_demo_settings']);
         $controller=token3(); $s=$c->prepare("INSERT INTO demoAssistanceSession(name,threshold,state,controllerToken,startsAt,blockAt) VALUES(?,?,'active',?,UTC_TIMESTAMP(),DATE_ADD(UTC_TIMESTAMP(),INTERVAL ? SECOND))");
         $s->bind_param('sisi',$name,$threshold,$controller,$delay); $s->execute(); $sid=(int)$s->insert_id; $s->close();
         reply3(201,['ok'=>true,'controller_token'=>$controller,'session'=>session3($c,$sid)]);
     }
-    if($a==='current'){
-        $q=$c->query("SELECT sessionId FROM demoAssistanceSession WHERE state IN('active','contained') ORDER BY sessionId DESC LIMIT 1"); $r=$q->fetch_assoc();
-        reply3(200,['ok'=>true,'session'=>$r?session3($c,(int)$r['sessionId']):null]);
+    if($a==='list'){
+        $q=$c->query("SELECT sessionId FROM demoAssistanceSession WHERE state='active' AND blockAt>DATE_ADD(UTC_TIMESTAMP(),INTERVAL 15 SECOND) ORDER BY blockAt ASC, sessionId ASC LIMIT 50");
+        $items=[]; while($r=$q->fetch_assoc()){ $x=session3($c,(int)$r['sessionId']); if($x && $x['state']==='active' && $x['seconds_remaining']>15) $items[]=$x; }
+        reply3(200,['ok'=>true,'sessions'=>$items]);
     }
     $sid=(int)($b['session_id']??$_REQUEST['session_id']??0); if($sid<1) reply3(400,['ok'=>false,'error'=>'invalid_session']);
     if($a==='join'){
-        $cur=session3($c,$sid); if(!$cur||$cur['state']!=='active') reply3(409,['ok'=>false,'error'=>'session_not_joinable']);
+        $cur=session3($c,$sid); if(!$cur||$cur['state']!=='active'||$cur['seconds_remaining']<=15) reply3(409,['ok'=>false,'error'=>'session_not_joinable']);
         $nick=trim((string)($b['nickname']??'')); if(mb_strlen($nick)>80) reply3(400,['ok'=>false,'error'=>'invalid_nickname']);
         $pt=token3(); $ip=trim((string)($_SERVER['REMOTE_ADDR']??'')); $s=$c->prepare("INSERT INTO demoAssistanceParticipant(sessionId,participantToken,nickname,observedIp) VALUES(?,?,?,?)");
         $s->bind_param('isss',$sid,$pt,$nick,$ip); $s->execute(); $pid=(int)$s->insert_id; $s->close(); reply3(201,['ok'=>true,'participant_id'=>$pid,'participant_token'=>$pt,'session'=>session3($c,$sid)]);
