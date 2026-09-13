@@ -1,0 +1,31 @@
+/* Reliable three-bar mobile menu icon. Some mobile browsers render the
+   Bootstrap data-URI icon as a single heavy horizontal line. */
+@media (max-width: 991.98px) {
+    .navbar-dark .navbar-toggler {
+        min-width: 48px;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .navbar-dark .navbar-toggler-icon {
+        position: relative;
+        width: 28px;
+        height: 20px;
+        background-image: none !important;
+        border-top: 3px solid #fff;
+        border-bottom: 3px solid #fff;
+    }
+
+    .navbar-dark .navbar-toggler-icon::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 50%;
+        height: 3px;
+        background: #fff;
+        transform: translateY(-50%);
+    }
+}
