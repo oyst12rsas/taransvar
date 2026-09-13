@@ -486,23 +486,31 @@ if (mysql_stmt_bind_result(stmtSelect, bindSelectResult) != 0) {
 
 		//Split the traffic record
 		char cBackup[200];	//Just for debugging
-		strcpy(cBackup, cRecord[j]);
-		char *token = strtok(cRecord[j], "-");
+		snprintf(cBackup, sizeof(cBackup), "%s", cRecord[j]);
+		char *saveptr = NULL;
+		char *token = strtok_r(cRecord[j], "-", &saveptr);
 		char *cFields[10];
 		int n = 0;
+		const size_t fieldCapacity = sizeof(cFields) / sizeof(cFields[0]);
 
 		//Record format: AA4AFA8E-1BB-AA4AFA8E-D6CE-1-999   (6 fields... so 10 should be enough for a while)
 		// <hex ip from>-<portfrom>-<hex ip to>-<port to>-<count>-<tag> 
 
-		while (token != NULL && n<sizeof(cFields)) 
+		while (token != NULL && (size_t)n < fieldCapacity)
 		{
 			cFields[n++] = token;
-			token = strtok(NULL, "-");
+			token = strtok_r(NULL, "-", &saveptr);
 		}
 
-		if (n != 6)
+		/*
+		 * Six fields are the original traffic tuple. Newer tarakernel builds
+		 * append four rejection-metadata fields. Keep the base tuple usable
+		 * during rolling upgrades; cFields[6..9] remain available for schema-
+		 * aware handling without losing the traffic/conntrack correlation.
+		 */
+		if (token != NULL || (n != 6 && n != 10))
 		{
-			printf("***** ERROR ****** Incomplete record.. %d fields, supposed to be 6. Skipping record: %s\n", n, cBackup);
+			printf("***** ERROR ****** Invalid traffic record field count %d (expected 6 or 10). Skipping record: %s\n", n, cBackup);
 		}
 		else
 		{
@@ -972,5 +980,3 @@ if (mysql_stmt_bind_result(stmtSelect, bindSelectResult) != 0) {
 	mysql_close(conn);
 }
 */
-
-
