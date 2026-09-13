@@ -58,15 +58,20 @@ authenticated_status_page() {
 }
 
 denied_page() {
-    local loginbase sole_login
+    local loginbase test_setup
     loginbase="$(hotspot_web_base)"
-    sole_login="$(/usr/local/sbin/tarasec-single-subscriber 2>/dev/null || true)"
+    test_setup="$(/usr/local/sbin/tarasec-single-subscriber 2>/dev/null || true)"
     echo "<div class=\"bad\">Internet access is not active</div><p>This device does not currently have access on this hotspot.</p>
 <div class=\"note\"><b>Global TaraSec account</b><br>If you use a global TaraSec account, open the TaraSec app and choose <b>Use this account on current hotspot</b>.</div>
-<a class=\"btn btn2\" href=\"tarasec://identity\">Open the TaraSec app</a>
-<h2 style=\"margin-top:24px\">Local hotspot account</h2>
-<p>Or log in for local access with the username and password below. Your local subscription or quota determines whether hotspot access is authorized.</p>
-$sole_login
+<a class=\"btn btn2\" href=\"tarasec://identity\">Open the TaraSec app</a>"
+
+    if [ "$test_setup" = "1" ]; then
+        echo "<div class=\"note\"><b>Hotspot test setup</b><br>This hotspot is currently configured with a local test account. Its username and password are intentionally not displayed on the captive portal.<br><br><b>Hotspot operator:</b> on the hotspot computer, create or reset the back-office administrator password with:<br><code>sudo tarasec-users --set-admin-password</code><br><br>Then open the hotspot administration system and sign in with that administrator account.</div>
+<a class=\"btn btn2\" href=\"$loginbase/index.php?f=main_login\">Hotspot administration</a>"
+    fi
+
+    echo "<h2 style=\"margin-top:24px\">Local hotspot account</h2>
+<p>Log in with a local hotspot username and password supplied by the hotspot operator. Your local subscription or quota determines whether hotspot access is authorized.</p>
 <form id=\"tslogin\" action=\"$loginbase/portal_login.php\" method=\"post\">
 <input type=\"hidden\" name=\"client_ip\" value=\"$clientip\">
 <input type=\"hidden\" name=\"fas\" value=\"$fas\">
