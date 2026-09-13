@@ -52,6 +52,8 @@ authenticated_status_page() {
 <a class=\"btn\" href=\"http://neverssl.com/\">Open Internet</a>
 <a class=\"btn btnlogout\" href=\"$loginbase/portal_status.php\">Log out</a>
 <a class=\"btn btn2\" href=\"$loginbase/portal_status.php\">My access / account information</a>
+<div class=\"note\"><b>Get the TaraSec app</b><br>The TaraSec app is the recommended way to use TaraSec hotspots, manage your TaraSec identity and participate in TaraSec demos.</div>
+<a class=\"btn btn2\" href=\"https://tarasec.org/app\">TaraSec app</a>
 <div class=\"note\"><b>About this hotspot</b><br>Learn about TaraSec and Taransvar, hotspot security, acceptable use and privacy from the information links below.</div>
 <form action=\"/opennds_preauth/\" method=\"get\"><input type=\"hidden\" name=\"fas\" value=\"$fas\">$custom_passthrough<input type=\"hidden\" name=\"terms\" value=\"yes\"><input class=\"btn btn2\" type=\"submit\" value=\"TaraSec / Taransvar information\"></form>"
     footer
@@ -62,7 +64,9 @@ denied_page() {
     loginbase="$(hotspot_web_base)"
     test_setup="$(/usr/local/sbin/tarasec-single-subscriber 2>/dev/null || true)"
     echo "<div class=\"bad\">Internet access is not active</div><p>This device does not currently have access on this hotspot.</p>
-<div class=\"note\"><b>Global TaraSec account</b><br>If you use a global TaraSec account, open the TaraSec app and choose <b>Use this account on current hotspot</b>.</div>
+<div class=\"note\"><b>Recommended: TaraSec app</b><br>The TaraSec app is the easiest way to use TaraSec hotspots, manage your TaraSec identity and participate in TaraSec demos.</div>
+<a class=\"btn\" href=\"https://tarasec.org/app\">Get the TaraSec app</a>
+<div class=\"note\"><b>Already using the app?</b><br>Open the TaraSec app and choose <b>Use this account on current hotspot</b>.</div>
 <a class=\"btn btn2\" href=\"tarasec://identity\">Open the TaraSec app</a>"
 
     if [ "$test_setup" = "1" ]; then
