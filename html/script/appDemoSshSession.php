@@ -56,6 +56,9 @@ function demoPublicSession(array $row): array
         'node_a_observed' => !empty($row['nodeAEvidenceId']),
         'unit_marked' => !empty($row['demoInfectionObserved']) || in_array((string)$row['state'], ['demo_infected','awaiting_node_b','cleared','owner_clear_required'], true),
         'node_b_observed' => !empty($row['nodeBEvidenceId']),
+        'node_b_login_accepted' => !array_key_exists('nodeBLoginAccepted', $row) || $row['nodeBLoginAccepted'] === null
+            ? null
+            : ((int)$row['nodeBLoginAccepted'] === 1),
         'progress_message' => (string)($row['progressMessage'] ?? '')
     ];
 }
@@ -269,7 +272,7 @@ try {
         if ($sessionId === false) demoReply(400, ['ok' => false, 'error' => 'Valid session_id required']);
         if (strlen($sessionToken) < 32) demoReply(403, ['ok' => false, 'error' => 'Session token required']);
         $accessHash = hash('sha256', $sessionToken);
-        $stmt = $conn->prepare("SELECT s.*,GREATEST(0,TIMESTAMPDIFF(SECOND,NOW(),s.expires)) secondsRemaining,INET_NTOA(d.nodeAIp) node_a,d.nodeAPort,INET_NTOA(n.ip) node_b,n.port nodeBPort,n.username FROM demoSshSession s JOIN demoSshSetup d ON d.demoSshSetupId=s.demoSshSetupId JOIN demoSshNodeB n ON n.demoSshNodeBId=s.demoSshNodeBId WHERE s.demoSshSessionId=? AND s.accessTokenHash=? LIMIT 1");
+        $stmt = $conn->prepare("SELECT s.*,GREATEST(0,TIMESTAMPDIFF(SECOND,NOW(),s.expires)) secondsRemaining,INET_NTOA(d.nodeAIp) node_a,d.nodeAPort,INET_NTOA(n.ip) node_b,n.port nodeBPort,n.username,(SELECT CAST(a.credentialValid AS UNSIGNED) FROM demoSshAttempt a WHERE a.demoSshSessionId=s.demoSshSessionId ORDER BY a.demoSshAttemptId DESC LIMIT 1) nodeBLoginAccepted FROM demoSshSession s JOIN demoSshSetup d ON d.demoSshSetupId=s.demoSshSetupId JOIN demoSshNodeB n ON n.demoSshNodeBId=s.demoSshNodeBId WHERE s.demoSshSessionId=? AND s.accessTokenHash=? LIMIT 1");
         $stmt->bind_param('is', $sessionId, $accessHash);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
