@@ -363,7 +363,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 
 	if (nSequenceNumber == 0)	//This is the first batch (for now there's only 1 batch)
 	{
-	    char szSQL[400];	//NOTE! 256 is now too small for internalInfections SQL
+	    char szSQL[1200];	//Configuration queries include generated assistance predicates
 	    char *lpHandledWhere;
 		//printf("Reading configuration.....\n");
 		sprintf(cReply, "CONFIG %d|", nSequenceNumber);
