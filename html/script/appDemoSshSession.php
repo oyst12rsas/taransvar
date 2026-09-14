@@ -236,32 +236,27 @@ try {
             $stmt = $conn->prepare("SELECT syslogThreatId FROM syslogThreat WHERE src_ip=? AND dst_ip=INET_ATON(?) AND dst_port=? AND is_attack<>0 AND created>=? ORDER BY syslogThreatId DESC LIMIT 1");
             $stmt->bind_param('isis', $row['sourceIp'], $row['node_a'], $row['nodeAPort'], $row['created']);
             $stmt->execute(); $nodeA = $stmt->get_result()->fetch_assoc(); $stmt->close();
-            // Locate the active infection created during this session. Never
-            // clear an older record, even when it belongs to the same unit or
-            // address: independent evidence remains owner-controlled.
-            if ($row['unitId'] !== null) {
-                $stmt = $conn->prepare("SELECT infectionId FROM internalInfections WHERE unitId=? AND active=b'1' AND COALESCE(lastSeen,inserted)>=? ORDER BY infectionId DESC LIMIT 1");
-                $stmt->bind_param('is', $row['unitId'], $row['created']);
-            } else {
-                $stmt = $conn->prepare("SELECT infectionId FROM internalInfections WHERE ip=? AND active=b'1' AND COALESCE(lastSeen,inserted)>=? ORDER BY infectionId DESC LIMIT 1");
-                $stmt->bind_param('is', $row['sourceIp'], $row['created']);
-            }
-            $stmt->execute(); $demoInfection = $stmt->get_result()->fetch_assoc(); $stmt->close();
-            $qualifies = $passwordOk && $attempts === 1 && $nodeA && $demoInfection;
+            // internalInfections belongs to the source gateway, not the global
+            // DB. The authoritative global proof that the gateway accepted the
+            // Node A report is its owner-confirmed hackReport confession.
+            $stmt = $conn->prepare("SELECT hr.reportId,hr.remoteUnitId FROM hackReport hr WHERE hr.ip=? AND hr.sentByIp=INET_ATON(?) AND hr.ownerConfirmedTime IS NOT NULL AND COALESCE(hr.lastSeen,hr.created)>=? ORDER BY COALESCE(hr.lastSeen,hr.created) DESC,hr.reportId DESC LIMIT 1");
+            $stmt->bind_param('iss', $row['sourceIp'], $row['node_a'], $row['created']);
+            $stmt->execute(); $gatewayConfirmation = $stmt->get_result()->fetch_assoc(); $stmt->close();
+            $qualifies = $passwordOk && $attempts === 1 && $nodeA && $gatewayConfirmation;
             $state = $qualifies ? 'cleared' : 'owner_clear_required';
             $nodeAId = $nodeA ? (int)$nodeA['syslogThreatId'] : null;
             $nodeBId = $nodeBEvidence ? (int)$nodeBEvidence['syslogThreatId'] : null;
             $stmt = $conn->prepare("UPDATE demoSshSession SET attempts=?,state=?,nodeBSourcePort=?,nodeAEvidenceId=?,nodeBEvidenceId=?,completed=NOW(),lastSeen=NOW() WHERE demoSshSessionId=?");
             $stmt->bind_param('isiiii', $attempts, $state, $sourcePort, $nodeAId, $nodeBId, $sessionId); $stmt->execute(); $stmt->close();
             $event = $qualifies ? 'cleared' : 'rejected';
-            $details = $qualifies ? 'validated first-attempt sequence' : (!$passwordOk ? 'credential mismatch' : (!$nodeA ? 'Node A evidence missing' : (!$demoInfection ? 'session infection missing' : 'not first attempt')));
+            $details = $qualifies ? 'validated first-attempt sequence' : (!$passwordOk ? 'credential mismatch' : (!$nodeA ? 'Node A evidence missing' : (!$gatewayConfirmation ? 'gateway confirmation missing' : 'not first attempt')));
             $stmt = $conn->prepare("INSERT INTO demoSshEvent(demoSshSessionId,eventType,nodeIp,sourceIp,syslogThreatId,details) VALUES(?,?,INET_ATON(?),INET_ATON(?),?,?)");
             $stmt->bind_param('isssis', $sessionId, $event, $node['node_b'], $sourceIp, $nodeBId, $details); $stmt->execute(); $stmt->close();
             if ($nodeBId) { $stmt = $conn->prepare("UPDATE syslogThreat SET demoSshSessionId=? WHERE syslogThreatId=?"); $stmt->bind_param('ii', $sessionId, $nodeBId); $stmt->execute(); $stmt->close(); }
-            if ($qualifies) {
-                $why = 'DEMO:SSH session ' . $sessionId . ': validated and cleared';
-                $stmt = $conn->prepare("UPDATE internalInfections SET active=b'0',handled=b'0',why=?,lastSeen=NOW() WHERE infectionId=?");
-                $stmt->bind_param('si', $why, $demoInfection['infectionId']); $stmt->execute(); $stmt->close();
+            if ($qualifies && $gatewayConfirmation) {
+                $status = 'DEMO:SSH session ' . $sessionId . ': validated; gateway release required';
+                $stmt = $conn->prepare("UPDATE hackReport SET status=?,lastSeen=NOW() WHERE reportId=?");
+                $stmt->bind_param('si', $status, $gatewayConfirmation['reportId']); $stmt->execute(); $stmt->close();
             }
         }
         $conn->commit();
@@ -304,16 +299,16 @@ try {
                 $row['unitId'] = $resolvedNodeAUnitId;
             }
 
-            $stmt = $conn->prepare("SELECT i.infectionId FROM internalInfections i JOIN demoSshSession s ON s.demoSshSessionId=? WHERE i.active=b'1' AND COALESCE(i.lastSeen,i.inserted)>=s.created AND (i.ip=s.sourceIp OR (s.unitId IS NOT NULL AND i.unitId=s.unitId)) ORDER BY i.infectionId DESC LIMIT 1");
+            $stmt = $conn->prepare("SELECT hr.reportId,hr.remoteUnitId FROM hackReport hr JOIN demoSshSession s ON s.demoSshSessionId=? JOIN demoSshSetup d ON d.demoSshSetupId=s.demoSshSetupId WHERE hr.ip=s.sourceIp AND hr.sentByIp=d.nodeAIp AND hr.ownerConfirmedTime IS NOT NULL AND COALESCE(hr.lastSeen,hr.created)>=s.created ORDER BY COALESCE(hr.lastSeen,hr.created) DESC,hr.reportId DESC LIMIT 1");
             $stmt->bind_param('i', $sessionId);
             $stmt->execute();
-            $demoInfection = $stmt->get_result()->fetch_assoc();
+            $gatewayConfirmation = $stmt->get_result()->fetch_assoc();
             $stmt->close();
 
             $nextState = $row['state'];
-            if ($nodeAEvidence && $demoInfection) {
+            if ($nodeAEvidence && $gatewayConfirmation) {
                 $nextState = 'awaiting_node_b';
-            } elseif ($nodeAEvidence || $demoInfection) {
+            } elseif ($nodeAEvidence || $gatewayConfirmation) {
                 $nextState = 'demo_infected';
             }
             $nodeAEvidenceId = $nodeAEvidence ? (int)$nodeAEvidence['syslogThreatId'] : null;
@@ -326,7 +321,7 @@ try {
                 if ($nextState !== $previousState) {
                     $details = $nextState === 'awaiting_node_b'
                         ? 'Node A rejection and unit infection observed'
-                        : ($nodeAEvidence ? 'Node A rejection observed; awaiting infection report' : 'Unit infection observed; awaiting Node A report');
+                        : ($nodeAEvidence ? 'Node A rejection observed; awaiting gateway confirmation' : 'Gateway confirmation observed; awaiting Node A report');
                     $stmt = $conn->prepare("INSERT INTO demoSshEvent(demoSshSessionId,eventType,sourceIp,syslogThreatId,details) VALUES(?,'node_a_observed',INET_ATON(?),?,?)");
                     $stmt->bind_param('isis', $sessionId, $sender, $nodeAEvidenceId, $details);
                     $stmt->execute();
@@ -335,11 +330,11 @@ try {
                 $row['state'] = $nextState;
                 if ($nodeAEvidenceId) $row['nodeAEvidenceId'] = $nodeAEvidenceId;
             }
-            $row['demoInfectionObserved'] = $demoInfection ? 1 : 0;
+            $row['demoInfectionObserved'] = $gatewayConfirmation ? 1 : 0;
             $row['progressMessage'] = $nextState === 'awaiting_node_b'
                 ? 'Node A and gateway reports received; continue with Node B'
                 : ($nextState === 'demo_infected'
-                    ? ($nodeAEvidence ? 'Node A report received; waiting for gateway infection update' : 'Gateway infection update received; waiting for Node A report')
+                    ? ($nodeAEvidence ? 'Node A report received; waiting for gateway confirmation' : 'Gateway confirmation received; waiting for Node A report')
                     : 'Waiting for Node A rejection report');
         }
         // MySQL created the expiry using NOW(), so MySQL must also decide
