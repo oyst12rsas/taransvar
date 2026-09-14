@@ -371,7 +371,7 @@ static void checkHackReportsWorker()
 	 * taralink replaying months of historical reports while current security
 	 * events (including Demo 2 gateway confirmation) wait behind the snapshot.
 	 * Once current traffic is handled, subsequent timer passes drain the backlog. */
-	sprintf(szSQL, "select reportId, ip, port, inet_ntoa(ip), created, TIMESTAMPDIFF(SECOND, created, NOW()) as SecondsSince, sendAttemptCount, inet_ntoa(sentByIp), why from hackReport where handledTime is null and (ip <> %u or created < DATE_SUB(NOW(), INTERVAL 10 SECOND)) order by created desc, reportId desc limit 100", nMyIp);
+	sprintf(szSQL, "select reportId, ip, port, inet_ntoa(ip), created, TIMESTAMPDIFF(SECOND, created, NOW()) as SecondsSince, sendAttemptCount, inet_ntoa(sentByIp), why, coalesce(severity,7) from hackReport where handledTime is null and (ip <> %u or created < DATE_SUB(NOW(), INTERVAL 10 SECOND)) order by created desc, reportId desc limit 100", nMyIp);
 
 	if (mysql_query(conn, szSQL)) {
 		fprintf(stderr, "**** ERROR *** While fetching hackReports: %s\n", mysql_error(conn));
@@ -403,6 +403,9 @@ static void checkHackReportsWorker()
 		int bUpdateHandled = 1;
 		char *lpIp = (row[3]?row[3]:"(null)");
 		u_int32_t nInternaIpFromUnitPort = 0;
+		int nSeverity = row[9] ? atoi(row[9]) : 7;
+		if (nSeverity < 0) nSeverity = 0;
+		if (nSeverity > 15) nSeverity = 15;
 
 		if (nNumericIp == nMyIp || isMeOrMine(nNumericIp, nInternalIp, nNettmask))
 		{
@@ -474,7 +477,39 @@ static void checkHackReportsWorker()
 				mysql_free_result(lookupRes);
 			}
 
+			/* A report about the gateway's public address can only identify a
+			 * unit through the translated source port. Never turn a missing NAT
+			 * mapping into an infection of the router itself (unit 0), and never
+			 * confess ownership without an attributable unit. */
+			if (!nUnitId)
+			{
+				printf("Ignoring local report %s:%s: no unit attribution; no infection or confession created.\n", lpIp, row[2]?row[2]:"0");
+				strcpy(cWhat, "Ignored: no unit attribution");
+				setHackReportAsHandled(cWhat, atoi(row[0]));
+				continue;
+			}
+
 			localUpdate = getConnection();
+
+			/* Severity zero is an explicit clean notification. It may clear an
+			 * existing attributable infection, but must never create one. */
+			if (nSeverity == 0)
+			{
+				if (nInfectionId > 0)
+				{
+					sprintf(cSQL, "update internalInfections set active=b'0', handled=b'0', lastSeen=now() where infectionId=%d", nInfectionId);
+					if (mysql_query(localUpdate, cSQL)) {
+						fprintf(stderr, "******** ERROR ****** While applying clean report: %s\n", mysql_error(localUpdate));
+						return;
+					}
+					strcpy(cWhat, "Clean report: infection deactivated");
+				}
+				else
+					strcpy(cWhat, "Clean report: no active infection");
+
+				setHackReportAsHandled(cWhat, atoi(row[0]));
+				continue;
+			}
 
 			if (nInfectionId > 0)
 			{
@@ -517,7 +552,7 @@ static void checkHackReportsWorker()
 					printf("Storing ip from unitPort as in (%d)", nInternaIpFromUnitPort);
 				}
 
-				sprintf(cSQL, "insert into internalInfections (ip, nettmask, status, unitId, severity, why) values (%d, inet_aton('255.255.255.255'), 'firsttime', %d, 7, ?)", nNumericIp, nUnitId);
+				sprintf(cSQL, "insert into internalInfections (ip, nettmask, status, unitId, severity, why) values (%d, inet_aton('255.255.255.255'), 'firsttime', %d, %d, ?)", nNumericIp, nUnitId, nSeverity);
 
 			    MYSQL_STMT *stmt = mysql_stmt_init(localUpdate);
     			if (!stmt) {
@@ -586,8 +621,8 @@ static void checkHackReportsWorker()
 			uint32_t nRouterIp = getIpOfRegisteredPartnerRouter(lookupConn, nNumericIp, szRouterIp, sizeof(szRouterIp));
 			char szParams[400], czCodedWhat[255];
 			urlencode(row[8]?row[8]:"", czCodedWhat, sizeof(czCodedWhat));
-			snprintf(szParams, sizeof(szParams), "ip=%s&port=%s&wt=%s&code=from_partner",
-                     row[3]?row[3]:"", row[2]?row[2]:"", czCodedWhat);
+			snprintf(szParams, sizeof(szParams), "ip=%s&port=%s&wt=%s&code=from_partner&severity=%d",
+			         row[3]?row[3]:"", row[2]?row[2]:"", czCodedWhat, nSeverity);
 
             int partnerDeliveryFailed = 0;
             int globalDeliveryFailed = 0;

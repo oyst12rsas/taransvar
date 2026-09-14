@@ -59,8 +59,28 @@ function demoPublicSession(array $row): array
         'node_b_login_accepted' => !array_key_exists('nodeBLoginAccepted', $row) || $row['nodeBLoginAccepted'] === null
             ? null
             : ((int)$row['nodeBLoginAccepted'] === 1),
-        'progress_message' => (string)($row['progressMessage'] ?? '')
+        'progress_message' => (string)($row['progressMessage'] ?? ''),
+        'operational_warning' => (string)($row['operationalWarning'] ?? ''),
+        'operationally_ready' => empty($row['operationalWarning'])
     ];
+}
+
+function demoOperationalWarning(mysqli $conn, array $ips): string
+{
+    $stale = [];
+    $stmt = $conn->prepare("SELECT partnerStatusReceived,TIMESTAMPDIFF(SECOND,partnerStatusReceived,NOW()) age FROM partnerRouter WHERE ip=INET_ATON(?) LIMIT 1");
+    foreach (array_unique(array_filter($ips)) as $label => $ip) {
+        $stmt->bind_param('s', $ip);
+        $stmt->execute();
+        $health = $stmt->get_result()->fetch_assoc();
+        if (!$health || $health['partnerStatusReceived'] === null || (int)$health['age'] > 300) {
+            $stale[] = is_string($label) ? $label : $ip;
+        }
+    }
+    $stmt->close();
+    return $stale
+        ? 'Operational issue: no recent status report from ' . implode(', ', $stale) . '; demo evidence may be unreliable.'
+        : '';
 }
 
 $method = (string)($_SERVER['REQUEST_METHOD'] ?? 'GET');
@@ -82,11 +102,19 @@ try {
         $stmt->close();
         $eligible = !$infection;
         $demoResetAvailable = $infection && str_starts_with((string)$infection['why'], 'DEMO:');
+        $health = $conn->query("SELECT INET_NTOA(d.nodeAIp) node_a,INET_NTOA(n.ip) node_b FROM demoSshSetup d JOIN demoSshNodeB n ON n.demoSshNodeBId=d.demoSshNodeBId WHERE d.active=b'1' AND n.active=b'1' ORDER BY d.demoSshSetupId LIMIT 1")->fetch_assoc();
+        $operationalWarning = demoOperationalWarning($conn, [
+            'gateway' => $sender,
+            'Node A' => $health['node_a'] ?? '',
+            'Node B' => $health['node_b'] ?? ''
+        ]);
         demoReply(200, [
             'ok' => true,
             'eligible' => $eligible,
             'next' => $eligible ? 'demo' : 'remediation',
             'demo_reset_available' => (bool)$demoResetAvailable,
+            'operational_warning' => $operationalWarning,
+            'operationally_ready' => $operationalWarning === '',
             // Do not disclose infection state to an unauthenticated demo caller.
             'message' => $eligible
                 ? 'This unit may start the demonstration'
@@ -183,7 +211,8 @@ try {
         $stmt->execute();
         $stmt->close();
         $conn->commit();
-        demoReply(201, ['ok' => true, 'session_id' => $sessionId, 'session_token' => $accessToken, 'state' => 'awaiting_node_a', 'node_a' => $setup['node_a'], 'node_a_port' => (int)$setup['nodeAPort'], 'node_b' => $node['node_b'], 'node_b_port' => (int)$node['nodeBPort'], 'username' => $node['username'], 'password' => $node['passwordPlain'], 'credential_generation' => (int)$node['credentialGeneration'], 'expires_in' => $ttl]);
+        $operationalWarning = demoOperationalWarning($conn, ['gateway' => $sender, 'Node A' => $setup['node_a'], 'Node B' => $node['node_b']]);
+        demoReply(201, ['ok' => true, 'session_id' => $sessionId, 'session_token' => $accessToken, 'state' => 'awaiting_node_a', 'node_a' => $setup['node_a'], 'node_a_port' => (int)$setup['nodeAPort'], 'node_b' => $node['node_b'], 'node_b_port' => (int)$node['nodeBPort'], 'username' => $node['username'], 'password' => $node['passwordPlain'], 'credential_generation' => (int)$node['credentialGeneration'], 'expires_in' => $ttl, 'operational_warning' => $operationalWarning, 'operationally_ready' => $operationalWarning === '']);
     }
 
     if ($action === 'cancel') {
@@ -311,7 +340,7 @@ try {
             $existingDemoReport = $stmt->get_result()->fetch_assoc();
             $stmt->close();
             if (!$existingDemoReport) {
-                $stmt = $conn->prepare("INSERT INTO hackReport(ip,port,sentByIp,status,hrCategory,why,lastSeen) VALUES(INET_ATON(?),?,INET_ATON(?),'FirstTime','demo',?,NOW())");
+                $stmt = $conn->prepare("INSERT INTO hackReport(ip,port,sentByIp,status,hrCategory,why,severity,lastSeen) VALUES(INET_ATON(?),?,INET_ATON(?),'FirstTime','demo',?,7,NOW())");
                 $stmt->bind_param('siss', $sourceIp, $sourcePort, $sender, $demoWhy);
                 $stmt->execute();
                 $stmt->close();
@@ -483,6 +512,7 @@ try {
             $row['state'] = 'expired';
             $row['secondsRemaining'] = 0;
         }
+        $row['operationalWarning'] = demoOperationalWarning($conn, ['gateway' => $sender, 'Node A' => $row['node_a'], 'Node B' => $row['node_b']]);
         demoReply(200, ['ok' => true, 'session' => demoPublicSession($row)]);
     }
 

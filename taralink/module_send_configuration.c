@@ -982,13 +982,23 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 		script/partnerRequest.php will put it in the local assistanceRequest, ABBmonitor will then forward this to the abscurity program
 		for filtering outbound presumed infected traffic. */ 
 		
+		/* The table is an event history, while tarakernel needs one effective
+		 * state per target. Collapse duplicate/overlapping requests so a stale
+		 * history cannot overflow the netlink configuration packet. For an
+		 * incremental update, include each target touched by an unhandled event,
+		 * but calculate its state from all currently active rows. */
 		if (bReadChangesOnly)
-		    lpHandledWhere = " and handled is null";
+			lpHandledWhere = "where exists (select 1 from assistanceRequest changed where changed.ip=ar.ip and changed.port=ar.port and changed.handled is null)";
 		else
-		    lpHandledWhere = " and active = b'1'";
-		
-		//260811: Removed from sql:  where purpose = 'fromPartner' ... not sure why put there but prevented manual registrations on this gateway from being included. 
-		snprintf(szSQL, sizeof(szSQL), "select requestId, hex(ip), port, requestQuality, CAST(wantSpoofed AS UNSIGNED) as wantSpoofed, handled, CAST(active AS UNSIGNED) as active from assistanceRequest where 1 = 1 %s order by ip", lpHandledWhere);
+			lpHandledWhere = "where ar.active=b'1'";
+
+		snprintf(szSQL, sizeof(szSQL),
+			"select min(requestId), hex(ip), port, "
+			"coalesce(max(case when active=b'1' then coalesce(requestQuality,0) end),0), "
+			"coalesce(max(case when active=b'1' then CAST(wantSpoofed AS UNSIGNED) end),0), "
+			"null, if(sum(CAST(active AS UNSIGNED))>0,1,0) "
+			"from assistanceRequest ar %s group by ip,port order by ip,port",
+			lpHandledWhere);
 		//printf("Assist requests: %s\n", szSQL);
 		
 		if (mysql_query(conn, szSQL)) {
@@ -1019,7 +1029,13 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 				break;
 			}
 			nFound++;
-			updateHandled(updateConn, "assistanceRequest", "requestId", row[0]);
+			/* Mark every pending history row represented by this effective target. */
+			char szHandledSql[300];
+			snprintf(szHandledSql, sizeof(szHandledSql),
+				"update assistanceRequest set handled=b'1' where ip=unhex('%s') and port=%s and handled is null",
+				row[1], row[2]?row[2]:"0");
+			if (mysql_query(updateConn, szHandledSql))
+				fprintf(stderr, "taralink: Could not mark assistance target handled: %s\n", mysql_error(updateConn));
 		}
 		mysql_free_result(res);
 	//	printf("After assistance request..\n");

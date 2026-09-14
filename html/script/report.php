@@ -65,6 +65,17 @@ if (strncmp($why, 'DEMO:', 5) === 0) {
     $category = 'demo';
 }
 
+// Older senders did not include severity. Preserve their historical threat
+// meaning, while allowing an explicit zero to carry a clean notification.
+$severity = isset($_GET['severity'])
+    ? filter_var($_GET['severity'], FILTER_VALIDATE_INT, [
+        'options' => ['min_range' => 0, 'max_range' => 15]
+    ])
+    : 7;
+if ($severity === false) {
+    reportFail(400, 'invalid severity');
+}
+
 $ourId = isset($_GET['ourid']) ? (int)$_GET['ourid'] : 0;
 $fromPort = isset($_SERVER['REMOTE_PORT']) ? (int)$_SERVER['REMOTE_PORT'] : 0;
 
@@ -121,11 +132,11 @@ try {
     if ($confessedRow) {
         $reportId = (int)$confessedRow['reportId'];
         $sql = "UPDATE hackReport
-                SET partnerIp = INET_ATON(?), partnerPort = ?, hrCategory = ?, why = ?,
+                SET partnerIp = INET_ATON(?), partnerPort = ?, hrCategory = ?, why = ?, severity = ?,
                     sentByIp = INET_ATON(?), ipOwnerId = ?, lastSeen = NOW(), count = count + 1
                 WHERE reportId = ?";
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param('sisssii', $sender, $fromPort, $category, $why, $sender, $ourId, $reportId);
+        $stmt->bind_param('sissisii', $sender, $fromPort, $category, $why, $severity, $sender, $ourId, $reportId);
         $stmt->execute();
         $stmt->close();
         $conn->close();
@@ -152,17 +163,17 @@ try {
 
     if ($row && (int)$row['seconds_since'] < 30) {
         $reportId = (int)$row['reportId'];
-        $stmt = $conn->prepare('UPDATE hackReport SET count = count + 1, lastSeen = NOW() WHERE reportId = ?');
-        $stmt->bind_param('i', $reportId);
+        $stmt = $conn->prepare('UPDATE hackReport SET count = count + 1, severity = ?, lastSeen = NOW() WHERE reportId = ?');
+        $stmt->bind_param('ii', $severity, $reportId);
         $stmt->execute();
         $stmt->close();
     } else {
         $sql = "INSERT INTO hackReport
-                    (ip, port, partnerIp, partnerPort, hrCategory, why, sentByIp, ipOwnerId)
+                    (ip, port, partnerIp, partnerPort, hrCategory, why, sentByIp, ipOwnerId, severity)
                 VALUES
-                    (INET_ATON(?), ?, INET_ATON(?), ?, ?, ?, INET_ATON(?), ?)";
+                    (INET_ATON(?), ?, INET_ATON(?), ?, ?, ?, INET_ATON(?), ?, ?)";
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param('sisisssi', $ip, $port, $sender, $fromPort, $category, $why, $sender, $ourId);
+        $stmt->bind_param('sisisssii', $ip, $port, $sender, $fromPort, $category, $why, $sender, $ourId, $severity);
         $stmt->execute();
         $reportId = (int)$conn->insert_id;
         $stmt->close();
