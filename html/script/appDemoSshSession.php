@@ -298,17 +298,38 @@ try {
         $stmt->execute();
         $stmt->close();
 
+        // A successful, sensor-authenticated Node B login is authoritative
+        // threat evidence, but the syslog observation alone never enters the
+        // normal hackReport -> owner gateway -> confession path. Create one
+        // deduplicated report for the exact translated tuple so taralink can
+        // ask the gateway to resolve the real unit behind NAT.
+        if ($row && $passwordOk) {
+            $demoWhy = 'DEMO:SSH session ' . $sessionId . ': authenticated Node B login';
+            $stmt = $conn->prepare("SELECT reportId FROM hackReport WHERE ip=INET_ATON(?) AND port=? AND sentByIp=INET_ATON(?) AND hrCategory='demo' AND why=? AND created>=? ORDER BY reportId DESC LIMIT 1");
+            $stmt->bind_param('sisss', $sourceIp, $sourcePort, $sender, $demoWhy, $row['created']);
+            $stmt->execute();
+            $existingDemoReport = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if (!$existingDemoReport) {
+                $stmt = $conn->prepare("INSERT INTO hackReport(ip,port,sentByIp,status,hrCategory,why,lastSeen) VALUES(INET_ATON(?),?,INET_ATON(?),'FirstTime','demo',?,NOW())");
+                $stmt->bind_param('siss', $sourceIp, $sourcePort, $sender, $demoWhy);
+                $stmt->execute();
+                $stmt->close();
+            }
+        }
+
         $state = $row ? (string)$row['state'] : 'awaiting_attribution';
         if ($row) {
             $attempts = (int)$row['attempts'] + 1;
-            $stmt = $conn->prepare("SELECT syslogThreatId FROM syslogThreat WHERE src_ip=? AND dst_ip=INET_ATON(?) AND dst_port=? AND is_attack<>0 AND created>=? ORDER BY syslogThreatId DESC LIMIT 1");
+            $stmt = $conn->prepare("SELECT syslogThreatId,src_port FROM syslogThreat WHERE src_ip=? AND dst_ip=INET_ATON(?) AND dst_port=? AND is_attack<>0 AND created>=? ORDER BY syslogThreatId DESC LIMIT 1");
             $stmt->bind_param('isis', $row['sourceIp'], $row['node_a'], $row['nodeAPort'], $row['created']);
             $stmt->execute(); $nodeA = $stmt->get_result()->fetch_assoc(); $stmt->close();
             // internalInfections belongs to the source gateway, not the global
             // DB. The authoritative global proof that the gateway accepted the
             // Node A report is its owner-confirmed hackReport confession.
-            $stmt = $conn->prepare("SELECT hr.reportId,hr.remoteUnitId FROM hackReport hr WHERE hr.ip=? AND hr.sentByIp=INET_ATON(?) AND hr.ownerConfirmedTime IS NOT NULL AND COALESCE(hr.lastSeen,hr.created)>=? ORDER BY COALESCE(hr.lastSeen,hr.created) DESC,hr.reportId DESC LIMIT 1");
-            $stmt->bind_param('iss', $row['sourceIp'], $row['node_a'], $row['created']);
+            $stmt = $conn->prepare("SELECT hr.reportId,hr.remoteUnitId FROM hackReport hr WHERE hr.ip=? AND hr.port IN (?,?) AND hr.sentByIp IN (INET_ATON(?),INET_ATON(?)) AND hr.ownerConfirmedTime IS NOT NULL AND COALESCE(hr.lastSeen,hr.created)>=? ORDER BY COALESCE(hr.lastSeen,hr.created) DESC,hr.reportId DESC LIMIT 1");
+            $nodeASourcePort = $nodeA ? (int)$nodeA['src_port'] : 0;
+            $stmt->bind_param('iiisss', $row['sourceIp'], $nodeASourcePort, $sourcePort, $row['node_a'], $node['node_b'], $row['created']);
             $stmt->execute(); $gatewayConfirmation = $stmt->get_result()->fetch_assoc(); $stmt->close();
             $qualifies = $passwordOk && $attempts === 1 && $nodeA && $gatewayConfirmation;
             $awaitingGateway = $passwordOk && $attempts === 1 && $nodeA && !$gatewayConfirmation;
@@ -397,7 +418,7 @@ try {
                 $row['unitId'] = $resolvedNodeAUnitId;
             }
 
-            $stmt = $conn->prepare("SELECT hr.reportId,hr.remoteUnitId FROM hackReport hr JOIN demoSshSession s ON s.demoSshSessionId=? JOIN demoSshSetup d ON d.demoSshSetupId=s.demoSshSetupId WHERE hr.ip=s.sourceIp AND hr.sentByIp=d.nodeAIp AND hr.ownerConfirmedTime IS NOT NULL AND COALESCE(hr.lastSeen,hr.created)>=s.created ORDER BY COALESCE(hr.lastSeen,hr.created) DESC,hr.reportId DESC LIMIT 1");
+            $stmt = $conn->prepare("SELECT hr.reportId,hr.remoteUnitId FROM hackReport hr JOIN demoSshSession s ON s.demoSshSessionId=? JOIN demoSshSetup d ON d.demoSshSetupId=s.demoSshSetupId JOIN demoSshNodeB n ON n.demoSshNodeBId=s.demoSshNodeBId WHERE hr.ip=s.sourceIp AND hr.port IN ((SELECT src_port FROM syslogThreat WHERE syslogThreatId=s.nodeAEvidenceId),s.nodeBSourcePort) AND hr.sentByIp IN (d.nodeAIp,n.ip) AND hr.ownerConfirmedTime IS NOT NULL AND COALESCE(hr.lastSeen,hr.created)>=s.created ORDER BY COALESCE(hr.lastSeen,hr.created) DESC,hr.reportId DESC LIMIT 1");
             $stmt->bind_param('i', $sessionId);
             $stmt->execute();
             $gatewayConfirmation = $stmt->get_result()->fetch_assoc();
