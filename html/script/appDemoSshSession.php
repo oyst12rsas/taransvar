@@ -225,6 +225,16 @@ try {
         $matches = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         $stmt->close();
         $row = count($matches) === 1 ? $matches[0] : null;
+        if (!$row && count($matches) > 1) {
+            // Closing the screen in an older client could leave an
+            // awaiting_node_a row behind. Prefer the one uniquely progressed
+            // session instead of making the later Node B callback ambiguous.
+            $progressed = array_values(array_filter($matches, static function (array $match): bool {
+                return !empty($match['nodeAEvidenceId'])
+                    || in_array((string)$match['state'], ['demo_infected', 'awaiting_node_b'], true);
+            }));
+            if (count($progressed) === 1) $row = $progressed[0];
+        }
         if (!$row) $correlation = count($matches) > 1 ? 'pending' : 'none';
         $sessionId = $row ? (int)$row['demoSshSessionId'] : null;
         $stmt = $conn->prepare("INSERT INTO demoSshAttempt(demoSshNodeBId,demoSshSessionId,sourceIp,sourcePort,destinationPort,unitId,credentialGeneration,credentialValid,correlation) VALUES(?,?,INET_ATON(?),?,?,?,?,?,?)");
@@ -246,13 +256,14 @@ try {
             $stmt->bind_param('iss', $row['sourceIp'], $row['node_a'], $row['created']);
             $stmt->execute(); $gatewayConfirmation = $stmt->get_result()->fetch_assoc(); $stmt->close();
             $qualifies = $passwordOk && $attempts === 1 && $nodeA && $gatewayConfirmation;
-            $state = $qualifies ? 'cleared' : 'owner_clear_required';
+            $awaitingGateway = $passwordOk && $attempts === 1 && $nodeA && !$gatewayConfirmation;
+            $state = $qualifies ? 'cleared' : ($awaitingGateway ? 'awaiting_node_b' : 'owner_clear_required');
             $nodeAId = $nodeA ? (int)$nodeA['syslogThreatId'] : null;
             $nodeBId = $nodeBEvidence ? (int)$nodeBEvidence['syslogThreatId'] : null;
-            $stmt = $conn->prepare("UPDATE demoSshSession SET attempts=?,state=?,nodeBSourcePort=?,nodeAEvidenceId=?,nodeBEvidenceId=?,completed=NOW(),lastSeen=NOW() WHERE demoSshSessionId=?");
-            $stmt->bind_param('isiiii', $attempts, $state, $sourcePort, $nodeAId, $nodeBId, $sessionId); $stmt->execute(); $stmt->close();
-            $event = $qualifies ? 'cleared' : 'rejected';
-            $details = $qualifies ? 'validated first-attempt sequence' : (!$passwordOk ? 'credential mismatch' : (!$nodeA ? 'Node A evidence missing' : (!$gatewayConfirmation ? 'gateway confirmation missing' : 'not first attempt')));
+            $stmt = $conn->prepare("UPDATE demoSshSession SET attempts=?,state=?,nodeBSourcePort=?,nodeAEvidenceId=?,nodeBEvidenceId=?,completed=IF(?='awaiting_node_b',NULL,NOW()),lastSeen=NOW() WHERE demoSshSessionId=?");
+            $stmt->bind_param('isiiisi', $attempts, $state, $sourcePort, $nodeAId, $nodeBId, $state, $sessionId); $stmt->execute(); $stmt->close();
+            $event = $qualifies ? 'cleared' : ($awaitingGateway ? 'node_b_attempt' : 'rejected');
+            $details = $qualifies ? 'validated first-attempt sequence' : ($awaitingGateway ? 'login accepted; awaiting gateway confirmation' : (!$passwordOk ? 'credential mismatch' : (!$nodeA ? 'Node A evidence missing' : 'not first attempt')));
             $stmt = $conn->prepare("INSERT INTO demoSshEvent(demoSshSessionId,eventType,nodeIp,sourceIp,syslogThreatId,details) VALUES(?,?,INET_ATON(?),INET_ATON(?),?,?)");
             $stmt->bind_param('isssis', $sessionId, $event, $node['node_b'], $sourceIp, $nodeBId, $details); $stmt->execute(); $stmt->close();
             if ($nodeBId) { $stmt = $conn->prepare("UPDATE syslogThreat SET demoSshSessionId=? WHERE syslogThreatId=?"); $stmt->bind_param('ii', $sessionId, $nodeBId); $stmt->execute(); $stmt->close(); }
@@ -278,10 +289,39 @@ try {
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$row) demoReply(404, ['ok' => false, 'error' => 'Demo session not found']);
+
+        // The authenticated callback normally arrives a few milliseconds before
+        // rsyslog has normalized ssh_login_success. Replace the earlier connect
+        // or client-version evidence with the definitive success record once it
+        // becomes available.
+        if (isset($row['nodeBLoginAccepted']) && (int)$row['nodeBLoginAccepted'] === 1 && !empty($row['nodeBSourcePort'])) {
+            $stmt = $conn->prepare("SELECT syslogThreatId FROM syslogThreat WHERE src_ip=? AND src_port=? AND dst_ip=INET_ATON(?) AND dst_port=? AND description LIKE 'ssh_login_success %' AND created>=? ORDER BY syslogThreatId DESC LIMIT 1");
+            $stmt->bind_param('iisis', $row['sourceIp'], $row['nodeBSourcePort'], $row['node_b'], $row['nodeBPort'], $row['created']);
+            $stmt->execute();
+            $successEvidence = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if ($successEvidence && (int)$successEvidence['syslogThreatId'] !== (int)$row['nodeBEvidenceId']) {
+                $successEvidenceId = (int)$successEvidence['syslogThreatId'];
+                $stmt = $conn->prepare("UPDATE demoSshSession SET nodeBEvidenceId=?,lastSeen=NOW() WHERE demoSshSessionId=?");
+                $stmt->bind_param('ii', $successEvidenceId, $sessionId);
+                $stmt->execute();
+                $stmt->close();
+                $stmt = $conn->prepare("UPDATE syslogThreat SET demoSshSessionId=? WHERE syslogThreatId=?");
+                $stmt->bind_param('ii', $sessionId, $successEvidenceId);
+                $stmt->execute();
+                $stmt->close();
+                $row['nodeBEvidenceId'] = $successEvidenceId;
+            }
+        }
+
         // Reconcile asynchronous Node A/gateway reports into the session before
         // replying. The Android client polls this endpoint; without this step
         // the row remains awaiting_node_a even after the DB has the evidence.
-        if (in_array($row['state'], ['awaiting_node_a','demo_infected','awaiting_node_b'], true)) {
+        $recoverPrematureFinalization = (string)$row['state'] === 'owner_clear_required'
+            && isset($row['nodeBLoginAccepted'])
+            && (int)$row['nodeBLoginAccepted'] === 1
+            && (int)$row['attempts'] === 1;
+        if (in_array($row['state'], ['awaiting_node_a','demo_infected','awaiting_node_b'], true) || $recoverPrematureFinalization) {
             $stmt = $conn->prepare("SELECT t.syslogThreatId,COALESCE(t.confirmed_unit_id,t.unit_id,(SELECT hr.remoteUnitId FROM hackReport hr WHERE hr.ip=t.src_ip AND hr.port=t.src_port AND hr.ownerConfirmedTime IS NOT NULL AND hr.remoteUnitId IS NOT NULL AND COALESCE(hr.lastSeen,hr.created)>=s.created ORDER BY hr.reportId DESC LIMIT 1)) resolvedUnitId FROM syslogThreat t JOIN demoSshSession s ON s.demoSshSessionId=? WHERE t.dst_ip=INET_ATON(?) AND t.dst_port=? AND t.is_attack<>0 AND t.created>=s.created AND (t.src_ip=s.sourceIp OR (s.unitId IS NOT NULL AND COALESCE(t.confirmed_unit_id,t.unit_id,(SELECT hr2.remoteUnitId FROM hackReport hr2 WHERE hr2.ip=t.src_ip AND hr2.port=t.src_port AND hr2.ownerConfirmedTime IS NOT NULL AND hr2.remoteUnitId IS NOT NULL AND COALESCE(hr2.lastSeen,hr2.created)>=s.created ORDER BY hr2.reportId DESC LIMIT 1))=s.unitId)) ORDER BY t.syslogThreatId DESC LIMIT 1");
             $stmt->bind_param('isi', $sessionId, $row['node_a'], $row['nodeAPort']);
             $stmt->execute();
@@ -308,8 +348,11 @@ try {
             $gatewayConfirmation = $stmt->get_result()->fetch_assoc();
             $stmt->close();
 
+            $loginAccepted = isset($row['nodeBLoginAccepted']) && (int)$row['nodeBLoginAccepted'] === 1;
             $nextState = $row['state'];
-            if ($nodeAEvidence && $gatewayConfirmation) {
+            if ($loginAccepted && (int)$row['attempts'] === 1 && $nodeAEvidence && $gatewayConfirmation) {
+                $nextState = 'cleared';
+            } elseif ($nodeAEvidence && $gatewayConfirmation) {
                 $nextState = 'awaiting_node_b';
             } elseif ($nodeAEvidence || $gatewayConfirmation) {
                 $nextState = 'demo_infected';
@@ -317,28 +360,43 @@ try {
             $nodeAEvidenceId = $nodeAEvidence ? (int)$nodeAEvidence['syslogThreatId'] : null;
             if ($nextState !== $row['state'] || ($nodeAEvidenceId && empty($row['nodeAEvidenceId']))) {
                 $previousState = (string)$row['state'];
-                $stmt = $conn->prepare("UPDATE demoSshSession SET state=?,nodeAEvidenceId=COALESCE(nodeAEvidenceId,?),lastSeen=NOW() WHERE demoSshSessionId=?");
-                $stmt->bind_param('sii', $nextState, $nodeAEvidenceId, $sessionId);
+                $stmt = $conn->prepare("UPDATE demoSshSession SET state=?,nodeAEvidenceId=COALESCE(nodeAEvidenceId,?),completed=IF(?='cleared',NOW(),completed),lastSeen=NOW() WHERE demoSshSessionId=?");
+                $stmt->bind_param('sisi', $nextState, $nodeAEvidenceId, $nextState, $sessionId);
                 $stmt->execute();
                 $stmt->close();
                 if ($nextState !== $previousState) {
-                    $details = $nextState === 'awaiting_node_b'
+                    $details = $nextState === 'cleared'
+                        ? 'validated first-attempt sequence after gateway confirmation'
+                        : ($nextState === 'awaiting_node_b'
                         ? 'Node A rejection and unit infection observed'
-                        : ($nodeAEvidence ? 'Node A rejection observed; awaiting gateway confirmation' : 'Gateway confirmation observed; awaiting Node A report');
-                    $stmt = $conn->prepare("INSERT INTO demoSshEvent(demoSshSessionId,eventType,sourceIp,syslogThreatId,details) VALUES(?,'node_a_observed',INET_ATON(?),?,?)");
-                    $stmt->bind_param('isis', $sessionId, $sender, $nodeAEvidenceId, $details);
+                        : ($nodeAEvidence ? 'Node A rejection observed; awaiting gateway confirmation' : 'Gateway confirmation observed; awaiting Node A report'));
+                    $eventType = $nextState === 'cleared' ? 'cleared' : 'node_a_observed';
+                    $eventEvidenceId = $nextState === 'cleared' && !empty($row['nodeBEvidenceId']) ? (int)$row['nodeBEvidenceId'] : $nodeAEvidenceId;
+                    $stmt = $conn->prepare("INSERT INTO demoSshEvent(demoSshSessionId,eventType,sourceIp,syslogThreatId,details) VALUES(?,?,INET_ATON(?),?,?)");
+                    $stmt->bind_param('issis', $sessionId, $eventType, $sender, $eventEvidenceId, $details);
                     $stmt->execute();
                     $stmt->close();
+                    if ($nextState === 'cleared') {
+                        $status = 'DEMO:SSH session ' . $sessionId . ': validated; gateway release required';
+                        $stmt = $conn->prepare("UPDATE hackReport SET status=?,lastSeen=NOW() WHERE reportId=?");
+                        $stmt->bind_param('si', $status, $gatewayConfirmation['reportId']);
+                        $stmt->execute();
+                        $stmt->close();
+                    }
                 }
                 $row['state'] = $nextState;
                 if ($nodeAEvidenceId) $row['nodeAEvidenceId'] = $nodeAEvidenceId;
             }
             $row['demoInfectionObserved'] = $gatewayConfirmation ? 1 : 0;
-            $row['progressMessage'] = $nextState === 'awaiting_node_b'
+            $row['progressMessage'] = $loginAccepted && !$gatewayConfirmation
+                ? 'Node B login accepted; waiting for gateway confirmation'
+                : ($nextState === 'cleared'
+                    ? 'First-attempt sequence validated; gateway release required'
+                    : ($nextState === 'awaiting_node_b'
                 ? 'Node A and gateway reports received; continue with Node B'
                 : ($nextState === 'demo_infected'
                     ? ($nodeAEvidence ? 'Node A report received; waiting for gateway confirmation' : 'Gateway confirmation received; waiting for Node A report')
-                    : 'Waiting for Node A rejection report');
+                    : 'Waiting for Node A rejection report')));
         }
         // MySQL created the expiry using NOW(), so MySQL must also decide
         // whether it has passed. Parsing its timezone-less timestamp in PHP
