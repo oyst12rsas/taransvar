@@ -27,7 +27,9 @@ try {
         "SELECT infectionId, severity, CAST(active AS UNSIGNED) AS active, why, lastSeen
            FROM internalInfections
           WHERE ip = INET_ATON(?)
-          ORDER BY infectionId DESC
+          ORDER BY (active=b'1' AND severity>1) DESC,
+                   COALESCE(lastSeen,inserted) DESC,
+                   infectionId DESC
           LIMIT 1"
     );
     $stmt->bind_param('s', $sender);
@@ -38,17 +40,29 @@ try {
 
     $active = $row ? ((int)$row['active'] === 1) : false;
     $severity = $row ? (int)$row['severity'] : 0;
+    $why = $row ? (string)$row['why'] : '';
+    $infected = $active && $severity > 1;
+    $demoResetAvailable = $infected && str_starts_with($why, 'DEMO:');
 
     echo json_encode([
         'ok' => true,
-        'infected' => $active && $severity > 1,
+        'eligible_for_demo' => !$infected,
+        'infected' => $infected,
         'severity' => $active ? $severity : 0,
         'source' => 'internalInfections',
+        'gateway' => gethostname() ?: 'TaraSec gateway',
         'client_ip' => $sender,
         'client_port' => (int)($_SERVER['REMOTE_PORT'] ?? 0),
         'infectionId' => $row ? (int)$row['infectionId'] : 0,
         'active' => $active,
-        'why' => $row ? (string)$row['why'] : '',
+        'why' => $why,
+        'demo_reset_available' => $demoResetAvailable,
+        'next' => !$infected ? 'demo' : ($demoResetAvailable ? 'reset_demo' : 'remediation'),
+        'message' => !$infected
+            ? 'This unit may start the demonstration'
+            : ($demoResetAvailable
+                ? 'This unit has demo infection state on the current gateway'
+                : 'This unit needs a security review before the demonstration can start'),
         'lastSeen' => $row ? (string)$row['lastSeen'] : '',
         'server_time' => gmdate('c')
     ], JSON_UNESCAPED_SLASHES);
