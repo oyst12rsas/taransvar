@@ -699,7 +699,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 
 			sprintf(szSQL, "select inet_ntoa(ip) as ip, inet_ntoa(nettmask) as nettmask, coalesce(status,'NULL'), \
 				infectionId, handled, coalesce(CAST(active AS UNSIGNED),0) as active, coalesce(infoSharePartners,'NULL'), \
-				coalesce(unitId,0), coalesce(severity,0), coalesce(botnetId,0), ip, nettmask from internalInfections %s limit %d", lpHandledWhere, MAX_INFECTIONS);
+				coalesce(unitId,0), coalesce(severity,0), coalesce(botnetId,0), ip, nettmask, coalesce(why,'') from internalInfections %s limit %d", lpHandledWhere, MAX_INFECTIONS);
 			//printf("SQL: %s\n", szSQL);
 
 			if (mysql_query(conn, szSQL)) {
@@ -724,10 +724,23 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 				int nActive = atoi(row[5]);
 				if (!nActive)
 				{
-					lpSendInfectionInfo = "assurance_reduced:cleaning_unverified";
-					lpSendSeverity = "1";	//Severity 1 means reduced assurance; the elaborated UDP message carries the reason.
+					if (row[12] && !strncmp(row[12], "DEMO:", 5))
+					{
+						/* Demo state is deliberately reversible. A new run must
+						 * replace cached evidence on Node A/Node B with an explicit
+						 * clean assertion instead of reviving the previous demo as
+						 * reduced-assurance infection. */
+						lpSendInfectionInfo = "DEMO:clean";
+						lpSendSeverity = "0";
+						printf("Sending explicit clean state for inactive demo infection\n");
+					}
+					else
+					{
+						lpSendInfectionInfo = "assurance_reduced:cleaning_unverified";
+						lpSendSeverity = "1";	//Severity 1 means reduced assurance; the elaborated UDP message carries the reason.
+						printf("Sending severity 1 for cleaning that is not yet verified\n");
+					}
 					nActive = 1;			//If active = 0 is sent, then tarakernel will remove it from the list....
-					printf("Sending severity 1 for cleaning that is not yet verified\n");
 				}
 
 				printf("****** Active: %d (%s), info: %s, severity: %s. After: %s/%s\n", nActive, row[5], row[6], row[8], lpSendInfectionInfo, lpSendSeverity);
