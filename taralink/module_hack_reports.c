@@ -330,7 +330,7 @@ int isMeOrMine(uint32_t nIp, uint32_t nMyIp, uint32_t nNettmask)
 	return ((nIp & nNettmask) == (nMyIp & nNettmask));
 }
 
-void checkHackReports()
+static void checkHackReportsWorker()
 {
 	MYSQL *conn, *updateConn, *lookupConn, *localUpdate;
 	MYSQL_RES *res;
@@ -666,4 +666,23 @@ void checkHackReports()
 
 	mysql_free_result(res);
 	mysql_close(conn);
+}
+
+/*
+ * timer_callback() is dispatched using SIGEV_THREAD, so a slow report pass can
+ * overlap the next timer tick.  Keep this public entry point single-flight:
+ * concurrent readers of the same unhandled result set otherwise deliver and
+ * mark the same reports out of order.
+ */
+static volatile int hackReportsRunning = 0;
+
+void checkHackReports()
+{
+	if (__sync_lock_test_and_set(&hackReportsRunning, 1)) {
+		printf("Hack-report check already running; skipping overlapping timer tick.\n");
+		return;
+	}
+
+	checkHackReportsWorker();
+	__sync_lock_release(&hackReportsRunning);
 }
