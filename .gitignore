@@ -1,2 +1,16 @@
 __pycache__/
 *.py[cod]
+
+# Generated Linux kernel module build products
+tarakernel/*.o
+tarakernel/*.ko
+tarakernel/*.mod
+tarakernel/*.mod.c
+tarakernel/Module.symvers
+tarakernel/modules.order
+tarakernel/.*.cmd
+
+# Generated taralink binaries and runtime logs
+taralink/taralink
+taralink/taralink.new
+taralink/taralink.log
