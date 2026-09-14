@@ -122,6 +122,23 @@ try {
             ]);
         }
 
+        // Starting over is only valid after the authenticated client has
+        // explicitly cancelled its previous session. This prevents abandoned
+        // active rows from making a later Node B callback ambiguous.
+        $stmt = $conn->prepare("SELECT demoSshSessionId FROM demoSshSession WHERE demoSshSetupId=? AND sourceIp=INET_ATON(?) AND state IN ('awaiting_node_a','demo_infected','awaiting_node_b') AND expires>NOW() ORDER BY created DESC LIMIT 1 FOR UPDATE");
+        $stmt->bind_param('is', $setupId, $sender);
+        $stmt->execute();
+        $activeSession = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if ($activeSession) {
+            $conn->rollback();
+            demoReply(409, [
+                'ok' => false,
+                'error' => 'Close the active Demo 2 session before starting another',
+                'active_session_id' => (int)$activeSession['demoSshSessionId']
+            ]);
+        }
+
         // Lock Node B while deciding whether to reuse or rotate its credential.
         // Every overlapping classroom session shares the same generation.
         $stmt = $conn->prepare("SELECT demoSshNodeBId,name,INET_NTOA(ip) node_b,port nodeBPort,username,passwordPlain,passwordHash,credentialGeneration FROM demoSshNodeB WHERE demoSshNodeBId=? AND active=b'1' FOR UPDATE");
@@ -167,6 +184,37 @@ try {
         $stmt->close();
         $conn->commit();
         demoReply(201, ['ok' => true, 'session_id' => $sessionId, 'session_token' => $accessToken, 'state' => 'awaiting_node_a', 'node_a' => $setup['node_a'], 'node_a_port' => (int)$setup['nodeAPort'], 'node_b' => $node['node_b'], 'node_b_port' => (int)$node['nodeBPort'], 'username' => $node['username'], 'password' => $node['passwordPlain'], 'credential_generation' => (int)$node['credentialGeneration'], 'expires_in' => $ttl]);
+    }
+
+    if ($action === 'cancel') {
+        if ($method !== 'POST') demoReply(405, ['ok' => false, 'error' => 'POST required']);
+        $sessionId = filter_var($input['session_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        $sessionToken = (string)($input['session_token'] ?? '');
+        if ($sessionId === false) demoReply(400, ['ok' => false, 'error' => 'Valid session_id required']);
+        if (strlen($sessionToken) < 32) demoReply(403, ['ok' => false, 'error' => 'Session token required']);
+        $accessHash = hash('sha256', $sessionToken);
+
+        $conn->begin_transaction();
+        $stmt = $conn->prepare("SELECT state FROM demoSshSession WHERE demoSshSessionId=? AND accessTokenHash=? AND sourceIp=INET_ATON(?) LIMIT 1 FOR UPDATE");
+        $stmt->bind_param('iss', $sessionId, $accessHash, $sender);
+        $stmt->execute();
+        $sessionRow = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$sessionRow) { $conn->rollback(); demoReply(404, ['ok' => false, 'error' => 'Demo session not found']); }
+
+        $wasActive = in_array((string)$sessionRow['state'], ['awaiting_node_a','demo_infected','awaiting_node_b'], true);
+        if ($wasActive) {
+            $stmt = $conn->prepare("UPDATE demoSshSession SET state='cancelled',completed=NOW(),lastSeen=NOW() WHERE demoSshSessionId=?");
+            $stmt->bind_param('i', $sessionId);
+            $stmt->execute();
+            $stmt->close();
+            $stmt = $conn->prepare("INSERT INTO demoSshEvent(demoSshSessionId,eventType,sourceIp,details) VALUES(?,'cancelled',INET_ATON(?),'Session closed by authenticated client')");
+            $stmt->bind_param('is', $sessionId, $sender);
+            $stmt->execute();
+            $stmt->close();
+        }
+        $conn->commit();
+        demoReply(200, ['ok' => true, 'state' => $wasActive ? 'cancelled' : (string)$sessionRow['state']]);
     }
 
     if ($action === 'validate') {
