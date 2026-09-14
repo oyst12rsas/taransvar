@@ -1,3 +1,4 @@
+1037 misc/crontasks.pl
 #crontasks
 #cron is the linux system for scheduled tasks. To schedule tasks, issue:  
 #sudo crontab -u root -e
@@ -998,3 +999,40 @@ reportStatus($dbh);
 #}
 
 $| = 1; # Disable output buffering
+
+#Uncomment to debug checkWhoIs()
+#checkWhoIs();
+#exit;
+
+#Now check if gets here after running approximately 10 seconds..
+my $nCount = 0;
+
+while (time() - $nTimeStarted < 52)
+{
+	#Call script with some parameter do do debugging
+	#Enable some warnings here so you remember to enable again...
+	#saveWarning("handleConntrack() removed from cron job");
+
+	checkDisableSshChange();
+	check_dhcpEvent($dbh);	
+	#Now running as service: handleConntrack($dbh);	#NOTE! Import port assignments. Import dhcp leases before this..
+	checkWhoIs($dbh, $nNumberOfWhoIsLookupsPerIteration);
+	sendPendingWgets();
+	handle_syslogThreat_table($dbh);	#iptables drops ++ are handled here.
+
+	print "\nWaiting to do repetitive tasks (dmesg capture, whois lookups, ++?). Ctrl-C to break\n";
+	sleep $nSecondsToSleepBetweenIterations;
+	my $nSecondsSinceStart = time() - $nTimeStarted;
+	print "$nSecondsSinceStart seconds.\n";
+	$nCount++;
+}
+
+$dbh->disconnect;
+
+$nice_timestamp = getNiceTimestamp();
+
+if ($nCount < 5 && $nSecondsToSleepBetweenIterations > 0) {
+	print "$nice_timestamp: ****** WARNING crontasks.pl only managed to make $nCount iterations.\nYou may consider to reduce \$nSecondsToSleepBetweenIterations from ".$nSecondsToSleepBetweenIterations."\n";  
+} else {
+	print "\n$nice_timestamp: Finished! Managed $nCount iterations.\n\n\n";
+}
