@@ -464,8 +464,15 @@ alter table partnerRouter add taggedTrafficRoute int unsigned null after nettmas
 alter table partnerRouter add taggedTrafficRouteUpdated timestamp null after taggedTrafficRoute;
 update setup set dbVersion = 87;
 
+#version 88 (260914)
+#Accept successful assistance acknowledgements even when a legacy PHP include
+#wraps the exact "ok" response in CR/LF/tab whitespace.
+DROP TRIGGER IF EXISTS pendingWget_assistance_retry;
+CREATE TRIGGER pendingWget_assistance_retry BEFORE UPDATE ON pendingWget FOR EACH ROW SET NEW.handled = IF(NEW.category = 'AssistanceRequest' AND NEW.reply IS NOT NULL AND TRIM(REPLACE(REPLACE(REPLACE(NEW.reply, CHAR(13), ''), CHAR(10), ''), CHAR(9), '')) <> 'ok', NULL, NEW.handled);
+update setup set dbVersion = 88;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 88;
+#update setup set dbVersion = 89;
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 
 #can import DB changes automatically based on the content of this file...
