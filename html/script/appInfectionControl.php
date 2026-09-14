@@ -58,13 +58,16 @@ try {
     // hackReport and do not infer another unit from the TCP source port.
     // The local TaraSec gateway sees the phone's LAN address and marks that
     // exact /32 in internalInfections so tarakernel can tag its traffic.
-    $stmt = $conn->prepare(
+    // Demo controls must never overwrite a genuine infection row merely
+    // because it is the newest record for this address.
+    $lookupSql =
         "SELECT infectionId
            FROM internalInfections
-          WHERE ip = INET_ATON(?)
-          ORDER BY infectionId DESC
-          LIMIT 1"
-    );
+          WHERE ip = INET_ATON(?)" .
+        ($isDemo ? " AND why LIKE 'DEMO:%'" : " AND (why IS NULL OR why NOT LIKE 'DEMO:%')") .
+        " ORDER BY infectionId DESC
+          LIMIT 1";
+    $stmt = $conn->prepare($lookupSql);
     $stmt->bind_param('s', $sender);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
@@ -121,7 +124,21 @@ try {
     }
 
     $changed = 0;
-    if ($infectionId > 0) {
+    if ($isDemo) {
+        // Reset every demo-only row for this device on the current gateway.
+        // Genuine security findings are deliberately left active.
+        $stmt = $conn->prepare(
+            "UPDATE internalInfections
+                SET active = b'0', handled = b'0', lastSeen = NOW()
+              WHERE ip = INET_ATON(?)
+                AND active = b'1'
+                AND why LIKE 'DEMO:%'"
+        );
+        $stmt->bind_param('s', $sender);
+        $stmt->execute();
+        $changed = $stmt->affected_rows;
+        $stmt->close();
+    } elseif ($infectionId > 0) {
         $stmt = $conn->prepare(
             "UPDATE internalInfections
                 SET active = b'0', handled = b'0', lastSeen = NOW()
@@ -142,7 +159,9 @@ try {
         'severity' => 0,
         'changed' => $changed,
         'demo' => $isDemo,
-        'message' => $infectionId > 0 ? 'This device is marked clean on the local TaraSec gateway' : 'This device had no infection record'
+        'message' => $isDemo
+            ? ($changed > 0 ? 'Demo state reset on the current TaraSec gateway' : 'This device had no active demo infection state on the current gateway')
+            : ($infectionId > 0 ? 'This device is marked clean on the local TaraSec gateway' : 'This device had no infection record')
     ], JSON_UNESCAPED_SLASHES);
 } catch (Throwable $e) {
     error_log('appInfectionControl.php failed for ' . $sender . ': ' . $e->getMessage());
