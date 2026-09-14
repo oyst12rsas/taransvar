@@ -57,13 +57,28 @@ try {
         $stmt->bind_param("siss", $requestedIp, $port, $category, $senderIp);
         $stmt->execute(); $stmt->close();
     } else {
-        // This request has already been distributed by the global DB. Keep it
-        // out of checkRequestAssistance() while leaving handled=NULL so the
-        // incremental setup pass immediately delivers it to tarakernel.
-        $sql = "insert into assistanceRequest (purpose, ip, port, senderIp, senderPort, category, requestQuality, wantSpoofed, comment, fromOther, handled, sentPartners, active) values ('fromPartner', inet_aton(?), ?, inet_aton(?), ?, ?, ?, ?, 'From DB server', b'1', NULL, b'1', b'1')";
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param("sisisii", $requestedIp, $port, $senderIp, $senderPort, $category, $requestQuality, $wantSpoofed);
-        $stmt->execute(); $stmt->close();
+        // Distribution is at-least-once. Treat an identical copy of the latest
+        // state as an acknowledgement, not as a new history event.
+        $stmt = $conn->prepare("SELECT CAST(active AS UNSIGNED) active, COALESCE(requestQuality,0) requestQuality, CAST(COALESCE(wantSpoofed,b'0') AS UNSIGNED) wantSpoofed FROM assistanceRequest WHERE purpose='fromPartner' AND ip=inet_aton(?) AND port=? AND category=? AND senderIp=inet_aton(?) ORDER BY requestId DESC LIMIT 1");
+        $stmt->bind_param("siss", $requestedIp, $port, $category, $senderIp);
+        $stmt->execute();
+        $latest = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+
+        $duplicate = $latest
+            && intval($latest["active"]) === 1
+            && intval($latest["requestQuality"]) === $requestQuality
+            && intval($latest["wantSpoofed"]) === $wantSpoofed;
+
+        if (!$duplicate) {
+            // This request has already been distributed by the global DB. Keep
+            // it out of checkRequestAssistance() while leaving handled=NULL so
+            // taralink immediately delivers the changed state to tarakernel.
+            $sql = "insert into assistanceRequest (purpose, ip, port, senderIp, senderPort, category, requestQuality, wantSpoofed, comment, fromOther, handled, sentPartners, active) values ('fromPartner', inet_aton(?), ?, inet_aton(?), ?, ?, ?, ?, 'From DB server', b'1', NULL, b'1', b'1')";
+            $stmt = $conn->prepare($sql);
+            $stmt->bind_param("sisisii", $requestedIp, $port, $senderIp, $senderPort, $category, $requestQuality, $wantSpoofed);
+            $stmt->execute(); $stmt->close();
+        }
     }
 
     header('Content-Type: text/plain; charset=utf-8'); echo "ok";
