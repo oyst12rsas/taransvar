@@ -168,6 +168,7 @@ sub reportStatus {
 
 	my $szTaralink = "/root/taransvar/taralink";
 	$json{"lnk"} = (programRunningLockFileHeld("/tmp/taralink.lock")?1:0);
+	my $bSystemdManaged = -e "/etc/tarasec/taralink-managed-by-systemd";
 
 	# Keep corrected fail-open modules loaded; remove only legacy fail-closed
 	# modules when the userspace controller is unavailable.
@@ -186,13 +187,23 @@ sub reportStatus {
 		setSystemError(8, "Protection degraded: Taralink is unavailable. Forwarded traffic is allowed without TaraSec inspection.");
 		$json{"knl"} = (moduleRunning("tarakernel")?"1":0);
 		$json{"lnk"} = 0;
+	} elsif ($bSystemdManaged && !$json{"lnk"}) {
+		# An inactive systemd-managed service may be deliberately stopped for
+		# maintenance or containment.  Cron must not defeat that state by
+		# independently loading tarakernel or launching the legacy binary.
+		if (moduleRunning("tarakernel")) {
+			system("modprobe -r tarakernel");
+		}
+		setSystemError(8, "Protection unavailable: systemd-managed Taralink is not running. Tarakernel remains unloaded.");
+		$json{"knl"} = (moduleRunning("tarakernel")?"1":0);
+		$json{"lnk"} = 0;
 	} else {
 		if (!moduleRunning("tarakernel")) {
 			system("modprobe tarakernel");
 			saveWarning("Tarakernel was not running when reporting status. Trying to start it\n");
 		}
 
-		if (!$json{"lnk"} && !-e "/etc/tarasec/taralink-managed-by-systemd") {
+		if (!$json{"lnk"}) {
 			# systemd owns restart policy on standardized installations.
 			system("nohup $szTaralink >>/tmp/taralink.log 2>&1 &");
 			sleep(7);	# Allow taralink to acquire its lock and configure tarakernel.
@@ -987,40 +998,3 @@ reportStatus($dbh);
 #}
 
 $| = 1; # Disable output buffering
-
-#Uncomment to debug checkWhoIs()
-#checkWhoIs();
-#exit;
-
-#Now check if gets here after running approximately 10 seconds..
-my $nCount = 0;
-
-while (time() - $nTimeStarted < 52)
-{
-	#Call script with some parameter do do debugging
-	#Enable some warnings here so you remember to enable again...
-	#saveWarning("handleConntrack() removed from cron job");
-
-	checkDisableSshChange();
-	check_dhcpEvent($dbh);	
-	#Now running as service: handleConntrack($dbh);	#NOTE! Import port assignments. Import dhcp leases before this..
-	checkWhoIs($dbh, $nNumberOfWhoIsLookupsPerIteration);
-	sendPendingWgets();
-	handle_syslogThreat_table($dbh);	#iptables drops ++ are handled here.
-
-	print "\nWaiting to do repetitive tasks (dmesg capture, whois lookups, ++?). Ctrl-C to break\n";
-	sleep $nSecondsToSleepBetweenIterations;
-	my $nSecondsSinceStart = time() - $nTimeStarted;
-	print "$nSecondsSinceStart seconds.\n";
-	$nCount++;
-}
-
-$dbh->disconnect;
-
-$nice_timestamp = getNiceTimestamp();
-
-if ($nCount < 5 && $nSecondsToSleepBetweenIterations > 0) {
-	print "$nice_timestamp: ****** WARNING crontasks.pl only managed to make $nCount iterations.\nYou may consider to reduce \$nSecondsToSleepBetweenIterations from ".$nSecondsToSleepBetweenIterations."\n";  
-} else {
-	print "\n$nice_timestamp: Finished! Managed $nCount iterations.\n\n\n";
-}
