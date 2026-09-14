@@ -3,7 +3,10 @@ ini_set('display_errors', '0');
 error_reporting(E_ALL);
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
+// dbfunc.php historically emits trailing whitespace outside its PHP block.
+ob_start();
 include "../dbfunc.php";
+ob_end_clean();
 
 function controlPeerIp()
 {
