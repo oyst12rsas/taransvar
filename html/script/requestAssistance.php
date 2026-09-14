@@ -48,10 +48,26 @@ if (!filter_var($senderIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) { http_respons
 $conn = getConnection();
 try {
     if (!senderIsRegisteredPartner($conn, $senderIp)) { http_response_code(403); exit("unregistered partner"); }
-    $sql = "insert into assistanceRequest (purpose, ip, port, senderIp, senderPort, category, requestQuality, wantSpoofed, active) values ('forDistribution', inet_aton(?), ?, inet_aton(?), ?, ?, ?, ?, ?)";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("sisisiii", $reportedIp, $port, $senderIp, $senderPort, $category, $requestQuality, $wantSpoofed, $active);
-    $stmt->execute(); $stmt->close();
+
+    // Requests are delivered at least once. Preserve real state transitions,
+    // but do not turn a retry of the latest identical state into another event.
+    $stmt = $conn->prepare("SELECT CAST(active AS UNSIGNED) active, COALESCE(requestQuality,0) requestQuality, CAST(COALESCE(wantSpoofed,b'0') AS UNSIGNED) wantSpoofed FROM assistanceRequest WHERE purpose='forDistribution' AND ip=inet_aton(?) AND port=? AND category=? AND senderIp=inet_aton(?) ORDER BY requestId DESC LIMIT 1");
+    $stmt->bind_param("siss", $reportedIp, $port, $category, $senderIp);
+    $stmt->execute();
+    $latest = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    $duplicate = $latest
+        && intval($latest["active"]) === $active
+        && intval($latest["requestQuality"]) === $requestQuality
+        && intval($latest["wantSpoofed"]) === $wantSpoofed;
+
+    if (!$duplicate) {
+        $sql = "insert into assistanceRequest (purpose, ip, port, senderIp, senderPort, category, requestQuality, wantSpoofed, active) values ('forDistribution', inet_aton(?), ?, inet_aton(?), ?, ?, ?, ?, ?)";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("sisisiii", $reportedIp, $port, $senderIp, $senderPort, $category, $requestQuality, $wantSpoofed, $active);
+        $stmt->execute(); $stmt->close();
+    }
     header('Content-Type: text/plain; charset=utf-8'); echo "ok";
 } catch (Throwable $e) {
     error_log("requestAssistance failed: sender=" . $senderIp . " error=" . $e->getMessage());
