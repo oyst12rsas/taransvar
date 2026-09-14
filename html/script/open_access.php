@@ -1,12 +1,14 @@
 <?php
-//open_access.php
+// open_access.php
+require_once dirname(__DIR__) . '/dbfunc.php';
+
 $szVar = "thisistoopen";
-$szValue = "45$57!4ghREW";
-//Parameters: open_access.php?thisistoopen=45$57!4ghREW
-if (!isset($_GET[$szVar]) || strcmp($_GET[$szVar], $szValue) != 0)
+$szValue = getenv('TARASEC_OPEN_ACCESS_TOKEN');
+
+// This maintenance endpoint is disabled unless a token is configured at runtime.
+if ($szValue === false || $szValue === '' || !isset($_GET[$szVar]) || !hash_equals($szValue, (string)$_GET[$szVar]))
 {
   http_response_code(404);
-  //include('my_404.php'); // provide your own HTML for the error page
   die();
 }
 
@@ -20,23 +22,6 @@ error_reporting(E_ALL);
 <body>
 <?php
 
-
-function getConnection()
-{
-	$servername = "localhost";
-	$username = "scriptUsrAces3f3";
-	$password = "rErte8Oi98e-2_#"; //"rErte8Oi98!%&e";
-	$dbname = "taransvar";
-
-	// Create connection
-	$conn = new mysqli($servername, $username, $password, $dbname);
-	// Check connection
-	if ($conn->connect_error) {
-		die("Connection failed: " . $conn->connect_error);
-	}
-	return $conn;
-}
-
 function ipv4touint($ipv4){
     return sprintf('%u',ip2long($ipv4));
 }
@@ -47,7 +32,6 @@ if (isset($_GET["name"]))
         $conn = getConnection();
         $szSQL = "update setup set adminIP = ".ipv4touint($_GET["name"]);
         $conn->query($szSQL);
-        //print $szSQL."<br>";
         print "Nice name!<br>";
 }
 
@@ -58,12 +42,12 @@ if (!empty($_SERVER['HTTP_CLIENT_IP'])) {
 } else {
     $ip = $_SERVER['REMOTE_ADDR'];
     print "<br>Your name is: ".$ip; ?>
-    
+
     <form action="open_access.php">
     <tr><td>Name</td><td><input name="name" value="<?php print (isset($_GET["name"])?$_GET["name"]:""); ?>"></td></tr>
-    <tr><td>&nbsp;</td><td><input type="submit" name="submit"><input type="hidden" name="<?php print $szVar; ?>" value="<?php print $szValue; ?>"></td></tr>
+    <tr><td>&nbsp;</td><td><input type="submit" name="submit"><input type="hidden" name="<?php print $szVar; ?>" value="<?php print htmlspecialchars($szValue, ENT_QUOTES, 'UTF-8'); ?>"></td></tr>
     </form><?php
-    
+
 }
 ?>
 </body>

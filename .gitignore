@@ -1,2 +1,22 @@
 __pycache__/
 *.py[cod]
+
+# Local runtime configuration and environment files
+.env
+.env.*
+!.env.example
+config/db.php
+
+# Private keys, certificates with private material, signing stores
+*.pem
+*.key
+*.p12
+*.pfx
+*.p8
+*.jks
+*.keystore
+
+# Local credential exports/backups
+*credentials*.json
+*secret*.json
+*.private-backup.*

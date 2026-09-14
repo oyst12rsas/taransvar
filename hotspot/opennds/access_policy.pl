@@ -11,8 +11,8 @@ if ($ip !~ /\A(?:\d{1,3}\.){3}\d{1,3}\z/) {
 
 my $dsn = $ENV{TARASEC_DSN} // 'DBI:mysql:database=taransvar;host=localhost';
 my $user = $ENV{TARASEC_DB_USER} // 'scriptUsrAces3f3';
-my $pass = $ENV{TARASEC_DB_PASS} // 'rErte8Oi98e-2_#';
-my $dbh = eval { DBI->connect($dsn, $user, $pass, { RaiseError => 1, PrintError => 0, AutoCommit => 1 }) };
+my $pass = $ENV{TARASEC_DB_PASS} // '';
+my $dbh = $pass ne '' ? eval { DBI->connect($dsn, $user, $pass, { RaiseError => 1, PrintError => 0, AutoCommit => 1 }) } : undef;
 if (!$dbh) {
     print "0\t0\t0\t0\t0\t0\n";
     exit 0;

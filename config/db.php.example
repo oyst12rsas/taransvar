@@ -1,0 +1,9 @@
+<?php
+// Copy this file to /etc/tarasec/db.php on each deployed host.
+// Keep the real file outside the repository and readable only by the web/service user.
+return [
+    'host' => 'localhost',
+    'user' => 'CHANGE_ME',
+    'password' => 'CHANGE_ME',
+    'name' => 'taransvar',
+];

@@ -5,12 +5,12 @@ set -euo pipefail
 # Tara Hotspot Installer v0.1
 # =========================
 
-SSID="Tara_Hotspot"
-WIFI_PASSWORD="TaraHotspot1234"
+SSID="${SSID:-Tara_Hotspot}"
+WIFI_PASSWORD="${WIFI_PASSWORD:-}"
 
 VPN_IF="wt0"
 NETBIRD_MGMT_URL="https://netbird.taransvar.no"
-NETBIRD_SETUP_KEY="PASTE_SETUP_KEY_HERE"
+NETBIRD_SETUP_KEY="${NETBIRD_SETUP_KEY:-}"
 
 TARA_REPO="https://github.com/YOUR_ORG/YOUR_TARA_REPO.git"
 TARA_DIR="/opt/tara"
@@ -53,13 +53,6 @@ detect_interfaces() {
 
     echo "    Hotspot Wi-Fi interface: $HOTSPOT_IF"
     echo "    Internet interface:      $WAN_IF"
-}
-
-subnet_in_use() {
-    local subnet="$1"
-    ip route | grep -q "$subnet" && return 0
-    ip addr | grep -q "${subnet%0/24}" && return 0
-    return 1
 }
 
 choose_hotspot_subnet() {
@@ -107,10 +100,26 @@ install_packages() {
         iptables-persistent \
         git \
         curl \
+        openssl \
         perl \
         build-essential
 
     systemctl unmask hostapd || true
+}
+
+prepare_runtime_secrets() {
+    if [[ -z "$WIFI_PASSWORD" ]]; then
+        WIFI_PASSWORD="$(openssl rand -hex 12)"
+        echo "[+] Generated a random Wi-Fi password for this hotspot."
+    fi
+
+    if [[ -z "$NETBIRD_SETUP_KEY" ]]; then
+        echo "[ERROR] NETBIRD_SETUP_KEY is not configured."
+        echo "Set it only for this installer invocation, for example:"
+        echo "  sudo env NETBIRD_SETUP_KEY='<setup-key>' bash $0"
+        echo "Do not paste the key into the tracked script."
+        exit 1
+    fi
 }
 
 backup_configs() {
@@ -177,6 +186,7 @@ wpa_key_mgmt=WPA-PSK
 rsn_pairwise=CCMP
 EOF
 
+    chmod 600 /etc/hostapd/hostapd.conf
     sed -i 's|^#*DAEMON_CONF=.*|DAEMON_CONF="/etc/hostapd/hostapd.conf"|' /etc/default/hostapd || true
 
     systemctl enable hostapd
@@ -210,12 +220,6 @@ install_netbird() {
     systemctl enable netbird || true
 
     echo "[+] Joining NetBird network..."
-
-    if [[ "$NETBIRD_SETUP_KEY" == "PASTE_SETUP_KEY_HERE" ]]; then
-        echo "[ERROR] NETBIRD_SETUP_KEY is not configured."
-        echo "Create a reusable setup key in NetBird UI and paste it into this script."
-        exit 1
-    fi
 
     netbird up \
         --management-url "$NETBIRD_MGMT_URL" \
@@ -311,16 +315,11 @@ print_summary() {
     echo "Hotspot gateway:   $HOTSPOT_IP"
     echo "DHCP range:        $DHCP_START - $DHCP_END"
     echo
-    echo "WireGuard public key:"
-    cat /etc/wireguard/publickey
-    echo
     echo "Useful commands:"
     echo "  ip addr"
     echo "  ip route"
-    echo "  sudo wg"
     echo "  sudo systemctl status hostapd"
     echo "  sudo systemctl status dnsmasq"
-    echo "  sudo systemctl status wg-quick@$WG_IF"
     echo "  sudo journalctl -u hostapd -e"
     echo "  sudo journalctl -u dnsmasq -e"
     echo
@@ -334,6 +333,7 @@ main() {
     detect_interfaces
     choose_hotspot_subnet
     install_packages
+    prepare_runtime_secrets
     backup_configs
     configure_ip_forwarding
     configure_hotspot_ip
