@@ -1,3 +1,4 @@
+#include <pthread.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -237,6 +238,8 @@ struct t_eventData{
     int myData;
 };
 
+static pthread_mutex_t timer_callback_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 int init_timer()
 {
     int res = 0;
@@ -270,6 +273,13 @@ int init_timer()
 
 void timer_callback(union sigval timer_data)
 {
+    if (pthread_mutex_trylock(&timer_callback_mutex) != 0)
+    {
+        printf("Timer callback already running; skipping overlapping timer tick.\n");
+        fflush(stdout);
+        return;
+    }
+
     char *lpPayload;
     time_t rawtime;
     time(&rawtime);
@@ -299,4 +309,6 @@ void timer_callback(union sigval timer_data)
         }
         #endif
     #endif
+
+    pthread_mutex_unlock(&timer_callback_mutex);
 }
