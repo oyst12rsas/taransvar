@@ -371,7 +371,7 @@ static void checkHackReportsWorker()
 	 * taralink replaying months of historical reports while current security
 	 * events (including Demo 2 gateway confirmation) wait behind the snapshot.
 	 * Once current traffic is handled, subsequent timer passes drain the backlog. */
-	sprintf(szSQL, "select reportId, ip, port, inet_ntoa(ip), created, TIMESTAMPDIFF(SECOND, created, NOW()) as SecondsSince, sendAttemptCount, inet_ntoa(sentByIp), why, coalesce(severity,7) from hackReport where handledTime is null and (ip <> %u or created < DATE_SUB(NOW(), INTERVAL 10 SECOND)) order by created desc, reportId desc limit 100", nMyIp);
+	sprintf(szSQL, "select reportId, ip, port, inet_ntoa(ip), created, TIMESTAMPDIFF(SECOND, created, NOW()) as SecondsSince, sendAttemptCount, inet_ntoa(sentByIp), why, coalesce(severity,7), hrCategory from hackReport where handledTime is null and (ip <> %u or created < DATE_SUB(NOW(), INTERVAL 10 SECOND)) order by created desc, reportId desc limit 100", nMyIp);
 
 	if (mysql_query(conn, szSQL)) {
 		fprintf(stderr, "**** ERROR *** While fetching hackReports: %s\n", mysql_error(conn));
@@ -406,6 +406,51 @@ static void checkHackReportsWorker()
 		int nSeverity = row[9] ? atoi(row[9]) : 7;
 		if (nSeverity < 0) nSeverity = 0;
 		if (nSeverity > 15) nSeverity = 15;
+
+		/* Demo evidence is an authenticated lifecycle signal, not an infection
+		 * state change. Forward it to the global DB even when the report names
+		 * this gateway's public address. Delayed processing must not depend on a
+		 * live conntrack/unitPort mapping, and severity zero must not turn valid
+		 * Demo evidence into a clean-infection notification. */
+		int bDemoReport = row[10] && !strcmp(row[10], "demo");
+		if (bDemoReport)
+		{
+			char szParams[500], czCodedWhat[320], deliveryError[500];
+			urlencode(row[8]?row[8]:"", czCodedWhat, sizeof(czCodedWhat));
+			snprintf(szParams, sizeof(szParams),
+			         "ip=%s&port=%s&wt=%s&code=demo&severity=%d",
+			         row[3]?row[3]:"", row[2]?row[2]:"", czCodedWhat, nSeverity);
+
+			if (sendReportToGlobalDbServersVerified(&cGlobalDb, szParams, cMyIp,
+			                                        deliveryError, sizeof(deliveryError)))
+			{
+				if (!localUpdate)
+					localUpdate = getConnection();
+
+				snprintf(cSQL, sizeof(cSQL),
+				         "update hackReport set sentGlobalDB=now(), handledTime=now(), "
+				         "status='Demo evidence delivered' where reportId=%d",
+				         atoi(row[0]));
+				if (mysql_query(localUpdate, cSQL)) {
+					fprintf(stderr, "******** ERROR ****** While completing Demo report: %s\n",
+					        mysql_error(localUpdate));
+					return;
+				}
+				clearHackReportDeliverySystemError();
+				printf("Demo hack report %s delivered to global DB.\n", row[0]);
+			}
+			else
+			{
+				char systemError[700];
+				snprintf(systemError, sizeof(systemError),
+				         "Hack report delivery failed: %.45s:%.10s - %.580s",
+				         row[3]?row[3]:"?", row[2]?row[2]:"?", deliveryError);
+				setTaralinkSystemError(systemError, 7);
+				addWarningRecord(systemError);
+				increaseSendAttemptCount(atoi(row[0]));
+			}
+			continue;
+		}
 
 		if (nNumericIp == nMyIp || isMeOrMine(nNumericIp, nInternalIp, nNettmask))
 		{
