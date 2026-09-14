@@ -233,7 +233,14 @@ try {
                 return !empty($match['nodeAEvidenceId'])
                     || in_array((string)$match['state'], ['demo_infected', 'awaiting_node_b'], true);
             }));
-            if (count($progressed) === 1) $row = $progressed[0];
+            if (count($progressed) >= 1) {
+                // Results are newest-first. When gateway/NAT attribution is not
+                // available, bind the callback to the newest session that has
+                // already reached Node A. An abandoned older progressed session
+                // must not leave every later Node B callback pending forever.
+                $row = $progressed[0];
+                if (count($progressed) > 1) $correlation = 'latest_progressed_source';
+            }
         }
         if (!$row) $correlation = count($matches) > 1 ? 'pending' : 'none';
         $sessionId = $row ? (int)$row['demoSshSessionId'] : null;
