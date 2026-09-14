@@ -718,7 +718,7 @@ void *worker(void *arg) {
 					cHexIp, 
 					pFound->nPort, 
 					1,  //version number
-					1, //presumed_infected
+					pInfection->nSeverity > 0 ? 1 : 0, //presumed_infected
 					0,  //owners_id
 					pInfection->nInfectionId, //owners_id
 					pInfection->nSeverity, 
