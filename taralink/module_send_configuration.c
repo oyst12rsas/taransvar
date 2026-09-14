@@ -1025,7 +1025,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 			/* Mark every pending history row represented by this effective target. */
 			char szHandledSql[300];
 			snprintf(szHandledSql, sizeof(szHandledSql),
-				"update assistanceRequest set handled=b'1' where ip=unhex('%s') and port=%s and handled is null",
+				"update assistanceRequest set handled=b'1' where ip=CAST(CONV('%s',16,10) AS UNSIGNED) and port=%s and handled is null",
 				row[1], row[2]?row[2]:"0");
 			if (mysql_query(updateConn, szHandledSql))
 				fprintf(stderr, "taralink: Could not mark assistance target handled: %s\n", mysql_error(updateConn));
