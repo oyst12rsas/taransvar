@@ -119,7 +119,7 @@ try {
                       WHERE PW.category='AssistanceRequest'
                         AND PW.regardingId=AR.requestId
                         AND PW.handled IS NOT NULL
-                        AND TRIM(COALESCE(PW.reply,''))='ok') AS acceptedCount,
+                        AND TRIM(REPLACE(REPLACE(REPLACE(COALESCE(PW.reply,''),CHAR(13),''),CHAR(10),''),CHAR(9),''))='ok') AS acceptedCount,
                     (SELECT COUNT(*) FROM pendingWget PW
                       WHERE PW.category='AssistanceRequest'
                         AND PW.regardingId=AR.requestId
