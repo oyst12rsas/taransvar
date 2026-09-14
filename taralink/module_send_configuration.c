@@ -257,7 +257,10 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 			Then can read as many as we went and leave the others for the next batch (we may need a separate field "sentTarakernel" but can try without).
 			*/
 
-			if (mysql_query(conn, "update internalInfections set handled = b'0'")
+			/* A full configuration must rebuild only the current active state.
+			 * Mark inactive history handled so the following incremental pass does
+			 * not replay it as infection data. */
+			if (mysql_query(conn, "update internalInfections set handled = IF(active=b'1',b'0',b'1')")
 				|| mysql_query(conn, "update colorListings set handled = b'0'")
 				|| mysql_query(conn, "update honeyport set handled = b'0'")
 				|| mysql_query(conn, "update inspection set handled = b'0'")
@@ -693,9 +696,8 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 		
 			if (bReadChangesOnly)
 				lpHandledWhere = "WHERE COALESCE(handled, b'0') = b'0'";
-	    	else
-
-	        	lpHandledWhere = ""; //Now send severity = 1 if deactivated... Before: "where active = b'1'";
+			else
+				lpHandledWhere = "WHERE active = b'1'";
 
 			sprintf(szSQL, "select inet_ntoa(ip) as ip, inet_ntoa(nettmask) as nettmask, coalesce(status,'NULL'), \
 				infectionId, handled, coalesce(CAST(active AS UNSIGNED),0) as active, coalesce(infoSharePartners,'NULL'), \
@@ -724,23 +726,14 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 				int nActive = atoi(row[5]);
 				if (!nActive)
 				{
-					if (row[12] && !strncmp(row[12], "DEMO:", 5))
-					{
-						/* Demo state is deliberately reversible. A new run must
-						 * replace cached evidence on Node A/Node B with an explicit
-						 * clean assertion instead of reviving the previous demo as
-						 * reduced-assurance infection. */
-						lpSendInfectionInfo = "DEMO:clean";
-						lpSendSeverity = "0";
-						printf("Sending explicit clean state for inactive demo infection\n");
-					}
-					else
-					{
-						lpSendInfectionInfo = "assurance_reduced:cleaning_unverified";
-						lpSendSeverity = "1";	//Severity 1 means reduced assurance; the elaborated UDP message carries the reason.
-						printf("Sending severity 1 for cleaning that is not yet verified\n");
-					}
-					nActive = 1;			//If active = 0 is sent, then tarakernel will remove it from the list....
+					/* Inactive is a state transition, not a reduced-severity
+					 * infection.  Sending active=0 removes any cached kernel
+					 * entry.  Partner notification below still receives the
+					 * database's inactive state. */
+					lpSendInfectionInfo = (row[12] && !strncmp(row[12], "DEMO:", 5))
+						? "DEMO:clean" : "cleaning_unverified";
+					lpSendSeverity = "0";
+					printf("Sending inactive state so tarakernel removes cached infection\n");
 				}
 
 				printf("****** Active: %d (%s), info: %s, severity: %s. After: %s/%s\n", nActive, row[5], row[6], row[8], lpSendInfectionInfo, lpSendSeverity);
