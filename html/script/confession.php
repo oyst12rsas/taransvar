@@ -53,13 +53,18 @@ if (isset($_GET['ourid']) && $_GET['ourid'] !== '' && $_GET['ourid'] !== '0') {
 try {
     $conn = getConnection();
 
-    // The victim report should normally already exist. Match only a very recent
-    // report so an ephemeral source port cannot attach a confession to old traffic.
+    // The victim report should normally already exist, but gateway processing
+    // is asynchronous and can exceed one timer interval. Match the newest
+    // unconfirmed real victim report for the exact IP/port tuple within the
+    // Demo 2 session lifetime. Requiring sentByIp excludes confession-only rows
+    // and prevents those placeholders from matching one another.
     $sql = "SELECT reportId, remoteUnitId
             FROM hackReport
             WHERE ip = INET_ATON(?)
               AND port = ?
-              AND created >= NOW() - INTERVAL 5 SECOND
+              AND sentByIp IS NOT NULL
+              AND ownerConfirmedTime IS NULL
+              AND created >= NOW() - INTERVAL 30 MINUTE
             ORDER BY created DESC
             LIMIT 1";
     $stmt = $conn->prepare($sql);
