@@ -407,51 +407,7 @@ static void checkHackReportsWorker()
 		if (nSeverity < 0) nSeverity = 0;
 		if (nSeverity > 15) nSeverity = 15;
 
-		/* Demo evidence is an authenticated lifecycle signal, not an infection
-		 * state change. Forward it to the global DB even when the report names
-		 * this gateway's public address. Delayed processing must not depend on a
-		 * live conntrack/unitPort mapping, and severity zero must not turn valid
-		 * Demo evidence into a clean-infection notification. */
 		int bDemoReport = row[10] && !strcmp(row[10], "demo");
-		if (bDemoReport)
-		{
-			char szParams[500], czCodedWhat[320], deliveryError[500];
-			urlencode(row[8]?row[8]:"", czCodedWhat, sizeof(czCodedWhat));
-			snprintf(szParams, sizeof(szParams),
-			         "ip=%s&port=%s&wt=%s&code=demo&severity=%d",
-			         row[3]?row[3]:"", row[2]?row[2]:"", czCodedWhat, nSeverity);
-
-			if (sendReportToGlobalDbServersVerified(&cGlobalDb, szParams, cMyIp,
-			                                        deliveryError, sizeof(deliveryError)))
-			{
-				if (!localUpdate)
-					localUpdate = getConnection();
-
-				snprintf(cSQL, sizeof(cSQL),
-				         "update hackReport set sentGlobalDB=now(), handledTime=now(), "
-				         "status='Demo evidence delivered' where reportId=%d",
-				         atoi(row[0]));
-				if (mysql_query(localUpdate, cSQL)) {
-					fprintf(stderr, "******** ERROR ****** While completing Demo report: %s\n",
-					        mysql_error(localUpdate));
-					return;
-				}
-				clearHackReportDeliverySystemError();
-				printf("Demo hack report %s delivered to global DB.\n", row[0]);
-			}
-			else
-			{
-				char systemError[700];
-				snprintf(systemError, sizeof(systemError),
-				         "Hack report delivery failed: %.45s:%.10s - %.580s",
-				         row[3]?row[3]:"?", row[2]?row[2]:"?", deliveryError);
-				setTaralinkSystemError(systemError, 7);
-				addWarningRecord(systemError);
-				increaseSendAttemptCount(atoi(row[0]));
-			}
-			continue;
-		}
-
 		if (nNumericIp == nMyIp || isMeOrMine(nNumericIp, nInternalIp, nNettmask))
 		{
 			strcpy(cWhat, "Me or my unit. ");
@@ -485,7 +441,26 @@ static void checkHackReportsWorker()
 				strcpy(cWhat, "NAT'ed unit. ");
 				printf("This is a hacking report regarding one of my units.. Find what unit it was based on\n");
 
-				sprintf(szSQL, "select portAssignmentId, UP.created, ifnull(U.unitId,0), UP.ipAddress, description, dhcpClientId, vci, hostname, inet_ntoa(UP.ipAddress) from unitPort UP join unit U on U.unitId = UP.unitId where port = %s order by portAssignmentId desc limit 1", row[2]);
+				/* Demo callbacks can be processed after conntrack has expired, and
+				 * translated ports are routinely reused. Resolve the internal source
+				 * from the traffic tuple at the report timestamp instead of accepting
+				 * an unrelated historical unitPort row. */
+				if (bDemoReport)
+					snprintf(szSQL, sizeof(szSQL),
+					         "select T.trafficId,T.created,ifnull(U.unitId,0),T.ipFrom,"
+					         "U.description,U.dhcpClientId,U.vci,U.hostname,inet_ntoa(T.ipFrom) "
+					         "from traffic T join unit U on U.ipAddress=T.ipFrom "
+					         "where T.portFrom=%s and T.created between "
+					         "date_sub('%s',interval 2 minute) and date_add('%s',interval 2 minute) "
+					         "order by abs(timestampdiff(second,T.created,'%s')),T.trafficId desc limit 1",
+					         row[2], row[4], row[4], row[4]);
+				else
+					snprintf(szSQL, sizeof(szSQL),
+					         "select portAssignmentId,UP.created,ifnull(U.unitId,0),UP.ipAddress,"
+					         "description,dhcpClientId,vci,hostname,inet_ntoa(UP.ipAddress) "
+					         "from unitPort UP join unit U on U.unitId=UP.unitId "
+					         "where port=%s order by portAssignmentId desc limit 1",
+					         row[2]);
 				if (mysql_query(updateConn, szSQL)) {
 					fprintf(stderr, "****** ERROR ***** While finding port assignment: %s\n", mysql_error(updateConn));
 					return;
@@ -535,6 +510,41 @@ static void checkHackReportsWorker()
 			}
 
 			localUpdate = getConnection();
+
+			/* A Demo report proves the owner gateway resolved the exact translated
+			 * tuple. Send the standard owner confession used by Demo lifecycle
+			 * validation, but do not mutate internalInfections: Demo evidence is
+			 * neither an infection declaration nor a clean notification. */
+			if (bDemoReport)
+			{
+				snprintf(cSQL, sizeof(cSQL),
+				         "update hackReport set unitId=%u where reportId=%d",
+				         nUnitId, atoi(row[0]));
+				if (mysql_query(localUpdate, cSQL)) {
+					fprintf(stderr, "******** ERROR ****** While attributing Demo report: %s\n",
+					        mysql_error(localUpdate));
+					return;
+				}
+
+				char demoParams[220];
+				snprintf(demoParams, sizeof(demoParams),
+				         "f=confession&ip=%s&port=%s&ourid=%u",
+				         row[3], row[2], nUnitId);
+				sendToGlogalDbServers(&cGlobalDb, demoParams, nMyIp, cMyIp);
+
+				snprintf(cSQL, sizeof(cSQL),
+				         "update hackReport set sentGlobalDB=now(),handledTime=now(),"
+				         "status='Demo evidence attributed and confessed' where reportId=%d",
+				         atoi(row[0]));
+				if (mysql_query(localUpdate, cSQL)) {
+					fprintf(stderr, "******** ERROR ****** While completing Demo confession: %s\n",
+					        mysql_error(localUpdate));
+					return;
+				}
+				printf("Demo hack report %s attributed to unit %u and confessed.\n",
+				       row[0], nUnitId);
+				continue;
+			}
 
 			/* Severity zero is an explicit clean notification. It may clear an
 			 * existing attributable infection, but must never create one. */
