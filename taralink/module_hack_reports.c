@@ -344,7 +344,7 @@ static void checkHackReportsWorker()
 	uint32_t nMyIp;
 	uint32_t nNettmask;
 	char cMyIp[20];
-	char szSQL[400];
+	char szSQL[1200];
 	_GlobalServers cGlobalDb;
 
 	char *lpSql = "select adminIP, inet_ntoa(adminIP), inet_ntoa(globalDb1ip), inet_ntoa(globalDb2ip), inet_ntoa(globalDb3ip), nettmask, internalIP from setup";
