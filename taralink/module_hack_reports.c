@@ -367,7 +367,11 @@ void checkHackReports()
 	}
     mysql_free_result(res);
 
-	sprintf(szSQL, "select reportId, ip, port, inet_ntoa(ip), created, TIMESTAMPDIFF(SECOND, created, NOW()) as SecondsSince, sendAttemptCount, inet_ntoa(sentByIp), why from hackReport where handledTime is null and (ip <> %u or created < DATE_SUB(NOW(), INTERVAL 10 SECOND))", nMyIp);
+	/* Process bounded newest-first batches. A full unbounded result set can trap
+	 * taralink replaying months of historical reports while current security
+	 * events (including Demo 2 gateway confirmation) wait behind the snapshot.
+	 * Once current traffic is handled, subsequent timer passes drain the backlog. */
+	sprintf(szSQL, "select reportId, ip, port, inet_ntoa(ip), created, TIMESTAMPDIFF(SECOND, created, NOW()) as SecondsSince, sendAttemptCount, inet_ntoa(sentByIp), why from hackReport where handledTime is null and (ip <> %u or created < DATE_SUB(NOW(), INTERVAL 10 SECOND)) order by created desc, reportId desc limit 100", nMyIp);
 
 	if (mysql_query(conn, szSQL)) {
 		fprintf(stderr, "**** ERROR *** While fetching hackReports: %s\n", mysql_error(conn));
