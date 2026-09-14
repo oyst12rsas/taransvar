@@ -95,7 +95,10 @@ void checkRequestAssistance()
         setupRes = NULL;
         setupRow = NULL;
 
-        char *szSQL = "select hex(ip) as ip, port, category, comment, coalesce(requestQuality,0) as requestQuality, wantSpoofed, requestId, senderIp, hex(senderIp) as senderIpHex, purpose, CAST(active AS UNSIGNED) as active from assistanceRequest where sentPartners = b'0'";
+        /* fromPartner rows have already completed distribution and must never
+         * occupy this outbound work scan. Bound each timer pass as well, so a
+         * historical assistance backlog cannot starve hack-report delivery. */
+        char *szSQL = "select hex(ip) as ip, port, category, comment, coalesce(requestQuality,0) as requestQuality, wantSpoofed, requestId, senderIp, hex(senderIp) as senderIpHex, purpose, CAST(active AS UNSIGNED) as active from assistanceRequest where sentPartners = b'0' and (purpose is null or purpose <> 'fromPartner') order by requestId limit 100";
 
         if (mysql_query(conn, szSQL))
         {
