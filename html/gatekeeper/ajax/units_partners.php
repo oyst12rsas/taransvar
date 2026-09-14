@@ -112,7 +112,7 @@ function getServerStatus($seconds_since, $status, $nId)
 	$szServerStatus = getDotByInterval($cTemp, "secSince", 130, 200, 		//May skip one round because crontasks.pl didn't finish on time.. This is normal, hence 130
 					"Receiving status messages",
 					"A bit long since received status message. There may be communication problems.", 
-					"Not been sending status message for $seconds_since seconds. Please inform tech team");
+					"Not been sending status messages for ".age($seconds_since).". Please inform tech team");
 
 	$json = json_decode($status, true);
 
