@@ -233,6 +233,7 @@ function initGatekeeperMenus()
             <a href="index.php?f=assistance">Assistance</a>
             <a href="index.php?f=honey">Honey</a>
             <a href="index.php?f=setup">Setup</a>
+            ${typeof bGatekeeperAdmin !== "undefined" && bGatekeeperAdmin ? '<a href="index.php?f=aiStatus">AI status</a>' : ''}
             ${document.querySelector('a[href="index.php?f=users"]') ? '' : '<a href="index.php?f=users">Users</a>'}
         `;
 
