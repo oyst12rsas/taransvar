@@ -247,16 +247,19 @@ function getServerStatus($seconds_since, $status, $nId)
 		    [$key, $value] = explode(':', $item, 2); // limit to 2 in case value contains ':'
 	    	$data[$key] = $value;
 		}
-		$bOk = ($data["log"] == 1 && !strcmp(($data["rsyslog"] ?? ""), "active") && strlen($data["setup"] ?? ""));
+		$logApplicable = (($data["log"] ?? "") !== "n/a");
+		$bForwardingOk = (!strcmp(($data["rsyslog"] ?? ""), "active") && strlen($data["setup"] ?? ""));
+		$bLogOk = (!$logApplicable || ($data["log"] ?? 0) == 1);
+		$bOk = ($bForwardingOk && $bLogOk);
 
 		$szMainDbServer = "100.68.126.0";
 
-		if (strlen(strlen($data["setup"] ?? "")) && !strstr($data["setup"], $szMainDbServer))
+		if (strlen($data["setup"] ?? "") && !strstr($data["setup"], $szMainDbServer))
 			$szServerStatus .= getTitledDot(0, "N/A", "rsyslog is set up but not to send to primary DB server: $szMainDbServer");
-		else		
-			$szServerStatus .= getTitledDot($bOk, 
-					"rsyslog is set up: ".$data["setup"],
-					"rsyslog is not set up");
+		else
+			$szServerStatus .= getTitledDot($bOk,
+					($logApplicable ? "Firewall logging and rsyslog forwarding are set up: " : "Rsyslog forwarding is set up; firewall LOG rule is not applicable on this node: ").$data["setup"],
+					($logApplicable ? "Firewall logging or rsyslog forwarding is not set up" : "Rsyslog forwarding is not set up"));
 	}
 	else
 		$bOldScript = 1;
