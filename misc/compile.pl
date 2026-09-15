@@ -144,6 +144,12 @@ if (
     	"libcjson-dev",
     	""
 	)
+	|| !checkLibInstalled(
+    	"dpkg-query -W -f='\${Status}' libmariadb-dev 2>/dev/null",
+    	"install ok installed",
+    	"libmariadb-dev",
+    	""
+	)
 )
 {
     print "Do you want to quit to install? (y/n): ";
@@ -307,9 +313,17 @@ chdir "..";
 chdir "taralink";
 #print getcwd();
 
-$szLogFile = getSysRoot()."log/gcc.txt"; 
+$szLogFile = getSysRoot()."log/gcc.txt";
+my $szDbConfig = `command -v mariadb_config 2>/dev/null || command -v mysql_config 2>/dev/null`;
+chomp($szDbConfig);
+if (!$szDbConfig) {
+	print "\n****** ERROR ***** Neither mariadb_config nor mysql_config was found.\n";
+	print "Install the MariaDB development files with: sudo apt install libmariadb-dev\n\n";
+	exit 1;
+}
+print "Using database build helper: $szDbConfig\n";
 print "**** Now compiling with debug symbols.... (-g)\n";
-system ("gcc -g taralink.c -o taralink \$(mysql_config --cflags --libs) -lcurl -lcjson > $szLogFile");
+system ("gcc -g taralink.c -o taralink \$($szDbConfig --cflags --libs) -lcurl -lcjson > $szLogFile");
 my $szFilename = './taralink';
 $nFileSize = fileModified($szFilename, 45*1000, 10);
 if ($nFileSize <= 0) {
