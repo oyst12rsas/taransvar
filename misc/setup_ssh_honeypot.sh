@@ -92,6 +92,26 @@ if [ "$SSH_HONEYPOT_DEMO_PORT" != "0" ]; then
     }
     [ "${#SSH_HONEYPOT_DEMO_NODE_TOKEN}" -ge 32 ] || { echo "Demo mode requires a node token of at least 32 characters" >&2; exit 1; }
 fi
+echo
+ echo "TaraSec SSH configuration from $CONF:"
+printf '  %-28s %s\n' "ALLOW_SSH" "${ALLOW_SSH:-not set}"
+printf '  %-28s %s\n' "SSH_PORT (real SSH)" "$SSH_PORT"
+printf '  %-28s %s\n' "SSH_ALLOWED_SOURCES" "${SSH_ALLOWED_SOURCES:-not set}"
+printf '  %-28s %s\n' "SSH_RECOVERY_PROTECT" "${SSH_RECOVERY_PROTECT:-not set}"
+printf '  %-28s %s\n' "SSH_BROADCAST" "${SSH_BROADCAST:-not set}"
+printf '  %-28s %s\n' "SSH_HONEYPOT" "$SSH_HONEYPOT"
+printf '  %-28s %s\n' "SSH_HONEYPOT_PORTS" "$SSH_HONEYPOT_PORTS"
+printf '  %-28s %s\n' "SSH_HONEYPOT_AUTH_MODE" "$SSH_HONEYPOT_AUTH_MODE"
+printf '  %-28s %s\n' "SSH_HONEYPOT_DEMO_PORT" "$SSH_HONEYPOT_DEMO_PORT"
+printf '  %-28s %s\n' "SSH_FAILSAFE" "$SSH_FAILSAFE"
+printf '  %-28s %s\n' "SSH_FAILSAFE_MINUTES" "$SSH_FAILSAFE_MINUTES"
+echo
+read -r -p "Apply this SSH configuration? [y/N] " answer
+case "${answer,,}" in
+    y|yes) ;;
+    *) echo "Cancelled. No SSH, firewall or honeypot changes were made."; exit 0 ;;
+esac
+
 if ! command -v sshd >/dev/null 2>&1; then echo "OpenSSH server is not installed." >&2; exit 1; fi
 
 # Ubuntu 22.10+ may use systemd ssh.socket activation. In that mode the
