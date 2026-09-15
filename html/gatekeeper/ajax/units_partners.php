@@ -208,7 +208,7 @@ function getServerStatus($seconds_since, $status, $nId)
 					"CPU I/O wait is ".$json["cpuWait"]."%. Storage is a bottleneck");
 	}
 	if (isset($json["dbScan"])) {
-		$szServerStatus .= getDotByInterval($json, "dbScan", 10000, 100000,
+		$szServerStatus .= getDotByInterval($json, "dbScan", 100, 1000,
 					"MariaDB scans ".$json["dbScan"]." rows/second. This is normal",
 					"MariaDB scans ".$json["dbScan"]." rows/second. Check query indexes",
 					"MariaDB scans ".$json["dbScan"]." rows/second. Missing indexes are likely");
