@@ -1,7 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
-CONF="${1:-/etc/tarasecfw.conf}"
+CONF="/etc/tarasecfw.conf"
+
+if [ "$#" -ne 0 ]; then
+    echo "Usage: sudo bash $0" >&2
+    echo "Configuration is always read from $CONF" >&2
+    exit 1
+fi
 REPO_DIR="${TARASEC_REPO_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 HONEYPOT_SRC="$REPO_DIR/misc/tarasec_ssh_honeypot.py"
 SERVICE_SRC="$REPO_DIR/misc/tarasec-ssh-honeypot.service"
@@ -13,7 +19,7 @@ ROLLBACK_SERVICE="tarasec-ssh-rollback.service"
 ROLLBACK_TIMER="tarasec-ssh-rollback.timer"
 HONEYPOT_SERVICE="tarasec-ssh-honeypot.service"
 
-if [ "$(id -u)" -ne 0 ]; then echo "Run as root: sudo bash $0 [$CONF]" >&2; exit 1; fi
+if [ "$(id -u)" -ne 0 ]; then echo "Run as root: sudo bash $0" >&2; exit 1; fi
 if [ ! -r "$CONF" ]; then echo "Missing firewall configuration: $CONF" >&2; exit 1; fi
 
 # shellcheck disable=SC1090
