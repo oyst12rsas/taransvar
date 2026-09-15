@@ -651,7 +651,8 @@ CREATE TABLE `traffic` (
   `count` int(10) unsigned NOT NULL DEFAULT 1,
   `isLan` bit(1) NOT NULL DEFAULT b'0',
   `tag` int(10) unsigned DEFAULT NULL,
-  PRIMARY KEY (`trafficId`)
+  PRIMARY KEY (`trafficId`),
+  KEY `idx_traffic_flow_latest` (`ipFrom`,`portFrom`,`ipTo`,`portTo`,`trafficId`)
 ) ENGINE=InnoDB AUTO_INCREMENT=109459 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 CREATE TABLE `unit` (
   `unitId` int(11) NOT NULL AUTO_INCREMENT,
