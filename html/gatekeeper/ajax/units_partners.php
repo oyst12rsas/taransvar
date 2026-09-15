@@ -200,18 +200,24 @@ function getServerStatus($seconds_since, $status, $nId)
 					"CPU usage is ".$json["cpu"]."%. This is normal",
 					"CPU usage is ".$json["cpu"]."%. This should be monitored",
 					"CPU usage is ".$json["cpu"]."%. This is high and should be checked");
+	} else {
+		$szServerStatus .= getTitledDot(false, "N/A", "CPU usage has not been reported by this node");
 	}
 	if (isset($json["cpuWait"])) {
 		$szServerStatus .= getDotByInterval($json, "cpuWait", 10, 25,
 					"CPU I/O wait is ".$json["cpuWait"]."%. This is normal",
 					"CPU I/O wait is ".$json["cpuWait"]."%. Storage may be busy",
 					"CPU I/O wait is ".$json["cpuWait"]."%. Storage is a bottleneck");
+	} else {
+		$szServerStatus .= getTitledDot(false, "N/A", "CPU I/O wait has not been reported by this node");
 	}
 	if (isset($json["dbScan"])) {
 		$szServerStatus .= getDotByInterval($json, "dbScan", 100, 1000,
 					"MariaDB scans ".$json["dbScan"]." rows/second. This is normal",
 					"MariaDB scans ".$json["dbScan"]." rows/second. Check query indexes",
 					"MariaDB scans ".$json["dbScan"]." rows/second. Missing indexes are likely");
+	} else {
+		$szServerStatus .= getTitledDot(false, "N/A", "MariaDB scan rate has not been reported by this node");
 	}
 
 	if (isset($json["df"]))
