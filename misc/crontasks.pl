@@ -296,10 +296,10 @@ sub reportStatus {
 		}
 	}
 
-	if (open(my $fhMetricWrite, ">", "$szMetricStateFile.$")) {
+	if (open(my $fhMetricWrite, ">", "${szMetricStateFile}.$$")) {
 		print $fhMetricWrite encode_json(\%metricNow);
 		close($fhMetricWrite);
-		rename("$szMetricStateFile.$", $szMetricStateFile);
+		rename("${szMetricStateFile}.$$", $szMetricStateFile);
 	}
 
 	#my $szSQL = "select inet_ntoa(ip) from traffic where coalesce(lastSeen, created) > NOW() - INTERVAL 1 MINUTE";
@@ -351,10 +351,10 @@ sub reportStatus {
 	} else {
 		$updates = `/usr/lib/update-notifier/apt-check 2>&1`;
 		chomp $updates;
-		if (open(my $fhAptWrite, ">", "$szAptCacheFile.$")) {
+		if (open(my $fhAptWrite, ">", "${szAptCacheFile}.$$")) {
 			print $fhAptWrite $updates;
 			close($fhAptWrite);
-			rename("$szAptCacheFile.$", $szAptCacheFile);
+			rename("${szAptCacheFile}.$$", $szAptCacheFile);
 		}
 	}
 	chomp $updates;
