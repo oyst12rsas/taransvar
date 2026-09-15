@@ -227,6 +227,16 @@ bool getSetupStringNewOk(MYSQL *conn, MYSQL *updateConn, char *cSetupString, int
 
 
 //int sentConfiguration(struct _SocketData *pSockData, int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
+static int closeConfigurationConnections(MYSQL *conn, MYSQL *updateConn)
+{
+	if (conn)
+		mysql_close(conn);
+	if (updateConn)
+		mysql_close(updateConn);
+	return 0;
+}
+
+
 int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 {
 	//This is a request for configuration setup...
@@ -239,7 +249,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 
 	/*if (!bReadChangesOnly)
 		if (fileConfigurationSent(nSequenceNumber, bIsInbound))
-			return 0;*/
+			return closeConfigurationConnections(conn, updateConn);*/
 
 
 	MYSQL *conn, *updateConn;
@@ -270,7 +280,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 				) {
 			    fprintf(stderr, "%s\n", mysql_error(conn));
 			    reportErrorReadin("servers");
-		    	return 0;
+		    	return closeConfigurationConnections(conn, updateConn);
 			}
 			printf("********** WARNING ******* Testing using handled field to assemble batches of settings. Initiated now.\n");
 		}
@@ -310,14 +320,14 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 	if (mysql_query(conn, lpSQL)) {
 		fprintf(stderr, "taralink: %s\n", mysql_error(conn));
 		reportErrorReadin("setup");
-		return 0;
+		return closeConfigurationConnections(conn, updateConn);
 	}
 
 	setupRes = mysql_use_result(conn);
 	//res = mysql_store_result(conn);		
 	if (!setupRes) {
 	   	fprintf(stderr, "mysql_store_result failed: %s\n", mysql_error(conn));
-		return 0;
+		return closeConfigurationConnections(conn, updateConn);
 	}		
 
 	if ((setupRow = mysql_fetch_row(setupRes)) == NULL)
@@ -337,7 +347,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 		//}
         //printf("Minutes: %lu (%s)\n", nMinutes, szWgetBuff);
 		printf("************ ERROR! Unable to read the setup. Aborting\n");
-		return 0;
+		return closeConfigurationConnections(conn, updateConn);
 	}	
 
 	uint32_t adminIP = (uint32_t)strtoul(setupRow[0]?setupRow[0]:"0", NULL, 10);
@@ -386,14 +396,14 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 			if (mysql_query(conn, lpSQL)) {
 				fprintf(stderr, "taralink: %s\n", mysql_error(conn));
 				reportErrorReadin("setup");
-				return 0;
+				return closeConfigurationConnections(conn, updateConn);
 			}
 				
 			//res = mysql_use_result(conn);
 			res = mysql_store_result(conn);		
 			if (!res) {
 			    fprintf(stderr, "mysql_use_result failed: %s\n", mysql_error(conn));
-    			return 0;
+    			return closeConfigurationConnections(conn, updateConn);
 			}		
 
 			if ((row = mysql_fetch_row(res)) == NULL)
@@ -416,7 +426,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 			//char cSetupStringNew[1000];
 			//if (//!getSetupStringOk(conn, updateConn, cSetupString, sizeof(cSetupString), bReadChangesOnly) ||
 			//	!getSetupStringNewOk(conn, updateConn, cSetupStringNew, sizeof(cSetupStringNew), bReadChangesOnly))
-			//	return 0;
+			//	return closeConfigurationConnections(conn, updateConn);
 
 
 
@@ -503,7 +513,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 						fprintf(stderr, "%s\n", mysql_error(updateConn));
 						addWarningRecord("****** ERROR Error updating setup handled field (meaning it will read again)");
 				    	mysql_free_result(setupRes);
-						return 0;
+						return closeConfigurationConnections(conn, updateConn);
 					}
 			  	}
 				else
@@ -570,7 +580,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 		if (mysql_query(conn, szSQL)) {
 		    fprintf(stderr, "%s\n", mysql_error(conn));
 		    reportErrorReadin("servers");
-		    return 0;
+		    return closeConfigurationConnections(conn, updateConn);
 		}
 		res = mysql_use_result(conn);
 
@@ -637,7 +647,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 		if (mysql_query(conn, szSQL)) {
 			fprintf(stderr, "%s\n", mysql_error(conn));
   			reportErrorReadin("white- and blacklists");
-  			return 0;
+  			return closeConfigurationConnections(conn, updateConn);
 		}
 		res = mysql_use_result(conn);
 		char szColorList[20];
@@ -707,7 +717,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 			if (mysql_query(conn, szSQL)) {
 			    fprintf(stderr, "%s\n", mysql_error(conn));
  			    reportErrorReadin("internal infections");
-		    	return 0;
+		    	return closeConfigurationConnections(conn, updateConn);
 			}
 			res = mysql_use_result(conn);
 
@@ -797,7 +807,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 		if (mysql_query(conn, szSQL)) {
 		    fprintf(stderr, "%s\n", mysql_error(conn));
  		    reportErrorReadin("partner info");
-		    return 0;
+		    return closeConfigurationConnections(conn, updateConn);
 		}
 		res = mysql_use_result(conn);
 
@@ -867,7 +877,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 		if (mysql_query(conn, szSQL)) {
 		    fprintf(stderr, "taralink: %s\n", mysql_error(conn));
  		    reportErrorReadin("inspection info");
-		    return 0;
+		    return closeConfigurationConnections(conn, updateConn);
 		}
 
 		res = mysql_use_result(conn);
@@ -930,7 +940,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 		if (mysql_query(conn, szSQL)) {
 		    fprintf(stderr, "taralink: %s\n", mysql_error(conn));
 		    reportErrorReadin("honeypot info");
-		    return 0;
+		    return closeConfigurationConnections(conn, updateConn);
 		}
 		res = mysql_use_result(conn);
 
@@ -997,7 +1007,7 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 		if (mysql_query(conn, szSQL)) {
 		    fprintf(stderr, "taralink: %s\n", mysql_error(conn));
 		    reportErrorReadin("requests for assistance");
-		    return 0;
+		    return closeConfigurationConnections(conn, updateConn);
 		}
 		res = mysql_use_result(conn);
 
