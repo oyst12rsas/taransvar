@@ -338,7 +338,7 @@ const char *sqlSelect =
 		"ipFrom = ? and portFrom = ? and "
 		"ipTo = ? and portTo = ? and "
 		"(lastSeen is null or lastSeen > NOW() - INTERVAL 1 MINUTE) "
-		"order by coalesce(lastSeen, created) desc limit 1";
+		"order by trafficId desc limit 1";
 
 stmtSelect = mysql_stmt_init(conn);
 if (!stmtSelect) {
