@@ -145,8 +145,6 @@ function getServerStatus($seconds_since, $status, $nId)
 	$cTemp["bootOk"] = (isset($json["bootReq"]) && ($json["bootReq"]==1) ? 0:1);
 	$szServerStatus .= check($cTemp, "bootOk", "boot is not required", "the system requires a boot after upgrading");
 
-	$szServerStatus .= "<br>";
-
 	if (isset($json["updates"]))
 	{
 		$cTemp = explode(";",$json["updates"]);
@@ -166,6 +164,9 @@ function getServerStatus($seconds_since, $status, $nId)
 	}
 	else
 		$bOldScript = 1;
+
+	// Keep the two status-dot rows balanced: update counts finish the first row.
+	$szServerStatus .= "<br>";
 
 	if (isset($json["lstUp"]))
 	{
