@@ -286,7 +286,7 @@ td {
 <script type="text/javascript" src="std.js"></script>
 <script type="text/javascript" src="lib.js?v=20260911-2"></script>
 <script type="text/javascript" src="lib2.js"></script>
-<script type="text/javascript" src="gatekeeper.js?v=20260911-2"></script>
+<script type="text/javascript" src="gatekeeper.js?v=20260915-3"></script>
 <script>
 var cJsonParam = new Object;
 var bGatekeeperAdmin = <?php print isAdmin() ? "true" : "false"; ?>;
