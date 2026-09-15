@@ -354,6 +354,7 @@ function setupMenu()
 <td bgcolor="white"><a href="index.php?f=honey">Honey</a></td>
 <!----------------- <td bgcolor="white"><a href="index.php?f=workshops">Workshop</a></td> ------------->
 <td bgcolor="white"><a href="index.php?f=setup">Setup</a></td>
+<?php if (isAdmin()) { ?><td bgcolor="white"><a href="index.php?f=aiStatus">AI status</a></td><?php } ?>
 </tr>
 </table>
 <?php
@@ -593,7 +594,7 @@ function getCloseWarningLink($nId)
 showMenu();
 
 if (isset($_SESSION["userid"]) && isset($_GET["f"]) &&  in_array($_GET["f"], array("setup", 'servers', "partners", "domains", "colorListings", "inspections", 
-		"workshop", "honey", "listrouters","addpartner","addServer","adddomain","addColorListing","addInspection","addHoney","partner","delRouter")))
+		"workshop", "honey", "aiStatus", "listrouters","addpartner","addServer","adddomain","addColorListing","addInspection","addHoney","partner","delRouter")))
 {
 	setupMenu();
 }
