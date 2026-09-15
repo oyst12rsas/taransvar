@@ -289,6 +289,7 @@ td {
 <script type="text/javascript" src="gatekeeper.js?v=20260911-2"></script>
 <script>
 var cJsonParam = new Object;
+var bGatekeeperAdmin = <?php print isAdmin() ? "true" : "false"; ?>;
 </script>
 <title><?php 
 	printTitle();
