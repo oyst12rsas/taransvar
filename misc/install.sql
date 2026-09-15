@@ -471,8 +471,14 @@ DROP TRIGGER IF EXISTS pendingWget_assistance_retry;
 CREATE TRIGGER pendingWget_assistance_retry BEFORE UPDATE ON pendingWget FOR EACH ROW SET NEW.handled = IF(NEW.category = 'AssistanceRequest' AND NEW.reply IS NOT NULL AND TRIM(REPLACE(REPLACE(REPLACE(NEW.reply, CHAR(13), ''), CHAR(10), ''), CHAR(9), '')) <> 'ok', NULL, NEW.handled);
 update setup set dbVersion = 88;
 
+#version 89 (260915)
+#The per-packet traffic lookup matches a complete network tuple and then selects
+#the newest row. Without this index MariaDB scans and sorts the traffic table.
+alter table traffic add index idx_traffic_flow_latest (ipFrom, portFrom, ipTo, portTo, trafficId);
+update setup set dbVersion = 89;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 89;
+#update setup set dbVersion = 90;
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 
 #can import DB changes automatically based on the content of this file...
