@@ -244,6 +244,64 @@ sub reportStatus {
 	$json{"mem"} = `free -h | awk '/Mem:/ {print \$3 "/" \$2}'`;
 	chomp($json{"mem"});
 
+	# Lightweight interval metrics. /proc/stat and MariaDB expose cumulative
+	# counters, so comparing this heartbeat with the previous one measures the
+	# whole minute without running top or adding a sampling delay.
+	my $szMetricStateFile = "/tmp/tarasec-status-counters.json";
+	my %metricNow;
+	$metricNow{"time"} = time;
+
+	if (open(my $fhCpu, "<", "/proc/stat")) {
+		my $szCpuLine = <$fhCpu>;
+		close($fhCpu);
+		if (defined($szCpuLine) && $szCpuLine =~ /^cpu\s+(.+)$/) {
+			my @cpu = split(/\s+/, $1);
+			my $nTotal = 0;
+			$nTotal += $_ for @cpu;
+			$metricNow{"cpuTotal"} = $nTotal + 0;
+			$metricNow{"cpuIdle"} = ($cpu[3] // 0) + 0;
+			$metricNow{"cpuWait"} = ($cpu[4] // 0) + 0;
+		}
+	}
+
+	my $sthScans = $dbh->prepare("SHOW GLOBAL STATUS LIKE 'Handler_read_rnd_next'");
+	$sthScans->execute();
+	if (my $cScans = $sthScans->fetchrow_hashref()) {
+		$metricNow{"dbScans"} = ($cScans->{"Value"} // 0) + 0;
+	}
+	$sthScans->finish();
+
+	my $metricPrevious = {};
+	if (-f $szMetricStateFile && open(my $fhMetricRead, "<", $szMetricStateFile)) {
+		local $/;
+		my $szPrevious = <$fhMetricRead>;
+		close($fhMetricRead);
+		my $decoded = eval { decode_json($szPrevious) };
+		$metricPrevious = $decoded if ref($decoded) eq "HASH";
+	}
+
+	if (defined($metricPrevious->{"time"})) {
+		my $nElapsed = $metricNow{"time"} - $metricPrevious->{"time"};
+		my $nCpuTotal = ($metricNow{"cpuTotal"} // 0) - ($metricPrevious->{"cpuTotal"} // 0);
+		my $nCpuIdle = ($metricNow{"cpuIdle"} // 0) - ($metricPrevious->{"cpuIdle"} // 0);
+		my $nCpuWait = ($metricNow{"cpuWait"} // 0) - ($metricPrevious->{"cpuWait"} // 0);
+
+		if ($nCpuTotal > 0) {
+			$json{"cpu"} = sprintf("%.1f", 100 * ($nCpuTotal - $nCpuIdle - $nCpuWait) / $nCpuTotal) + 0;
+			$json{"cpuWait"} = sprintf("%.1f", 100 * $nCpuWait / $nCpuTotal) + 0;
+		}
+		if ($nElapsed > 0 && defined($metricPrevious->{"dbScans"})) {
+			my $nScans = $metricNow{"dbScans"} - $metricPrevious->{"dbScans"};
+			$json{"dbScan"} = int($nScans / $nElapsed) if $nScans >= 0;
+		}
+	}
+
+	if (open(my $fhMetricWrite, ">", "$szMetricStateFile.$")) {
+		print $fhMetricWrite encode_json(\%metricNow);
+		close($fhMetricWrite);
+		rename("$szMetricStateFile.$", $szMetricStateFile);
+	}
+
 	#my $szSQL = "select inet_ntoa(ip) from traffic where coalesce(lastSeen, created) > NOW() - INTERVAL 1 MINUTE";
 	my $szSQL = "SELECT COUNT(DISTINCT ipFrom) AS unique_ips FROM traffic WHERE COALESCE(lastSeen, created) > NOW() - INTERVAL 5 MINUTE AND ipFrom <> INET_ATON('10.100.0.1') and ipFrom BETWEEN INET_ATON('10.100.0.0') AND INET_ATON('10.100.255.255')";
 	#To see the user names: 
@@ -281,9 +339,25 @@ sub reportStatus {
 	#Check if boot is required, updates available and time of last automatic update
 	$json{"bootReq"} = -e "/var/run/reboot-required" ? 1 : 0;
 
-	my $updates = `/usr/lib/update-notifier/apt-check 2>&1`;
+	# apt-check is relatively expensive. Refresh it hourly and reuse the cached
+	# result in each minute heartbeat.
+	my $szAptCacheFile = "/tmp/tarasec-apt-check.cache";
+	my $updates = "";
+	if (-f $szAptCacheFile && time - (stat($szAptCacheFile))[9] < 3600) {
+		if (open(my $fhAptRead, "<", $szAptCacheFile)) {
+			$updates = <$fhAptRead> // "";
+			close($fhAptRead);
+		}
+	} else {
+		$updates = `/usr/lib/update-notifier/apt-check 2>&1`;
+		chomp $updates;
+		if (open(my $fhAptWrite, ">", "$szAptCacheFile.$")) {
+			print $fhAptWrite $updates;
+			close($fhAptWrite);
+			rename("$szAptCacheFile.$", $szAptCacheFile);
+		}
+	}
 	chomp $updates;
-
 	$json{"updates"} = $updates;
 
 	#$json{"updates"} = `/usr/lib/update-notifier/apt-check`;
