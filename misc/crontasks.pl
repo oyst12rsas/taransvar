@@ -67,33 +67,36 @@ sub readConfig
 }
 
 
-sub checkServices {
+sub serviceEnabled {
+	my ($service) = @_;
+	return system("systemctl", "is-enabled", "--quiet", $service) == 0;
+}
 
-	#NOTE Also implement for dhcp..
+sub checkServices {
+	# These workers are required on every TaraSec node. The gateway firewall
+	# is role-specific and must only be required where it is enabled.
 	my @services = (
-    	"worker_read_dmesg",
+		"worker_read_dmesg",
 		"worker_conntrack",
-		"tarasec-gateway.service",
 	);
+	push @services, "tarasec-gateway.service" if serviceEnabled("tarasec-gateway.service");
 
 	my $cfg = readConfig();
-	print $cfg->{SERVICES};
+	print($cfg->{SERVICES} // "");
 
 	print "\n\nChecking services:\n";
 
 	my @errors;
-	my @configServices = grep { length } split /,/, ($cfg->{SERVICES} // '');	
+	my @configServices = grep { length } split /,/, ($cfg->{SERVICES} // '');
 	my @merged = (@services, @configServices);
 
 	foreach my $service (@merged) {
-		my $szStatus = `sudo systemctl status $service`;
-
-		if (system("systemctl is-active --quiet $service") == 0) {
-    		print "$service is RUNNING\n";
+		if (system("systemctl", "is-active", "--quiet", $service) == 0) {
+   		print "$service is RUNNING\n";
 		} else {
-    		print "$service is NOT running\n";
+   		print "$service is NOT running\n";
 			push @errors, $service;
-		}		
+		}
 	}
 
 	if (scalar(@errors)) {
@@ -102,7 +105,6 @@ sub checkServices {
 		return "";
 	}
 }
-
 sub checkDisableSshChange {
 	my $dbh = getConnection();
 	my $sthSetup = $dbh->prepare("select iptablesAllowPing, coalesce(CAST(iptablesAllowSsh as UNSIGNED),0) as iptablesAllowSsh, sshPort, whoMaySsh, iptablesSetupChanged from setup where iptablesSetupChanged limit 1");
@@ -304,15 +306,21 @@ sub reportStatus {
 	
 	my $szStatus = "";
 
-	if ($szIptablesLog =~ /^\s*\d+\s+\d+\s+(\d+)\s+LOG\b.*?avg\s+(\d+)\/min\s+burst\s+(\d+).*?prefix\s+"([^"]+)"/m) 
+	if ($szIptablesLog =~ /^\s*\d+\s+\d+\s+(\d+)\s+LOG\b.*?avg\s+(\d+)\/min\s+burst\s+(\d+).*?prefix\s+"([^"]+)"/m)
 	{
 	    my ($bytes, $avg, $burst, $prefix) = ($1, $2, $3, $4);
 	    $prefix =~ s/:\s*$//;
 	    $szStatus = "log:1,byte:$bytes,avg:$avg,burst:$burst,prefix:$prefix";
 	}
+	elsif (serviceEnabled("tarasec-gateway.service"))
+	{
+		# A gateway is expected to have the firewall LOG rule.
+   		$szStatus = "log:0";
+	}
 	else
 	{
-    	$szStatus = "log:0";
+		# Ordinary nodes forward logs but do not require a gateway LOG rule.
+   		$szStatus = "log:n/a";
 	}
 
 	my $rsyslogActive = `systemctl is-active rsyslog 2>/dev/null`;
