@@ -37,25 +37,20 @@ function aiStatusIssues($secondsSince, $status)
     if (isset($status['dmesg']) && (int)$status['dmesg'] >= 130) {
         $issues[] = 'ERROR: dmesg data is ' . (int)$status['dmesg'] . ' seconds old';
     }
-
     if (isset($status['trfc']) && (int)$status['trfc'] >= 130) {
         $issues[] = 'NOTICE: traffic data is ' . (int)$status['trfc'] . ' seconds old; this may be normal when there are no users';
     }
-
     if (isset($status['sqlThrds']) && (int)$status['sqlThrds'] >= 25) {
         $issues[] = 'ERROR: high MariaDB connection count (' . (int)$status['sqlThrds'] . ')';
     } elseif (isset($status['sqlThrds']) && (int)$status['sqlThrds'] > 12) {
         $issues[] = 'WARNING: elevated MariaDB connection count (' . (int)$status['sqlThrds'] . ')';
     }
-
     if (!empty($status['bootReq'])) {
         $issues[] = 'WARNING: reboot required';
     }
-
     if (!empty($status['srvcNtOk'])) {
         $issues[] = 'ERROR: services not running: ' . $status['srvcNtOk'];
     }
-
     if (isset($status['ld'])) {
         $loads = preg_split('/\s+/', trim((string)$status['ld']));
         $recentLoads = array_slice(array_map('floatval', $loads), 0, 2);
@@ -65,7 +60,6 @@ function aiStatusIssues($secondsSince, $status)
             $issues[] = 'WARNING: elevated recent load (' . $status['ld'] . ')';
         }
     }
-
     if (isset($status['rsyslog'])) {
         $parts = array();
         foreach (explode(',', $status['rsyslog']) as $item) {
@@ -84,23 +78,19 @@ function aiStatusIssues($secondsSince, $status)
             $issues[] = 'ERROR: expected firewall LOG rule is missing';
         }
     }
-
     if (!empty($status['err'])) {
         $severity = isset($status['errSev']) ? $status['errSev'] : 'unknown';
         $issues[] = 'REPORTED ERROR (severity ' . $severity . '): ' . $status['err'];
     }
-
     if (!$issues) {
         $issues[] = 'OK: no issue detected by the dashboard thresholds';
     }
-
     return $issues;
 }
 
 function aiStatusAppendServer(&$lines, $name, $ip, $reportedAt, $secondsSince, $rawStatus, $kind)
 {
     $status = json_decode((string)$rawStatus, true);
-
     $lines[] = '';
     $lines[] = '============================================================';
     $lines[] = 'SERVER: ' . ($name !== '' ? $name : 'Unnamed');
@@ -109,11 +99,9 @@ function aiStatusAppendServer(&$lines, $name, $ip, $reportedAt, $secondsSince, $
     $lines[] = 'REPORTED_AT: ' . aiStatusScalar($reportedAt);
     $lines[] = 'SECONDS_SINCE_REPORT: ' . aiStatusScalar($secondsSince);
     $lines[] = 'ASSESSMENT:';
-
     foreach (aiStatusIssues($secondsSince === null ? null : (int)$secondsSince, $status) as $issue) {
         $lines[] = '- ' . $issue;
     }
-
     $lines[] = 'STATUS_FIELDS:';
     if (is_array($status)) {
         ksort($status);
@@ -126,11 +114,8 @@ function aiStatusAppendServer(&$lines, $name, $ip, $reportedAt, $secondsSince, $
     } else {
         $lines[] = 'invalid_or_missing_status_json';
     }
-
     $lines[] = 'RAW_STATUS_JSON:';
-    $lines[] = is_array($status)
-        ? json_encode($status, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
-        : aiStatusScalar($rawStatus);
+    $lines[] = is_array($status) ? json_encode($status, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) : aiStatusScalar($rawStatus);
 }
 
 function aiStatus()
@@ -162,48 +147,18 @@ function aiStatus()
         '- Absent traffic can be normal on an idle node.',
     );
 
-    $localSql = "SELECT COALESCE(nickname,'Local server') AS name,
-                        COALESCE(INET_NTOA(adminIP),'') AS ip,
-                        networkStatusChecked AS reported_at,
-                        TIMESTAMPDIFF(SECOND,networkStatusChecked,NOW()) AS seconds_since,
-                        networkStatus AS status
-                 FROM setup
-                 LIMIT 1";
+    $localSql = "SELECT COALESCE(nickname,'Local server') AS name, COALESCE(INET_NTOA(adminIP),'') AS ip, networkStatusChecked AS reported_at, TIMESTAMPDIFF(SECOND,networkStatusChecked,NOW()) AS seconds_since, networkStatus AS status FROM setup LIMIT 1";
     $localResult = $conn->query($localSql);
     if ($localResult && ($row = $localResult->fetch_assoc())) {
-        aiStatusAppendServer(
-            $lines,
-            (string)$row['name'],
-            (string)$row['ip'],
-            $row['reported_at'],
-            $row['seconds_since'],
-            $row['status'],
-            'local server'
-        );
+        aiStatusAppendServer($lines, (string)$row['name'], (string)$row['ip'], $row['reported_at'], $row['seconds_since'], $row['status'], 'local server');
         $localResult->free();
     }
 
-    $partnerSql = "SELECT R.routerId,
-                          COALESCE(P.name,CONCAT('Router ',R.routerId)) AS name,
-                          COALESCE(INET_NTOA(R.ip),'') AS ip,
-                          R.partnerStatusReceived AS reported_at,
-                          TIMESTAMPDIFF(SECOND,R.partnerStatusReceived,NOW()) AS seconds_since,
-                          R.status
-                   FROM partnerRouter R
-                   LEFT JOIN partner P ON P.partnerId=R.partnerId
-                   ORDER BY P.name,R.routerId";
+    $partnerSql = "SELECT R.routerId, COALESCE(P.name,CONCAT('Router ',R.routerId)) AS name, COALESCE(INET_NTOA(R.ip),'') AS ip, R.partnerStatusReceived AS reported_at, TIMESTAMPDIFF(SECOND,R.partnerStatusReceived,NOW()) AS seconds_since, R.status FROM partnerRouter R LEFT JOIN partner P ON P.partnerId=R.partnerId ORDER BY P.name,R.routerId";
     $partnerResult = $conn->query($partnerSql);
     if ($partnerResult) {
         while ($row = $partnerResult->fetch_assoc()) {
-            aiStatusAppendServer(
-                $lines,
-                (string)$row['name'],
-                (string)$row['ip'],
-                $row['reported_at'],
-                $row['seconds_since'],
-                $row['status'],
-                'partner router'
-            );
+            aiStatusAppendServer($lines, (string)$row['name'], (string)$row['ip'], $row['reported_at'], $row['seconds_since'], $row['status'], 'partner router');
         }
         $partnerResult->free();
     }
@@ -212,33 +167,59 @@ function aiStatus()
     $report = implode("\n", $lines);
     ?>
     <style>
-    .ai-status-wrap { max-width: 1100px; margin: 20px auto; text-align: left; }
-    .ai-status-actions { margin: 10px 0; }
-    #aiStatusReport { width: 100%; min-height: 650px; box-sizing: border-box; font-family: monospace; white-space: pre; }
-    #aiStatusCopyResult { margin-left: 10px; }
+    .ai-status-wrap { max-width: 1100px; margin: 20px auto; text-align: left; padding: 0 8px; box-sizing: border-box; }
+    .ai-status-actions { margin: 10px 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .ai-status-actions button { min-height: 44px; padding: 8px 14px; font-size: 16px; touch-action: manipulation; }
+    #aiStatusReport { width: 100%; min-height: 650px; box-sizing: border-box; font-family: monospace; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; font-size: 14px; }
+    #aiStatusCopyResult { min-height: 1.4em; }
+    @media (max-width: 600px) {
+        .ai-status-wrap { margin: 10px auto; }
+        .ai-status-actions button { width: 100%; }
+        #aiStatusCopyResult { width: 100%; }
+        #aiStatusReport { min-height: 60vh; font-size: 13px; }
+    }
     </style>
     <div class="ai-status-wrap">
         <h2>AI status report</h2>
         <p>This administrator-only report combines the latest status received from the local server and every registered partner. Copy it into an AI conversation when requesting operational help.</p>
         <div class="ai-status-actions">
-            <button type="button" onclick="copyAiStatusReport()">Copy complete report</button>
-            <span id="aiStatusCopyResult"></span>
+            <button type="button" id="aiStatusCopyButton" onclick="copyAiStatusReport()">Copy complete report</button>
+            <button type="button" onclick="selectAiStatusReport()">Select report</button>
+            <span id="aiStatusCopyResult" role="status" aria-live="polite"></span>
         </div>
-        <textarea id="aiStatusReport" readonly><?php
-            print htmlspecialchars($report, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        ?></textarea>
+        <textarea id="aiStatusReport" readonly spellcheck="false" autocapitalize="off" autocomplete="off"><?php print htmlspecialchars($report, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); ?></textarea>
     </div>
     <script>
+    function selectAiStatusReport() {
+        const report = document.getElementById('aiStatusReport');
+        const result = document.getElementById('aiStatusCopyResult');
+        report.focus();
+        report.select();
+        report.setSelectionRange(0, report.value.length);
+        result.textContent = 'Report selected — use Copy from your phone menu';
+    }
+
     async function copyAiStatusReport() {
         const report = document.getElementById('aiStatusReport');
         const result = document.getElementById('aiStatusCopyResult');
+        const button = document.getElementById('aiStatusCopyButton');
         try {
-            await navigator.clipboard.writeText(report.value);
-            result.textContent = 'Copied';
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(report.value);
+            } else {
+                report.focus();
+                report.select();
+                report.setSelectionRange(0, report.value.length);
+                if (!document.execCommand('copy')) {
+                    throw new Error('copy command unavailable');
+                }
+            }
+            result.textContent = 'Copied to clipboard';
+            button.textContent = 'Copied ✓';
+            window.setTimeout(function () { button.textContent = 'Copy complete report'; }, 1800);
         } catch (error) {
-            report.focus();
-            report.select();
-            result.textContent = 'Select and copy the highlighted report';
+            selectAiStatusReport();
+            result.textContent = 'Automatic copy unavailable — report selected; tap Copy';
         }
     }
     </script>
