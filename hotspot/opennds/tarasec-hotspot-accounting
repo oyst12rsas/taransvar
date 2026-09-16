@@ -102,6 +102,38 @@ for my $client_key (keys %{$data->{clients}}) {
                         ]
                     );
                     my $account = eval { decode_json($account_body) };
+
+                    # A reconnect resets openNDS counters. The central API closes
+                    # the previous session instead of treating the reset as new
+                    # usage. Request a fresh session and retry in this same poll
+                    # so the app does not keep showing the old connection total.
+                    if ($account && !$account->{ok}
+                        && ($account->{reason} // '') eq 'session_reset_required') {
+                        my $retry_access_body = curl_form(
+                            $access_url,
+                            $gateway_key,
+                            $gateway_token,
+                            [ device_key => $device_key, client_ip => $ip ]
+                        );
+                        my $retry_access = eval { decode_json($retry_access_body) };
+                        if ($retry_access && $retry_access->{ok} && $retry_access->{allow}
+                            && int($retry_access->{session_id} // 0) > 0) {
+                            $session_id = int($retry_access->{session_id});
+                            $account_body = curl_form(
+                                $accounting_url,
+                                $gateway_key,
+                                $gateway_token,
+                                [
+                                    session_id => $session_id,
+                                    bytes_up => $up * 1024,
+                                    bytes_down => $down * 1024,
+                                ]
+                            );
+                            $account = eval { decode_json($account_body) };
+                            logger("central counter reset recovered with session=$session_id client=$ip");
+                        }
+                    }
+
                     if ($account && $account->{ok}) {
                         logger("central session=$session_id client=$ip usage_mib=".($account->{usage_mib}//'0')." charged=".($account->{charged_credits}//'0'));
                         if (exists $account->{allow} && !$account->{allow}) {
