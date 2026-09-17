@@ -991,7 +991,10 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 		 * incremental update, include each target touched by an unhandled event,
 		 * but calculate its state from all currently active rows. */
 		if (bReadChangesOnly)
-			lpHandledWhere = "where exists (select 1 from assistanceRequest changed where changed.ip=ar.ip and changed.port=ar.port and changed.handled is null)";
+			/* Begin with the usually tiny set of changed endpoints, then use the
+			 * endpoint index to aggregate only their history. A correlated EXISTS
+			 * caused MariaDB to scan the complete history every five seconds. */
+			lpHandledWhere = "join (select distinct ip, port from assistanceRequest where handled is null) changed on changed.ip=ar.ip and changed.port=ar.port";
 		else
 			lpHandledWhere = "where ar.active=b'1'";
 
