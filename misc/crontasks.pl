@@ -176,7 +176,7 @@ sub reportStatus {
 	# modules when the userspace controller is unavailable.
 	my $szFailOpenParameter = "/sys/module/tarakernel/parameters/fail_open_without_config";
 	my $bKernelFailOpen = 0;
-	if (moduleRunning("tarakernel") && open(my $fhFailOpen, "<", $szFailOpenParameter)) {
+	if (moduleRunning("tarakernel") && -r $szFailOpenParameter && open(my $fhFailOpen, "<", $szFailOpenParameter)) {
 		my $szFailOpen = <$fhFailOpen>;
 		close($fhFailOpen);
 		$bKernelFailOpen = (defined($szFailOpen) && $szFailOpen =~ /^\s*(?:1|y|yes)\s*$/i);
@@ -214,7 +214,7 @@ sub reportStatus {
 				saveWarning("Taralink was not running when reporting status. Seems like managed to start it\n");
 			} else {
 				my $bStillFailOpen = 0;
-				if (moduleRunning("tarakernel") && open(my $fhFailOpen, "<", $szFailOpenParameter)) {
+				if (moduleRunning("tarakernel") && -r $szFailOpenParameter && open(my $fhFailOpen, "<", $szFailOpenParameter)) {
 					my $szFailOpen = <$fhFailOpen>;
 					close($fhFailOpen);
 					$bStillFailOpen = (defined($szFailOpen) && $szFailOpen =~ /^\s*(?:1|y|yes)\s*$/i);
