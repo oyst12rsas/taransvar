@@ -477,8 +477,18 @@ update setup set dbVersion = 88;
 alter table traffic add index idx_traffic_flow_latest (ipFrom, portFrom, ipTo, portTo, trafficId);
 update setup set dbVersion = 89;
 
+#version 90 (260917)
+#The five-second workers query pending work repeatedly. Index the pending-state
+#columns first so idle nodes do not scan complete historical tables.
+alter table traffic add index idx_traffic_whois_pending (whoIsId, isLan, trafficId);
+alter table assistanceRequest add index idx_assistance_outbound (sentPartners, requestId);
+alter table assistanceRequest add index idx_assistance_changed (handled, ip, port);
+alter table assistanceRequest add index idx_assistance_endpoint (ip, port, requestId);
+alter table hackReport add index idx_hackreport_pending (handledTime, created, reportId);
+update setup set dbVersion = 90;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 90;
+#update setup set dbVersion = 91;
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 
 #can import DB changes automatically based on the content of this file...
