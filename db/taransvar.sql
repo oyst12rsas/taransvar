@@ -43,8 +43,12 @@ CREATE TABLE `assistanceRequest` (
   `active` bit(1) NOT NULL DEFAULT b'1',
   `fromOther` bit(1) NOT NULL DEFAULT b'0',
   `handled` bit(1) DEFAULT NULL,
+  `sentPartners` bit(1) NOT NULL DEFAULT b'0',
   `purpose` enum('internalRequest','forDistribution','fromPartner') DEFAULT NULL,
-  PRIMARY KEY (`requestId`)
+  PRIMARY KEY (`requestId`),
+  KEY `idx_assistance_outbound` (`sentPartners`,`requestId`),
+  KEY `idx_assistance_changed` (`handled`,`ip`,`port`),
+  KEY `idx_assistance_endpoint` (`ip`,`port`,`requestId`)
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 CREATE TABLE `attack` (
   `attackId` int(10) unsigned NOT NULL AUTO_INCREMENT,
@@ -210,7 +214,8 @@ CREATE TABLE `hackReport` (
   `sentGlobalDB` timestamp NULL DEFAULT NULL,
   `ipOwnerId` varchar(100) DEFAULT NULL,
   `sendAttemptCount` int(11) NOT NULL DEFAULT 0,
-  PRIMARY KEY (`reportId`)
+  PRIMARY KEY (`reportId`),
+  KEY `idx_hackreport_pending` (`handledTime`,`created`,`reportId`)
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 CREATE TABLE `honeyport` (
   `port` smallint(5) unsigned NOT NULL,
@@ -652,7 +657,8 @@ CREATE TABLE `traffic` (
   `isLan` bit(1) NOT NULL DEFAULT b'0',
   `tag` int(10) unsigned DEFAULT NULL,
   PRIMARY KEY (`trafficId`),
-  KEY `idx_traffic_flow_latest` (`ipFrom`,`portFrom`,`ipTo`,`portTo`,`trafficId`)
+  KEY `idx_traffic_flow_latest` (`ipFrom`,`portFrom`,`ipTo`,`portTo`,`trafficId`),
+  KEY `idx_traffic_whois_pending` (`whoIsId`,`isLan`,`trafficId`)
 ) ENGINE=InnoDB AUTO_INCREMENT=109459 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 CREATE TABLE `unit` (
   `unitId` int(11) NOT NULL AUTO_INCREMENT,
