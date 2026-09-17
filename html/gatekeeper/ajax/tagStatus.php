@@ -7,8 +7,30 @@
  * repeated the infection, hack-report and traffic queries here, with different
  * freshness and precedence rules from the app.
  */
+
+/*
+ * AJAX normally loads taraLib.php through gatekeeper/ajax.php. Resolve it
+ * directly as well so this endpoint fails clearly if a deployment copied only
+ * the gatekeeper subtree and left the shared library behind.
+ */
+if (!function_exists('getTagData')) {
+    $taraLib = dirname(__DIR__, 2).'/taraLib.php';
+    if (is_readable($taraLib)) {
+        require_once $taraLib;
+    }
+}
+
 function tagStatus()
 {
+    if (!function_exists('getTagData')) {
+        CXmlCommand::setInnerHTML(
+            "tagStatus",
+            "",
+            '<font color="red">Status unavailable: server files are out of sync.</font>'
+        );
+        return;
+    }
+
 	$data = getTagData();
 
 	/*
