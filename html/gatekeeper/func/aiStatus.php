@@ -199,27 +199,62 @@ function aiStatus()
         result.textContent = 'Report selected — use Copy from your phone menu';
     }
 
+    function copyAiStatusReportLegacy(text) {
+        const clipboardField = document.createElement('textarea');
+        clipboardField.value = text;
+        clipboardField.setAttribute('readonly', '');
+        clipboardField.setAttribute('aria-hidden', 'true');
+        clipboardField.style.position = 'fixed';
+        clipboardField.style.left = '-9999px';
+        clipboardField.style.top = '0';
+        clipboardField.style.opacity = '0';
+        document.body.appendChild(clipboardField);
+        clipboardField.focus();
+        clipboardField.select();
+        clipboardField.setSelectionRange(0, clipboardField.value.length);
+
+        let copied = false;
+        try {
+            copied = document.execCommand('copy');
+        } finally {
+            clipboardField.remove();
+        }
+        return copied;
+    }
+
     async function copyAiStatusReport() {
         const report = document.getElementById('aiStatusReport');
         const result = document.getElementById('aiStatusCopyResult');
         const button = document.getElementById('aiStatusCopyButton');
+        button.disabled = true;
+
         try {
+            let copied = false;
             if (navigator.clipboard && window.isSecureContext) {
-                await navigator.clipboard.writeText(report.value);
-            } else {
-                report.focus();
-                report.select();
-                report.setSelectionRange(0, report.value.length);
-                if (!document.execCommand('copy')) {
-                    throw new Error('copy command unavailable');
+                try {
+                    await navigator.clipboard.writeText(report.value);
+                    copied = true;
+                } catch (clipboardError) {
+                    copied = copyAiStatusReportLegacy(report.value);
                 }
+            } else {
+                copied = copyAiStatusReportLegacy(report.value);
             }
-            result.textContent = 'Copied to clipboard';
+
+            if (!copied) {
+                throw new Error('copy command unavailable');
+            }
+
+            result.textContent = 'Complete report copied to clipboard';
             button.textContent = 'Copied ✓';
-            window.setTimeout(function () { button.textContent = 'Copy complete report'; }, 1800);
+            window.setTimeout(function () {
+                button.textContent = 'Copy complete report';
+                button.disabled = false;
+            }, 1800);
         } catch (error) {
+            button.disabled = false;
             selectAiStatusReport();
-            result.textContent = 'Automatic copy unavailable — report selected; tap Copy';
+            result.textContent = 'Copy was blocked by the browser — report selected; choose Copy';
         }
     }
     </script>
