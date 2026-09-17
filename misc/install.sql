@@ -480,11 +480,11 @@ update setup set dbVersion = 89;
 #version 90 (260917)
 #The five-second workers query pending work repeatedly. Index the pending-state
 #columns first so idle nodes do not scan complete historical tables.
-alter table traffic add index idx_traffic_whois_pending (whoIsId, isLan, trafficId);
-alter table assistanceRequest add index idx_assistance_outbound (sentPartners, requestId);
-alter table assistanceRequest add index idx_assistance_changed (handled, ip, port);
-alter table assistanceRequest add index idx_assistance_endpoint (ip, port, requestId);
-alter table hackReport add index idx_hackreport_pending (handledTime, created, reportId);
+alter table traffic add index if not exists idx_traffic_whois_pending (whoIsId, isLan, trafficId);
+alter table assistanceRequest add index if not exists idx_assistance_outbound (sentPartners, requestId);
+alter table assistanceRequest add index if not exists idx_assistance_changed (handled, ip, port);
+alter table assistanceRequest add index if not exists idx_assistance_endpoint (ip, port, requestId);
+alter table hackReport add index if not exists idx_hackreport_pending (handledTime, created, reportId);
 update setup set dbVersion = 90;
 
 #******** NEXT TIME ALSO add *****
