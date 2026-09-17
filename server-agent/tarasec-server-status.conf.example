@@ -1,0 +1,8 @@
+# TaraSec generic server status agent
+# Prefer a private/VPN address or HTTPS DB endpoint.
+DB_STATUS_URL=https://db.example.org/script/serverStatusReport.php
+ROLE=vm
+# Optional bearer token. Keep the real config root-readable (0600).
+TOKEN=
+# Random delay before each report to avoid synchronized fleets (0..45).
+JITTER_SECONDS=20
