@@ -402,7 +402,7 @@ sub reportStatus {
 	    $prefix =~ s/:\s*$//;
 	    $szStatus = "log:1,byte:$bytes,avg:$avg,burst:$burst,prefix:$prefix";
 	}
-	elsif (serviceEnabled("tarasec-gateway.service"))
+	elsif (configuredAsGateway())
 	{
 		# A gateway is expected to have the firewall LOG rule.
    		$szStatus = "log:0";
