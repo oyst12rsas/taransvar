@@ -72,14 +72,30 @@ sub serviceEnabled {
 	return system("systemctl", "is-enabled", "--quiet", $service) == 0;
 }
 
+sub configuredAsGateway {
+	my $cfgFile = "/etc/tarasecfw.conf";
+	return 0 if !-r $cfgFile;
+
+	open(my $fh, "<", $cfgFile);
+	while (my $line = <$fh>) {
+		next if $line =~ /^\s*#/;
+		if ($line =~ /^\s*IS_GATEWAY\s*=\s*["']?(1|yes|true|on)["']?\s*(?:#.*)?$/i) {
+			close($fh);
+			return 1;
+		}
+	}
+	close($fh);
+	return 0;
+}
+
 sub checkServices {
 	# These workers are required on every TaraSec node. The gateway firewall
-	# is role-specific and must only be required where it is enabled.
+	# is required only when the node is explicitly configured as a gateway.
 	my @services = (
 		"worker_read_dmesg",
 		"worker_conntrack",
 	);
-	push @services, "tarasec-gateway.service" if serviceEnabled("tarasec-gateway.service");
+	push @services, "tarasec-gateway.service" if configuredAsGateway();
 
 	my $cfg = readConfig();
 	print($cfg->{SERVICES} // "");
