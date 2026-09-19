@@ -217,10 +217,10 @@ function getServerStatus($seconds_since, $status, $nId)
 		$szServerStatus .= getTitledDot(false, "N/A", "CPU I/O wait has not been reported by this node");
 	}
 	if (isset($json["dbScan"])) {
-		$szServerStatus .= getDotByInterval($json, "dbScan", 100, 1000,
-					"MariaDB scans ".$json["dbScan"]." rows/second. This is normal",
-					"MariaDB scans ".$json["dbScan"]." rows/second. Check query indexes",
-					"MariaDB scans ".$json["dbScan"]." rows/second. Missing indexes are likely");
+		$szServerStatus .= getDotByInterval($json, "dbScan", 10000, 100000,
+					"MariaDB scans ".$json["dbScan"]." rows/second. CPU and I/O metrics determine whether this is costly",
+					"MariaDB scans ".$json["dbScan"]." rows/second. Review query digests if CPU or I/O wait also rises",
+					"MariaDB scans ".$json["dbScan"]." rows/second. Investigate query plans and indexes");
 	} else {
 		$szServerStatus .= getTitledDot(false, "N/A", "MariaDB scan rate has not been reported by this node");
 	}
