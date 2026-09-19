@@ -72,11 +72,11 @@ function session3(mysqli $c, int $sid): ?array {
     try { advance3($c,$sid); $c->commit(); } catch(Throwable $e){ $c->rollback(); throw $e; }
     $s=$c->prepare("SELECT sessionId,name,threshold,state,targetIp,visibility,groupLabel,containmentSeconds,assistanceRequestId,releaseRequestId,startsAt,blockAt,releaseAt,GREATEST(0,TIMESTAMPDIFF(SECOND,UTC_TIMESTAMP(),blockAt)) remaining,GREATEST(0,TIMESTAMPDIFF(SECOND,UTC_TIMESTAMP(),releaseAt)) releaseRemaining FROM demoAssistanceSession WHERE sessionId=?");
     $s->bind_param('i',$sid); $s->execute(); $r=$s->get_result()->fetch_assoc(); $s->close(); if(!$r) return null;
-    $s=$c->prepare("SELECT participantId,nickname,observedIp,severity,decision,lastSeenAt,firstSilentAt,recoveredAt,GREATEST(0,TIMESTAMPDIFF(SECOND,lastSeenAt,UTC_TIMESTAMP())) secondsSinceSeen FROM demoAssistanceParticipant WHERE sessionId=? ORDER BY participantId");
+    $s=$c->prepare("SELECT participantId,nickname,observedIp,severity,decision,lastSeenAt,firstSilentAt,recoveredAt,leftAt,GREATEST(0,TIMESTAMPDIFF(SECOND,lastSeenAt,UTC_TIMESTAMP())) secondsSinceSeen FROM demoAssistanceParticipant WHERE sessionId=? ORDER BY participantId");
     $s->bind_param('i',$sid); $s->execute(); $q=$s->get_result(); $p=[]; $silent=0; $connected=0; $recovered=0;
     while($x=$q->fetch_assoc()){
         if($x['decision']==='silent')$silent++; elseif($x['decision']==='recovered')$recovered++; elseif($x['decision']==='connected')$connected++;
-        $p[]=['participant_id'=>(int)$x['participantId'],'nickname'=>(string)$x['nickname'],'observed_ip'=>(string)$x['observedIp'],'severity'=>(int)$x['severity'],'decision'=>(string)$x['decision'],'last_seen'=>(string)($x['lastSeenAt']??''),'seconds_since_seen'=>$x['secondsSinceSeen']===null?null:(int)$x['secondsSinceSeen']];
+        $p[]=['participant_id'=>(int)$x['participantId'],'nickname'=>(string)$x['nickname'],'observed_ip'=>(string)$x['observedIp'],'severity'=>(int)$x['severity'],'decision'=>(string)$x['decision'],'last_seen'=>(string)($x['lastSeenAt']??''),'left_at'=>(string)($x['leftAt']??''),'seconds_since_seen'=>$x['secondsSinceSeen']===null?null:(int)$x['secondsSinceSeen']];
     }
     $s->close();
     return ['session_id'=>(int)$r['sessionId'],'name'=>(string)$r['name'],'threshold'=>(int)$r['threshold'],'state'=>(string)$r['state'],'target_ip'=>(string)$r['targetIp'],'visibility'=>(string)$r['visibility'],'group_label'=>(string)$r['groupLabel'],'containment_seconds'=>(int)$r['containmentSeconds'],'block_at'=>(string)($r['blockAt']??''),'release_at'=>(string)($r['releaseAt']??''),'seconds_remaining'=>(int)$r['remaining'],'release_seconds_remaining'=>$r['releaseAt']? (int)$r['releaseRemaining']:0,'assistance_request_id'=>$r['assistanceRequestId']? (int)$r['assistanceRequestId']:null,'release_request_id'=>$r['releaseRequestId']? (int)$r['releaseRequestId']:null,'participants'=>$p,'summary'=>['participants'=>count($p),'connected'=>$connected,'silent'=>$silent,'recovered'=>$recovered]];
@@ -106,6 +106,14 @@ try {
         reply3(200,['ok'=>true,'sessions'=>$items]);
     }
     $sid=(int)($b['session_id']??$_REQUEST['session_id']??0); if($sid<1) reply3(400,['ok'=>false,'error'=>'invalid_session']);
+    if($a==='leave'){
+        $pt=trim((string)($b['participant_token']??''));
+        if(!preg_match('/^[a-f0-9]{64}$/',$pt)) reply3(400,['ok'=>false,'error'=>'invalid_participant']);
+        $s=$c->prepare("UPDATE demoAssistanceParticipant SET severity=0,decision='left',leftAt=UTC_TIMESTAMP(),lastSeenAt=UTC_TIMESTAMP() WHERE sessionId=? AND participantToken=? AND decision<>'left'");
+        $s->bind_param('is',$sid,$pt); $s->execute(); $n=$s->affected_rows; $s->close();
+        if($n<1) reply3(404,['ok'=>false,'error'=>'participant_not_found_or_already_left']);
+        reply3(200,['ok'=>true,'session'=>session3($c,$sid)]);
+    }
     if($a==='release'){
         $controller=trim((string)($b['controller_token']??''));
         if(!preg_match('/^[a-f0-9]{64}$/',$controller)) reply3(400,['ok'=>false,'error'=>'invalid_controller']);
@@ -128,13 +136,13 @@ try {
     if($a==='severity'){
         $cur=session3($c,$sid); $pt=trim((string)($b['participant_token']??'')); $sev=(int)($b['severity']??-1); if(!preg_match('/^[a-f0-9]{64}$/',$pt)||$sev<0||$sev>10) reply3(400,['ok'=>false,'error'=>'invalid_update']);
         if(!$cur||$cur['state']!=='active') reply3(409,['ok'=>false,'error'=>'update_rejected']);
-        $s=$c->prepare("UPDATE demoAssistanceParticipant SET severity=? WHERE sessionId=? AND participantToken=?");
+        $s=$c->prepare("UPDATE demoAssistanceParticipant SET severity=? WHERE sessionId=? AND participantToken=? AND decision<>'left'");
         $s->bind_param('iis',$sev,$sid,$pt); $s->execute(); $n=$s->affected_rows; $s->close(); if($n<1) reply3(409,['ok'=>false,'error'=>'update_rejected']); reply3(200,['ok'=>true,'session'=>session3($c,$sid)]);
     }
     if($a==='heartbeat'){
         $pt=trim((string)($b['participant_token']??'')); if(!preg_match('/^[a-f0-9]{64}$/',$pt)) reply3(400,['ok'=>false,'error'=>'invalid_participant']);
         $cur=session3($c,$sid); if(!$cur) reply3(404,['ok'=>false,'error'=>'session_not_found']);
-        $s=$c->prepare("UPDATE demoAssistanceParticipant SET recoveredAt=CASE WHEN decision='silent' THEN UTC_TIMESTAMP() ELSE recoveredAt END,decision=CASE WHEN decision='silent' THEN 'recovered' ELSE 'connected' END,lastSeenAt=UTC_TIMESTAMP() WHERE sessionId=? AND participantToken=?");
+        $s=$c->prepare("UPDATE demoAssistanceParticipant SET recoveredAt=CASE WHEN decision='silent' THEN UTC_TIMESTAMP() ELSE recoveredAt END,decision=CASE WHEN decision='silent' THEN 'recovered' ELSE 'connected' END,lastSeenAt=UTC_TIMESTAMP() WHERE sessionId=? AND participantToken=? AND decision<>'left'");
         $s->bind_param('is',$sid,$pt); $s->execute(); $n=$s->affected_rows; $s->close(); if($n<1) reply3(404,['ok'=>false,'error'=>'participant_not_found']); reply3(200,['ok'=>true,'session'=>session3($c,$sid)]);
     }
     if($a==='status') { if(!groupAccess3($c,$sid,(string)($_REQUEST['join_code']??''))) reply3(403,['ok'=>false,'error'=>'invalid_group_code']); reply3(200,['ok'=>true,'session'=>session3($c,$sid)]); }
