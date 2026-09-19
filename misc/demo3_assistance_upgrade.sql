@@ -6,6 +6,7 @@ ALTER TABLE demoAssistanceSession
     ADD INDEX IF NOT EXISTS ix_demo_assistance_visibility (visibility,state,sessionId);
 
 ALTER TABLE demoAssistanceParticipant
+    MODIFY severity TINYINT UNSIGNED NULL DEFAULT NULL,
     MODIFY decision ENUM('pending','connected','silent','recovered','left') NOT NULL DEFAULT 'pending',
     ADD COLUMN IF NOT EXISTS leftAt DATETIME NULL AFTER recoveredAt;
 
