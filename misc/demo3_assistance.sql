@@ -5,6 +5,9 @@ CREATE TABLE IF NOT EXISTS demoAssistanceSession (
     state ENUM('setup','active','contained','releasing','closed') NOT NULL DEFAULT 'setup',
     controllerToken CHAR(64) NOT NULL,
     targetIp VARCHAR(45) NOT NULL,
+    visibility ENUM('public','group') NOT NULL DEFAULT 'public',
+    groupLabel VARCHAR(120) NOT NULL DEFAULT '',
+    joinCodeHash CHAR(64) NULL,
     containmentSeconds SMALLINT UNSIGNED NOT NULL DEFAULT 120,
     assistanceRequestId INT UNSIGNED NULL,
     releaseRequestId INT UNSIGNED NULL,
@@ -18,6 +21,7 @@ CREATE TABLE IF NOT EXISTS demoAssistanceSession (
     PRIMARY KEY (sessionId),
     UNIQUE KEY uq_demo_assistance_controller (controllerToken),
     KEY ix_demo_assistance_state (state, sessionId),
+    KEY ix_demo_assistance_visibility (visibility, state, sessionId),
     KEY ix_demo_assistance_block (state, blockAt),
     KEY ix_demo_assistance_release (state, releaseAt)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
