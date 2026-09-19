@@ -143,13 +143,24 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 		if (pSetup->cShowInstructions.bits.showUrgentPtrUsage)
 			pr_info("tarakernel: FW: URG flag is set! urg_ptr set to %04X. %s->%s \n", pPacket->tcp_header->urg_ptr, pPacket->cSourceIp, pPacket->cDestIp);
 
-	if (isPartner(pPacket->ip_header->daddr))
+	/* An Assistance Request is an explicit destination-scoped containment
+	 * instruction.  It must be evaluated even when the protected destination
+	 * is not also present in the partner/tagging list.  Demo 3 deliberately
+	 * targets the DB server this way; restricting this path to isPartner()
+	 * allowed an infected WireGuard client to keep polling the protected
+	 * server without ever reaching requestedAssistance() in checkFixTagging(). */
+	bool bDestinationIsPartner = isPartner(pPacket->ip_header->daddr);
+	bool bDestinationRequestedAssistance =
+		requestedAssistance(pPacket->ip_header->daddr, pPacket->dPort) > 0;
+
+	if (bDestinationIsPartner || bDestinationRequestedAssistance)
 	{
-		//Packet from our own subnet going to a partner and their subnet.
+		/* Packet from our own subnet going to a partner, or to a target that
+		 * explicitly requested source-side assistance. */
 		bool bForwarding = true;
 		int nRetval = checkFixTagging(pPacket, bForwarding, state);	//state may be NF_INET_FORWARD??
 
-		tk_debug(3, "FW: Forwarding to partner after tagging: %s->%s, tag=%04X\n", pPacket->cSourceIp, pPacket->cDestIp, pPacket->tcp_header->urg_ptr);
+		tk_debug(3, "FW: Forwarding to protected destination after assistance/tagging checks: %s->%s, tag=%04X\n", pPacket->cSourceIp, pPacket->cDestIp, pPacket->tcp_header->urg_ptr);
 
 		#ifdef ALTERNATIVE_TAGGING
 
@@ -276,4 +287,3 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
         
 	return NF_ACCEPT;
 }
-
