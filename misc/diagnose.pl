@@ -514,8 +514,12 @@ if (my $row = $stmt->fetchrow_hashref()) {
 }
 
 my $dmsg_worker_lockfile = "/tmp/$worker_name.pl.lock";
-if (!programRunningLockFileHeld($dmsg_worker_lockfile)) {
-	print "*** ERROR **** $worker_name.pl is not running in background. Supposed to be started by crontasks.pl (run as cron task) - lock file: $dmsg_worker_lockfile\n";
+my $dmsg_worker_service_active =
+	system("systemctl", "is-active", "--quiet", "$worker_name.service") == 0;
+if (!$dmsg_worker_service_active && !programRunningLockFileHeld($dmsg_worker_lockfile)) {
+	print "*** ERROR **** $worker_name.pl is not running. Neither $worker_name.service nor the legacy lock is active - lock file: $dmsg_worker_lockfile\n";
+} elsif ($dmsg_worker_service_active) {
+	print "$worker_name.service is active.\n";
 }
 
 } else {
