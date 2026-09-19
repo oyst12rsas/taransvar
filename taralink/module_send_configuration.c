@@ -173,6 +173,69 @@ void reportErrorReadin(char *lpWhat)
         addWarningRecord(szMsg);
 }
 
+/*
+ * DB servers configured on this node are trusted TaraSec infrastructure
+ * destinations.  Expose them to tarakernel as /32 partners so tagging and
+ * destination-scoped Assistance Requests are evaluated for their traffic.
+ * This does not create partnerRouter records or extend trust to arbitrary
+ * Assistance Request destinations.
+ */
+static int appendRegisteredDbPartners(MYSQL *conn, char *reply, size_t replySize)
+{
+    MYSQL_RES *res;
+    MYSQL_ROW row;
+    int added = 0;
+    int i;
+
+    if (mysql_query(conn,
+            "select lpad(hex(nullif(globalDb1ip,0)),8,'0'), "
+            "lpad(hex(nullif(globalDb2ip,0)),8,'0'), "
+            "lpad(hex(nullif(globalDb3ip,0)),8,'0') "
+            "from setup limit 1")) {
+        fprintf(stderr, "Unable to read registered DB server partners: %s\n",
+                mysql_error(conn));
+        return 0;
+    }
+
+    res = mysql_store_result(conn);
+    if (!res)
+        return 0;
+
+    row = mysql_fetch_row(res);
+    if (row) {
+        for (i = 0; i < 3; i++) {
+            char entry[32];
+            size_t needed;
+
+            if (!row[i] || !row[i][0])
+                continue;
+
+            snprintf(entry, sizeof(entry), "%s:FFFFFFFF^", row[i]);
+            if (strstr(reply, entry))
+                continue;
+
+            needed = strlen(reply) + strlen(entry) +
+                     (added == 0 ? strlen("PARTNER|") : 0) + 2;
+            if (needed >= replySize) {
+                fprintf(stderr,
+                        "Registered DB server partner list exceeds configuration buffer\n");
+                break;
+            }
+
+            if (added == 0)
+                strcat(reply, "PARTNER|");
+            strcat(reply, entry);
+            printf("Registered DB server partner found: %s/32\n", row[i]);
+            added++;
+        }
+    }
+
+    mysql_free_result(res);
+    if (added)
+        strcat(reply, "|");
+    return added;
+}
+
 static unsigned int readAdminSshPortFromConfig(void)
 {
     FILE *config = fopen("/etc/tarasecfw.conf", "r");
@@ -849,6 +912,10 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 			strcpy(cReply+strlen(cReply), "|");
 	        bFoundData = 1;
         }
+
+		/* Add registered TaraSec DB servers as kernel-only /32 partners. */
+		if (appendRegisteredDbPartners(conn, cReply, sizeof(cReply)) > 0)
+			bFoundData = 1;
 
 		/* Add explicitly configured demo destinations without persisting trust. */
 		if (appendDemoPartnersFromConfig(cReply, sizeof(cReply)) > 0)
