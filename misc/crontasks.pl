@@ -325,10 +325,17 @@ sub reportStatus {
 		rename("/tmp/tarasec-status-counters.json.tmp", $szMetricStateFile);
 	}
 
-	#my $szSQL = "select inet_ntoa(ip) from traffic where coalesce(lastSeen, created) > NOW() - INTERVAL 1 MINUTE";
-	my $szSQL = "SELECT COUNT(DISTINCT ipFrom) AS unique_ips FROM traffic WHERE COALESCE(lastSeen, created) > NOW() - INTERVAL 5 MINUTE AND ipFrom <> INET_ATON('10.100.0.1') and ipFrom BETWEEN INET_ATON('10.100.0.0') AND INET_ATON('10.100.255.255')";
-	#To see the user names: 
-	#SELECT DISTINCT INET_NTOA(ipFrom) FROM traffic WHERE COALESCE(lastSeen, created) > NOW() - INTERVAL 5 MINUTE   AND (ipFrom & INET_ATON('255.255.0.0')) = INET_ATON('10.100.0.0'); 
+	# Count recent local users through sargable time ranges. COALESCE(lastSeen,
+	# created) forced a full traffic-table scan on every status heartbeat.
+	my $szSQL = "SELECT COUNT(*) AS unique_ips FROM (" .
+		"SELECT ipFrom FROM traffic WHERE lastSeen > NOW() - INTERVAL 5 MINUTE " .
+		"AND ipFrom BETWEEN INET_ATON('10.100.0.0') AND INET_ATON('10.100.255.255') " .
+		"AND ipFrom <> INET_ATON('10.100.0.1') " .
+		"UNION " .
+		"SELECT ipFrom FROM traffic WHERE lastSeen IS NULL AND created > NOW() - INTERVAL 5 MINUTE " .
+		"AND ipFrom BETWEEN INET_ATON('10.100.0.0') AND INET_ATON('10.100.255.255') " .
+		"AND ipFrom <> INET_ATON('10.100.0.1')" .
+		") recent_local_users";
 	my $sthCount = $dbh->prepare($szSQL);
 	$sthCount->execute() or die "execution failed: $sthSetup->errstr()";
 	my $cCount = $sthCount->fetchrow_hashref();
