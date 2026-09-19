@@ -528,8 +528,15 @@ update setup set dbVersion = 92;
 alter table syslogThreat add index if not exists idx_syslogthreat_pending (handled, syslogThreatId);
 update setup set dbVersion = 93;
 
+#version 94 (260919)
+#Leaving Demo 3 is participant-local. Preserve that evidence without closing or
+#releasing the shared session for everyone else.
+alter table demoAssistanceParticipant modify decision enum('pending','connected','silent','recovered','left') not null default 'pending';
+alter table demoAssistanceParticipant add column if not exists leftAt datetime null after recoveredAt;
+update setup set dbVersion = 94;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 94;
+#update setup set dbVersion = 95;
 
 #NOTE! The versions (#version nn ...) are imported by the installed
 #diagnostics script. Deploy misc to /root/taransvar/perl, then run:
