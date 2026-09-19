@@ -487,8 +487,35 @@ alter table assistanceRequest add index if not exists idx_assistance_endpoint (i
 alter table hackReport add index if not exists idx_hackreport_pending (handledTime, created, reportId);
 update setup set dbVersion = 90;
 
+#version 91 (260919)
+#Per-gateway demo selection. This chooses what the app presents; it does not
+#restrict the gateway's normal LAN-to-NetBird connectivity.
+create table gatewayDemoConfiguration (
+	gatewayIp int unsigned not null,
+	gatewayName varchar(120) not null default '',
+	demo1ReceiverIp int unsigned null,
+	demo1ReceiverName varchar(120) not null default '',
+	demoSshSetupId int unsigned null,
+	demo4RouterId int null,
+	organisationLabel varchar(120) not null default '',
+	updated timestamp not null default current_timestamp on update current_timestamp,
+	primary key(gatewayIp),
+	constraint fk_gatewayDemoConfiguration_ssh foreign key(demoSshSetupId) references demoSshSetup(demoSshSetupId),
+	constraint fk_gatewayDemoConfiguration_demo4 foreign key(demo4RouterId) references partnerRouter(routerId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+create table demo4GatewayState (
+	gatewayIp int unsigned not null,
+	routerId int not null,
+	state enum('configured','applied','error') not null default 'configured',
+	message varchar(255) not null default '',
+	reported timestamp not null default current_timestamp on update current_timestamp,
+	primary key(gatewayIp,routerId),
+	constraint fk_demo4GatewayState_router foreign key(routerId) references partnerRouter(routerId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+update setup set dbVersion = 91;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 91;
+#update setup set dbVersion = 92;
 
 #NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 
 #can import DB changes automatically based on the content of this file...
