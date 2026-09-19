@@ -535,8 +535,15 @@ alter table demoAssistanceParticipant modify decision enum('pending','connected'
 alter table demoAssistanceParticipant add column if not exists leftAt datetime null after recoveredAt;
 update setup set dbVersion = 94;
 
+#version 95 (260919)
+#Demo 3 uses a per-session category (demo3_<sessionId>) so start/release
+#requests remain correlated. The legacy ENUM rejected those values and caused
+#appDemoAssistance.php to return demo_assistance_unavailable when containment began.
+alter table assistanceRequest modify category varchar(64) null;
+update setup set dbVersion = 95;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 95;
+#update setup set dbVersion = 96;
 
 #NOTE! The versions (#version nn ...) are imported by the installed
 #diagnostics script. Deploy misc to /root/taransvar/perl, then run:
