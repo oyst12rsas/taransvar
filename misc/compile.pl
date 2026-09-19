@@ -46,9 +46,39 @@ use func;
 my $nInstallSqlVersion = installSqlVersion();
 my $cSetup = getSetup();
 
-if ($nInstallSqlVersion ne $cSetup->{"dbVersion"}) {
-	print "\n*********** ERROR - DB update required **********\n\nCurrent version: $nInstallSqlVersion, DB version: ".$cSetup->{"dbVersion"}."\n\nRun:\n\nsudo cp install.sql /root/taransvar/perl\nsudo perl diagnose.pl\n\n";
-	print "\nYou should proably also:\nsudo cp -r ~/taransvar/html /var/www\nsudo cp ~/taransvar/misc/*.* /root/taransvar/perl\n(NOTE! Not yet tested)";
+my $szSourceMisc = $FindBin::Bin;
+my $szRepositoryRoot = dirname($szSourceMisc);
+my $szRuntimePerl = "/root/taransvar/perl";
+my $szRuntimeHtml = "/var/www/html";
+
+sub printDeploymentCommands
+{
+	my ($bDatabaseUpdateRequired) = @_;
+
+	print "\n******** DEPLOY CURRENT CHECKOUT ********\n\n";
+	print "Source checkout: $szRepositoryRoot\n";
+	print "Installed Perl runtime: $szRuntimePerl\n";
+	print "Installed web root: $szRuntimeHtml\n\n";
+	print "Review and run these commands manually after compilation succeeds:\n\n";
+	print "sudo mkdir -p $szRuntimePerl\n";
+	print "sudo rsync -a --exclude '.git' $szSourceMisc/ $szRuntimePerl/\n";
+	print "sudo rsync -a --exclude '.git' $szRepositoryRoot/html/ $szRuntimeHtml/\n";
+
+	if ($bDatabaseUpdateRequired) {
+		print "sudo bash -c 'cd $szRuntimePerl && perl diagnose.pl'\n";
+	}
+
+	print "\nThe rsync commands update installed runtime copies; cron continues to run ";
+	print "$szRuntimePerl/crontasks.pl.\n";
+	print "They intentionally do not use --delete, so local runtime-only files are preserved.\n\n";
+}
+
+if ($nInstallSqlVersion != $cSetup->{"dbVersion"}) {
+	print "\n*********** ERROR - DB update required **********\n\n";
+	print "Install SQL version: $nInstallSqlVersion\n";
+	print "Database version: ".$cSetup->{"dbVersion"}."\n";
+	printDeploymentCommands(1);
+	print "Deploy the current scripts and run diagnose.pl as shown above, then run compile.pl again.\n";
 	return;
 }
 
@@ -160,7 +190,8 @@ if (
     exit if $answer =~ /^y/i;
 }
 
-print "Assuming you compiled from taransvar/misc, you might want to:\nsudo cp -r ../html/ /var/www\nsudo cp *.* /root/taransvar/perl\n\nTo run in taralink in background: sudo perl compile.pl bg\n\n";
+printDeploymentCommands(0);
+print "To run taralink in background after compilation: sudo perl compile.pl bg\n\n";
 
 my $proc = "taralink";
 
