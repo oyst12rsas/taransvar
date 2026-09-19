@@ -45,6 +45,9 @@ $requestQuality = isset($_GET["qual"]) ? intval($_GET["qual"]) : 0;
 $wantSpoofed = isset($_GET["sp"]) ? intval($_GET["sp"]) : 0;
 $active = isset($_GET["active"]) ? intval($_GET["active"]) : 1;
 if ($active !== 0 && $active !== 1) { http_response_code(400); exit("invalid active"); }
+$sourceRequestId = isset($_GET["rid"]) ? filter_var($_GET["rid"], FILTER_VALIDATE_INT, ["options" => ["min_range" => 1]]) : false;
+if (isset($_GET["rid"]) && $sourceRequestId === false) { http_response_code(400); exit("invalid request id"); }
+$sourceRequestId = $sourceRequestId === false ? 0 : intval($sourceRequestId);
 $senderIp = controlPeerIp();
 $senderPort = isset($_SERVER['REMOTE_PORT']) ? intval($_SERVER['REMOTE_PORT']) : 0;
 if (!filter_var($senderIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) { http_response_code(403); exit("untrusted sender"); }
@@ -53,39 +56,45 @@ $conn = getConnection();
 try {
     if (!senderIsConfiguredGlobalDb($conn, $senderIp)) { http_response_code(403); exit("unregistered global DB"); }
 
-    if ($active === 0) {
-        // handled=NULL is the established incremental-configuration marker.
-        // taralink therefore sends active=0 to tarakernel on its next setup tick.
-        $stmt = $conn->prepare("UPDATE assistanceRequest SET active=b'0', handled=NULL, sentPartners=b'1', handlingComment='Released by global DB' WHERE purpose='fromPartner' AND ip=inet_aton(?) AND port=? AND category=? AND senderIp=inet_aton(?) AND active=b'1'");
-        $stmt->bind_param("siss", $requestedIp, $port, $category, $senderIp);
-        $stmt->execute(); $stmt->close();
-    } else {
-        // Distribution is at-least-once. Treat an identical copy of the latest
-        // state as an acknowledgement, not as a new history event.
-        $stmt = $conn->prepare("SELECT CAST(active AS UNSIGNED) active, COALESCE(requestQuality,0) requestQuality, CAST(COALESCE(wantSpoofed,b'0') AS UNSIGNED) wantSpoofed FROM assistanceRequest WHERE purpose='fromPartner' AND ip=inet_aton(?) AND port=? AND category=? AND senderIp=inet_aton(?) ORDER BY requestId DESC LIMIT 1");
-        $stmt->bind_param("siss", $requestedIp, $port, $category, $senderIp);
-        $stmt->execute();
-        $latest = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
+    /* Delivery is at-least-once and pending work may arrive out of order.  The
+       central requestId is therefore the source sequence.  Keep one effective
+       row per sender/category and never let an older start overwrite a newer
+       release.  An inactive event must create a tombstone when its start has
+       not arrived yet. */
+    $conn->begin_transaction();
+    $stmt = $conn->prepare("SELECT requestId,COALESCE(regardingRequestId,0) sourceRequestId,CAST(active AS UNSIGNED) active,COALESCE(requestQuality,0) requestQuality,CAST(COALESCE(wantSpoofed,b'0') AS UNSIGNED) wantSpoofed FROM assistanceRequest WHERE purpose='fromPartner' AND ip=inet_aton(?) AND port=? AND category=? AND senderIp=inet_aton(?) ORDER BY requestId DESC LIMIT 1 FOR UPDATE");
+    $stmt->bind_param("siss", $requestedIp, $port, $category, $senderIp);
+    $stmt->execute();
+    $latest = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
 
-        $duplicate = $latest
-            && intval($latest["active"]) === 1
-            && intval($latest["requestQuality"]) === $requestQuality
-            && intval($latest["wantSpoofed"]) === $wantSpoofed;
+    $stale = $latest && $sourceRequestId > 0
+        && intval($latest["sourceRequestId"]) > $sourceRequestId;
+    $duplicate = $latest && !$stale
+        && ($sourceRequestId === 0 || intval($latest["sourceRequestId"]) === $sourceRequestId)
+        && intval($latest["active"]) === $active
+        && intval($latest["requestQuality"]) === $requestQuality
+        && intval($latest["wantSpoofed"]) === $wantSpoofed;
 
-        if (!$duplicate) {
-            // This request has already been distributed by the global DB. Keep
-            // it out of checkRequestAssistance() while leaving handled=NULL so
-            // taralink immediately delivers the changed state to tarakernel.
-            $sql = "insert into assistanceRequest (purpose, ip, port, senderIp, senderPort, category, requestQuality, wantSpoofed, comment, fromOther, handled, sentPartners, active) values ('fromPartner', inet_aton(?), ?, inet_aton(?), ?, ?, ?, ?, 'From DB server', b'1', NULL, b'1', b'1')";
+    if (!$stale && !$duplicate) {
+        if ($latest) {
+            $comment = $active ? 'Updated by global DB' : 'Released by global DB';
+            $stmt = $conn->prepare("UPDATE assistanceRequest SET regardingRequestId=?,senderPort=?,requestQuality=?,wantSpoofed=?,active=?,handled=NULL,sentPartners=b'1',handlingComment=? WHERE requestId=?");
+            $requestId = intval($latest["requestId"]);
+            $stmt->bind_param("iiiiisi", $sourceRequestId, $senderPort, $requestQuality, $wantSpoofed, $active, $comment, $requestId);
+        } else {
+            $sql = "INSERT INTO assistanceRequest (purpose,ip,port,senderIp,senderPort,category,regardingRequestId,requestQuality,wantSpoofed,comment,fromOther,handled,sentPartners,active) VALUES ('fromPartner',inet_aton(?),?,inet_aton(?),?,?,?,?,?,'From DB server',b'1',NULL,b'1',?)";
             $stmt = $conn->prepare($sql);
-            $stmt->bind_param("sisisii", $requestedIp, $port, $senderIp, $senderPort, $category, $requestQuality, $wantSpoofed);
-            $stmt->execute(); $stmt->close();
+            $stmt->bind_param("sisisiiii", $requestedIp, $port, $senderIp, $senderPort, $category, $sourceRequestId, $requestQuality, $wantSpoofed, $active);
         }
+        $stmt->execute();
+        $stmt->close();
     }
+    $conn->commit();
 
     header('Content-Type: text/plain; charset=utf-8'); echo "ok";
 } catch (Throwable $e) {
+    if (isset($conn)) $conn->rollback();
     error_log("partnerRequest failed: sender=" . $senderIp . " error=" . $e->getMessage());
     http_response_code(500); echo "error";
 } finally { $conn->close(); }

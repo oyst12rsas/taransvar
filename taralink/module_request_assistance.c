@@ -248,9 +248,9 @@ void checkRequestAssistance()
                                 }
 
                                 int written = snprintf(cUrl, sizeof(cUrl),
-                                        "http://%s/script/partnerRequest.php?f=assistance&ip=%s&port=%d&cat=%s&qual=%d&sp=%d&active=%d",
+                                        "http://%s/script/partnerRequest.php?f=assistance&ip=%s&port=%d&cat=%s&qual=%d&sp=%d&active=%d&rid=%s",
                                         partnerRow[0], lpRequesterIp, nPort, encodedCategory,
-                                        nQuality, nWantSpoofed, nActive);
+                                        nQuality, nWantSpoofed, nActive, lpRequestId);
                                 if (written < 0 || (size_t)written >= sizeof(cUrl))
                                 {
                                         addWarningRecord("***** ERROR ***** distributed assistance URL too long");
