@@ -402,7 +402,7 @@ if ($ARGV[0]) {
 #my $address      = Net::Address::IP::Local->public;
 #print "My address: $address\n"; 
 
-my $szSQL = "select inet_ntoa(adminIp) as ip, internalIP as nInternal, inet_ntoa(internalIP) as internalIP, dmesg, ifnull(unix_timestamp(now())-unix_timestamp(dmesgUpdated),1000) as secsAgo, CAST(hotspot AS UNSIGNED) as hotspot from setup";
+my $szSQL = "select inet_ntoa(adminIp) as ip, internalIP as nInternal, inet_ntoa(internalIP) as internalIP, dmesg, ifnull(unix_timestamp(now())-unix_timestamp(dmesgUpdated),1000) as secsAgo, CAST(hotspot AS UNSIGNED) as hotspot, CAST(isGlobalDbServer AS UNSIGNED) as isGlobalDbServer from setup";
 
 my $sth = $dbh->prepare($szSQL) or die "prepare statement failed: $dbh->errstr()";
 #print "$szSQL\n";
@@ -426,7 +426,8 @@ if ($cSetup = $sth->fetchrow_hashref()) {
 
 #*********** Check if running hotspot
 my $nInternalIp = (defined $cSetup->{"nInternal"}?$cSetup->{"nInternal"}+0:0);
-my $bRunningHotspot = (($nInternalIp & 4294901760) == 3232235520);	#internalIP is 192.168.0.0/16
+my $bGlobalDbServer = (defined $cSetup->{"isGlobalDbServer"} && $cSetup->{"isGlobalDbServer"}+0 == 1);
+my $bRunningHotspot = !$bGlobalDbServer && (defined $cSetup->{"hotspot"} && $cSetup->{"hotspot"}+0 == 1) && (($nInternalIp & 4294901760) == 3232235520);	#internalIP is 192.168.0.0/16
 
 if ($bRunningHotspot) {
 	print "Running hotspot (internal IP is 192.168.0.0/16). Checking DHCP\n";
@@ -478,12 +479,15 @@ if ($bRunningHotspot) {
 		print "\n**** WARNING **** Probably missing iptables rules. If this computer is used as router,\nthen iptables should be set up correctly to allow traffic to flow through it.\nCheck Gatekeeper document on how to do that. You can also check the misc/iptables.sh on how to set it up.\nThis has to be run every time you start the server unless you set it up to run automatically.\n\n";  
 	}
 } else {
-	print "\nNot running hotspot. Skipping those tests.\n\n";
+	print $bGlobalDbServer
+		? "\nGlobal DB server. Skipping hotspot, DHCP, accounting and MASQUERADE tests.\n\n"
+		: "\nNot running hotspot. Skipping those tests.\n\n";
 }
 
 checkDbVersion($dbh);	#Defined in lib_cron.pm
 
 #***** Check background processes running	asdfasdf
+if (!$bGlobalDbServer) {
 my $nMaxId = 0;
 my $worker_name = "worker_read_dmesg";
 
@@ -510,6 +514,10 @@ if (my $row = $stmt->fetchrow_hashref()) {
 my $dmsg_worker_lockfile = "/tmp/$worker_name.pl.lock";
 if (!programRunningLockFileHeld($dmsg_worker_lockfile)) {
 	print "*** ERROR **** $worker_name.pl is not running in background. Supposed to be started by crontasks.pl (run as cron task) - lock file: $dmsg_worker_lockfile\n";
+}
+
+} else {
+	print "Global DB server. Skipping dmesg ingestion worker checks.\n";
 }
 
 if (!moduleRunning("tarakernel")) {
