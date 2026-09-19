@@ -542,8 +542,14 @@ update setup set dbVersion = 94;
 alter table assistanceRequest modify category varchar(64) null;
 update setup set dbVersion = 95;
 
+#version 96 (260919)
+#A newly joined Demo 3 participant has not selected CLEAN or INFECTED yet.
+#NULL severity preserves that distinction; an explicit CLEAN selection stores 0.
+alter table demoAssistanceParticipant modify severity tinyint unsigned null default null;
+update setup set dbVersion = 96;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 96;
+#update setup set dbVersion = 97;
 
 #NOTE! The versions (#version nn ...) are imported by the installed
 #diagnostics script. Deploy misc to /root/taransvar/perl, then run:
