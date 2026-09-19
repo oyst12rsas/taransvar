@@ -79,7 +79,7 @@ if ($nInstallSqlVersion != $cSetup->{"dbVersion"}) {
 	print "Database version: ".$cSetup->{"dbVersion"}."\n";
 	printDeploymentCommands(1);
 	print "Deploy the current scripts and run diagnose.pl as shown above, then run compile.pl again.\n";
-	return;
+	exit 1;
 }
 
 my $szSysRoot = "/root/setup";
