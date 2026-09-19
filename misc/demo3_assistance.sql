@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS demoAssistanceParticipant (
     participantToken CHAR(64) NOT NULL,
     nickname VARCHAR(80) NOT NULL DEFAULT '',
     observedIp VARCHAR(45) NOT NULL,
-    severity TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    severity TINYINT UNSIGNED NULL DEFAULT NULL,
     decision ENUM('pending','connected','silent','recovered','left') NOT NULL DEFAULT 'pending',
     joinedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     lastSeenAt DATETIME NULL,
