@@ -514,8 +514,15 @@ create table demo4GatewayState (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 update setup set dbVersion = 91;
 
+#version 92 (260919)
+#Status reporting must not scan the complete traffic history once per minute.
+#These indexes support the separate lastSeen and created five-minute windows.
+alter table traffic add index if not exists idx_traffic_active_lastseen (lastSeen, ipFrom);
+alter table traffic add index if not exists idx_traffic_active_created (created, ipFrom);
+update setup set dbVersion = 92;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 92;
+#update setup set dbVersion = 93;
 
 #NOTE! The versions (#version nn ...) are imported by the installed
 #diagnostics script. Deploy misc to /root/taransvar/perl, then run:
