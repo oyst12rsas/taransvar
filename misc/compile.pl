@@ -59,7 +59,7 @@ sub printDeploymentCommands
 	print "Source checkout: $szRepositoryRoot\n";
 	print "Installed Perl runtime: $szRuntimePerl\n";
 	print "Installed web root: $szRuntimeHtml\n\n";
-	print "Review and run these commands manually after compilation succeeds:\n\n";
+	print "Review and run these commands manually in the order shown:\n\n";
 	print "sudo mkdir -p $szRuntimePerl\n";
 	print "sudo rsync -a --exclude '.git' $szSourceMisc/ $szRuntimePerl/\n";
 	print "sudo rsync -a --exclude '.git' $szRepositoryRoot/html/ $szRuntimeHtml/\n";
