@@ -755,12 +755,14 @@ if (!$nErrors)	#This may be a lot so don't put it on the screen if there's error
 	}
 }
 
-#***************** Check pending assistanceRequests ***********
-#Note! There's also a "handled" field but it was set to b'1' while sentTime remained NULL.
-$szSQL = "select count(*) as val from assistanceRequest where sentTime is null and created < DATE_SUB(NOW(), INTERVAL '2' MINUTE)";
+#***************** Check pending assistance deliveries ***********
+#assistanceRequest.sentTime is a legacy field and is not authoritative. Actual
+#partner deliveries are queued in pendingWget; DB v83 keeps failed deliveries
+#unhandled so they remain visible and retryable.
+$szSQL = "select count(*) as val from pendingWget where category='AssistanceRequest' and handled is null and created < DATE_SUB(NOW(), INTERVAL 2 MINUTE)";
 my $nCount = getString($szSQL)+0;
 if ($nCount > 0) {
-	print "\n****** WARNING ******* $nCount requests for assistance are not sent by taralink!\n\n";
+	print "\n****** WARNING ******* $nCount assistance deliveries are pending or retrying in pendingWget.\n\n";
 	$nWarnings++;
 }
 
