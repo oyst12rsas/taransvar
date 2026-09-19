@@ -115,6 +115,7 @@ function getServerStatus($seconds_since, $status, $nId)
 					"Not been sending status messages for ".age($seconds_since).". Please inform tech team");
 
 	$json = json_decode($status, true);
+	$isGlobalDbServer = (($json["role"] ?? "") === "global_db");
 
 	$szServerStatus .= check($json, "knl", "tarakernel is running", "tarakernel is NOT running");
 
@@ -123,9 +124,12 @@ function getServerStatus($seconds_since, $status, $nId)
 	$szServerStatus .= check($json, "cron", "crontask.pl (perl task) is running", "crontask.pl (perl task) is NOT running");
 
 	$nSeconds = $json["dmesg"] ?? "";
-	$szServerStatus .= getDotByInterval($json, "dmesg", 60, 130, 
+	if ($isGlobalDbServer)
+		$szServerStatus .= getTitledDot(true, "dmesg ingestion is not required on the global DB server", "");
+	else
+		$szServerStatus .= getDotByInterval($json, "dmesg", 60, 130,
 					"Receiving dmesg messages",
-					"$nSeconds seconds since received dmesg. Refresh in a minute may help", 
+					"$nSeconds seconds since received dmesg. Refresh in a minute may help",
 					"Not receiving dmesg ($nSeconds seconds). Please inform tech team");
 	
 	$nSeconds = $json["trfc"] ?? "";
@@ -265,32 +269,39 @@ function getServerStatus($seconds_since, $status, $nId)
 	else
 		$bOldScript = 1;
 
-	//rsyslog activated. When set up: "log:0,rsyslog:active,setup:@100.68.181.35"
-	if (isset($json["rsyslog"]))
-	{
-		$data = [];
-
-		foreach (explode(',', $json["rsyslog"]) as $item) 
-		{
-		    [$key, $value] = explode(':', $item, 2); // limit to 2 in case value contains ':'
-	    	$data[$key] = $value;
-		}
-		$logApplicable = (($data["log"] ?? "") !== "n/a");
-		$bForwardingOk = (!strcmp(($data["rsyslog"] ?? ""), "active") && strlen($data["setup"] ?? ""));
-		$bLogOk = (!$logApplicable || ($data["log"] ?? 0) == 1);
-		$bOk = ($bForwardingOk && $bLogOk);
-
-		$szMainDbServer = "100.68.126.0";
-
-		if (strlen($data["setup"] ?? "") && !strstr($data["setup"], $szMainDbServer))
-			$szServerStatus .= getTitledDot(0, "N/A", "rsyslog is set up but not to send to primary DB server: $szMainDbServer");
-		else
-			$szServerStatus .= getTitledDot($bOk,
-					($logApplicable ? "Firewall logging and rsyslog forwarding are set up: " : "Rsyslog forwarding is set up; firewall LOG rule is not applicable on this node: ").$data["setup"],
-					($logApplicable ? "Firewall logging or rsyslog forwarding is not set up" : "Rsyslog forwarding is not set up"));
-	}
+	// Rsyslog forwarding is not applicable to the global DB server, which is
+	// the destination for reports rather than a forwarding node.
+	if ($isGlobalDbServer)
+		$szServerStatus .= getTitledDot(true, "Rsyslog forwarding is not required on the global DB server", "");
 	else
-		$bOldScript = 1;
+	{
+		//rsyslog activated. When set up: "log:0,rsyslog:active,setup:@100.68.181.35"
+		if (isset($json["rsyslog"]))
+		{
+			$data = [];
+	
+			foreach (explode(',', $json["rsyslog"]) as $item) 
+			{
+			    [$key, $value] = explode(':', $item, 2); // limit to 2 in case value contains ':'
+		    	$data[$key] = $value;
+			}
+			$logApplicable = (($data["log"] ?? "") !== "n/a");
+			$bForwardingOk = (!strcmp(($data["rsyslog"] ?? ""), "active") && strlen($data["setup"] ?? ""));
+			$bLogOk = (!$logApplicable || ($data["log"] ?? 0) == 1);
+			$bOk = ($bForwardingOk && $bLogOk);
+	
+			$szMainDbServer = "100.68.126.0";
+	
+			if (strlen($data["setup"] ?? "") && !strstr($data["setup"], $szMainDbServer))
+				$szServerStatus .= getTitledDot(0, "N/A", "rsyslog is set up but not to send to primary DB server: $szMainDbServer");
+			else
+				$szServerStatus .= getTitledDot($bOk,
+						($logApplicable ? "Firewall logging and rsyslog forwarding are set up: " : "Rsyslog forwarding is set up; firewall LOG rule is not applicable on this node: ").$data["setup"],
+						($logApplicable ? "Firewall logging or rsyslog forwarding is not set up" : "Rsyslog forwarding is not set up"));
+		}
+		else
+			$bOldScript = 1;
+	}
 
 	//Services
 	if (!isset($json["srvcNtOk"])) {
