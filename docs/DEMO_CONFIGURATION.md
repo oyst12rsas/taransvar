@@ -55,7 +55,7 @@ Central per-gateway configuration takes precedence when a matching row exists.
 Install or upgrade the separate Demo 3 schema on the DB server:
 
 ```sh
-mysql taransvar < misc/demo3_assistance_upgrade.sql
+sudo mariadb taransvar < misc/demo3_assistance_upgrade.sql
 ```
 
 A session without a group code is public. A session created with a group code is
