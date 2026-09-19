@@ -157,12 +157,21 @@ sub reportStatus {
 
 	my %json;
 
-	my $sthSetup = $dbh->prepare("select adminIP as nAdminIp, LPAD(HEX(adminIP), 8, '0') as adminIP, nettmask as aNettmask, LPAD(HEX(nettmask), 8, '0') as nettmask, secondsSinceBoot, TIMESTAMPDIFF(SECOND, dmesgUpdated, NOW()) AS dmesg, inet_ntoa(globalDb1ip) as Db1, inet_ntoa(globalDb2ip) as Db2, inet_ntoa(globalDb3ip) as Db3, systemError, coalesce(systemErrorSeverity,0) as systemErrorSeverity, TIMESTAMPDIFF(SECOND, systemErrorSet, NOW()) AS systemErrorAge, CAST(isGlobalDbServer AS UNSIGNED) as isGlobalDbServer from setup") or die "prepare statement failed: $dbh->errstr()";
+	my $sthSetup = $dbh->prepare("select adminIP as nAdminIp, LPAD(HEX(adminIP), 8, '0') as adminIP, nettmask as aNettmask, LPAD(HEX(nettmask), 8, '0') as nettmask, secondsSinceBoot, TIMESTAMPDIFF(SECOND, dmesgUpdated, NOW()) AS dmesg, inet_ntoa(globalDb1ip) as Db1, inet_ntoa(globalDb2ip) as Db2, inet_ntoa(globalDb3ip) as Db3, systemError, coalesce(systemErrorSeverity,0) as systemErrorSeverity, TIMESTAMPDIFF(SECOND, systemErrorSet, NOW()) AS systemErrorAge, CAST(isGlobalDbServer AS UNSIGNED) as isGlobalDbServer, CAST(hotspot AS UNSIGNED) as hotspot, coalesce(internalNic,'') as internalNic from setup") or die "prepare statement failed: $dbh->errstr()";
 	$sthSetup->execute() or die "execution failed: $sthSetup->errstr()";
 	my $cSetup = $sthSetup->fetchrow_hashref();
 	$sthSetup->finish();
 	my $isGlobalDbServer = (defined $cSetup->{"isGlobalDbServer"} && $cSetup->{"isGlobalDbServer"}+0 == 1);
-	$json{"role"} = $isGlobalDbServer ? "global_db" : (configuredAsGateway() ? "gateway" : "node");
+	# A gateway may be a hotspot, have a configured internal interface, or be a
+	# headless NetBird router with only an active MASQUERADE rule (for example
+	# Squash). Derive this here instead of depending on a nonexistent helper.
+	my $szNatPostrouting = $isGlobalDbServer ? "" : `/usr/sbin/iptables -t nat -S POSTROUTING 2>/dev/null`;
+	my $isGateway = !$isGlobalDbServer && (
+		(defined($cSetup->{"hotspot"}) && $cSetup->{"hotspot"}+0 == 1) ||
+		(defined($cSetup->{"internalNic"}) && $cSetup->{"internalNic"} ne "") ||
+		$szNatPostrouting =~ /(?:^|\\s)-j\\s+MASQUERADE(?:\\s|$)/m
+	);
+	$json{"role"} = $isGlobalDbServer ? "global_db" : ($isGateway ? "gateway" : "node");
 
 	$json{"ip"} = (defined $cSetup->{"nAdminIP"}?$cSetup->{"nAdminIP"}+0:0);
 	$json{"nett"} = (defined $cSetup->{"nNettmask"}?$cSetup->{"nNettmask"}:0);
@@ -421,7 +430,7 @@ sub reportStatus {
 		    $prefix =~ s/:\s*$//;
 		    $szStatus = "log:1,byte:$bytes,avg:$avg,burst:$burst,prefix:$prefix";
 		}
-		elsif (configuredAsGateway())
+		elsif ($isGateway)
 		{
 			# A gateway is expected to have the firewall LOG rule.
 	   		$szStatus = "log:0";
