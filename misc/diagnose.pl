@@ -11,8 +11,10 @@ use autodie;
 use DBI;
 use Data::Dumper qw(Dumper);
 use File::Copy;
+use FindBin;
+use lib $FindBin::Bin;
+chdir $FindBin::Bin or die "Unable to change directory to $FindBin::Bin: $!";
 
-use lib ('.');	#Don't change this to allow opening from elsewhere because trying to hardcode full path below...
 use func;
 use lib_cron;
 use lib_net;
@@ -525,8 +527,9 @@ if (!moduleRunning("tarakernel")) {
 	$nErrors++;
 }
 
-if (!$nErrors) {
-	#Don't disturb with this if there's errors
+if (!$nErrors && !$bGlobalDbServer) {
+	#Interactive kernel-log viewing is useful on nodes, but is not a service
+	#requirement on the central database server.
 	if (!programRunning("dmesg -w", "sudo dmesg -w")) {
 		print "\n***** WARNING ***** There is no running window showing the log messages from tarakernel.\nYou can start one from terminal (Ctrl-Alt-T):\nsudo dmesg -w | grep -v \"^[[:space:]]*\$\"\nIf you're not bothered with blank lines, you can just:\nsudo dmesg -w\n\n";
 		$nWarnings++;
@@ -632,6 +635,9 @@ sub sameNet {
 	#if (!defined($cIp1[2])) { print "cIp1[2] not defined\n";}
 	#if (!defined($cIp2[2])) { print "cIp2[2] not defined\n";}
 
+	return 0 unless @cIp1 >= 3 && @cIp2 >= 3;
+	return 0 unless defined $cIp1[0] && defined $cIp1[1] && defined $cIp1[2];
+	return 0 unless defined $cIp2[0] && defined $cIp2[1] && defined $cIp2[2];
 	if ($cIp1[0] ne $cIp2[0]) {return 0;};
 	if ($cIp1[1] ne $cIp2[1]) {return 0;};
 	if ($cIp1[2] ne $cIp2[2]) {return 0;};
@@ -673,47 +679,51 @@ if (!$nErrors)	#This may be a lot so don't put it on the screen if there's error
 		my @cPartner = split(/\./,$szPartner);
 		$szPartners .= $szPartner."\t\t";
 		
-		if (@cMain == 4) {
-			if ($szPartner eq $szAdminIP || $szPartner eq $szInternalIP) {
-				$szPartners .= "***** ERROR ********* Same as main IP address or internal IP address.. Should be removed as partner."; 
-			} else {
-				if ($bMainIsLan)
-				{
-					if (sameNet(\@cMain, \@cPartner)) {
-						$szPartners.= "Great... partners in same net.";
+		if ($bGlobalDbServer) {
+			$szPartners .= "NetBird partner; LAN topology check is not applicable on the global DB server.";
+		} else {
+				if (@cMain == 4) {
+					if ($szPartner eq $szAdminIP || $szPartner eq $szInternalIP) {
+						$szPartners .= "***** ERROR ********* Same as main IP address or internal IP address.. Should be removed as partner."; 
 					} else {
-						if (sameNet(\@cInternal, \@cPartner)) {
-							$szPartners.= "****** WARNING **** Partner is in your subnet... That should mean they'll receive tagged traffi but not sure if that's handled yet.";
-							$nWarnings++;
+						if ($bMainIsLan)
+						{
+							if (sameNet(\@cMain, \@cPartner)) {
+								$szPartners.= "Great... partners in same net.";
+							} else {
+								if (sameNet(\@cInternal, \@cPartner)) {
+									$szPartners.= "****** WARNING **** Partner is in your subnet... That should mean they'll receive tagged traffi but not sure if that's handled yet.";
+									$nWarnings++;
+								} else
+								{
+									if (isLanAddress($szPartner))  
+									{
+										$szPartners.= "****** WARNING **** Partner is in another LAN. This is most likely an error (unless you have a network with multiple LANs)";
+										$nWarnings++;
+									} else {
+										$szPartners.= "****** WARNING **** Partner is outside your lan. Meaning they probably can't reach you. You share one public IP with multiple other networs.";
+										$nWarnings++;
+									}
+								}
+							}
 						} else
 						{
-							if (isLanAddress($szPartner))  
-							{
-								$szPartners.= "****** WARNING **** Partner is in another LAN. This is most likely an error (unless you have a network with multiple LANs)";
-								$nWarnings++;
-							} else {
-								$szPartners.= "****** WARNING **** Partner is outside your lan. Meaning they probably can't reach you. You share one public IP with multiple other networs.";
+							# Main IP address is not on lan.... 
+							if (isLanAddress($szPartner)) {
+								if (!sameNet(\@cInternal, \@cPartner)) {
+									$szPartners.= "****** WARNING **** Your server is on WAN, but you have partner on different LAN. Sure about this?\n";
+								} else {
+									$szPartners.= "****** WARNING **** You have partner on LAN. Not sure if that works yet....\n";
+								
+								}
 								$nWarnings++;
 							}
 						}
 					}
-				} else
-				{
-					# Main IP address is not on lan.... 
-					if (isLanAddress($szPartner)) {
-						if (!sameNet(\@cInternal, \@cPartner)) {
-							$szPartners.= "****** WARNING **** Your server is on WAN, but you have partner on different LAN. Sure about this?\n";
-						} else {
-							$szPartners.= "****** WARNING **** You have partner on LAN. Not sure if that works yet....\n";
-						
-						}
-						$nWarnings++;
-					}
 				}
-			}
-		}
-		else {
-				$szPartners .= "********** ERROR ***** Wrong IP address.: ".@cMain;
+				else {
+						$szPartners .= "********** ERROR ***** Wrong IP address.: ".@cMain;
+				}
 		}
 		
 		#Add 
