@@ -103,13 +103,13 @@ try {
         if(!groupAccess3($c,$sid,(string)($b['join_code']??''))) reply3(403,['ok'=>false,'error'=>'invalid_group_code']);
         $cur=session3($c,$sid); if(!$cur||$cur['state']!=='active'||$cur['seconds_remaining']<=15) reply3(409,['ok'=>false,'error'=>'session_not_joinable']);
         $nick=trim((string)($b['nickname']??'')); if(mb_strlen($nick)>80) reply3(400,['ok'=>false,'error'=>'invalid_nickname']);
-        $pt=token3(); $ip=trim((string)($_SERVER['REMOTE_ADDR']??'')); $s=$c->prepare("INSERT INTO demoAssistanceParticipant(sessionId,participantToken,nickname,observedIp,lastSeenAt,decision) VALUES(?,?,?,?,UTC_TIMESTAMP(),'connected')");
+        $pt=token3(); $ip=trim((string)($_SERVER['REMOTE_ADDR']??'')); $s=$c->prepare("INSERT INTO demoAssistanceParticipant(sessionId,participantToken,nickname,observedIp,lastSeenAt,decision) VALUES(?,?,?,?,NULL,'pending')");
         $s->bind_param('isss',$sid,$pt,$nick,$ip); $s->execute(); $pid=(int)$s->insert_id; $s->close(); reply3(201,['ok'=>true,'participant_id'=>$pid,'participant_token'=>$pt,'session'=>session3($c,$sid)]);
     }
     if($a==='severity'){
         $cur=session3($c,$sid); $pt=trim((string)($b['participant_token']??'')); $sev=(int)($b['severity']??-1); if(!preg_match('/^[a-f0-9]{64}$/',$pt)||$sev<0||$sev>10) reply3(400,['ok'=>false,'error'=>'invalid_update']);
         if(!$cur||$cur['state']!=='active') reply3(409,['ok'=>false,'error'=>'update_rejected']);
-        $s=$c->prepare("UPDATE demoAssistanceParticipant SET severity=?,lastSeenAt=UTC_TIMESTAMP(),decision='connected' WHERE sessionId=? AND participantToken=?");
+        $s=$c->prepare("UPDATE demoAssistanceParticipant SET severity=? WHERE sessionId=? AND participantToken=?");
         $s->bind_param('iis',$sev,$sid,$pt); $s->execute(); $n=$s->affected_rows; $s->close(); if($n<1) reply3(409,['ok'=>false,'error'=>'update_rejected']); reply3(200,['ok'=>true,'session'=>session3($c,$sid)]);
     }
     if($a==='heartbeat'){
