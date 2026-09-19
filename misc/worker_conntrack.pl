@@ -17,24 +17,24 @@ use func;	#NOTE! See comment above regarding lib..
 #use lib_dhcp;
 use lib_cron;
 
-our $lastDbUse = time();
+our $lastDbCheck = time();
 our $dbh = getConnection();
 
 sub ensureDbConnection
 {
-    if (time() - $lastDbUse > 60) {
+    # This function is called for every conntrack event. Track the last actual
+    # health check, not the last event; otherwise continuous traffic can prevent
+    # ping() from ever running and a stale DB handle survives indefinitely.
+    return if time() - $lastDbCheck < 15;
 
-        if (!$dbh->ping()) {
-            print "DB connection stale. Reconnecting...\n";
-
-            eval { $dbh->disconnect() if $dbh };
-
-            $dbh = getConnection()
-                or die "Unable to reconnect to database\n";
-        }
+    if (!$dbh || !$dbh->ping()) {
+        print "DB connection stale. Reconnecting...\n";
+        eval { $dbh->disconnect() if $dbh };
+        $dbh = getConnection()
+            or die "Unable to reconnect to database\n";
     }
 
-    $lastDbUse = time();
+    $lastDbCheck = time();
 }
 
 sub findWhatUnitHasIp {
