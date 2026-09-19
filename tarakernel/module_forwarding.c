@@ -13,7 +13,8 @@ int checkFixTagging(struct _PacketInspection *pPacket, bool bForwarding, const s
 	char *lpPrOrFw = (bForwarding?"FW":"PR");
 
 	struct _InfectionSpecification *pInfected = isInfected(pPacket->ip_header->saddr);
-	int nSenderIsInfected = (pInfected?pInfected->cTag.presumed_infected:0);
+	/* Assistance quality is a severity threshold, not a boolean infection flag. */
+	int nSenderIsInfected = (pInfected ? pInfected->nSeverity : 0);
 	int nRequestedAssistance = requestedAssistance(pPacket->ip_header->daddr, pPacket->dPort);
 	short bCommentPrinted = 0;  //Set to 1 to indicate that comment has been printed (otherwise print default at the end...
 	char cInfectionStatus[200];
@@ -143,20 +144,15 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
 		if (pSetup->cShowInstructions.bits.showUrgentPtrUsage)
 			pr_info("tarakernel: FW: URG flag is set! urg_ptr set to %04X. %s->%s \n", pPacket->tcp_header->urg_ptr, pPacket->cSourceIp, pPacket->cDestIp);
 
-	/* An Assistance Request is an explicit destination-scoped containment
-	 * instruction.  It must be evaluated even when the protected destination
-	 * is not also present in the partner/tagging list.  Demo 3 deliberately
-	 * targets the DB server this way; restricting this path to isPartner()
-	 * allowed an infected WireGuard client to keep polling the protected
-	 * server without ever reaching requestedAssistance() in checkFixTagging(). */
-	bool bDestinationIsPartner = isPartner(pPacket->ip_header->daddr);
-	bool bDestinationRequestedAssistance =
-		requestedAssistance(pPacket->ip_header->daddr, pPacket->dPort) > 0;
-
-	if (bDestinationIsPartner || bDestinationRequestedAssistance)
+	/*
+	 * Tagging and Assistance Request enforcement apply only to recognized
+	 * partners.  Registered DB servers are added to this kernel partner list
+	 * by taralink; an Assistance Request alone must never turn an arbitrary
+	 * non-partner destination into an enforcement target.
+	 */
+	if (isPartner(pPacket->ip_header->daddr))
 	{
-		/* Packet from our own subnet going to a partner, or to a target that
-		 * explicitly requested source-side assistance. */
+		/* Packet from our own subnet going to a recognized partner. */
 		bool bForwarding = true;
 		int nRetval = checkFixTagging(pPacket, bForwarding, state);	//state may be NF_INET_FORWARD??
 
