@@ -469,7 +469,7 @@ sub getSetup {
 
 	my $conn = getConnection();
 	
-	my $sthSetup = $conn->prepare("select inet_ntoa(adminIP) as adminIP, inet_ntoa(internalIP) as internalIP, externalNic, internalNic, doDemo, uptime, workshopId, inet_ntoa(globalDb1ip) as globalDb1, inet_ntoa(globalDb2ip) as globalDb2, inet_ntoa(globalDb3ip) as globalDb3, networkStatus, CAST(hotspot AS UNSIGNED) as hotspot, CAST(requestReboot AS UNSIGNED) as requestReboot, CAST(requestShutdown AS UNSIGNED) as requestShutdown, dbVersion from setup") or die "prepare statement failed: $conn->errstr()";
+	my $sthSetup = $conn->prepare("select inet_ntoa(adminIP) as adminIP, inet_ntoa(internalIP) as internalIP, externalNic, internalNic, doDemo, uptime, workshopId, inet_ntoa(globalDb1ip) as globalDb1, inet_ntoa(globalDb2ip) as globalDb2, inet_ntoa(globalDb3ip) as globalDb3, networkStatus, CAST(hotspot AS UNSIGNED) as hotspot, CAST(isGlobalDbServer AS UNSIGNED) as isGlobalDbServer, CAST(requestReboot AS UNSIGNED) as requestReboot, CAST(requestShutdown AS UNSIGNED) as requestShutdown, dbVersion from setup") or die "prepare statement failed: $conn->errstr()";
 	$sthSetup->execute() or die "execution failed: $sthSetup->errstr()";
 	#my $bNicsUpdated = 0; #No need to update network devices (and IP address) for all demo records because all records are being updated first time.. (no "where demoId = n in where clause)
 	$cSetup = $sthSetup->fetchrow_hashref();
