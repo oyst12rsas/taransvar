@@ -517,6 +517,6 @@ update setup set dbVersion = 91;
 #******** NEXT TIME ALSO add *****
 #update setup set dbVersion = 92;
 
-#NOTE! The versions (#version nn ...) are here so that misc/system_diag.pl 
-#can import DB changes automatically based on the content of this file...
-#So just go to programming/misc and: sudo perl system_diag.pl
+#NOTE! The versions (#version nn ...) are imported by the installed
+#diagnostics script. Deploy misc to /root/taransvar/perl, then run:
+#sudo bash -c 'cd /root/taransvar/perl && perl diagnose.pl'
