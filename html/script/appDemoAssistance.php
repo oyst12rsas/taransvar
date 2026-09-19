@@ -48,10 +48,17 @@ function advance3(mysqli $c, int $sid): void {
     $s->bind_param('i',$sid); $s->execute(); $r=$s->get_result()->fetch_assoc(); $s->close();
     if(!$r) return;
 
-    if(($r['state']==='contained'||$r['state']==='releasing') && $r['releaseAt'] && strtotime($r['releaseAt'].' UTC') <= $now && empty($r['releaseRequestId'])) {
-        $rid=queueAssistance3($c,$sid,(string)$r['targetIp'],(int)$r['threshold'],false);
-        $s=$c->prepare("UPDATE demoAssistanceSession SET state='closed',releaseRequestId=?,closedAt=UTC_TIMESTAMP() WHERE sessionId=?");
-        $s->bind_param('ii',$rid,$sid); $s->execute(); $s->close();
+    // Release is deliberately not timer-driven. The controller must request it,
+    // and the session remains observable until previously silent infected units
+    // make contact again.
+    if($r['state']==='releasing' && !empty($r['releaseRequestId'])) {
+        $s=$c->prepare("SELECT COUNT(*) awaiting FROM demoAssistanceParticipant WHERE sessionId=? AND severity>? AND decision='silent'");
+        $threshold=(int)$r['threshold'];
+        $s->bind_param('ii',$sid,$threshold); $s->execute(); $awaiting=(int)$s->get_result()->fetch_assoc()['awaiting']; $s->close();
+        if($awaiting===0) {
+            $s=$c->prepare("UPDATE demoAssistanceSession SET state='closed',closedAt=UTC_TIMESTAMP() WHERE sessionId=? AND state='releasing'");
+            $s->bind_param('i',$sid); $s->execute(); $s->close();
+        }
     }
 
     // A participant above the threshold is considered observably contained only
@@ -99,6 +106,18 @@ try {
         reply3(200,['ok'=>true,'sessions'=>$items]);
     }
     $sid=(int)($b['session_id']??$_REQUEST['session_id']??0); if($sid<1) reply3(400,['ok'=>false,'error'=>'invalid_session']);
+    if($a==='release'){
+        $controller=trim((string)($b['controller_token']??''));
+        if(!preg_match('/^[a-f0-9]{64}$/',$controller)) reply3(400,['ok'=>false,'error'=>'invalid_controller']);
+        $s=$c->prepare("SELECT state,targetIp,threshold,controllerToken,releaseRequestId FROM demoAssistanceSession WHERE sessionId=?");
+        $s->bind_param('i',$sid); $s->execute(); $row=$s->get_result()->fetch_assoc(); $s->close();
+        if(!$row||!hash_equals((string)$row['controllerToken'],$controller)) reply3(403,['ok'=>false,'error'=>'controller_required']);
+        if($row['state']!=='contained'||!empty($row['releaseRequestId'])) reply3(409,['ok'=>false,'error'=>'release_not_available']);
+        $rid=queueAssistance3($c,$sid,(string)$row['targetIp'],(int)$row['threshold'],false);
+        $s=$c->prepare("UPDATE demoAssistanceSession SET state='releasing',releaseRequestId=?,releaseAt=UTC_TIMESTAMP() WHERE sessionId=? AND state='contained'");
+        $s->bind_param('ii',$rid,$sid); $s->execute(); $s->close();
+        reply3(200,['ok'=>true,'session'=>session3($c,$sid)]);
+    }
     if($a==='join'){
         if(!groupAccess3($c,$sid,(string)($b['join_code']??''))) reply3(403,['ok'=>false,'error'=>'invalid_group_code']);
         $cur=session3($c,$sid); if(!$cur||$cur['state']!=='active'||$cur['seconds_remaining']<=15) reply3(409,['ok'=>false,'error'=>'session_not_joinable']);
