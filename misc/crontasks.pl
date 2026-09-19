@@ -73,10 +73,12 @@ sub serviceEnabled {
 }
 
 sub checkServices {
-	# These ingestion workers are required on every TaraSec node. Gateway
+	my ($isGlobalDbServer) = @_;
+	# Packet-ingestion workers belong on traffic-processing nodes, not on the
+	# central coordination/database server. Gateway
 	# routing is provided by firewall rules, tarakernel and taralink; there is
 	# no tarasec-gateway.service unit to monitor.
-	my @services = (
+	my @services = $isGlobalDbServer ? () : (
 		"worker_read_dmesg",
 		"worker_conntrack",
 	);
@@ -155,10 +157,12 @@ sub reportStatus {
 
 	my %json;
 
-	my $sthSetup = $dbh->prepare("select adminIP as nAdminIp, LPAD(HEX(adminIP), 8, '0') as adminIP, nettmask as aNettmask, LPAD(HEX(nettmask), 8, '0') as nettmask, secondsSinceBoot, TIMESTAMPDIFF(SECOND, dmesgUpdated, NOW()) AS dmesg, inet_ntoa(globalDb1ip) as Db1, inet_ntoa(globalDb2ip) as Db2, inet_ntoa(globalDb3ip) as Db3, systemError, coalesce(systemErrorSeverity,0) as systemErrorSeverity, TIMESTAMPDIFF(SECOND, systemErrorSet, NOW()) AS systemErrorAge from setup") or die "prepare statement failed: $dbh->errstr()";
+	my $sthSetup = $dbh->prepare("select adminIP as nAdminIp, LPAD(HEX(adminIP), 8, '0') as adminIP, nettmask as aNettmask, LPAD(HEX(nettmask), 8, '0') as nettmask, secondsSinceBoot, TIMESTAMPDIFF(SECOND, dmesgUpdated, NOW()) AS dmesg, inet_ntoa(globalDb1ip) as Db1, inet_ntoa(globalDb2ip) as Db2, inet_ntoa(globalDb3ip) as Db3, systemError, coalesce(systemErrorSeverity,0) as systemErrorSeverity, TIMESTAMPDIFF(SECOND, systemErrorSet, NOW()) AS systemErrorAge, CAST(isGlobalDbServer AS UNSIGNED) as isGlobalDbServer from setup") or die "prepare statement failed: $dbh->errstr()";
 	$sthSetup->execute() or die "execution failed: $sthSetup->errstr()";
 	my $cSetup = $sthSetup->fetchrow_hashref();
 	$sthSetup->finish();
+	my $isGlobalDbServer = (defined $cSetup->{"isGlobalDbServer"} && $cSetup->{"isGlobalDbServer"}+0 == 1);
+	$json{"role"} = $isGlobalDbServer ? "global_db" : (configuredAsGateway() ? "gateway" : "node");
 
 	$json{"ip"} = (defined $cSetup->{"nAdminIP"}?$cSetup->{"nAdminIP"}+0:0);
 	$json{"nett"} = (defined $cSetup->{"nNettmask"}?$cSetup->{"nNettmask"}:0);
@@ -372,54 +376,60 @@ sub reportStatus {
 	}
 
 	#Check running services 
-	$json{"srvcNtOk"} = checkServices();
+	$json{"srvcNtOk"} = checkServices($isGlobalDbServer);
 
-	#Check log forwarding.
-	my $szIptablesLog = `sudo iptables -L -n -v --line-numbers | grep LOG`;
-	#Returns something like: 10       7  1430 LOG        0    --  *      *       0.0.0.0/0            0.0.0.0/0            limit: avg 10/min burst 20 LOG flags 0 level 4 prefix "TARASEC_squash: "
+	# The global DB server receives application reports directly. It is not a
+	# packet-forwarding node and therefore has no rsyslog forwarding target.
+	if ($isGlobalDbServer) {
+		$json{"rsyslog"} = "log:n/a,rsyslog:n/a,setup:";
+	} else {
+		#Check log forwarding.
+		my $szIptablesLog = `sudo iptables -L -n -v --line-numbers | grep LOG`;
+		#Returns something like: 10       7  1430 LOG        0    --  *      *       0.0.0.0/0            0.0.0.0/0            limit: avg 10/min burst 20 LOG flags 0 level 4 prefix "TARASEC_squash: "
+		
+		my $szStatus = "";
 	
-	my $szStatus = "";
-
-	if ($szIptablesLog =~ /^\s*\d+\s+\d+\s+(\d+)\s+LOG\b.*?avg\s+(\d+)\/min\s+burst\s+(\d+).*?prefix\s+"([^"]+)"/m)
-	{
-	    my ($bytes, $avg, $burst, $prefix) = ($1, $2, $3, $4);
-	    $prefix =~ s/:\s*$//;
-	    $szStatus = "log:1,byte:$bytes,avg:$avg,burst:$burst,prefix:$prefix";
+		if ($szIptablesLog =~ /^\s*\d+\s+\d+\s+(\d+)\s+LOG\b.*?avg\s+(\d+)\/min\s+burst\s+(\d+).*?prefix\s+"([^"]+)"/m)
+		{
+		    my ($bytes, $avg, $burst, $prefix) = ($1, $2, $3, $4);
+		    $prefix =~ s/:\s*$//;
+		    $szStatus = "log:1,byte:$bytes,avg:$avg,burst:$burst,prefix:$prefix";
+		}
+		elsif (configuredAsGateway())
+		{
+			# A gateway is expected to have the firewall LOG rule.
+	   		$szStatus = "log:0";
+		}
+		else
+		{
+			# Ordinary nodes forward logs but do not require a gateway LOG rule.
+	   		$szStatus = "log:n/a";
+		}
+	
+		my $rsyslogActive = `systemctl is-active rsyslog 2>/dev/null`;
+		chomp $rsyslogActive;
+	
+		$szStatus .= ",rsyslog:$rsyslogActive";
+	
+		#Alternative ways to report rsyslog setup
+		#UDP rsyslog: 	grep -R "@" /etc/rsyslog.conf /etc/rsyslog.d/
+		#TCP:			grep -R "@@" /etc/rsyslog.conf /etc/rsyslog.d/
+		#or: 			action(type="omfwd" target="192.168.1.10" port="514" protocol="udp")
+		#regardless of syntax: grep -R -E 'omfwd|target=|@' /etc/rsyslog.conf /etc/rsyslog.d/
+		#Just IPs: 		grep -RhoP 'target="\K[^"]+|(?<=@)[^:]+' /etc/rsyslog.conf /etc/rsyslog.d/
+		#Or simply the lines: grep -R -n -E 'omfwd|target=|@' /etc/rsyslog.conf /etc/rsyslog.d/
+	
+		my $szRsyslogSetup = `grep -RhoP 'target="\\K[^"]+|(?<=@)[^:]+' /etc/rsyslog.conf /etc/rsyslog.d/ 2>/dev/null`;
+		chomp $szRsyslogSetup;
+		# Replace multiple destinations/newlines with commas
+		$szRsyslogSetup =~ s/\s+/,/g;
+		$szRsyslogSetup =~ s/,+$//;
+	
+		$szRsyslogSetup =~ s/,/^/g;	# change , to ^because comma is field separator
+	
+		$szStatus .= ",setup:$szRsyslogSetup";
+		$json{"rsyslog"} = $szStatus;
 	}
-	elsif (configuredAsGateway())
-	{
-		# A gateway is expected to have the firewall LOG rule.
-   		$szStatus = "log:0";
-	}
-	else
-	{
-		# Ordinary nodes forward logs but do not require a gateway LOG rule.
-   		$szStatus = "log:n/a";
-	}
-
-	my $rsyslogActive = `systemctl is-active rsyslog 2>/dev/null`;
-	chomp $rsyslogActive;
-
-	$szStatus .= ",rsyslog:$rsyslogActive";
-
-	#Alternative ways to report rsyslog setup
-	#UDP rsyslog: 	grep -R "@" /etc/rsyslog.conf /etc/rsyslog.d/
-	#TCP:			grep -R "@@" /etc/rsyslog.conf /etc/rsyslog.d/
-	#or: 			action(type="omfwd" target="192.168.1.10" port="514" protocol="udp")
-	#regardless of syntax: grep -R -E 'omfwd|target=|@' /etc/rsyslog.conf /etc/rsyslog.d/
-	#Just IPs: 		grep -RhoP 'target="\K[^"]+|(?<=@)[^:]+' /etc/rsyslog.conf /etc/rsyslog.d/
-	#Or simply the lines: grep -R -n -E 'omfwd|target=|@' /etc/rsyslog.conf /etc/rsyslog.d/
-
-	my $szRsyslogSetup = `grep -RhoP 'target="\\K[^"]+|(?<=@)[^:]+' /etc/rsyslog.conf /etc/rsyslog.d/ 2>/dev/null`;
-	chomp $szRsyslogSetup;
-	# Replace multiple destinations/newlines with commas
-	$szRsyslogSetup =~ s/\s+/,/g;
-	$szRsyslogSetup =~ s/,+$//;
-
-	$szRsyslogSetup =~ s/,/^/g;	# change , to ^because comma is field separator
-
-	$szStatus .= ",setup:$szRsyslogSetup";
-	$json{"rsyslog"} = $szStatus;
 
 
 	#Check log to db server status
