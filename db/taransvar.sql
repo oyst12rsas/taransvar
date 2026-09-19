@@ -653,12 +653,15 @@ CREATE TABLE `traffic` (
   `portFrom` int(10) unsigned DEFAULT NULL,
   `portTo` int(10) unsigned DEFAULT NULL,
   `created` timestamp NOT NULL DEFAULT current_timestamp(),
+  `lastSeen` timestamp NULL DEFAULT NULL,
   `count` int(10) unsigned NOT NULL DEFAULT 1,
   `isLan` bit(1) NOT NULL DEFAULT b'0',
   `tag` int(10) unsigned DEFAULT NULL,
   PRIMARY KEY (`trafficId`),
   KEY `idx_traffic_flow_latest` (`ipFrom`,`portFrom`,`ipTo`,`portTo`,`trafficId`),
-  KEY `idx_traffic_whois_pending` (`whoIsId`,`isLan`,`trafficId`)
+  KEY `idx_traffic_whois_pending` (`whoIsId`,`isLan`,`trafficId`),
+  KEY `idx_traffic_active_lastseen` (`lastSeen`,`ipFrom`),
+  KEY `idx_traffic_active_created` (`created`,`ipFrom`)
 ) ENGINE=InnoDB AUTO_INCREMENT=109459 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 CREATE TABLE `unit` (
   `unitId` int(11) NOT NULL AUTO_INCREMENT,
