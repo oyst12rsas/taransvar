@@ -191,11 +191,20 @@ if (
 }
 
 printDeploymentCommands(0);
-print "To run taralink in background after compilation: sudo perl compile.pl bg\n\n";
+print "Systemd-managed installations restart taralink.service after compilation.\n";
+print "Legacy background mode requires an explicit: sudo perl compile.pl bg\n\n";
 
 my $proc = "taralink";
+my $bSystemdManaged = -e "/etc/tarasec/taralink-managed-by-systemd" ||
+	system("systemctl", "cat", "--quiet", "taralink.service") == 0;
 
-# Check if process exists
+if ($bSystemdManaged) {
+	print "Stopping systemd-managed taralink.service for compilation...\n";
+	system("systemctl", "stop", "taralink.service") == 0
+		or die "Unable to stop taralink.service before compilation\n";
+}
+
+# Check for unmanaged processes that remain after the service was stopped.
 my @pids = `pgrep $proc`;
 chomp @pids;
 
@@ -362,30 +371,31 @@ if ($nFileSize <= 0) {
 	exit 1;
 } else {
 	system ("cp $szFilename /root/taransvar");
+	print "******* Successfully created taralink user space program *****\n";
 
-	if ($ARGV[0] && ($ARGV[0] eq "install")) {
-		print "\nCompile initiated by install script.. Quitting here.\n";
+	if ($bSystemdManaged) {
+		print "Restarting taralink.service under systemd ownership...\n";
+		system("systemctl", "restart", "taralink.service") == 0
+			or die "Compiled Taralink, but taralink.service failed to restart\n";
+		system("systemctl", "--no-pager", "--full", "status", "taralink.service");
 		exit 0;
 	}
-	print "******* Successfully created taralink user space program *****\n\n**** Starting....\n\n";
-	
-	#print "\n************** Skipping starting taralink...\n(To start manually:  ../taralink/taralink )\n";
-	#print "\nOpening taralink in other window...\n";
-	
-	#This works, but starts taralink in separate window that closes if taralink aborts... and then we want to see error message... so drop for now
-	#It also seems to leave a part active that we can't get rid of (compile complains that taralink is open in other window)
-	#startTaraLinkOk();
 
-	system("killall taralink");
-	system("rm /tmp/taralink.lock");	#There has been problems with the lock file
+	if ($ARGV[0] && ($ARGV[0] eq "install")) {
+		print "\nCompile initiated by install script. Taralink was installed but not started.\n";
+		exit 0;
+	}
 
 	if ($ARGV[0] && ($ARGV[0] eq "bg")) {
+		# Legacy non-systemd installations may explicitly request background mode.
+		system("killall", "taralink");
+		unlink("/tmp/taralink.lock");
 		system("nohup $szFilename > $szFilename.log 2>&1 &");
-		system("sudo ps aux | grep taralink");
-		print "***** taralink is running in background - as shown above\n";
-	}
-	else {
-		system ($szFilename);	#Start taralink
+		system("ps", "aux");
+		print "***** Legacy Taralink background mode requested explicitly.\n";
+	} else {
+		print "Taralink was compiled and installed but not started.\n";
+		print "Install/use taralink.service for managed runtime ownership.\n";
 	}
 
 	exit 0;
