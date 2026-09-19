@@ -123,7 +123,8 @@ create table syslogThreat(
 	botnetId int unsigned null,
 	severity int unsigned null, 
 	handled bit(1),
-	primary key(syslogThreatId)
+	primary key(syslogThreatId),
+	key idx_syslogthreat_pending (handled, syslogThreatId)
 );
 update setup set dbVersion = 56;
 
@@ -521,8 +522,14 @@ alter table traffic add index if not exists idx_traffic_active_lastseen (lastSee
 alter table traffic add index if not exists idx_traffic_active_created (created, ipFrom);
 update setup set dbVersion = 92;
 
+#version 93 (260919)
+#The five-second syslog worker must find pending records without scanning the
+#complete historical threat table on every idle iteration.
+alter table syslogThreat add index if not exists idx_syslogthreat_pending (handled, syslogThreatId);
+update setup set dbVersion = 93;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 93;
+#update setup set dbVersion = 94;
 
 #NOTE! The versions (#version nn ...) are imported by the installed
 #diagnostics script. Deploy misc to /root/taransvar/perl, then run:
