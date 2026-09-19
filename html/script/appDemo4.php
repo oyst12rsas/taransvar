@@ -36,6 +36,23 @@ try
     if (!$authorized)
         demo4Reply(403, array('ok' => false, 'error' => 'registered_tarasec_gateway_required'));
 
+    if ($_SERVER['REQUEST_METHOD'] === 'POST')
+    {
+        $body = json_decode(file_get_contents('php://input') ?: '', true);
+        if (!is_array($body)) $body = $_POST;
+        $routerId = (int)($body['router_id'] ?? 0);
+        $state = strtolower(trim((string)($body['state'] ?? '')));
+        $message = mb_substr(trim((string)($body['message'] ?? '')), 0, 255);
+        if ($routerId < 1 || !in_array($state, array('configured','applied','error'), true))
+            demo4Reply(400, array('ok'=>false,'error'=>'invalid_route_state'));
+        $check=$conn->prepare("select 1 from partnerRouter where routerId=? and taggedTrafficRoute is not null");
+        $check->bind_param('i',$routerId); $check->execute(); $exists=$check->get_result()->num_rows>0; $check->close();
+        if (!$exists) demo4Reply(404,array('ok'=>false,'error'=>'route_not_found'));
+        $report=$conn->prepare("insert into demo4GatewayState(gatewayIp,routerId,state,message) values(INET_ATON(?),?,?,?) on duplicate key update state=values(state),message=values(message),reported=current_timestamp");
+        $report->bind_param('siss',$senderIp,$routerId,$state,$message); $report->execute(); $report->close();
+        demo4Reply(200,array('ok'=>true,'routerId'=>$routerId,'state'=>$state,'reportedAt'=>gmdate('c')));
+    }
+
     $sql = "select r.routerId, p.name partnerName, INET_NTOA(r.ip) destinationIp, " .
         "INET_NTOA(r.nettmask) netmask, INET_NTOA(r.taggedTrafficRoute) taggedTrafficRoute, " .
         "r.taggedTrafficRouteUpdated, COALESCE(s.state,'configured') applyState, " .
