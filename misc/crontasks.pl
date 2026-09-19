@@ -317,7 +317,6 @@ sub reportStatus {
 		if ($nDbUptime > 0 && defined($metricNow{"dbScans"})) {
 			$json{"dbScan"} = int($metricNow{"dbScans"} / $nDbUptime);
 		}
-		$json{"metricWindow"} = "since_boot";
 	}
 
 	if (open(my $fhMetricWrite, ">", "${szMetricStateFile}.$")) {
