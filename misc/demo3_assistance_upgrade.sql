@@ -8,3 +8,9 @@ ALTER TABLE demoAssistanceSession
 ALTER TABLE demoAssistanceParticipant
     MODIFY decision ENUM('pending','connected','silent','recovered','left') NOT NULL DEFAULT 'pending',
     ADD COLUMN IF NOT EXISTS leftAt DATETIME NULL AFTER recoveredAt;
+
+
+-- Demo 3 assistance requests use category demo3_<sessionId>. The historical
+-- assistanceRequest ENUM rejects those values under strict SQL mode.
+ALTER TABLE assistanceRequest
+    MODIFY category VARCHAR(64) NULL;
