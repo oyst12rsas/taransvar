@@ -268,10 +268,14 @@ sub reportStatus {
 		}
 	}
 
-	my $sthScans = $dbh->prepare("SHOW GLOBAL STATUS LIKE 'Handler_read_rnd_next'");
+	my $sthScans = $dbh->prepare("SHOW GLOBAL STATUS WHERE Variable_name IN ('Handler_read_rnd_next','Uptime')");
 	$sthScans->execute();
-	if (my $cScans = $sthScans->fetchrow_hashref()) {
-		$metricNow{"dbScans"} = ($cScans->{"Value"} // 0) + 0;
+	while (my $cScans = $sthScans->fetchrow_hashref()) {
+		if ($cScans->{"Variable_name"} eq "Handler_read_rnd_next") {
+			$metricNow{"dbScans"} = ($cScans->{"Value"} // 0) + 0;
+		} elsif ($cScans->{"Variable_name"} eq "Uptime") {
+			$metricNow{"dbUptime"} = ($cScans->{"Value"} // 0) + 0;
+		}
 	}
 	$sthScans->finish();
 
@@ -298,9 +302,25 @@ sub reportStatus {
 			my $nScans = $metricNow{"dbScans"} - $metricPrevious->{"dbScans"};
 			$json{"dbScan"} = int($nScans / $nElapsed) if $nScans >= 0;
 		}
+	} else {
+		# On the first heartbeat after boot there is no prior sample. Publish
+		# meaningful averages immediately rather than making the dashboard claim
+		# that these metrics are unsupported.
+		my $nCpuTotal = $metricNow{"cpuTotal"} // 0;
+		my $nCpuIdle = $metricNow{"cpuIdle"} // 0;
+		my $nCpuWait = $metricNow{"cpuWait"} // 0;
+		if ($nCpuTotal > 0) {
+			$json{"cpu"} = sprintf("%.1f", 100 * ($nCpuTotal - $nCpuIdle - $nCpuWait) / $nCpuTotal) + 0;
+			$json{"cpuWait"} = sprintf("%.1f", 100 * $nCpuWait / $nCpuTotal) + 0;
+		}
+		my $nDbUptime = $metricNow{"dbUptime"} // 0;
+		if ($nDbUptime > 0 && defined($metricNow{"dbScans"})) {
+			$json{"dbScan"} = int($metricNow{"dbScans"} / $nDbUptime);
+		}
+		$json{"metricWindow"} = "since_boot";
 	}
 
-	if (open(my $fhMetricWrite, ">", "${szMetricStateFile}.$$")) {
+	if (open(my $fhMetricWrite, ">", "${szMetricStateFile}.$")) {
 		print $fhMetricWrite encode_json(\%metricNow);
 		close($fhMetricWrite);
 		rename("${szMetricStateFile}.$$", $szMetricStateFile);
