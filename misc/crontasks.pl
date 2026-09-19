@@ -319,10 +319,10 @@ sub reportStatus {
 		}
 	}
 
-	if (open(my $fhMetricWrite, ">", "${szMetricStateFile}.$")) {
+	if (open(my $fhMetricWrite, ">", "/tmp/tarasec-status-counters.json.tmp")) {
 		print $fhMetricWrite encode_json(\%metricNow);
 		close($fhMetricWrite);
-		rename("${szMetricStateFile}.$$", $szMetricStateFile);
+		rename("/tmp/tarasec-status-counters.json.tmp", $szMetricStateFile);
 	}
 
 	#my $szSQL = "select inet_ntoa(ip) from traffic where coalesce(lastSeen, created) > NOW() - INTERVAL 1 MINUTE";
