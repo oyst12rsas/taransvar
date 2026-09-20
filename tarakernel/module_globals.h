@@ -28,7 +28,7 @@
 
 //Used by taralink to set timer interval (seconds between pinging tarakernel). Seems to handle 1sek quite well. Bigger problem with big intervals like 30 easily cause problem
 #define C_TIMER_INTERVAL_MILLISECONDS 0
-#define C_TIMER_INTERVAL_SECONDS 5
+#define C_TIMER_INTERVAL_SECONDS 1
 
 enum et_CheckType {e_PossiblePartner}; 
 
