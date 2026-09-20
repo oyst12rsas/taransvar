@@ -152,7 +152,7 @@ sub checkDisableSshChange {
 }
 
 sub reportStatus {
-	my ($dbh) = @_;
+	my ($dbh, $nTimeStarted) = @_;
 	use JSON;
 
 	my %json;
@@ -257,9 +257,9 @@ sub reportStatus {
 	$json{"mem"} = `free -h | awk '/Mem:/ {print \$3 "/" \$2}'`;
 	chomp($json{"mem"});
 
-	# Lightweight interval metrics. /proc/stat and MariaDB expose cumulative
-	# counters, so comparing this heartbeat with the previous one measures the
-	# whole minute without running top or adding a sampling delay.
+	# Lightweight CPU interval metrics. /proc/stat exposes cumulative counters,
+	# so comparing this heartbeat with the previous one measures the whole minute
+	# without running top or adding a sampling delay.
 	my $szMetricStateFile = "/tmp/tarasec-status-counters.json";
 	my %metricNow;
 	$metricNow{"time"} = time;
@@ -277,21 +277,6 @@ sub reportStatus {
 		}
 	}
 
-	# SHOW GLOBAL STATUS describes the MariaDB server, not the unit making the
-	# query. Only the global database server may publish these counters; remote
-	# gateways and nodes must not present central database activity as local.
-	if ($isGlobalDbServer) {
-		my $sthScans = $dbh->prepare("SHOW GLOBAL STATUS WHERE Variable_name IN ('Handler_read_rnd_next','Uptime')");
-		$sthScans->execute();
-		while (my $cScans = $sthScans->fetchrow_hashref()) {
-			if ($cScans->{"Variable_name"} eq "Handler_read_rnd_next") {
-				$metricNow{"dbScans"} = ($cScans->{"Value"} // 0) + 0;
-			} elsif ($cScans->{"Variable_name"} eq "Uptime") {
-				$metricNow{"dbUptime"} = ($cScans->{"Value"} // 0) + 0;
-			}
-		}
-		$sthScans->finish();
-	}
 
 	my $metricPrevious = {};
 	if (-f $szMetricStateFile && open(my $fhMetricRead, "<", $szMetricStateFile)) {
@@ -312,10 +297,6 @@ sub reportStatus {
 			$json{"cpu"} = sprintf("%.1f", 100 * ($nCpuTotal - $nCpuIdle - $nCpuWait) / $nCpuTotal) + 0;
 			$json{"cpuWait"} = sprintf("%.1f", 100 * $nCpuWait / $nCpuTotal) + 0;
 		}
-		if ($nElapsed > 0 && defined($metricPrevious->{"dbScans"})) {
-			my $nScans = $metricNow{"dbScans"} - $metricPrevious->{"dbScans"};
-			$json{"dbScan"} = int($nScans / $nElapsed) if $nScans >= 0;
-		}
 	} else {
 		# On the first heartbeat after boot there is no prior sample. Publish
 		# meaningful averages immediately rather than making the dashboard claim
@@ -326,10 +307,6 @@ sub reportStatus {
 		if ($nCpuTotal > 0) {
 			$json{"cpu"} = sprintf("%.1f", 100 * ($nCpuTotal - $nCpuIdle - $nCpuWait) / $nCpuTotal) + 0;
 			$json{"cpuWait"} = sprintf("%.1f", 100 * $nCpuWait / $nCpuTotal) + 0;
-		}
-		my $nDbUptime = $metricNow{"dbUptime"} // 0;
-		if ($nDbUptime > 0 && defined($metricNow{"dbScans"})) {
-			$json{"dbScan"} = int($metricNow{"dbScans"} / $nDbUptime);
 		}
 	}
 
@@ -474,6 +451,17 @@ sub reportStatus {
 
 	#Check log to db server status
 	#************* Assemble the json and send it to DB Servers and store it locally.
+	# Handler_read_rnd_next is cumulative for this connection when read through
+	# SESSION status. This reports only rows scanned by this unit's own cron DB
+	# session, never activity from other units connected to the same DB server.
+	my $sthSessionScans = $dbh->prepare("SHOW SESSION STATUS LIKE 'Handler_read_rnd_next'");
+	$sthSessionScans->execute();
+	if (my $cSessionScans = $sthSessionScans->fetchrow_hashref()) {
+		my $nElapsed = time() - ($nTimeStarted // time());
+		$nElapsed = 1 if $nElapsed < 1;
+		$json{"dbScan"} = int((($cSessionScans->{"Value"} // 0) + 0) / $nElapsed);
+	}
+	$sthSessionScans->finish();
 
 	my $cJson = encode_json(\%json);
 	print "Status: $cJson\n";
@@ -1115,7 +1103,7 @@ elsif (($rc >> 8) != 0) {
     saveWarning("manager_requests.pl exited with code " . ($rc >> 8));
 }
 
-reportStatus($dbh);
+reportStatus($dbh, $nTimeStarted);
 
 #handleRequestsForDmsg();
 
