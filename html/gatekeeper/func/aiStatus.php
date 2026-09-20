@@ -141,6 +141,7 @@ function aiStatus()
         '- knl, lnk and cron: 1 means running.',
         '- dmesg and trfc: seconds since newest local record.',
         '- sqlThrds: current MariaDB connected threads.',
+		'- dbScan: rows/second scanned by this unit\'s own cron database session; it excludes other units.',
         '- ld: 1, 5 and 15 minute load averages.',
         '- updates: total;security updates.',
         '- log:n/a means a firewall LOG rule is not applicable to that node role.',
