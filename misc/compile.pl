@@ -374,6 +374,10 @@ if ($nFileSize <= 0) {
 	print "******* Successfully created taralink user space program *****\n";
 
 	if ($bSystemdManaged) {
+		print "Installing compiled Taralink for the systemd-managed service...\n";
+		system("install", "-o", "root", "-g", "root", "-m", "0755",
+			$szFilename, "/usr/local/sbin/taralink") == 0
+			or die "Compiled Taralink, but failed to install /usr/local/sbin/taralink\n";
 		print "Restarting taralink.service under systemd ownership...\n";
 		system("systemctl", "restart", "taralink.service") == 0
 			or die "Compiled Taralink, but taralink.service failed to restart\n";
