@@ -277,16 +277,21 @@ sub reportStatus {
 		}
 	}
 
-	my $sthScans = $dbh->prepare("SHOW GLOBAL STATUS WHERE Variable_name IN ('Handler_read_rnd_next','Uptime')");
-	$sthScans->execute();
-	while (my $cScans = $sthScans->fetchrow_hashref()) {
-		if ($cScans->{"Variable_name"} eq "Handler_read_rnd_next") {
-			$metricNow{"dbScans"} = ($cScans->{"Value"} // 0) + 0;
-		} elsif ($cScans->{"Variable_name"} eq "Uptime") {
-			$metricNow{"dbUptime"} = ($cScans->{"Value"} // 0) + 0;
+	# SHOW GLOBAL STATUS describes the MariaDB server, not the unit making the
+	# query. Only the global database server may publish these counters; remote
+	# gateways and nodes must not present central database activity as local.
+	if ($isGlobalDbServer) {
+		my $sthScans = $dbh->prepare("SHOW GLOBAL STATUS WHERE Variable_name IN ('Handler_read_rnd_next','Uptime')");
+		$sthScans->execute();
+		while (my $cScans = $sthScans->fetchrow_hashref()) {
+			if ($cScans->{"Variable_name"} eq "Handler_read_rnd_next") {
+				$metricNow{"dbScans"} = ($cScans->{"Value"} // 0) + 0;
+			} elsif ($cScans->{"Variable_name"} eq "Uptime") {
+				$metricNow{"dbUptime"} = ($cScans->{"Value"} // 0) + 0;
+			}
 		}
+		$sthScans->finish();
 	}
-	$sthScans->finish();
 
 	my $metricPrevious = {};
 	if (-f $szMetricStateFile && open(my $fhMetricRead, "<", $szMetricStateFile)) {
