@@ -199,7 +199,7 @@ static void checkDemo3AssistanceTimer(void)
                     {
                         unsigned long requestId = (unsigned long)mysql_stmt_insert_id(stmt);
                         snprintf(sql, sizeof(sql),
-                            "UPDATE demoAssistanceSession SET releaseRequestId=%lu,closedAt=UTC_TIMESTAMP() "
+                            "UPDATE demoAssistanceSession SET releaseRequestId=%lu,releaseAt=UTC_TIMESTAMP(),closedAt=NULL "
                             "WHERE sessionId=%lu", requestId, sid);
                         mysql_query(conn, sql);
                         printf("Demo 3 %lu: queued real Assistance Request release %lu\n",
