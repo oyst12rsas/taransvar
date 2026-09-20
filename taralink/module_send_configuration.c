@@ -1066,11 +1066,11 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 			lpHandledWhere = "where ar.active=b'1'";
 
 		snprintf(szSQL, sizeof(szSQL),
-			"select min(requestId), hex(ip), port, "
-			"coalesce(max(case when active=b'1' then coalesce(requestQuality,0) end),0), "
-			"coalesce(max(case when active=b'1' then CAST(wantSpoofed AS UNSIGNED) end),0), "
-			"null, if(sum(CAST(active AS UNSIGNED))>0,1,0) "
-			"from assistanceRequest ar %s group by ip,port order by ip,port",
+			"select min(ar.requestId), hex(ar.ip), ar.port, "
+			"coalesce(max(case when ar.active=b'1' then coalesce(ar.requestQuality,0) end),0), "
+			"coalesce(max(case when ar.active=b'1' then CAST(ar.wantSpoofed AS UNSIGNED) end),0), "
+			"null, if(sum(CAST(ar.active AS UNSIGNED))>0,1,0) "
+			"from assistanceRequest ar %s group by ar.ip,ar.port order by ar.ip,ar.port",
 			lpHandledWhere);
 		//printf("Assist requests: %s\n", szSQL);
 		
