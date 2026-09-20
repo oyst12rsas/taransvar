@@ -48,14 +48,15 @@ function advance3(mysqli $c, int $sid): void {
     $s->bind_param('i',$sid); $s->execute(); $r=$s->get_result()->fetch_assoc(); $s->close();
     if(!$r) return;
 
-    // Release is deliberately not timer-driven. The controller must request it,
-    // and the session remains observable until previously silent infected units
-    // make contact again.
+    // After release, keep the completed exercise visible for ten minutes so
+    // participants can review containment and restored connectivity. Close
+    // earlier only after every participant explicitly leaves. Failed polling
+    // during containment must never be interpreted as leaving the demo.
     if($r['state']==='releasing' && !empty($r['releaseRequestId'])) {
-        $s=$c->prepare("SELECT COUNT(*) awaiting FROM demoAssistanceParticipant WHERE sessionId=? AND severity>? AND decision='silent'");
-        $threshold=(int)$r['threshold'];
-        $s->bind_param('ii',$sid,$threshold); $s->execute(); $awaiting=(int)$s->get_result()->fetch_assoc()['awaiting']; $s->close();
-        if($awaiting===0) {
+        $s=$c->prepare("SELECT COUNT(*) remaining FROM demoAssistanceParticipant WHERE sessionId=? AND decision<>'left'");
+        $s->bind_param('i',$sid); $s->execute(); $remaining=(int)$s->get_result()->fetch_assoc()['remaining']; $s->close();
+        $observationExpired=!empty($r['releaseAt']) && strtotime($r['releaseAt'].' UTC')+600 <= $now;
+        if($remaining===0 || $observationExpired) {
             $s=$c->prepare("UPDATE demoAssistanceSession SET state='closed',closedAt=UTC_TIMESTAMP() WHERE sessionId=? AND state='releasing'");
             $s->bind_param('i',$sid); $s->execute(); $s->close();
         }
@@ -70,7 +71,7 @@ function advance3(mysqli $c, int $sid): void {
 function session3(mysqli $c, int $sid): ?array {
     $c->begin_transaction();
     try { advance3($c,$sid); $c->commit(); } catch(Throwable $e){ $c->rollback(); throw $e; }
-    $s=$c->prepare("SELECT sessionId,name,threshold,state,targetIp,visibility,groupLabel,containmentSeconds,assistanceRequestId,releaseRequestId,startsAt,blockAt,releaseAt,GREATEST(0,TIMESTAMPDIFF(SECOND,UTC_TIMESTAMP(),blockAt)) remaining,GREATEST(0,TIMESTAMPDIFF(SECOND,UTC_TIMESTAMP(),releaseAt)) releaseRemaining FROM demoAssistanceSession WHERE sessionId=?");
+    $s=$c->prepare("SELECT sessionId,name,threshold,state,targetIp,visibility,groupLabel,containmentSeconds,assistanceRequestId,releaseRequestId,startsAt,blockAt,releaseAt,GREATEST(0,TIMESTAMPDIFF(SECOND,UTC_TIMESTAMP(),blockAt)) remaining,GREATEST(0,TIMESTAMPDIFF(SECOND,UTC_TIMESTAMP(),releaseAt)) releaseRemaining,GREATEST(0,TIMESTAMPDIFF(SECOND,UTC_TIMESTAMP(),DATE_ADD(releaseAt,INTERVAL 600 SECOND))) observationRemaining FROM demoAssistanceSession WHERE sessionId=?");
     $s->bind_param('i',$sid); $s->execute(); $r=$s->get_result()->fetch_assoc(); $s->close(); if(!$r) return null;
     $s=$c->prepare("SELECT participantId,nickname,observedIp,severity,decision,lastSeenAt,firstSilentAt,recoveredAt,leftAt,GREATEST(0,TIMESTAMPDIFF(SECOND,lastSeenAt,UTC_TIMESTAMP())) secondsSinceSeen FROM demoAssistanceParticipant WHERE sessionId=? ORDER BY participantId");
     $s->bind_param('i',$sid); $s->execute(); $q=$s->get_result(); $p=[]; $silent=0; $connected=0; $recovered=0;
@@ -79,7 +80,7 @@ function session3(mysqli $c, int $sid): ?array {
         $p[]=['participant_id'=>(int)$x['participantId'],'nickname'=>(string)$x['nickname'],'observed_ip'=>(string)$x['observedIp'],'severity'=>$x['severity']===null?null:(int)$x['severity'],'decision'=>(string)$x['decision'],'last_seen'=>(string)($x['lastSeenAt']??''),'left_at'=>(string)($x['leftAt']??''),'seconds_since_seen'=>$x['secondsSinceSeen']===null?null:(int)$x['secondsSinceSeen']];
     }
     $s->close();
-    return ['session_id'=>(int)$r['sessionId'],'name'=>(string)$r['name'],'threshold'=>(int)$r['threshold'],'state'=>(string)$r['state'],'target_ip'=>(string)$r['targetIp'],'visibility'=>(string)$r['visibility'],'group_label'=>(string)$r['groupLabel'],'containment_seconds'=>(int)$r['containmentSeconds'],'block_at'=>(string)($r['blockAt']??''),'release_at'=>(string)($r['releaseAt']??''),'seconds_remaining'=>(int)$r['remaining'],'release_seconds_remaining'=>$r['releaseAt']? (int)$r['releaseRemaining']:0,'assistance_request_id'=>$r['assistanceRequestId']? (int)$r['assistanceRequestId']:null,'release_request_id'=>$r['releaseRequestId']? (int)$r['releaseRequestId']:null,'participants'=>$p,'summary'=>['participants'=>count($p),'connected'=>$connected,'silent'=>$silent,'recovered'=>$recovered]];
+    return ['session_id'=>(int)$r['sessionId'],'name'=>(string)$r['name'],'threshold'=>(int)$r['threshold'],'state'=>(string)$r['state'],'target_ip'=>(string)$r['targetIp'],'visibility'=>(string)$r['visibility'],'group_label'=>(string)$r['groupLabel'],'containment_seconds'=>(int)$r['containmentSeconds'],'block_at'=>(string)($r['blockAt']??''),'release_at'=>(string)($r['releaseAt']??''),'seconds_remaining'=>(int)$r['remaining'],'release_seconds_remaining'=>$r['releaseAt']? (int)$r['releaseRemaining']:0,'observation_seconds_remaining'=>$r['releaseAt']? (int)$r['observationRemaining']:0,'assistance_request_id'=>$r['assistanceRequestId']? (int)$r['assistanceRequestId']:null,'release_request_id'=>$r['releaseRequestId']? (int)$r['releaseRequestId']:null,'participants'=>$p,'summary'=>['participants'=>count($p),'connected'=>$connected,'silent'=>$silent,'recovered'=>$recovered]];
 }
 
 $a=strtolower(trim((string)($_REQUEST['action']??'list'))); $b=body3();
