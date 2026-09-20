@@ -218,11 +218,11 @@ function getServerStatus($seconds_since, $status, $nId)
 	}
 	if (isset($json["dbScan"])) {
 		$szServerStatus .= getDotByInterval($json, "dbScan", 100, 1000,
-					"MariaDB scans ".$json["dbScan"]." rows/second. This is normal",
-					"MariaDB scans ".$json["dbScan"]." rows/second. Check query indexes",
-					"MariaDB scans ".$json["dbScan"]." rows/second. Missing indexes or excessive queued data are likely");
+					"This unit's DB session scans ".$json["dbScan"]." rows/second. This is normal",
+					"This unit's DB session scans ".$json["dbScan"]." rows/second. Check its query indexes",
+					"This unit's DB session scans ".$json["dbScan"]." rows/second. Its queries likely need indexes");
 	} else {
-		$szServerStatus .= getTitledDot(false, "N/A", "MariaDB scan rate has not been reported by this node");
+		$szServerStatus .= getTitledDot(false, "N/A", "This unit's DB session scan rate has not been reported");
 	}
 
 	if (isset($json["df"]))
