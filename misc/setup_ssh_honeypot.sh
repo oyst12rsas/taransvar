@@ -133,6 +133,9 @@ restart_sshd() {
 is_on() { case "${1,,}" in 1|yes|true|on) return 0 ;; *) return 1 ;; esac; }
 
 mkdir -p "$SSHD_DROPIN_DIR" "$ROLLBACK_DIR" /usr/local/lib/tarasec
+# /run is temporary and /run/sshd may disappear after reboot or rollback.
+# OpenSSH requires this root-owned directory even for configuration tests.
+install -d -o root -g root -m 0755 /run/sshd
 if [ -f "$SSHD_DROPIN" ]; then
     # A previous interrupted run may have left our temporary two-port sshd
     # phase in place. Never promote that transitional file to the known-good
@@ -169,6 +172,7 @@ HONEYPOT_SERVICE="tarasec-ssh-honeypot.service"
 if [ -s "$STATE/iptables.previous" ] && command -v iptables-restore >/dev/null 2>&1; then iptables-restore < "$STATE/iptables.previous"; fi
 if [ -s "$STATE/ip6tables.previous" ] && command -v ip6tables-restore >/dev/null 2>&1; then ip6tables-restore < "$STATE/ip6tables.previous" || true; fi
 if [ -f "$STATE/90-tarasec.conf.previous" ]; then cp -a "$STATE/90-tarasec.conf.previous" "$DROPIN"; else rm -f "$DROPIN"; fi
+install -d -o root -g root -m 0755 /run/sshd
 sshd -t
 if systemctl list-unit-files ssh.socket >/dev/null 2>&1 && systemctl is-enabled --quiet ssh.socket 2>/dev/null; then
     systemctl daemon-reload
