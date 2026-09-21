@@ -35,6 +35,8 @@ SSH_HONEYPOT_DEMO_DB_URL="${SSH_HONEYPOT_DEMO_DB_URL:-}"
 SSH_HONEYPOT_DEMO_NODE_TOKEN="${SSH_HONEYPOT_DEMO_NODE_TOKEN:-}"
 SSH_FAILSAFE="${SSH_FAILSAFE:-on}"
 SSH_FAILSAFE_MINUTES="${SSH_FAILSAFE_MINUTES:-10}"
+SSH_ALLOWED_SOURCES="${SSH_ALLOWED_SOURCES:-}"
+SSH_RECOVERY_SOURCES="${SSH_RECOVERY_SOURCES:-}"
 
 case "$SSH_PORT" in ''|*[!0-9]*) echo "Invalid SSH_PORT=$SSH_PORT" >&2; exit 1 ;; esac
 case "$SSH_HONEYPOT_PORT" in ''|*[!0-9]*) echo "Invalid SSH_HONEYPOT_PORT=$SSH_HONEYPOT_PORT" >&2; exit 1 ;; esac
@@ -156,6 +158,26 @@ else
 fi
 if command -v iptables-save >/dev/null 2>&1; then iptables-save > "$ROLLBACK_DIR/iptables.previous"; else rm -f "$ROLLBACK_DIR/iptables.previous"; fi
 if command -v ip6tables-save >/dev/null 2>&1; then ip6tables-save > "$ROLLBACK_DIR/ip6tables.previous"; else rm -f "$ROLLBACK_DIR/ip6tables.previous"; fi
+
+# Keep the proposed administrative port reachable even if a later setup step
+# fails before firewall.sh is run. The rollback snapshot above removes these
+# temporary rules, and firewall.sh replaces them with the final policy.
+temporary_sources="$SSH_ALLOWED_SOURCES,$SSH_RECOVERY_SOURCES"
+temporary_rule_count=0
+IFS=',' read -ra temporary_source_list <<< "$temporary_sources"
+declare -A temporary_source_seen=()
+for source in "${temporary_source_list[@]}"; do
+    source="${source//[[:space:]]/}"
+    [ -z "$source" ] && continue
+    [ -n "${temporary_source_seen[$source]:-}" ] && continue
+    temporary_source_seen[$source]=1
+    iptables -I INPUT 1 -p tcp -s "$source" --dport "$SSH_PORT" -j ACCEPT
+    temporary_rule_count=$((temporary_rule_count + 1))
+done
+if [ "$temporary_rule_count" -eq 0 ]; then
+    iptables -I INPUT 1 -p tcp --dport "$SSH_PORT" -j ACCEPT
+fi
+echo "Temporary firewall access installed for TCP/$SSH_PORT until final firewall policy or rollback."
 
 # A rerun may start while the TaraSec honeypot already owns TCP/22.
 # Snapshot that state and stop it before the temporary two-port sshd phase.
