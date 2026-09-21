@@ -24,7 +24,7 @@ use Fcntl qw(:flock);
 use LWP::UserAgent;		#Using this for posting status to partners
 use IO::Socket::INET;	#Using this for fire and forget status to partners
 
-print "Usage:\nperl crontasks.pl\tRun only debugging tasks then quit.\nperl crontasks.pl cron\t\tTo run as by cron\nperl crontasks.pl force\t\tStart even if crontasks.pl already running\n";
+print "Usage:\nperl crontasks.pl\tRun only debugging tasks then quit.\nperl crontasks.pl cron\t\tTo run as by cron\nperl crontasks.pl status\tSend one status report and quit\nperl crontasks.pl force\t\tStart even if crontasks.pl already running\n";
 
 #Prevent that multiple instances are running by using lock file
 my $szCrontasksLockFileName = '/tmp/crontasks.lock';
@@ -1039,6 +1039,16 @@ my $pSetup = getSetup();
 
 my $dbh = getConnection();
 setCronLibDbh($dbh);
+
+# Deployment and diagnostics can publish the newly installed status schema
+# immediately without starting the full minute-long cron maintenance cycle.
+if (defined($ARGV[0]) && $ARGV[0] eq "status") {
+	my $nStatusStarted = time();
+	reportStatus($dbh, $nStatusStarted);
+	$dbh->disconnect();
+	print "Status report sent.\n";
+	exit;
+}
 
 #if (!$ARGV[0]) {
 if (!runningAsCron() && !runningBootCheck())	#Run "sudo perl crontasks.pl whatever_except_cron_and_boot" to run this section. 
