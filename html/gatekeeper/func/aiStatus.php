@@ -40,10 +40,18 @@ function aiStatusIssues($secondsSince, $status)
 		$issues[] = 'ERROR: administrative SSH is not listening';
 	}
 
-    if (isset($status['dmesg']) && (int)$status['dmesg'] >= 130) {
+    if (array_key_exists('dmesgOk', $status)) {
+        if ((string)$status['dmesgOk'] !== '1') {
+            $issues[] = 'ERROR: dmesg collection worker is not running';
+        }
+    } elseif (isset($status['dmesg']) && (int)$status['dmesg'] >= 130) {
         $issues[] = 'ERROR: dmesg data is ' . (int)$status['dmesg'] . ' seconds old';
     }
-    if (isset($status['trfc']) && (int)$status['trfc'] >= 130) {
+    if (array_key_exists('trfcOk', $status)) {
+        if ((string)$status['trfcOk'] !== '1') {
+            $issues[] = 'ERROR: traffic reporting pipeline is not running';
+        }
+    } elseif (isset($status['trfc']) && (int)$status['trfc'] >= 130) {
         $issues[] = 'NOTICE: traffic data is ' . (int)$status['trfc'] . ' seconds old; this may be normal when there are no users';
     }
     if (isset($status['sqlThrds']) && (int)$status['sqlThrds'] >= 25) {
@@ -146,7 +154,8 @@ function aiStatus()
         'FIELD NOTES:',
         '- knl, lnk and cron: 1 means running.',
 		'- sshListen: 1 means the configured administrative SSH port is listening; the port number is not reported.',
-        '- dmesg and trfc: seconds since newest local record.',
+        '- dmesg and trfc: seconds since newest local record; old data alone does not mean failure.',
+		'- dmesgOk and trfcOk: 1 means the corresponding collection/reporting pipeline is running.',
         '- sqlThrds: current MariaDB connected threads.',
 		'- dbScan: rows/second scanned by this unit\'s own cron database session; it excludes other units.',
         '- ld: 1, 5 and 15 minute load averages.',
