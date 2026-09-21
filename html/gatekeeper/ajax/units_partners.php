@@ -123,6 +123,8 @@ function getServerStatus($seconds_since, $status, $nId)
 
 	$szServerStatus .= check($json, "cron", "crontask.pl (perl task) is running", "crontask.pl (perl task) is NOT running");
 
+	$szServerStatus .= check($json, "sshListen", "Administrative SSH is listening", "Administrative SSH is NOT listening");
+
 	$nSeconds = $json["dmesg"] ?? "";
 	if ($isGlobalDbServer)
 		$szServerStatus .= getTitledDot(true, "dmesg ingestion is not required on the global DB server", "");
