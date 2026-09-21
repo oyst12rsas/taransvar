@@ -7,6 +7,7 @@ import json
 import os
 import socket
 import socketserver
+import struct
 import threading
 import ipaddress
 from urllib.parse import urlsplit
@@ -76,6 +77,19 @@ HOST_KEY = paramiko.Ed25519Key(filename=KEY_FILE)
 
 def clean(value, limit=200):
     return "".join(char if 32 <= ord(char) < 127 else "?" for char in str(value))[:limit]
+
+
+def original_destination(sock):
+    """Return the pre-REDIRECT IPv4 destination when Netfilter provides it."""
+    local_ip, local_port = sock.getsockname()[:2]
+    try:
+        raw = sock.getsockopt(socket.SOL_IP, 80, 16)  # SO_ORIGINAL_DST
+        family = struct.unpack_from("=H", raw, 0)[0]
+        if family == socket.AF_INET:
+            return socket.inet_ntop(socket.AF_INET, raw[4:8]), struct.unpack_from("!H", raw, 2)[0]
+    except OSError:
+        pass
+    return local_ip, local_port
 
 
 def emit(event, context, severity, action="observe", **fields):
@@ -260,7 +274,7 @@ def run_shell(channel, server):
 class Handler(socketserver.BaseRequestHandler):
     def handle(self):
         src_ip, src_port = self.client_address[:2]
-        local_ip, dst_port = self.request.getsockname()[:2]
+        local_ip, dst_port = original_destination(self.request)
         context = {
             "session": uuid.uuid4().hex[:16],
             "src_ip": src_ip,
