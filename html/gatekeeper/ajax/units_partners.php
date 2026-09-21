@@ -134,10 +134,9 @@ function getServerStatus($seconds_since, $status, $nId)
 	} elseif ($isGlobalDbServer) {
 		$szServerStatus .= getTitledDot(true, "dmesg ingestion is not required on the global DB server", "");
 	} else {
-		$szServerStatus .= getDotByInterval($json, "dmesg", 60, 130,
-					"Receiving dmesg messages",
-					"$nSeconds seconds since received dmesg. Refresh in a minute may help",
-					"Not receiving dmesg ($nSeconds seconds). Please inform tech team");
+		$szServerStatus .= check($json, "dmesgOk",
+					"dmesg collection is running",
+					"dmesg collection worker is NOT running");
 	}
 
 	$nSeconds = $json["trfc"] ?? null;
@@ -147,10 +146,9 @@ function getServerStatus($seconds_since, $status, $nId)
 					"Traffic reporting pipeline is running; ".$trafficAge,
 					"Traffic reporting pipeline is NOT running");
 	} else {
-		$szServerStatus .= getDotByInterval($json, "trfc", 60, 130,
-					"Receiving traffic reports",
-					"$nSeconds seconds since received traffic. If no other issue is reported, it may be idle.",
-					"Not receiving traffic reports ($nSeconds seconds). This may be normal on an idle node.");
+		$szServerStatus .= check($json, "trfcOk",
+					"Traffic reporting pipeline is running",
+					"Traffic reporting pipeline is NOT running");
 	}
 
 	//Open mysql connections
@@ -323,7 +321,13 @@ function getServerStatus($seconds_since, $status, $nId)
 		//$szServerStatus .= getTitledDot(false, "N/A", "Check of services not implemented. Please upgrade tarasec systems");
 		$bOldScript = 1;
 	} else {
-		$szServerStatus .= getTitledDot(strlen($json["srvcNtOk"]) == 0, "All specified services are running", "Services not running: ".$json["srvcNtOk"]);
+		$servicesNotOk = array_values(array_filter(
+			array_map('trim', explode(',', $json["srvcNtOk"])),
+			function ($service) { return $service !== "" && $service !== "tarasec-gateway.service"; }
+		));
+		$szServerStatus .= getTitledDot(count($servicesNotOk) == 0,
+				"All specified services are running",
+				"Services not running: ".implode(',', $servicesNotOk));
 	}
 
 	//Active users
