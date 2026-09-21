@@ -255,8 +255,31 @@ Environment=TARASEC_SSH_HONEYPOT_DEMO_NODE_TOKEN=$SSH_HONEYPOT_DEMO_NODE_TOKEN
 EOF
 systemctl daemon-reload
 case "${SSH_HONEYPOT,,}" in
-    1|yes|true|on) systemctl enable --now "$HONEYPOT_SERVICE"; echo "TaraSec SSH honeypot listening on TCP ports: $SSH_HONEYPOT_LISTEN_PORTS. Decoy ranges are redirected by the firewall." ;;
-    *) systemctl disable --now "$HONEYPOT_SERVICE" 2>/dev/null || true; echo "TaraSec SSH honeypot disabled by firewall policy." ;;
+    1|yes|true|on)
+        systemctl enable --now "$HONEYPOT_SERVICE"
+        if ! systemctl is-active --quiet "$HONEYPOT_SERVICE"; then
+            echo "SSH honeypot service failed to start:" >&2
+            journalctl -u "$HONEYPOT_SERVICE" -n 25 --no-pager >&2 || true
+            exit 1
+        fi
+        if ! ss -H -ltn | awk -v port="$SSH_HONEYPOT_PORT" '
+            {
+                address=$4
+                sub(/^.*:/, "", address)
+                if (address == port) found=1
+            }
+            END { exit !found }
+        '; then
+            echo "SSH honeypot service is active but TCP/$SSH_HONEYPOT_PORT is not listening." >&2
+            journalctl -u "$HONEYPOT_SERVICE" -n 25 --no-pager >&2 || true
+            exit 1
+        fi
+        echo "TaraSec SSH honeypot verified on TCP/$SSH_HONEYPOT_PORT. Decoy ranges are redirected by the firewall."
+        ;;
+    *)
+        systemctl disable --now "$HONEYPOT_SERVICE" 2>/dev/null || true
+        echo "TaraSec SSH honeypot disabled by firewall policy."
+        ;;
 esac
 
 if [ -n "${DBSERVER:-}" ] && [ -r "$REPO_DIR/misc/setup_backoffice_ai.sh" ]; then
@@ -279,3 +302,28 @@ echo "SSH policy staged from $CONF."
 echo "  Real SSH: TCP/$SSH_PORT"
 echo "  Honeypot:  $SSH_HONEYPOT on TCP ports $SSH_HONEYPOT_PORTS ($SSH_HONEYPOT_AUTH_MODE)"
 echo "  Rollback:  sshd + IPv4/IPv6 firewall + honeypot state snapshot"
+
+NETBIRD_IP=$(ip -4 -o addr show 2>/dev/null | awk '
+    {
+        split($4, address, "/")
+        split(address[1], octet, ".")
+        if (octet[1] == 100 && octet[2] >= 64 && octet[2] <= 127) {
+            print address[1]
+            exit
+        }
+    }
+')
+if [ -n "$NETBIRD_IP" ]; then
+    echo
+    echo "Test real SSH from another computer:"
+    echo "  ssh -p $SSH_PORT ${SUDO_USER:-<user>}@$NETBIRD_IP"
+    if is_on "$SSH_HONEYPOT"; then
+        echo "Test the honeypot:"
+        echo "  ssh -p $SSH_HONEYPOT_PORT test@$NETBIRD_IP"
+        if [ "$SSH_HONEYPOT_AUTH_MODE" = "reject-all" ]; then
+            echo "Expected result: password attempts end with Permission denied; no shell is opened."
+        fi
+    fi
+else
+    echo "WARNING: No NetBird IPv4 address in 100.64.0.0/10 was found; test commands were not generated."
+fi
