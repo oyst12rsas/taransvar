@@ -52,37 +52,50 @@ case "$SSH_HONEYPOT_AUTH_MODE" in
     *) echo "SSH_HONEYPOT_AUTH_MODE must be accept-all, reject-all or password" >&2; exit 1 ;;
 esac
 
-expand_honeypot_ports() {
+parse_honeypot_ports() {
     local spec="${SSH_HONEYPOT_PORTS// /,}" item first last port
-    local -A seen=()
-    SSH_HONEYPOT_PORT_LIST=()
+    local -A seen_specs=()
+    SSH_HONEYPOT_PORT_SPECS=()
     IFS=',' read -ra items <<< "$spec"
     for item in "${items[@]}"; do
         [ -z "$item" ] && continue
         if [[ "$item" =~ ^([0-9]+)-([0-9]+)$ ]]; then
             first=$((10#${BASH_REMATCH[1]})); last=$((10#${BASH_REMATCH[2]}))
             [ "$first" -le "$last" ] || { echo "Descending honeypot range: $item" >&2; exit 1; }
-            for ((port=first; port<=last; port++)); do
-                [ "$port" -le 65535 ] || { echo "Invalid honeypot port: $port" >&2; exit 1; }
-                [ "$port" -ne "$SSH_PORT" ] || { echo "Honeypot port collides with real SSH: $port" >&2; exit 1; }
-                if [ -z "${seen[$port]:-}" ]; then seen[$port]=1; SSH_HONEYPOT_PORT_LIST+=("$port"); fi
-                [ "${#SSH_HONEYPOT_PORT_LIST[@]}" -le 64 ] || { echo "At most 64 honeypot ports are allowed" >&2; exit 1; }
-            done
+            [ "$first" -ge 1 ] && [ "$last" -le 65535 ] || { echo "Invalid honeypot range: $item" >&2; exit 1; }
+            ! (( SSH_PORT >= first && SSH_PORT <= last )) || { echo "Honeypot range collides with real SSH: $item" >&2; exit 1; }
+            item="$first-$last"
         elif [[ "$item" =~ ^[0-9]+$ ]] && [ "$((10#$item))" -ge 1 ] && [ "$((10#$item))" -le 65535 ]; then
             port=$((10#$item))
             [ "$port" -ne "$SSH_PORT" ] || { echo "Honeypot port collides with real SSH: $port" >&2; exit 1; }
-            if [ -z "${seen[$port]:-}" ]; then seen[$port]=1; SSH_HONEYPOT_PORT_LIST+=("$port"); fi
-            [ "${#SSH_HONEYPOT_PORT_LIST[@]}" -le 64 ] || { echo "At most 64 honeypot ports are allowed" >&2; exit 1; }
+            item="$port"
         else
             echo "Invalid SSH_HONEYPOT_PORTS entry: $item" >&2; exit 1
         fi
+        if [ -z "${seen_specs[$item]:-}" ]; then
+            seen_specs[$item]=1
+            SSH_HONEYPOT_PORT_SPECS+=("$item")
+        fi
+        [ "${#SSH_HONEYPOT_PORT_SPECS[@]}" -le 64 ] || { echo "At most 64 honeypot port entries are allowed" >&2; exit 1; }
     done
-    [ "${#SSH_HONEYPOT_PORT_LIST[@]}" -gt 0 ] || { echo "No honeypot ports configured" >&2; exit 1; }
+    [ "${#SSH_HONEYPOT_PORT_SPECS[@]}" -gt 0 ] || { echo "No honeypot ports configured" >&2; exit 1; }
 }
-expand_honeypot_ports
+honeypot_specs_include_port() {
+    local wanted="$1" item first last
+    for item in "${SSH_HONEYPOT_PORT_SPECS[@]}"; do
+        if [[ "$item" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+            first=${BASH_REMATCH[1]}; last=${BASH_REMATCH[2]}
+            (( wanted >= first && wanted <= last )) && return 0
+        elif [ "$wanted" -eq "$item" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+parse_honeypot_ports
 if [ "$SSH_HONEYPOT_DEMO_PORT" != "0" ]; then
     [[ "$SSH_HONEYPOT_DEMO_PORT" =~ ^[0-9]+$ ]] && [ "$SSH_HONEYPOT_DEMO_PORT" -ge 1 ] && [ "$SSH_HONEYPOT_DEMO_PORT" -le 65535 ] || { echo "Invalid SSH_HONEYPOT_DEMO_PORT" >&2; exit 1; }
-    [[ " ${SSH_HONEYPOT_PORT_LIST[*]} " == *" $SSH_HONEYPOT_DEMO_PORT "* ]] || { echo "Demo port must be included in SSH_HONEYPOT_PORTS" >&2; exit 1; }
+    honeypot_specs_include_port "$SSH_HONEYPOT_DEMO_PORT" || { echo "Demo port must be included in SSH_HONEYPOT_PORTS" >&2; exit 1; }
     # Plain HTTP is permitted only to a literal NetBird/CGNAT address.
     # This preserves the observed NetBird sender identity used for Demo 2
     # correlation without allowing credentials over arbitrary public HTTP.
@@ -91,6 +104,10 @@ if [ "$SSH_HONEYPOT_DEMO_PORT" != "0" ]; then
         exit 1
     }
     [ "${#SSH_HONEYPOT_DEMO_NODE_TOKEN}" -ge 32 ] || { echo "Demo mode requires a node token of at least 32 characters" >&2; exit 1; }
+fi
+SSH_HONEYPOT_LISTEN_PORTS="$SSH_HONEYPOT_PORT"
+if [ "$SSH_HONEYPOT_DEMO_PORT" != "0" ] && [ "$SSH_HONEYPOT_DEMO_PORT" != "$SSH_HONEYPOT_PORT" ]; then
+    SSH_HONEYPOT_LISTEN_PORTS+=",$SSH_HONEYPOT_DEMO_PORT"
 fi
 if ! command -v sshd >/dev/null 2>&1; then echo "OpenSSH server is not installed." >&2; exit 1; fi
 
@@ -225,7 +242,7 @@ mkdir -p /etc/systemd/system/tarasec-ssh-honeypot.service.d
 cat > /etc/systemd/system/tarasec-ssh-honeypot.service.d/10-port.conf <<EOF
 [Service]
 Environment=TARASEC_SSH_HONEYPOT_PORT=$SSH_HONEYPOT_PORT
-Environment="TARASEC_SSH_HONEYPOT_PORTS=$SSH_HONEYPOT_PORTS"
+Environment="TARASEC_SSH_HONEYPOT_PORTS=$SSH_HONEYPOT_LISTEN_PORTS"
 Environment=TARASEC_SSH_HONEYPOT_AUTH_MODE=$SSH_HONEYPOT_AUTH_MODE
 Environment=TARASEC_SSH_HONEYPOT_PASSWORD_HASH=$SSH_HONEYPOT_PASSWORD_HASH
 Environment=TARASEC_SSH_HONEYPOT_DEMO_PORT=$SSH_HONEYPOT_DEMO_PORT
@@ -234,7 +251,7 @@ Environment=TARASEC_SSH_HONEYPOT_DEMO_NODE_TOKEN=$SSH_HONEYPOT_DEMO_NODE_TOKEN
 EOF
 systemctl daemon-reload
 case "${SSH_HONEYPOT,,}" in
-    1|yes|true|on) systemctl enable --now "$HONEYPOT_SERVICE"; echo "TaraSec SSH honeypot enabled on TCP ports: $SSH_HONEYPOT_PORTS." ;;
+    1|yes|true|on) systemctl enable --now "$HONEYPOT_SERVICE"; echo "TaraSec SSH honeypot listening on TCP ports: $SSH_HONEYPOT_LISTEN_PORTS. Decoy ranges are redirected by the firewall." ;;
     *) systemctl disable --now "$HONEYPOT_SERVICE" 2>/dev/null || true; echo "TaraSec SSH honeypot disabled by firewall policy." ;;
 esac
 
