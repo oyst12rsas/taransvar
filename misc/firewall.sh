@@ -19,6 +19,7 @@ SSH_PORT="${SSH_PORT:-22}"
 SSH_HONEYPOT="${SSH_HONEYPOT:-off}"
 SSH_HONEYPOT_PORT="${SSH_HONEYPOT_PORT:-22}"
 SSH_HONEYPOT_PORTS="${SSH_HONEYPOT_PORTS:-$SSH_HONEYPOT_PORT}"
+SSH_HONEYPOT_DEMO_PORT="${SSH_HONEYPOT_DEMO_PORT:-0}"
 SSH_ALLOWED_SOURCES="${SSH_ALLOWED_SOURCES:-}"
 SSH_RECOVERY_PROTECT="${SSH_RECOVERY_PROTECT:-on}"
 SSH_RECOVERY_SOURCES="${SSH_RECOVERY_SOURCES:-}"
@@ -54,35 +55,36 @@ add_source_rules() {
 if ! valid_port "$SSH_PORT"; then echo "Invalid SSH_PORT=$SSH_PORT" >&2; exit 1; fi
 if ! valid_port "$SSH_HONEYPOT_PORT"; then echo "Invalid SSH_HONEYPOT_PORT=$SSH_HONEYPOT_PORT" >&2; exit 1; fi
 
-expand_honeypot_ports() {
+parse_honeypot_ports() {
     local spec="${SSH_HONEYPOT_PORTS// /,}" item first last port
-    local -A seen=()
-    SSH_HONEYPOT_PORT_LIST=()
+    local -A seen_specs=()
+    SSH_HONEYPOT_PORT_SPECS=()
     IFS=',' read -ra items <<< "$spec"
     for item in "${items[@]}"; do
         [ -z "$item" ] && continue
         if [[ "$item" =~ ^([0-9]+)-([0-9]+)$ ]]; then
             first=$((10#${BASH_REMATCH[1]})); last=$((10#${BASH_REMATCH[2]}))
             [ "$first" -le "$last" ] || { echo "Descending honeypot range: $item" >&2; exit 1; }
-            for ((port=first; port<=last; port++)); do
-                valid_port "$port" || { echo "Invalid honeypot port: $port" >&2; exit 1; }
-                [ "$port" != "$SSH_PORT" ] || { echo "Honeypot port collides with SSH_PORT=$SSH_PORT" >&2; exit 1; }
-                if [ -z "${seen[$port]:-}" ]; then seen[$port]=1; SSH_HONEYPOT_PORT_LIST+=("$port"); fi
-                [ "${#SSH_HONEYPOT_PORT_LIST[@]}" -le 64 ] || { echo "At most 64 honeypot ports are allowed" >&2; exit 1; }
-            done
+            valid_port "$first" && valid_port "$last" || { echo "Invalid honeypot range: $item" >&2; exit 1; }
+            ! (( SSH_PORT >= first && SSH_PORT <= last )) || { echo "Honeypot range collides with SSH_PORT=$SSH_PORT: $item" >&2; exit 1; }
+            item="$first-$last"
         elif [[ "$item" =~ ^[0-9]+$ ]]; then
             port=$((10#$item))
             valid_port "$port" || { echo "Invalid honeypot port: $item" >&2; exit 1; }
             [ "$port" != "$SSH_PORT" ] || { echo "Honeypot port collides with SSH_PORT=$SSH_PORT" >&2; exit 1; }
-            if [ -z "${seen[$port]:-}" ]; then seen[$port]=1; SSH_HONEYPOT_PORT_LIST+=("$port"); fi
-            [ "${#SSH_HONEYPOT_PORT_LIST[@]}" -le 64 ] || { echo "At most 64 honeypot ports are allowed" >&2; exit 1; }
+            item="$port"
         else
             echo "Invalid SSH_HONEYPOT_PORTS entry: $item" >&2; exit 1
         fi
+        if [ -z "${seen_specs[$item]:-}" ]; then
+            seen_specs[$item]=1
+            SSH_HONEYPOT_PORT_SPECS+=("$item")
+        fi
+        [ "${#SSH_HONEYPOT_PORT_SPECS[@]}" -le 64 ] || { echo "At most 64 honeypot port entries are allowed" >&2; exit 1; }
     done
-    [ "${#SSH_HONEYPOT_PORT_LIST[@]}" -gt 0 ] || { echo "No honeypot ports configured" >&2; exit 1; }
+    [ "${#SSH_HONEYPOT_PORT_SPECS[@]}" -gt 0 ] || { echo "No honeypot ports configured" >&2; exit 1; }
 }
-expand_honeypot_ports
+parse_honeypot_ports
 
 iptables -F
 iptables -X
@@ -199,9 +201,29 @@ else
 fi
 
 if is_on "$SSH_HONEYPOT"; then
-    for PORT in "${SSH_HONEYPOT_PORT_LIST[@]}"; do
-        iptables -A INPUT -p tcp --dport "$PORT" -j ACCEPT
+    # Redirect only connections addressed to this machine. Forwarded/NAT
+    # traffic is excluded by --dst-type LOCAL.
+    iptables -t nat -N TARASEC_SSH_HONEYPOT 2>/dev/null || iptables -t nat -F TARASEC_SSH_HONEYPOT
+    while iptables -t nat -D PREROUTING -p tcp -m addrtype --dst-type LOCAL -j TARASEC_SSH_HONEYPOT 2>/dev/null; do :; done
+    iptables -t nat -A PREROUTING -p tcp -m addrtype --dst-type LOCAL -j TARASEC_SSH_HONEYPOT
+    iptables -t nat -A TARASEC_SSH_HONEYPOT -p tcp --dport "$SSH_HONEYPOT_PORT" -j RETURN
+    if [ "$SSH_HONEYPOT_DEMO_PORT" != "0" ] && [ "$SSH_HONEYPOT_DEMO_PORT" != "$SSH_HONEYPOT_PORT" ]; then
+        iptables -t nat -A TARASEC_SSH_HONEYPOT -p tcp --dport "$SSH_HONEYPOT_DEMO_PORT" -j RETURN
+    fi
+    for PORT_SPEC in "${SSH_HONEYPOT_PORT_SPECS[@]}"; do
+        [ "$PORT_SPEC" = "$SSH_HONEYPOT_PORT" ] && continue
+        [ "$SSH_HONEYPOT_DEMO_PORT" != "0" ] && [ "$PORT_SPEC" = "$SSH_HONEYPOT_DEMO_PORT" ] && continue
+        iptables -t nat -A TARASEC_SSH_HONEYPOT -p tcp --dport "${PORT_SPEC/-/:}" \
+            -j REDIRECT --to-ports "$SSH_HONEYPOT_PORT"
     done
+    iptables -A INPUT -p tcp --dport "$SSH_HONEYPOT_PORT" -j ACCEPT
+    if [ "$SSH_HONEYPOT_DEMO_PORT" != "0" ] && [ "$SSH_HONEYPOT_DEMO_PORT" != "$SSH_HONEYPOT_PORT" ]; then
+        iptables -A INPUT -p tcp --dport "$SSH_HONEYPOT_DEMO_PORT" -j ACCEPT
+    fi
+else
+    while iptables -t nat -D PREROUTING -p tcp -m addrtype --dst-type LOCAL -j TARASEC_SSH_HONEYPOT 2>/dev/null; do :; done
+    iptables -t nat -F TARASEC_SSH_HONEYPOT 2>/dev/null || true
+    iptables -t nat -X TARASEC_SSH_HONEYPOT 2>/dev/null || true
 fi
 
 iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
