@@ -166,11 +166,15 @@ class SSHServer(paramiko.ServerInterface):
             and hmac.compare_digest(supplied_hash, PASSWORD_HASH)
             )
             demo_state = ""
+        # Any credential attempt on a normal honeypot port is sufficient to
+        # tag the source. Demo challenge failures remain observations because
+        # legitimate participants may enter an incorrect credential.
+        should_tag = accepted or not demo_attempt
         emit(
             "ssh_login_success" if accepted else "ssh_login_failed",
             self.context,
-            7 if accepted else 4,
-            "tag_host" if accepted else "observe",
+            7 if should_tag else 4,
+            "tag_host" if should_tag else "observe",
             username=self.username,
             password_length=len(password),
             auth_mode="demo-challenge" if demo_attempt else AUTH_MODE,
