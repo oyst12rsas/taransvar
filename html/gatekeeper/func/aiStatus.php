@@ -34,6 +34,12 @@ function aiStatusIssues($secondsSince, $status)
         }
     }
 
+	if (!array_key_exists('sshListen', $status)) {
+		$issues[] = 'WARNING: administrative SSH listener state is not reported';
+	} elseif ((string)$status['sshListen'] !== '1') {
+		$issues[] = 'ERROR: administrative SSH is not listening';
+	}
+
     if (isset($status['dmesg']) && (int)$status['dmesg'] >= 130) {
         $issues[] = 'ERROR: dmesg data is ' . (int)$status['dmesg'] . ' seconds old';
     }
@@ -139,6 +145,7 @@ function aiStatus()
         '',
         'FIELD NOTES:',
         '- knl, lnk and cron: 1 means running.',
+		'- sshListen: 1 means the configured administrative SSH port is listening; the port number is not reported.',
         '- dmesg and trfc: seconds since newest local record.',
         '- sqlThrds: current MariaDB connected threads.',
 		'- dbScan: rows/second scanned by this unit\'s own cron database session; it excludes other units.',
