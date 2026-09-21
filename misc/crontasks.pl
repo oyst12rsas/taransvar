@@ -30,7 +30,7 @@ print "Usage:\nperl crontasks.pl\tRun only debugging tasks then quit.\nperl cron
 my $szCrontasksLockFileName = '/tmp/crontasks.lock';
 my $lock_fh;   # must stay alive
 
-if (!$ARGV[0] || $ARGV[0] ne "force") 
+if (!$ARGV[0] || ($ARGV[0] ne "force" && $ARGV[0] ne "status")) 
 {
 	open($lock_fh, '>', $szCrontasksLockFileName) or die "Cannot open lock file: $!";
 	flock($lock_fh, LOCK_EX | LOCK_NB) or die "Already running. Aborting.\n";
