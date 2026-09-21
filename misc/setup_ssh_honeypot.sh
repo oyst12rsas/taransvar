@@ -117,20 +117,23 @@ if ! command -v sshd >/dev/null 2>&1; then echo "OpenSSH server is not installed
 restart_sshd() {
     if systemctl list-unit-files ssh.socket >/dev/null 2>&1 \
        && systemctl is-enabled --quiet ssh.socket 2>/dev/null; then
+        # ssh.socket owns new listeners. Restarting ssh.service here kills
+        # established administrative sessions, so leave it running.
         systemctl daemon-reload
-        systemctl stop ssh.service 2>/dev/null || true
         systemctl restart ssh.socket
-        systemctl start ssh.service
     elif systemctl list-unit-files ssh.service >/dev/null 2>&1; then
-        systemctl restart ssh.service
+        systemctl reload ssh.service
     elif systemctl list-unit-files sshd.service >/dev/null 2>&1; then
-        systemctl restart sshd.service
+        systemctl reload sshd.service
     else
         echo "Could not identify ssh.socket/ssh.service/sshd.service." >&2
         return 1
     fi
 }
 is_on() { case "${1,,}" in 1|yes|true|on) return 0 ;; *) return 1 ;; esac; }
+tcp_port_listening() {
+    ss -H -ltn "sport = :$1" 2>/dev/null | grep -q .
+}
 
 mkdir -p "$SSHD_DROPIN_DIR" "$ROLLBACK_DIR" /usr/local/lib/tarasec
 # /run is temporary and /run/sshd may disappear after reboot or rollback.
@@ -176,13 +179,11 @@ install -d -o root -g root -m 0755 /run/sshd
 sshd -t
 if systemctl list-unit-files ssh.socket >/dev/null 2>&1 && systemctl is-enabled --quiet ssh.socket 2>/dev/null; then
     systemctl daemon-reload
-    systemctl stop ssh.service 2>/dev/null || true
     systemctl restart ssh.socket
-    systemctl start ssh.service
 elif systemctl list-unit-files ssh.service >/dev/null 2>&1; then
-    systemctl restart ssh.service
+    systemctl reload ssh.service
 else
-    systemctl restart sshd.service
+    systemctl reload sshd.service
 fi
 if [ -f "$STATE/honeypot.was-active" ]; then
     systemctl start "$HONEYPOT_SERVICE" 2>/dev/null || true
@@ -262,14 +263,17 @@ case "${SSH_HONEYPOT,,}" in
             journalctl -u "$HONEYPOT_SERVICE" -n 25 --no-pager >&2 || true
             exit 1
         fi
-        if ! ss -H -ltn | awk -v port="$SSH_HONEYPOT_PORT" '
-            {
-                address=$4
-                sub(/^.*:/, "", address)
-                if (address == port) found=1
-            }
-            END { exit !found }
-        '; then
+        # systemctl may report active before Python has loaded Paramiko and
+        # bound the socket. Allow up to five seconds for listener startup.
+        honeypot_ready=0
+        for _ in {1..50}; do
+            if tcp_port_listening "$SSH_HONEYPOT_PORT"; then
+                honeypot_ready=1
+                break
+            fi
+            sleep 0.1
+        done
+        if [ "$honeypot_ready" -ne 1 ]; then
             echo "SSH honeypot service is active but TCP/$SSH_HONEYPOT_PORT is not listening." >&2
             journalctl -u "$HONEYPOT_SERVICE" -n 25 --no-pager >&2 || true
             exit 1
