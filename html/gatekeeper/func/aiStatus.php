@@ -63,7 +63,13 @@ function aiStatusIssues($secondsSince, $status)
         $issues[] = 'WARNING: reboot required';
     }
     if (!empty($status['srvcNtOk'])) {
-        $issues[] = 'ERROR: services not running: ' . $status['srvcNtOk'];
+        $servicesNotOk = array_values(array_filter(
+            array_map('trim', explode(',', (string)$status['srvcNtOk'])),
+            function ($service) { return $service !== '' && $service !== 'tarasec-gateway.service'; }
+        ));
+        if ($servicesNotOk) {
+            $issues[] = 'ERROR: services not running: ' . implode(',', $servicesNotOk);
+        }
     }
     if (isset($status['ld'])) {
         $loads = preg_split('/\s+/', trim((string)$status['ld']));
@@ -82,10 +88,11 @@ function aiStatusIssues($secondsSince, $status)
                 $parts[$pair[0]] = $pair[1];
             }
         }
-        if (($parts['rsyslog'] ?? '') !== 'active') {
+        $rsyslogApplicable = (($parts['rsyslog'] ?? '') !== 'n/a');
+        if ($rsyslogApplicable && ($parts['rsyslog'] ?? '') !== 'active') {
             $issues[] = 'ERROR: rsyslog is not active';
         }
-        if (empty($parts['setup'])) {
+        if ($rsyslogApplicable && empty($parts['setup'])) {
             $issues[] = 'ERROR: rsyslog has no forwarding destination';
         }
         if (($parts['log'] ?? '') === '0') {
@@ -94,7 +101,12 @@ function aiStatusIssues($secondsSince, $status)
     }
     if (!empty($status['err'])) {
         $severity = isset($status['errSev']) ? $status['errSev'] : 'unknown';
-        $issues[] = 'REPORTED ERROR (severity ' . $severity . '): ' . $status['err'];
+        $errorAge = isset($status['errAge']) ? (int)$status['errAge'] : -1;
+        if ($errorAge >= 3600) {
+            $issues[] = 'HISTORICAL ERROR (' . $errorAge . ' seconds old, severity ' . $severity . '): ' . $status['err'];
+        } else {
+            $issues[] = 'REPORTED ERROR (severity ' . $severity . '): ' . $status['err'];
+        }
     }
     if (!$issues) {
         $issues[] = 'OK: no issue detected by the dashboard thresholds';
