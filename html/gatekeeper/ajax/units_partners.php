@@ -125,20 +125,33 @@ function getServerStatus($seconds_since, $status, $nId)
 
 	$szServerStatus .= check($json, "sshListen", "Administrative SSH is listening", "Administrative SSH is NOT listening");
 
-	$nSeconds = $json["dmesg"] ?? "";
-	if ($isGlobalDbServer)
+	$nSeconds = $json["dmesg"] ?? null;
+	if (isset($json["dmesgOk"])) {
+		$dmesgAge = ($nSeconds === null ? "no kernel event recorded" : "last kernel event ".$nSeconds." seconds ago");
+		$szServerStatus .= check($json, "dmesgOk",
+					"dmesg collection is running; ".$dmesgAge,
+					"dmesg collection worker is NOT running");
+	} elseif ($isGlobalDbServer) {
 		$szServerStatus .= getTitledDot(true, "dmesg ingestion is not required on the global DB server", "");
-	else
+	} else {
 		$szServerStatus .= getDotByInterval($json, "dmesg", 60, 130,
 					"Receiving dmesg messages",
 					"$nSeconds seconds since received dmesg. Refresh in a minute may help",
 					"Not receiving dmesg ($nSeconds seconds). Please inform tech team");
-	
-	$nSeconds = $json["trfc"] ?? "";
-	$szServerStatus .= getDotByInterval($json, "trfc", 60, 130, 
+	}
+
+	$nSeconds = $json["trfc"] ?? null;
+	if (isset($json["trfcOk"])) {
+		$trafficAge = ($nSeconds === null ? "no traffic record yet" : "last traffic record ".$nSeconds." seconds ago");
+		$szServerStatus .= check($json, "trfcOk",
+					"Traffic reporting pipeline is running; ".$trafficAge,
+					"Traffic reporting pipeline is NOT running");
+	} else {
+		$szServerStatus .= getDotByInterval($json, "trfc", 60, 130,
 					"Receiving traffic reports",
-					"$nSeconds seconds since received traffic. If no other issue is reported, it's probably just because there's no users.", 
-					"Not receiving traffic reports ($nSeconds seconds). If no other issue is reported, it's probably just because there's no users.");
+					"$nSeconds seconds since received traffic. If no other issue is reported, it may be idle.",
+					"Not receiving traffic reports ($nSeconds seconds). This may be normal on an idle node.");
+	}
 
 	//Open mysql connections
 	$szServerStatus .= getDotByInterval($json, "sqlThrds", 12, 25, 
