@@ -107,6 +107,46 @@ sub checkServices {
 		return "";
 	}
 }
+sub configuredSshPort {
+	my $nPort = 22;
+	my $szConfig = "/etc/tarasecfw.conf";
+
+	if (open(my $fh, '<', $szConfig)) {
+		while (my $szLine = <$fh>) {
+			next if $szLine =~ /^\s*#/;
+			if ($szLine =~ /^\s*SSH_PORT\s*=\s*["']?([0-9]+)["']?\s*(?:#.*)?$/) {
+				$nPort = $1 + 0;
+				last;
+			}
+		}
+		close($fh);
+	}
+
+	return ($nPort >= 1 && $nPort <= 65535) ? $nPort : 0;
+}
+
+sub tcpPortListening {
+	my ($nPort) = @_;
+	return 0 unless $nPort;
+
+	my $szHexPort = sprintf("%04X", $nPort);
+	foreach my $szSocketTable ("/proc/net/tcp", "/proc/net/tcp6") {
+		next unless open(my $fh, '<', $szSocketTable);
+		while (my $szLine = <$fh>) {
+			$szLine =~ s/^\s+//;
+			my @cFields = split(/\s+/, $szLine);
+			next unless scalar(@cFields) > 3;
+			my (undef, $szPort) = split(/:/, $cFields[1], 2);
+			if (defined($szPort) && uc($szPort) eq $szHexPort && $cFields[3] eq "0A") {
+				close($fh);
+				return 1;
+			}
+		}
+		close($fh);
+	}
+
+	return 0;
+}
 sub checkDisableSshChange {
 	my $dbh = getConnection();
 	my $sthSetup = $dbh->prepare("select iptablesAllowPing, coalesce(CAST(iptablesAllowSsh as UNSIGNED),0) as iptablesAllowSsh, sshPort, whoMaySsh, iptablesSetupChanged from setup where iptablesSetupChanged limit 1");
@@ -172,6 +212,7 @@ sub reportStatus {
 		$szNatPostrouting =~ /(?:^|\\s)-j\\s+MASQUERADE(?:\\s|$)/m
 	);
 	$json{"role"} = $isGlobalDbServer ? "global_db" : ($isGateway ? "gateway" : "node");
+	$json{"sshListen"} = tcpPortListening(configuredSshPort()) ? 1 : 0;
 
 	$json{"ip"} = (defined $cSetup->{"nAdminIP"}?$cSetup->{"nAdminIP"}+0:0);
 	$json{"nett"} = (defined $cSetup->{"nNettmask"}?$cSetup->{"nNettmask"}:0);
