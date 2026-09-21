@@ -918,9 +918,9 @@ sub handle_syslogThreat_table
 				#print "Service field not set for $row->{'syslogThreatId'} - setting to handled.\n";
 				push @cIDs, $row->{'syslogThreatId'};
 			} else {
-				if ($row->{'service'} eq 'cowrie') {
-					print ("$row->{'src'}:$row->{'src_port'} -> $row->{'dst'}:$row->{'dst_port'}\n");
-					handle_syslogThreat_record($dbh, $row);	#Used for both cowrie and iptables for now
+				if ($row->{'service'} eq 'cowrie' || $row->{'service'} eq 'ssh') {
+					print ("$row->{'service'} threat $row->{'src'}:$row->{'src_port'} -> $row->{'dst'}:$row->{'dst_port'}\n");
+					handle_syslogThreat_record($dbh, $row);	#Honeypot events must be reported to the source router
 				} else {
 					if ($row->{'service'} eq 'iptable' || $row->{'service'} eq 'iptables') {
 						print ("iptables found $row->{'src'}:$row->{'src_port'} -> $row->{'dst'}:$row->{'dst_port'} (set to handled)\n");
