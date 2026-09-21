@@ -281,6 +281,14 @@ sub reportStatus {
 		$json{"knl"} = (moduleRunning("tarakernel")?"1":0);
 	}
 
+	# Data age measures activity, not pipeline health: an idle machine may
+	# legitimately have no new kernel or traffic records. Report the processes
+	# required to collect those records separately.
+	$json{"dmesgOk"} = $isGlobalDbServer ? 1 :
+		(system("systemctl", "is-active", "--quiet", "worker_read_dmesg.service") == 0 ? 1 : 0);
+	$json{"trfcOk"} = $isGlobalDbServer ? 1 :
+		(($json{"knl"} eq "1" && $json{"lnk"} eq "1") ? 1 : 0);
+
 #	$json{"cron"} = (programRunning("crontasks.pl")?"1":0);
 
 	my $bLockFileHeld = (programRunningLockFileHeld($szCrontasksLockFileName)?1:0);
