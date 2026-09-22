@@ -305,7 +305,7 @@ function requiresLogin($f)
 	if (!isset($f))
 		return true;
 
-	return !in_array($f, array("submitLogin", 'demo','listLog','infections','traffic','about','units', 'unitsMore','tagStatus','selfRegInfected'));
+	return !in_array($f, array("submitLogin", 'demo','appDemos','listLog','infections','traffic','about','units', 'unitsMore','tagStatus','selfRegInfected'));
 }
 
 function printMenuChoice($szFunc, $szPrint)
