@@ -1,0 +1,12 @@
+[Unit]
+Description=Send TaraSec server status every two minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+RandomizedDelaySec=20s
+Persistent=false
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target
