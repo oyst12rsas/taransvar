@@ -57,16 +57,19 @@ if (!$isDbServer) {
 <script>
 (function(){
  const api='../script/appDemoAssistance.php', key='tarasec_http_demo3_participant';
- let selected=null, participant=null, timer=null;
+ let selected=null, participant=null, timer=null, heartbeatBusy=false;
  const el=id=>document.getElementById(id);
  async function request(action, values, method){
    const options={cache:'no-store'};
    let url=api+'?action='+encodeURIComponent(action);
    if(method==='POST'){options.method='POST';options.headers={'Content-Type':'application/x-www-form-urlencoded'};options.body=new URLSearchParams(values||{}).toString();}
    else if(values) url+='&'+new URLSearchParams(values).toString();
-   const response=await fetch(url,options), data=await response.json().catch(()=>({ok:false,error:'invalid_server_response'}));
-   if(!response.ok||data.ok===false) throw new Error(data.error||('HTTP '+response.status));
-   return data;
+   const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),10000); options.signal=controller.signal;
+   try {
+     const response=await fetch(url,options), data=await response.json().catch(()=>({ok:false,error:'invalid_server_response'}));
+     if(!response.ok||data.ok===false) throw new Error(data.error||('HTTP '+response.status));
+     return data;
+   } finally { clearTimeout(timeout); }
  }
  function message(text,bad){el('demo3-message').textContent=text;el('demo3-message').className=bad?'gk-demo3-bad':'gk-demo3-muted';}
  function render(s){
@@ -78,9 +81,11 @@ if (!$isDbServer) {
  function escapeHtml(v){const d=document.createElement('div');d.textContent=String(v);return d.innerHTML;}
  function save(){participant?sessionStorage.setItem(key,JSON.stringify(participant)):sessionStorage.removeItem(key);}
  async function heartbeat(){
-   if(!participant)return;
+   if(!participant||heartbeatBusy)return;
+   heartbeatBusy=true;
    try{const d=await request('heartbeat',{session_id:participant.session_id,participant_token:participant.participant_token},'POST');render(d.session);}
-   catch(e){message('Heartbeat failed: '+e.message,true);}
+   catch(e){message('Heartbeat failed: '+(e.name==='AbortError'?'request timed out':e.message),true);}
+   finally{heartbeatBusy=false;}
  }
  window.demo3Load=async function(){
    try{
@@ -92,7 +97,7 @@ if (!$isDbServer) {
  };
  window.demo3Join=async function(){
    if(!selected)return;
-   try{const d=await request('join',{session_id:selected.session_id,nickname:el('demo3-nickname').value},'POST');participant={session_id:selected.session_id,participant_token:d.participant_token,participant_id:d.participant_id};save();render(d.session);timer=setInterval(heartbeat,2000);message('Joined. Heartbeats are now visible to the exercise.',false);}
+   try{const d=await request('join',{session_id:selected.session_id,nickname:el('demo3-nickname').value},'POST');participant={session_id:selected.session_id,participant_token:d.participant_token,participant_id:d.participant_id};save();render(d.session);timer=setInterval(heartbeat,3000);message('Joined. Heartbeats are now visible to the exercise.',false);}
    catch(e){message('Unable to join: '+e.message,true);}
  };
  window.demo3Leave=async function(){
@@ -110,7 +115,7 @@ if (!$isDbServer) {
    demo3CopyText(report).then(()=>message('Debug information copied.',false)).catch(()=>window.prompt('Copy this report:',report));
  };
  try{participant=JSON.parse(sessionStorage.getItem(key)||'null');}catch(_){participant=null;}
- window.demo3Load().then(()=>{if(participant){timer=setInterval(heartbeat,2000);heartbeat();}});
+ window.demo3Load().then(()=>{if(participant){timer=setInterval(heartbeat,3000);heartbeat();}});
 })();
 </script>
 <?php } ?>

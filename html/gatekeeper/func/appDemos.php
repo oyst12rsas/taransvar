@@ -101,7 +101,7 @@ if (!$isDbServer) {
     const api='../script/appDemoSshSession.php';
     const configApi='../script/appDemoConfiguration.php';
     const storageKey='tarasec_http_demo2_session';
-    let setup=null, session=null, timer=null, pollCount=0, configuration=null;
+    let setup=null, session=null, timer=null, pollCount=0, configuration=null, pollBusy=false;
 
     function el(id){ return document.getElementById(id); }
     function message(text,bad){
@@ -109,10 +109,13 @@ if (!$isDbServer) {
         el('gk-demo2-message').className=bad?'gk-demo-bad':'gk-demo-muted';
     }
     async function json(url, options){
-        const response=await fetch(url, Object.assign({cache:'no-store'},options||{}));
-        const data=await response.json().catch(()=>({ok:false,error:'Invalid server response'}));
-        if(!response.ok || data.ok===false) throw new Error(data.error||('HTTP '+response.status));
-        return data;
+        const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),10000);
+        try {
+            const response=await fetch(url, Object.assign({cache:'no-store',signal:controller.signal},options||{}));
+            const data=await response.json().catch(()=>({ok:false,error:'Invalid server response'}));
+            if(!response.ok || data.ok===false) throw new Error(data.error||('HTTP '+response.status));
+            return data;
+        } finally { clearTimeout(timeout); }
     }
     function body(values){ return new URLSearchParams(values).toString(); }
     function save(){ session ? sessionStorage.setItem(storageKey,JSON.stringify(session)) : sessionStorage.removeItem(storageKey); }
@@ -153,16 +156,17 @@ if (!$isDbServer) {
         }catch(e){ message(e.message,true); }
     };
     window.gkDemo2Refresh=async function(){
-        if(!session) return;
+        if(!session || pollBusy) return;
+        pollBusy=true;
         try{
             const fresh=await json(api+'?action=status&session_id='+encodeURIComponent(session.session_id)+'&session_token='+encodeURIComponent(session.session_token));
             const status=fresh.session||fresh;\n            session=Object.assign(session,status); save(); statusText(session); pollCount++;
             el('gk-demo2-poll').textContent='Checked '+new Date().toLocaleTimeString()+' · '+pollCount+' successful refresh(es)';
             if(['cleared','owner_clear_required','expired','cancelled'].includes(session.state)) stopPolling();
         }catch(e){
-            if(el('gk-demo2-poll')) el('gk-demo2-poll').textContent='Polling failed: '+e.message;
-            message(e.message,true);
-        }
+            if(el('gk-demo2-poll')) el('gk-demo2-poll').textContent='Polling failed: '+(e.name==='AbortError'?'request timed out':e.message);
+            message(e.name==='AbortError'?'Status request timed out':e.message,true);
+        } finally { pollBusy=false; }
     };
     window.gkDemo2Close=async function(){
         if(!session) return;
@@ -217,7 +221,7 @@ if (!$isDbServer) {
         ].join('\\n');
         copyText(report).then(()=>message('Debug information copied. Paste it into AI and ask what happened.',false)).catch(()=>window.prompt('Copy this debug report:',report));
     };
-    function startPolling(){ stopPolling(); timer=setInterval(window.gkDemo2Refresh,2000); }
+    function startPolling(){ stopPolling(); timer=setInterval(window.gkDemo2Refresh,3000); }
     function stopPolling(){ if(timer){ clearInterval(timer); timer=null; } }
     async function init(){
         try{
