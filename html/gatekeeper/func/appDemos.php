@@ -45,7 +45,156 @@ if(appDemoTableExists($c,'demoSshSession')){
     } print '</table>'; $q->free(); } else print '<p class="gk-demo-muted">No Demo 2 sessions yet.</p>';
 } else print '<p class="gk-demo-muted">Demo 2 tables are not installed.</p>';
 ?>
-<p class="gk-demo-muted">The HTTP page can observe the complete server-side sequence. The actual SSH connections still require an SSH client.</p></div>
+<p class="gk-demo-muted">The browser uses the same authoritative Demo 2 API as the Android app. You still make the two SSH connections with an SSH client.</p>
+<div id="gk-demo2-client">
+    <p id="gk-demo2-message" class="gk-demo-muted">Loading the configured Demo 2 path…</p>
+    <div id="gk-demo2-setup"></div>
+    <div id="gk-demo2-session" style="display:none">
+        <table>
+            <tr><th>Session</th><td id="gk-demo2-id">—</td></tr>
+            <tr><th>State</th><td id="gk-demo2-state">—</td></tr>
+            <tr><th>Node A report</th><td id="gk-demo2-a-status">⚪ Waiting</td></tr>
+            <tr><th>Gateway/DB</th><td id="gk-demo2-gateway-status">⚪ Waiting</td></tr>
+            <tr><th>Node B report</th><td id="gk-demo2-b-status">⚪ Waiting</td></tr>
+            <tr><th>Time remaining</th><td id="gk-demo2-time">—</td></tr>
+        </table>
+        <h3>1 · Connect to Node A</h3>
+        <p>Node A rejects the connection. That rejection is reported through TaraSec and marks this unit as infected.</p>
+        <code id="gk-demo2-a-command"></code>
+        <button type="button" onclick="gkDemo2Copy('gk-demo2-a-command')">Copy Node A command</button>
+        <h3>2 · Connect to Node B</h3>
+        <p>Wait until the gateway row says the unit is marked infected, then use the legitimate classroom login at Node B.</p>
+        <div id="gk-demo2-b-details"></div>
+        <code id="gk-demo2-b-command"></code>
+        <button type="button" onclick="gkDemo2Copy('gk-demo2-b-command')">Copy Node B command</button>
+        <div class="gk-demo-actions">
+            <button type="button" onclick="gkDemo2Refresh()">Refresh session</button>
+            <button type="button" onclick="gkDemo2Close()">Close session</button>
+            <button type="button" onclick="gkDemo2Debug()">Copy debug info for AI</button>
+        </div>
+    </div>
+    <div id="gk-demo2-start" class="gk-demo-actions" style="display:none">
+        <button type="button" id="gk-demo2-start-button" onclick="gkDemo2Start()">Start SSH demo</button>
+    </div>
+</div>
+<script>
+(function(){
+    const api='../script/appDemoSshSession.php';
+    const configApi='../script/appDemoConfiguration.php';
+    const storageKey='tarasec_http_demo2_session';
+    let setup=null, session=null, timer=null;
+
+    function el(id){ return document.getElementById(id); }
+    function message(text,bad){
+        el('gk-demo2-message').textContent=text;
+        el('gk-demo2-message').className=bad?'gk-demo-bad':'gk-demo-muted';
+    }
+    async function json(url, options){
+        const response=await fetch(url, Object.assign({cache:'no-store'},options||{}));
+        const data=await response.json().catch(()=>({ok:false,error:'Invalid server response'}));
+        if(!response.ok || data.ok===false) throw new Error(data.error||('HTTP '+response.status));
+        return data;
+    }
+    function body(values){ return new URLSearchParams(values).toString(); }
+    function save(){ session ? sessionStorage.setItem(storageKey,JSON.stringify(session)) : sessionStorage.removeItem(storageKey); }
+    function command(host,port,user){ return 'ssh -p '+port+' '+user+'@'+host; }
+    function statusText(s){
+        const state=s.state||'unknown';
+        el('gk-demo2-id').textContent='#'+s.session_id;
+        el('gk-demo2-state').textContent=state.replaceAll('_',' ');
+        el('gk-demo2-a-status').textContent=s.node_a_observed?'🔴 SSH rejection received':'⚪ Waiting';
+        el('gk-demo2-gateway-status').textContent=state==='cleared'?'🟢 Demo infection cleared':(s.unit_marked?'🔴 Unit marked infected':'⚪ Waiting');
+        el('gk-demo2-b-status').textContent=s.node_b_login_accepted===true?(state==='cleared'?'🟢 Login accepted · evidence validated':'🟢 Login accepted · validation pending'):(s.node_b_login_accepted===false?'🔴 Login rejected':(s.node_b_observed?'🟡 Report received · checking login':'⚪ Waiting'));
+        const seconds=Math.max(0,Number(s.seconds_remaining??s.expires_in??0));
+        el('gk-demo2-time').textContent=String(Math.floor(seconds/60)).padStart(2,'0')+':'+String(seconds%60).padStart(2,'0');
+        el('gk-demo2-a-command').textContent=command(s.node_a,s.node_a_port,s.username||'demo');
+        el('gk-demo2-b-command').textContent=command(s.node_b,s.node_b_port,s.username||'demo');
+        el('gk-demo2-b-details').textContent='Host '+s.node_b+':'+s.node_b_port+' · username '+(s.username||'demo')+' · password '+(s.password||'1');
+        el('gk-demo2-session').style.display='block';
+        el('gk-demo2-start').style.display='none';
+        if(s.progress_message) message(s.progress_message,false);
+    }
+    async function eligibility(){
+        const check=await json(api+'?action=eligibility');
+        if(!check.eligible){
+            message(check.message+(check.demo_reset_available?' Close/reset the previous demo state in the app or gateway before starting again.':''),true);
+            el('gk-demo2-start').style.display='none';
+            return false;
+        }
+        message(check.operational_warning||check.message,false);
+        el('gk-demo2-start').style.display='block';
+        return true;
+    }
+    window.gkDemo2Start=async function(){
+        try{
+            if(!setup || !await eligibility()) return;
+            const created=await json(api,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body({action:'create',setup_id:setup.id})});
+            session=created; save(); statusText(session); startPolling();
+        }catch(e){ message(e.message,true); }
+    };
+    window.gkDemo2Refresh=async function(){
+        if(!session) return;
+        try{
+            const fresh=await json(api+'?action=status&session_id='+encodeURIComponent(session.session_id)+'&session_token='+encodeURIComponent(session.session_token));
+            session=Object.assign(session,fresh); save(); statusText(session);
+            if(['cleared','owner_clear_required','expired','cancelled'].includes(session.state)) stopPolling();
+        }catch(e){ message(e.message,true); }
+    };
+    window.gkDemo2Close=async function(){
+        if(!session) return;
+        try{
+            await json(api,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body({action:'cancel',session_id:session.session_id,session_token:session.session_token})});
+            stopPolling(); session=null; save(); el('gk-demo2-session').style.display='none';
+            message('Session closed. If its demo infection remains active, clear it on the gateway before starting again.',false);
+            await eligibility();
+        }catch(e){ message(e.message,true); }
+    };
+    window.gkDemo2Copy=function(id){
+        const text=el(id).textContent;
+        navigator.clipboard.writeText(text).catch(()=>window.prompt('Copy this command:',text));
+    };
+    window.gkDemo2Debug=function(){
+        if(!session) return;
+        const report=[
+            'TaraSec HTTP Demo 2 debug report',
+            'ai_background=https://tarasec.org/ai/demo-guide/',
+            'secrets=omitted (password and session token)',
+            '',
+            '[setup]',
+            'setup_id='+(setup?.id||0),
+            'setup_name='+(setup?.name||'unknown'),
+            'node_a='+(session.node_a||'unknown')+':'+(session.node_a_port||0),
+            'node_b='+(session.node_b||'unknown')+':'+(session.node_b_port||0),
+            '',
+            '[session]',
+            'session_id='+(session.session_id||0),
+            'state='+(session.state||'unknown'),
+            'attempts='+(session.attempts||0),
+            'seconds_remaining='+(session.seconds_remaining??session.expires_in??0),
+            'node_a_observed='+Boolean(session.node_a_observed),
+            'unit_marked='+Boolean(session.unit_marked),
+            'node_b_observed='+Boolean(session.node_b_observed),
+            'node_b_login_accepted='+(session.node_b_login_accepted??'unknown'),
+            'progress_message='+(session.progress_message||'none')
+        ].join('\n');
+        navigator.clipboard.writeText(report).then(()=>message('Debug information copied. Paste it into AI and ask what happened.',false)).catch(()=>window.prompt('Copy this debug report:',report));
+    };
+    function startPolling(){ stopPolling(); timer=setInterval(window.gkDemo2Refresh,2000); }
+    function stopPolling(){ if(timer){ clearInterval(timer); timer=null; } }
+    async function init(){
+        try{
+            const configuration=await json(configApi);
+            setup=(configuration.demo_ssh_setups||[]).find(x=>x.id===configuration.selection?.demo2_setup_id)||(configuration.demo_ssh_setups||[])[0];
+            if(!setup){ throw new Error('No active Demo 2 setup is configured.'); }
+            el('gk-demo2-setup').textContent=setup.name+': '+setup.node_a+':'+setup.node_a_port+' → '+setup.node_b+':'+setup.node_b_port;
+            try{ session=JSON.parse(sessionStorage.getItem(storageKey)||'null'); }catch(_){ session=null; }
+            if(session?.session_id && session?.session_token){ statusText(session); startPolling(); await window.gkDemo2Refresh(); }
+            else await eligibility();
+        }catch(e){ message(e.message,true); }
+    }
+    init();
+})();
+</script></div>
 
 <div class="gk-demo-card"><h2>Demo 3 — community containment</h2>
 <?php
