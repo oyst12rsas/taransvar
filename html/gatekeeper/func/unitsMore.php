@@ -145,8 +145,6 @@ function unitsMore()
 
 	if ($row) 
 	{
-		print "<table>";
-
 		$status = $row["status"];
 		//$status = '{"ld":"0.00 0.00 0.00","knl":"1","df":"19G 9.8G 8.6G","updates":"3;0","boot":1000000,"cron":1,"mem":"552Mi/1.9Gi","sqlThrds":"3","nett":0,"dmesg":1,"msg":null,"lnk":1,"usr":0,"rsyslog":"log:1,byte:360,log:10,burst:20,prefix:TARASEC_tomato,rsyslog:active,setup:@100.68.181.35","trfc":58,"bootReq":0,"ip":0,"lstUp":885}';
 
@@ -164,6 +162,7 @@ function unitsMore()
 			return;
 		}
 		print "<h2>All status details</h2>";
+		print "<table>";
 
 		print '<tr><td>Name</td><td>'.$row["name"].'</td></tr>';
 
