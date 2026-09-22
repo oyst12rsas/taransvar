@@ -26,6 +26,13 @@ function queueAssistance3(mysqli $c, int $sid, string $targetIp, int $threshold,
     $category=category3($sid);
     $comment=($active?'DEMO3 start ':'DEMO3 release ').$sid;
     $activeInt=$active?1:0;
+    if(!$active) {
+        // The inactive row is the event distributed to partners. Also disable
+        // the original local start row, otherwise this DB server's aggregate
+        // assistance configuration remains active forever.
+        $s=$c->prepare("UPDATE assistanceRequest SET active=b'0',handled=NULL WHERE category=? AND isDemo=b'1' AND active=b'1'");
+        $s->bind_param('s',$category); $s->execute(); $s->close();
+    }
     $s=$c->prepare("INSERT INTO assistanceRequest (purpose,ip,port,category,comment,requestQuality,wantSpoofed,active,isDemo) VALUES ('forDistribution',INET_ATON(?),0,?,?,?,b'0',?,b'1')");
     $s->bind_param('sssii',$targetIp,$category,$comment,$threshold,$activeInt);
     $s->execute(); $id=(int)$s->insert_id; $s->close(); return $id;

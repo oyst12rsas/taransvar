@@ -198,6 +198,15 @@ static void checkDemo3AssistanceTimer(void)
                     if (mysql_stmt_bind_param(stmt, bind) == 0 && mysql_stmt_execute(stmt) == 0)
                     {
                         unsigned long requestId = (unsigned long)mysql_stmt_insert_id(stmt);
+                        /* The inactive row above is retained as the release
+                           event for partner distribution. Disable the local
+                           start row as well so this DB server stops enforcing
+                           the request against tagged traffic. */
+                        snprintf(sql, sizeof(sql),
+                            "UPDATE assistanceRequest SET active=b'0',handled=NULL "
+                            "WHERE category='%s' AND isDemo=b'1' AND active=b'1' "
+                            "AND requestId<>%lu", category, requestId);
+                        mysql_query(conn, sql);
                         snprintf(sql, sizeof(sql),
                             "UPDATE demoAssistanceSession SET releaseRequestId=%lu,releaseAt=UTC_TIMESTAMP(),closedAt=NULL "
                             "WHERE sessionId=%lu", requestId, sid);
