@@ -224,7 +224,7 @@ if(appDemoTableExists($c,'demoAssistanceSession')){
     } print '</table>'; $q->free(); } else print '<p class="gk-demo-muted">No Demo 3 sessions yet.</p>';
 } else print '<p class="gk-demo-muted">Demo 3 tables are not installed.</p>';
 ?>
-<p class="gk-demo-muted">This makes the important test visible in HTTP: an infected participant should become unreachable/silent during containment and recover after release.</p></div>
+<p class="gk-demo-muted">This makes the important test visible in HTTP: an infected participant should become unreachable/silent during containment and recover after release.</p><div class="gk-demo-actions"><a href="index.php?f=appDemo3">Open HTTP Demo 3</a></div></div>
 
 <div class="gk-demo-card"><h2>Demo 4 — partner ISP routing</h2>
 <?php
