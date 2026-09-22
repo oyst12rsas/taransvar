@@ -323,52 +323,60 @@ if (isset($_GET["f"]))
 			exit;                	
         }
 		case "unitIp":
-			if (!isset($_GET["ip"]) || !isset($_GET["port"]))
+			// This endpoint is consumed as JSON by Demo1. Never let an empty
+			// unitPort table produce PHP warnings or a non-JSON response.
+			header("Content-Type: application/json");
+			if (!isset($_GET["ip"]) || !isset($_GET["port"]) ||
+				!filter_var($_GET["ip"], FILTER_VALIDATE_IP) ||
+				!filter_var($_GET["port"], FILTER_VALIDATE_INT, ["options" => ["min_range" => 1, "max_range" => 65535]]))
 			{
-				print "Insufficient parameters";
+				echo json_encode(["error" => "1", "message" => "Invalid or insufficient parameters"]);
 				exit;
 			}
 
 			$szIp = $_GET["ip"];
-			$nPort = $_GET["port"];
+			$nPort = (int)$_GET["port"];
 			$conn = getConnection();
 			$szSQL = "select inet_ntoa(ipAddress) as ip, TIMESTAMPDIFF(SECOND, lastSeen, NOW()) AS seconds_since, unitId, nickname from unitPort join setup where port = ? order by lastSeen desc limit 1";
-			//print "$szSQL<br>";
 			$stmt = $conn->prepare($szSQL);
-			$stmt->bind_param("d", $nPort);//, $szMe); 
+			if (!$stmt)
+			{
+				echo json_encode(["error" => "1", "message" => "Unable to prepare unit-IP lookup"]);
+				exit;
+			}
+			$stmt->bind_param("i", $nPort);
 			$stmt->execute();
-			$result = $stmt->get_result(); // get the mysqli result
+			$result = $stmt->get_result();
 			$data = [];
 			if ($result && $row = $result->fetch_assoc())
 			{
-				$data["nickname"] = $row["nickname"];	//260714
+				$data["nickname"] = $row["nickname"];
 				$data["ip"] = $row["ip"];
-				$data["sec"] = $row["seconds_since"];
+				$data["sec"] = (int)$row["seconds_since"];
 			}
 			else
 			{
 				$data["error"] = "1";
 				$data["found"] = "-1";
 				$data["message"] = "Searched for $nPort";
+				$data["updated"] = "0";
+				$data["sec"] = null;
 
-				//Check if recent data exist
-				$szSQL = "select TIMESTAMPDIFF(SECOND, lastSeen, NOW()) AS seconds_since from unitPort order by lastSeen desc limit 1;";
-				$stmt = $conn->prepare($szSQL);
-				$stmt->execute();
-				$result = $stmt->get_result(); // get the mysqli result
-				if ($result && $row = $result->fetch_assoc())
+				// Report whether port-assignment collection itself is current.
+				$recentStmt = $conn->prepare("select TIMESTAMPDIFF(SECOND, lastSeen, NOW()) AS seconds_since from unitPort order by lastSeen desc limit 1");
+				if ($recentStmt)
 				{
-					if ($row["seconds_since"]+0 < 90)
-						$data["updated"] = "1";
-					else
-						$data["updated"] = "0";
+					$recentStmt->execute();
+					$recentResult = $recentStmt->get_result();
+					if ($recentResult && $recentRow = $recentResult->fetch_assoc())
+					{
+						$data["sec"] = (int)$recentRow["seconds_since"];
+						$data["updated"] = $data["sec"] < 90 ? "1" : "0";
+					}
 				}
-				$data["sec"] = $row["seconds_since"];
-
 			}
 
-			$json = json_encode($data);
-			echo $json;				
+			echo json_encode($data);
 			exit;
 
 		default:
