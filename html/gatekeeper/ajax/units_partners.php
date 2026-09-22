@@ -151,11 +151,16 @@ function getServerStatus($seconds_since, $status, $nId)
 					"Traffic reporting pipeline is NOT running");
 	}
 
-	//Open mysql connections
-	$szServerStatus .= getDotByInterval($json, "sqlThrds", 12, 25, 
-					"Normal number of sql threads busy",
-					"A bit too many sql threads. System may be in trouble", 
-					"Too many sql threads. Please inform tech team");
+	// Running SQL work and total open connections are different signals.
+	$szServerStatus .= getDotByInterval($json, "sqlThrds", 12, 25,
+					"Normal number of actively running SQL threads",
+					"A bit too many SQL threads are actively running",
+					"Too many SQL threads are actively running");
+	if (isset($json["sqlConns"]))
+		$szServerStatus .= getDotByInterval($json, "sqlConns", 75, 120,
+					"Normal number of open SQL connections",
+					"Many SQL connections are open, including sleeping connections",
+					"Too many SQL connections are open");
 
 	//Boot required and updates
 	$cTemp = array();
