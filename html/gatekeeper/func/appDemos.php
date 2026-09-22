@@ -9,7 +9,8 @@
  */
 function appDemoEsc($v){ return htmlspecialchars((string)$v, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8'); }
 function appDemoTableExists($c,$name){
-    $s=$c->prepare("SHOW TABLES LIKE ?"); $s->bind_param("s",$name); $s->execute();
+    $s=$c->prepare("SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=? LIMIT 1");
+    $s->bind_param("s",$name); $s->execute();
     $ok=$s->get_result()->num_rows>0; $s->close(); return $ok;
 }
 function appDemos()
@@ -31,7 +32,7 @@ function appDemos()
 <?php
     $c=null;
     try {
-        $c=getConnection(); $c->query("SET time_zone='+00:00'");
+        $c=getConnection();
 ?>
 <div class="gk-demo-grid">
 <div class="gk-demo-card"><h2>Demo 1 — browser tagging</h2>
@@ -242,7 +243,8 @@ if(appDemoTableExists($c,'demo4GatewayState')){
     } catch(Throwable $e){
         if($c) $c->close();
         error_log('appDemos: '.$e->getMessage());
-        print '<div class="gk-demo-card gk-demo-bad">Demo state is temporarily unavailable.</div>';
+        $errorCode = substr(hash('sha256', $e->getMessage()), 0, 10);
+        print '<div class="gk-demo-card gk-demo-bad">Demo state is temporarily unavailable. Error reference: '.appDemoEsc($errorCode).'</div>';
     }
 ?>
 </div>
