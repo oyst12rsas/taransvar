@@ -1,126 +1,50 @@
 <?php
 function appDemo3Esc($value){ return htmlspecialchars((string)$value, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8'); }
-
-function appDemo3()
-{
-    global $setupRow;
-    $isDbServer = isset($setupRow['isDbServer']) && (int)$setupRow['isDbServer'] === 1;
+function appDemo3(){
+ global $setupRow; $isDbServer=isset($setupRow['isDbServer'])&&(int)$setupRow['isDbServer']===1;
 ?>
 <style>
-.gk-demo3{max-width:900px;margin:0 auto;text-align:left}.gk-demo3 h1{text-align:center}.gk-demo3-card{border:1px solid #bbb;background:#fff;padding:14px;margin:12px 0}
-.gk-demo3-flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}.gk-demo3-step{border:1px solid #ddd;padding:10px;background:#fafafa}
-.gk-demo3 table{width:100%;border-collapse:collapse}.gk-demo3 th,.gk-demo3 td{border:1px solid #ddd;padding:6px;text-align:left}.gk-demo3-actions button,.gk-demo3-actions a{margin:4px;padding:7px 10px}
-.gk-demo3-muted{color:#555}.gk-demo3-bad{color:#a00000;font-weight:bold}.gk-demo3-good{color:#28752d;font-weight:bold}
+.gk-demo3{max-width:900px;margin:0 auto;text-align:left}.gk-demo3 h1{text-align:center}.gk-demo3-card{border:1px solid #bbb;background:#fff;padding:14px;margin:12px 0}.gk-demo3-warning{border:2px solid #a00000;background:#fff4f4;padding:12px;margin:12px 0}.gk-demo3-flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}.gk-demo3-step{border:1px solid #ddd;padding:10px;background:#fafafa}.gk-demo3 table{width:100%;border-collapse:collapse}.gk-demo3 th,.gk-demo3 td{border:1px solid #ddd;padding:6px;text-align:left}.gk-demo3-actions button,.gk-demo3-actions a,.gk-demo3-choice button{margin:4px;padding:7px 10px}.gk-demo3 input{padding:6px;max-width:100%;box-sizing:border-box}.gk-demo3-muted{color:#555}.gk-demo3-bad{color:#a00000;font-weight:bold}.gk-demo3-choice{display:flex;gap:8px;flex-wrap:wrap}
 </style>
 <div class="gk-demo3">
 <h1>Demo 3 — community containment</h1>
-<p>This is the HTTP version of the app's shared Request for Assistance demonstration. It uses the same server sessions and evidence; it does not create a parallel simulation.</p>
-<div class="gk-demo3-flow">
- <div class="gk-demo3-step"><b>1 · Join</b><br>Participants join the same exercise and keep sending heartbeats.</div>
- <div class="gk-demo3-step"><b>2 · Request assistance</b><br>The protected server asks partners to reject traffic above the selected threshold.</div>
- <div class="gk-demo3-step"><b>3 · Observe containment</b><br>An infected participant should become silent while clean participants remain connected.</div>
- <div class="gk-demo3-step"><b>4 · Release</b><br>The assistance request is withdrawn and connectivity should recover.</div>
-</div>
-<?php
-if (!$isDbServer) {
-    $c=getConnection(); $dbIp='';
-    $q=$c->query("SELECT INET_NTOA(globalDb1ip) db1 FROM setup LIMIT 1");
-    if($q && ($r=$q->fetch_assoc())) $dbIp=(string)($r['db1']??'');
-    if($q) $q->free(); $c->close();
-    if(filter_var($dbIp,FILTER_VALIDATE_IP,FILTER_FLAG_IPV4))
-        print '<div class="gk-demo3-card"><p>Demo 3 is controlled by the DB server so traffic follows the configured gateway path.</p><a href="http://'.appDemo3Esc($dbIp).'/gatekeeper/index.php?f=appDemo3">Open HTTP Demo 3 on the DB server</a></div>';
-    else
-        print '<div class="gk-demo3-card gk-demo3-bad">The global DB server is not configured on this host.</div>';
-} else {
-?>
-<div class="gk-demo3-card">
- <h2>Joinable exercises</h2>
- <p id="demo3-message" class="gk-demo3-muted">Loading live sessions…</p>
- <div id="demo3-list"></div>
- <div class="gk-demo3-actions"><button type="button" onclick="demo3Load()">Refresh</button></div>
-</div>
-<div id="demo3-session-card" class="gk-demo3-card" style="display:none">
- <h2 id="demo3-title">Current exercise</h2>
- <div id="demo3-session"></div>
- <label>Nickname (optional) <input id="demo3-nickname" maxlength="80"></label>
- <div class="gk-demo3-actions">
-  <button id="demo3-join" type="button" onclick="demo3Join()">Join as a clean participant</button>
-  <button id="demo3-leave" type="button" onclick="demo3Leave()" style="display:none">Leave this demo</button>
-  <button type="button" onclick="demo3CopyDebug()">Copy debug info for AI</button>
- </div>
-</div>
-<div class="gk-demo3-card">
- <h2>Implementation status</h2>
- <p class="gk-demo3-good">Implemented: live public-session discovery, shared session status, clean participant join, heartbeat evidence, leave, and AI debug information.</p>
- <p class="gk-demo3-muted">Next: create-exercise controls and infected/clean selection. The infected path must first call the observed TaraSec gateway, exactly as the app does; changing only the central demo severity would falsely simulate containment.</p>
-</div>
+<div class="gk-demo3-warning"><b>Test networks only.</b> Demo 3 deliberately marks a participant infected and asks TaraSec partners to reject its traffic to the protected demo server. Do not run this on a production network.</div>
+<p>This is the HTTP version of the app's real Request for Assistance exercise. At any time, copy the debug information and paste it into AI for an explanation.</p>
+<div class="gk-demo3-flow"><div class="gk-demo3-step"><b>1 · Join</b><br>Participants join and keep polling this server.</div><div class="gk-demo3-step"><b>2 · Choose status</b><br>CLEAN keeps polling. INFECTED is marked on the observed gateway.</div><div class="gk-demo3-step"><b>3 · Contain</b><br>The real request should stop infected polling only.</div><div class="gk-demo3-step"><b>4 · Release</b><br>The request is withdrawn and polling should recover.</div></div>
+<?php if(!$isDbServer){
+ $c=getConnection();$dbIp='';$q=$c->query("SELECT INET_NTOA(globalDb1ip) db1 FROM setup LIMIT 1");if($q&&($r=$q->fetch_assoc()))$dbIp=(string)($r['db1']??'');if($q)$q->free();$c->close();
+ if(filter_var($dbIp,FILTER_VALIDATE_IP,FILTER_FLAG_IPV4)) print '<div class="gk-demo3-card"><p>Demo 3 must run on the protected DB server. Your browser will still contact the observed gateway directly when you choose CLEAN or INFECTED.</p><a href="http://'.appDemo3Esc($dbIp).'/gatekeeper/index.php?f=appDemo3">Continue to HTTP Demo 3 on the DB server</a></div>';
+ else print '<div class="gk-demo3-card gk-demo3-bad">The global DB server is not configured on this host.</div>';
+}else{ ?>
+<div class="gk-demo3-card"><h2>Available exercises</h2><p id="demo3-message" class="gk-demo3-muted">Loading live Demo 3 state…</p><p><b>Observed gateway:</b> <span id="demo3-gateway">Identifying…</span></p><div id="demo3-list"></div><div class="gk-demo3-actions"><button type="button" onclick="demo3Load()">Refresh</button></div></div>
+<div class="gk-demo3-card"><h2>Start a new Demo 3</h2><p><label>Exercise name <input id="demo3-name" maxlength="120" placeholder="Community infection exercise"></label></p><p>Request countdown:</p><div class="gk-demo3-choice" id="demo3-delay"><button type="button" data-value="30">30s</button><button type="button" data-value="120">120s</button><button type="button" data-value="300">300s</button></div><p>Automatic release after:</p><div class="gk-demo3-choice" id="demo3-duration"><button type="button" data-value="30">30s</button><button type="button" data-value="120">120s</button><button type="button" data-value="300">300s</button></div><div class="gk-demo3-actions"><button type="button" onclick="demo3Create()">Start new Demo 3</button></div></div>
+<div id="demo3-session-card" class="gk-demo3-card" style="display:none"><h2 id="demo3-title">Current exercise</h2><div id="demo3-session"></div><div id="demo3-join-controls"><label>Nickname (optional) <input id="demo3-nickname" maxlength="80"></label><button type="button" onclick="demo3Join()">Join Demo 3</button></div><div id="demo3-status-controls" style="display:none"><p><b>This participant:</b> <span id="demo3-own-status">Not selected</span></p><div class="gk-demo3-choice"><button type="button" onclick="demo3SetStatus(false)">Set CLEAN</button><button type="button" onclick="demo3SetStatus(true)">Set INFECTED</button></div></div><div class="gk-demo3-actions"><button id="demo3-leave" type="button" onclick="demo3Leave()" style="display:none">Leave this demo</button><button type="button" onclick="demo3Reset()">Choose another demo</button><button type="button" onclick="demo3CopyDebug()">Copy debug info for AI</button></div></div>
 <script>
 (function(){
- const api='../script/appDemoAssistance.php', key='tarasec_http_demo3_participant';
- let selected=null, participant=null, timer=null, heartbeatBusy=false;
- const el=id=>document.getElementById(id);
- async function request(action, values, method){
-   const options={cache:'no-store'};
-   let url=api+'?action='+encodeURIComponent(action);
-   if(method==='POST'){options.method='POST';options.headers={'Content-Type':'application/x-www-form-urlencoded'};options.body=new URLSearchParams(values||{}).toString();}
-   else if(values) url+='&'+new URLSearchParams(values).toString();
-   const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),10000); options.signal=controller.signal;
-   try {
-     const response=await fetch(url,options), data=await response.json().catch(()=>({ok:false,error:'invalid_server_response'}));
-     if(!response.ok||data.ok===false) throw new Error(data.error||('HTTP '+response.status));
-     return data;
-   } finally { clearTimeout(timeout); }
- }
+ const api='../script/appDemoAssistance.php',gatewayApi='../script/appDemoGateway.php',key='tarasec_http_demo3_participant';
+ let selected=null,participant=null,gateway=null,timer=null,busy=false,autoClearAttempted=false,attempts=0,successes=0,failures=0,lastError='none',delaySeconds=120,durationSeconds=120;
+ const el=id=>document.getElementById(id),esc=v=>{const d=document.createElement('div');d.textContent=String(v);return d.innerHTML;};
+ async function request(action,values,method){const o={cache:'no-store'};let url=api+'?action='+encodeURIComponent(action);if(method==='POST'){o.method='POST';o.headers={'Content-Type':'application/x-www-form-urlencoded'};o.body=new URLSearchParams(values||{}).toString();}else if(values)url+='&'+new URLSearchParams(values);const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),10000);o.signal=controller.signal;try{const response=await fetch(url,o),data=await response.json().catch(()=>({ok:false,error:'invalid_server_response'}));if(!response.ok||data.ok===false)throw new Error(data.error||('HTTP '+response.status));return data;}finally{clearTimeout(timeout);}}
  function message(text,bad){el('demo3-message').textContent=text;el('demo3-message').className=bad?'gk-demo3-bad':'gk-demo3-muted';}
- function render(s){
-   selected=s; el('demo3-session-card').style.display='block'; el('demo3-title').textContent=s.name+' · session #'+s.session_id;
-   const rows=(s.participants||[]).map(p=>'<tr><td>'+escapeHtml(p.nickname||('Participant '+p.participant_id))+'</td><td>'+escapeHtml(p.severity===null?'Undecided':(p.severity>Number(s.threshold)?'Infected':'Clean'))+'</td><td>'+escapeHtml(p.decision||'pending')+'</td><td>'+escapeHtml(p.seconds_since_seen===null?'—':p.seconds_since_seen+'s ago')+'</td></tr>').join('');
-   el('demo3-session').innerHTML='<p><b>State:</b> '+escapeHtml(s.state)+' · <b>threshold:</b> '+Number(s.threshold)+' · <b>target:</b> '+escapeHtml(s.target_ip)+'</p><p><b>Request:</b> '+escapeHtml(s.assistance_request_id??'not sent')+' · <b>release:</b> '+escapeHtml(s.release_request_id??'not sent')+'</p><table><tr><th>Participant</th><th>Security</th><th>Heartbeat</th><th>Last seen</th></tr>'+rows+'</table>';
-   el('demo3-join').style.display=participant?'none':'inline-block'; el('demo3-leave').style.display=participant?'inline-block':'none';
- }
- function escapeHtml(v){const d=document.createElement('div');d.textContent=String(v);return d.innerHTML;}
- function save(){participant?sessionStorage.setItem(key,JSON.stringify(participant)):sessionStorage.removeItem(key);}
- async function heartbeat(){
-   if(!participant||heartbeatBusy)return;
-   heartbeatBusy=true;
-   try{const d=await request('heartbeat',{session_id:participant.session_id,participant_token:participant.participant_token},'POST');render(d.session);}
-   catch(e){message('Heartbeat failed: '+(e.name==='AbortError'?'request timed out':e.message),true);}
-   finally{heartbeatBusy=false;}
- }
- window.demo3Load=async function(){
-   try{
-     const d=await request('list'); const sessions=d.sessions||[];
-     el('demo3-list').innerHTML=sessions.length?sessions.map((s,i)=>'<button type="button" data-i="'+i+'">'+escapeHtml(s.name)+' · '+s.seconds_remaining+'s · '+s.summary.participants+' participant(s)</button>').join(' '):'<p>No joinable public exercise is active.</p>';
-     el('demo3-list').querySelectorAll('button').forEach(b=>b.onclick=()=>render(sessions[Number(b.dataset.i)]));
-     if(sessions.length&&!selected)render(sessions[0]); message('Live server state loaded.',false);
-   }catch(e){message('Demo 3 unavailable: '+e.message,true);}
- };
- window.demo3Join=async function(){
-   if(!selected)return;
-   try{const d=await request('join',{session_id:selected.session_id,nickname:el('demo3-nickname').value},'POST');participant={session_id:selected.session_id,participant_token:d.participant_token,participant_id:d.participant_id};save();render(d.session);timer=setInterval(heartbeat,3000);message('Joined. Heartbeats are now visible to the exercise.',false);}
-   catch(e){message('Unable to join: '+e.message,true);}
- };
- window.demo3Leave=async function(){
-   if(!participant)return;
-   try{const d=await request('leave',{session_id:participant.session_id,participant_token:participant.participant_token},'POST');clearInterval(timer);timer=null;participant=null;save();render(d.session);message('You left this exercise. The shared exercise continues for other participants.',false);}
-   catch(e){message('Unable to leave: '+e.message,true);}
- };
- function demo3CopyText(text){
-   if(navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
-   return new Promise(function(resolve,reject){const area=document.createElement('textarea');area.value=text;area.setAttribute('readonly','');area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.focus();area.select();try{document.execCommand('copy')?resolve():reject(new Error('copy_failed'));}catch(error){reject(error);}finally{document.body.removeChild(area);}});
- }
- window.demo3CopyDebug=function(){
-   if(!selected)return;
-   const report=['TaraSec HTTP Demo 3 debug report','ai_background=https://tarasec.org/ai/demo-guide/','secrets=omitted (participant token)','',JSON.stringify(selected,null,2)].join('\n');
-   demo3CopyText(report).then(()=>message('Debug information copied.',false)).catch(()=>window.prompt('Copy this report:',report));
- };
- try{participant=JSON.parse(sessionStorage.getItem(key)||'null');}catch(_){participant=null;}
- window.demo3Load().then(()=>{if(participant){timer=setInterval(heartbeat,3000);heartbeat();}});
+ function own(){return selected&&participant?(selected.participants||[]).find(p=>Number(p.participant_id)===Number(participant.participant_id)):null;}
+ function requestDue(){if(!selected)return false;if(selected.state!=='active')return true;if(!selected.block_at)return false;return Date.now()>=Date.parse(String(selected.block_at).replace(' ','T')+'Z');}
+ function releaseDue(){if(!selected||!selected.block_at)return false;return Date.now()>=Date.parse(String(selected.block_at).replace(' ','T')+'Z')+(Number(selected.containment_seconds)||0)*1000;}
+ function render(s){selected=s;el('demo3-session-card').style.display='block';el('demo3-title').textContent=s.name+' · session #'+s.session_id;const rows=(s.participants||[]).map(p=>{const infected=p.severity!==null&&Number(p.severity)>Number(s.threshold);let evidence=p.decision||'pending';if(p.decision==='connected'&&infected&&s.state!=='active')evidence='still polling — containment failed';if(p.decision==='silent')evidence='LOST CONNECTION';if(p.decision==='recovered')evidence='CONNECTION RESTORED';return '<tr><td>'+esc(p.nickname||('Participant '+p.participant_id))+(participant&&Number(p.participant_id)===Number(participant.participant_id)?' · you':'')+'</td><td>'+esc(p.severity===null?'Undecided':(infected?'🔴 INFECTED':'🟢 CLEAN'))+'</td><td>'+esc(evidence)+'</td><td>'+esc(p.seconds_since_seen===null?'—':p.seconds_since_seen+'s ago')+'</td></tr>';}).join('');const count=s.state==='active'?'Request in '+s.seconds_remaining+'s':(s.state==='contained'?'Release in '+s.release_seconds_remaining+'s':s.state);el('demo3-session').innerHTML='<p><b>State:</b> '+esc(s.state)+' · <b>'+esc(count)+'</b> · <b>target:</b> '+esc(s.target_ip)+'</p><p><b>Request:</b> '+esc(s.assistance_request_id??'not sent')+' · <b>release:</b> '+esc(s.release_request_id??'not sent')+'</p><table><tr><th>Participant</th><th>Security</th><th>Polling evidence</th><th>Last seen</th></tr>'+rows+'</table>';const joined=!!participant;el('demo3-join-controls').style.display=joined?'none':'block';el('demo3-status-controls').style.display=joined?'block':'none';el('demo3-leave').style.display=joined?'inline-block':'none';const me=own();el('demo3-own-status').textContent=!me||me.severity===null?'Not selected':(Number(me.severity)>Number(s.threshold)?'🔴 INFECTED':'🟢 CLEAN');}
+ function save(){participant?sessionStorage.setItem(key,JSON.stringify(participant)):sessionStorage.removeItem(key);}function startTimer(){if(!timer)timer=setInterval(heartbeat,2000);}
+ async function identifyGateway(){try{const response=await fetch(gatewayApi,{cache:'no-store'}),d=await response.json();if(!response.ok||!d.ok)throw new Error(d.error||('HTTP '+response.status));gateway=d.gateway;el('demo3-gateway').textContent=gateway.name+' · '+gateway.address+(gateway.recognized?'':' · unrecognized');}catch(e){gateway=null;el('demo3-gateway').textContent='Unavailable: '+e.message;}}
+ async function heartbeat(){if(!participant||busy)return;busy=true;attempts++;try{const me=own();if(!autoClearAttempted&&releaseDue()&&me&&Number(me.severity)>Number(selected.threshold)){autoClearAttempted=true;await setGatewayStatus(false);message('Containment time ended. Local demo state cleared; requesting the shared release…',false);}const d=await request('heartbeat',{session_id:participant.session_id,participant_token:participant.participant_token},'POST');successes++;lastError='none';render(d.session);}catch(e){failures++;lastError=e.name==='AbortError'?'request timed out':e.message;if(autoClearAttempted&&releaseDue())autoClearAttempted=false;if(selected&&selected.state==='active'&&!requestDue())message('Polling failed before containment: '+lastError,true);}finally{busy=false;}}
+ window.demo3Load=async function(){try{const d=await request('list'),sessions=d.sessions||[];el('demo3-list').innerHTML=sessions.length?sessions.map((s,i)=>'<button type="button" data-i="'+i+'">'+esc(s.name)+' · '+s.seconds_remaining+'s · '+s.summary.participants+' participant(s)</button>').join(' '):'<p>No joinable public exercise is active. Start one below.</p>';el('demo3-list').querySelectorAll('button').forEach(b=>b.onclick=()=>render(sessions[Number(b.dataset.i)]));if(sessions.length&&!selected)render(sessions[0]);message('Live server state loaded.',false);}catch(e){message('Demo 3 unavailable: '+e.message,true);}};
+ window.demo3Create=async function(){try{const d=await request('create',{name:el('demo3-name').value||'Community infection exercise',threshold:5,delay_seconds:delaySeconds,containment_seconds:durationSeconds,target_ip:location.hostname},'POST');render(d.session);message('Demo #'+d.session.session_id+' started. Others can now join.',false);}catch(e){message('Unable to start Demo 3: '+e.message,true);}};
+ window.demo3Join=async function(){if(!selected)return;try{const d=await request('join',{session_id:selected.session_id,nickname:el('demo3-nickname').value},'POST');participant={session_id:selected.session_id,participant_token:d.participant_token,participant_id:d.participant_id};autoClearAttempted=false;save();render(d.session);startTimer();message('Joined. Now choose CLEAN or INFECTED.',false);}catch(e){message('Unable to join: '+e.message,true);}};
+ async function setGatewayStatus(infected){if(!gateway||!gateway.recognized)throw new Error('recognized_gateway_required');const severity=infected?10:0,body=new URLSearchParams({infected:infected?'1':'0',demo:'1',severity:String(severity)}),response=await fetch('http://'+gateway.address+'/script/appInfectionControl.php',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body.toString(),cache:'no-store'}),local=await response.json().catch(()=>({ok:false,error:'invalid_gateway_response'}));if(!response.ok||!local.ok)throw new Error(local.error||('Gateway HTTP '+response.status));}
+ window.demo3SetStatus=async function(infected){if(!participant)return;try{await setGatewayStatus(infected);const severity=infected?10:0,d=await request('severity',{session_id:participant.session_id,participant_token:participant.participant_token,severity:severity},'POST');render(d.session);message(infected?'This device is INFECTED. Polling should stop after the request.':'This device is CLEAN. Polling should continue.',false);}catch(e){message('Could not update gateway and demo status: '+e.message,true);}};
+ window.demo3Leave=async function(){if(!participant)return;try{await setGatewayStatus(false);const d=await request('leave',{session_id:participant.session_id,participant_token:participant.participant_token},'POST');clearInterval(timer);timer=null;participant=null;save();render(d.session);message('You left, the demo infection mark was cleared, and you may join another exercise.',false);}catch(e){message('Unable to leave safely: '+e.message,true);}};
+ window.demo3Reset=function(){if(participant){demo3Leave();return;}clearInterval(timer);timer=null;selected=null;el('demo3-session-card').style.display='none';demo3Load();};
+ function copyText(text){if(navigator.clipboard&&window.isSecureContext)return navigator.clipboard.writeText(text);return new Promise((resolve,reject)=>{const a=document.createElement('textarea');a.value=text;a.style.position='fixed';a.style.opacity='0';document.body.appendChild(a);a.select();try{document.execCommand('copy')?resolve():reject(new Error('copy_failed'));}catch(e){reject(e);}finally{a.remove();}});}
+ window.demo3CopyDebug=function(){if(!selected)return;const me=own(),infected=!!(me&&Number(me.severity)>Number(selected.threshold)),expected=infected&&requestDue(),unexpected=expected&&lastError==='none';const report=['TaraSec HTTP Demo 3 debug report','ai_background=https://tarasec.org/ai/demo-guide/','secrets=omitted (participant token)','','[connection]','db_endpoint='+location.origin,'gateway='+(gateway?(gateway.name+' · '+gateway.address):'unknown'),'gateway_recognized='+!!(gateway&&gateway.recognized),'','[polling]','attempts='+attempts,'successes='+successes,'failures='+failures,'last_error='+lastError,'participant_infected='+infected,'assistance_request_due='+requestDue(),'expected_to_be_blocked='+expected,'unexpected_success_while_infected='+unexpected,'','[session]',JSON.stringify(selected,null,2)].join('\n');copyText(report).then(()=>message('Debug information copied.',false)).catch(()=>window.prompt('Copy this report:',report));};
+ document.querySelectorAll('#demo3-delay button').forEach(b=>b.onclick=()=>{delaySeconds=Number(b.dataset.value);message('Request countdown set to '+delaySeconds+' seconds.',false);});document.querySelectorAll('#demo3-duration button').forEach(b=>b.onclick=()=>{durationSeconds=Number(b.dataset.value);message('Automatic release set to '+durationSeconds+' seconds.',false);});
+ try{participant=JSON.parse(sessionStorage.getItem(key)||'null');}catch(_){participant=null;}identifyGateway();demo3Load().then(()=>{if(participant){startTimer();heartbeat();}});
 })();
 </script>
+<?php } ?><p><a href="index.php?f=appDemos">Back to HTTP demo dashboard</a></p></div>
 <?php } ?>
-<p><a href="index.php?f=appDemos">Back to HTTP demo dashboard</a></p>
-</div>
-<?php
-}
-?>

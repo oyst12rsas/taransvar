@@ -48,6 +48,16 @@ function advance3(mysqli $c, int $sid): void {
     $s->bind_param('i',$sid); $s->execute(); $r=$s->get_result()->fetch_assoc(); $s->close();
     if(!$r) return;
 
+    // Release is automatic. Clients may be unable to reach this endpoint while
+    // contained, so any clean participant/status poll after releaseAt can issue
+    // the real release request for the whole exercise.
+    if($r['state']==='contained' && !empty($r['releaseAt']) && strtotime($r['releaseAt'].' UTC') <= $now && empty($r['releaseRequestId'])) {
+        $rid=queueAssistance3($c,$sid,(string)$r['targetIp'],(int)$r['threshold'],false);
+        $s=$c->prepare("UPDATE demoAssistanceSession SET state='releasing',releaseRequestId=?,releaseAt=UTC_TIMESTAMP() WHERE sessionId=? AND state='contained' AND releaseRequestId IS NULL");
+        $s->bind_param('ii',$rid,$sid); $s->execute(); $s->close();
+        $r['state']='releasing'; $r['releaseRequestId']=$rid; $r['releaseAt']=gmdate('Y-m-d H:i:s');
+    }
+
     // After release, keep the completed exercise visible for ten minutes so
     // participants can review containment and restored connectivity. Close
     // earlier only after every participant explicitly leaves. Failed polling

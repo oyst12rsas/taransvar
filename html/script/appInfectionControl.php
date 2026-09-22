@@ -8,6 +8,10 @@ include '../taraLib.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
+// The DB-hosted HTTP demo must mark the browser device on its observed gateway.
+// This endpoint already accepts unauthenticated native-app requests; CORS lets
+// the browser demo make the same direct request.
+header('Access-Control-Allow-Origin: *');
 
 function controlFail(int $status, string $message): never
 {
