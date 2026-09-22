@@ -26,7 +26,7 @@ function demo()
     $demo1Ip = (is_array($GLOBALS['demoRow'] ?? null) ? (string)($GLOBALS['demoRow']['targetHost'] ?? '') : '');
     $demo1Url = filter_var($demo1Ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)
         ? 'http://'.$demo1Ip.'/gatekeeper/index.php?f=demo&view=browser'
-        : 'index.php?f=demo&amp;view=browser';
+        : 'index.php?f=demo&view=browser';
     $appDemosUrl = filter_var($dbIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)
         ? 'http://'.$dbIp.'/gatekeeper/index.php?f=appDemos'
         : 'index.php?f=appDemos';
