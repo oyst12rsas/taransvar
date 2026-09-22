@@ -50,8 +50,13 @@ function collectUnitIssues($status, $secondsSince)
 
     if (isset($status["sqlThrds"])) {
         $v = $status["sqlThrds"] + 0;
-        if ($v >= 25) addUnitIssue($issues, "red", "SQL threads", $v." SQL threads are busy.");
-        elseif ($v > 12) addUnitIssue($issues, "yellow", "SQL threads", $v." SQL threads are busy.");
+        if ($v >= 25) addUnitIssue($issues, "red", "Running SQL threads", $v." SQL threads are actively running.");
+        elseif ($v > 12) addUnitIssue($issues, "yellow", "Running SQL threads", $v." SQL threads are actively running.");
+    }
+    if (isset($status["sqlConns"])) {
+        $v = $status["sqlConns"] + 0;
+        if ($v >= 120) addUnitIssue($issues, "red", "SQL connections", $v." SQL connections are open (running and sleeping).");
+        elseif ($v >= 75) addUnitIssue($issues, "yellow", "SQL connections", $v." SQL connections are open (running and sleeping).");
     }
     if (!empty($status["bootReq"]))
         addUnitIssue($issues, "red", "Reboot required", "The system requires a reboot after upgrading.");
