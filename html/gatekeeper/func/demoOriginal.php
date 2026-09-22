@@ -143,8 +143,9 @@ function toggleText(link) {
     longText.style.display = showingLong ? "none" : "block";
 }
 </script>
-<table><tr><td colspan="2"><h1>Demo</h1></td></tr>
-<tr><td colspan="2">To see list of connected servers, go to <a href="index.php?f=units">"Units"</a></td></tr><br>
+<table><tr><td colspan="2"><h1>Demo 1 - browser</h1></td></tr>
+<tr><td colspan="2"><b>What this demonstrates:</b> traffic from your source device reaches this receiving TaraSec node through a TaraSec gateway. The gateway can identify the source unit behind NAT, and the receiver can show whether that unit\'s traffic is tagged.</td></tr>
+<tr><td colspan="2">Path: <b>source device &rarr; gateway &rarr; receiving node</b>. To see connected servers, go to <a href="index.php?f=units">"Units"</a>.</td></tr>
 <?php
 
 	print '';
@@ -265,7 +266,7 @@ function toggleText(link) {
 		print '<tr><td colspan="2">For a guided demo, go to one of our servers with cheese name in <a href="index.php?f=units">the involved sites list<a>. From there, click "Demo" in menu.</td></tr>';
 	}
 
-	print '<tr><td colspan="2"><a href="index.php?f=selfRegInfected">Register yourself as infected.</a></td></tr>';
+	print '<tr><td colspan="2"><b>Demo action:</b> <a href="index.php?f=selfRegInfected">Register this demo traffic as infected</a>. Use this to demonstrate the change from clean to tagged traffic.</td></tr>';
 
 
 	print "</table>";
