@@ -154,6 +154,15 @@ function unitsMore()
 
 		// Mobile-first summary: tapping the status dots lands here and shows only non-green checks first.
 		printUnitIssues($status, $row["seconds_since"]+0);
+		$routerId = isset($row["routerId"]) ? (int)$row["routerId"] : 0;
+		$allStatusUrl = "index.php?f=unitsMore".($routerId > 0 ? "&id=".$routerId : "")."&view=all";
+		if (!isset($_GET["view"]) || $_GET["view"] !== "all")
+		{
+			print '<h2><a href="'.htmlspecialchars($allStatusUrl, ENT_QUOTES, "UTF-8").'">All status details</a></h2>';
+			print "</table>";
+			$conn->close();
+			return;
+		}
 		print "<h2>All status details</h2>";
 
 		print '<tr><td>Name</td><td>'.$row["name"].'</td></tr>';
@@ -192,16 +201,10 @@ function unitsMore()
 		print '<tr><td>Nettmask</td><td>'.$status["nett"].'</td></tr>';
 		unset($status["nett"]);
 
-		print '<tr><td>SQL connections</td>';
-		if (isset($status["sqlThrds"]))
-		{
-			print '<td>'.$status["sqlThrds"].'</td>';
-			unset($status["sqlThrds"]);
-		}
-		else
-			print '<td>Not set (old version)</td>';
-
-		print '</tr>';
+		print '<tr><td>Running SQL threads</td><td>'.(isset($status["sqlThrds"]) ? (int)$status["sqlThrds"] : "Not set (old version)").'</td></tr>';
+		unset($status["sqlThrds"]);
+		print '<tr><td>Open SQL connections</td><td>'.(isset($status["sqlConns"]) ? (int)$status["sqlConns"] : "Not set (old version)").'</td></tr>';
+		unset($status["sqlConns"]);
 
 		//*********** rsyslog ***************** */
 		$szRsyslog = $status["rsyslog"];
@@ -271,7 +274,8 @@ function unitsMore()
 		//if (isset($row["len"]) && $row["len"]+0 > 200)	//NOTE! Field is being changed to text so this test will soon be obsolete
 		//	print '<tr><td colspan="2"><font color="red">'.$row["len"].' characters of 255 available used for status! Consider switch to text field.</font></td></tr>';
 
-		print "<table>";
+		print "</table>";
+		$conn->close();
 
 	}
 }
