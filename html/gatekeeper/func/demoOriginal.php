@@ -149,11 +149,11 @@ function toggleText(link) {
 <?php
 
 	print '';
-	print "<tr><td>This server IP:</td><td style=\"text-align: left;\">".$_SERVER['SERVER_ADDR'];
+	print "<tr><td>Receiving node:</td><td style=\"text-align: left;\">".gethostname()." (".$_SERVER['SERVER_ADDR'].")";
 
 	print "</td></tr>";
 	$szIP = getSenderIp();
-	print "<tr><td>Your IP address:</td><td style=\"text-align: left;\">".$szIP." port: ".$_SERVER['REMOTE_PORT']."</td></tr>";
+	print "<tr><td>Gateway seen by receiver:</td><td style=\"text-align: left;\">".$szIP." port: ".$_SERVER['REMOTE_PORT']."</td></tr>";
 
 	//Also in caller... remove when merged...
 	$szIP = getSenderIp();
@@ -206,7 +206,7 @@ function toggleText(link) {
 			{
 				$szLanIp = $data["ip"];	//NOTE! This is sometimes wrong... Maybe because conntrack data is not yet in unitPort table...
 				print "<tr>";
-				print "<td>LAN IP: </td><td style=\"text-align: left;\">".$szLanIp." (NOTE! This may be unreliable and you should refresh a few times to check if it's stable)</td</tr>";
+				print "<td>Source device:</td><td style=\"text-align: left;\">".$szLanIp;\n\t\t\t\tif (isset($data["nickname"]) && strlen($data["nickname"]))\n\t\t\t\t\tprint " (".$data["nickname"].")";\n\t\t\t\tprint " &mdash; attributed by the gateway from this connection\'s NAT source port.</td></tr>";
 				print "";
 				if ($data["sec"]+0 > 10000)
 					print "<tr><td>Seconds since seen:</td><td><font color=\"red\">Port assignemtn data are ".$data["sec"]." seconds old. The servier has obviously not been updated!</font></td</tr>";
