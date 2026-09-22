@@ -100,10 +100,14 @@ if (!$isDbServer) {
    try{const d=await request('leave',{session_id:participant.session_id,participant_token:participant.participant_token},'POST');clearInterval(timer);timer=null;participant=null;save();render(d.session);message('You left this exercise. The shared exercise continues for other participants.',false);}
    catch(e){message('Unable to leave: '+e.message,true);}
  };
+ function demo3CopyText(text){
+   if(navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+   return new Promise(function(resolve,reject){const area=document.createElement('textarea');area.value=text;area.setAttribute('readonly','');area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.focus();area.select();try{document.execCommand('copy')?resolve():reject(new Error('copy_failed'));}catch(error){reject(error);}finally{document.body.removeChild(area);}});
+ }
  window.demo3CopyDebug=function(){
    if(!selected)return;
    const report=['TaraSec HTTP Demo 3 debug report','ai_background=https://tarasec.org/ai/demo-guide/','secrets=omitted (participant token)','',JSON.stringify(selected,null,2)].join('\n');
-   navigator.clipboard.writeText(report).then(()=>message('Debug information copied.',false)).catch(()=>window.prompt('Copy this report:',report));
+   demo3CopyText(report).then(()=>message('Debug information copied.',false)).catch(()=>window.prompt('Copy this report:',report));
  };
  try{participant=JSON.parse(sessionStorage.getItem(key)||'null');}catch(_){participant=null;}
  window.demo3Load().then(()=>{if(participant){timer=setInterval(heartbeat,2000);heartbeat();}});
