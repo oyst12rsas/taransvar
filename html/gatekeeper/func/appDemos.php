@@ -14,6 +14,8 @@ function appDemoTableExists($c,$name){
 }
 function appDemos()
 {
+    global $setupRow;
+    $isDbServer = isset($setupRow['isDbServer']) && (int)$setupRow['isDbServer'] === 1;
 ?>
 <style>
 .gk-app-demos{max-width:1100px;margin:0 auto;text-align:left}.gk-app-demos h1{text-align:center}
@@ -36,7 +38,7 @@ function appDemos()
 <p>The original Gatekeeper HTTP demo: traffic attribution, suspicious reports, tagging and threat assessment.</p>
 <div class="gk-demo-actions"><a href="index.php?f=demo&amp;view=browser">Run Demo 1</a></div></div>
 
-<div class="gk-demo-card"><h2>Demo 2 — SSH rejection and clearing</h2>
+<div class="gk-demo-card" id="demo2"><h2>Demo 2 — SSH rejection and clearing</h2>
 <?php
 if(appDemoTableExists($c,'demoSshSession')){
     $q=$c->query("SELECT s.demoSshSessionId id,s.state,INET_NTOA(s.sourceIp) sourceIp,s.created,s.expires,s.completed,INET_NTOA(d.nodeAIp) nodeA,d.nodeAPort,INET_NTOA(n.ip) nodeB,n.port nodeBPort FROM demoSshSession s JOIN demoSshSetup d ON d.demoSshSetupId=s.demoSshSetupId JOIN demoSshNodeB n ON n.demoSshNodeBId=s.demoSshNodeBId ORDER BY s.demoSshSessionId DESC LIMIT 5");
@@ -46,6 +48,20 @@ if(appDemoTableExists($c,'demoSshSession')){
 } else print '<p class="gk-demo-muted">Demo 2 tables are not installed.</p>';
 ?>
 <p class="gk-demo-muted">The browser uses the same authoritative Demo 2 API as the Android app. You still make the two SSH connections with an SSH client.</p>
+<?php
+if (!$isDbServer) {
+    $dbIp = '';
+    $dbResult = $c->query("SELECT INET_NTOA(globalDb1ip) db1 FROM setup LIMIT 1");
+    if ($dbResult && ($dbRow = $dbResult->fetch_assoc())) $dbIp = (string)($dbRow['db1'] ?? '');
+    if ($dbResult) $dbResult->free();
+    if (filter_var($dbIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+        print '<p class="gk-demo-warn">Demo 2 sessions are controlled by the DB server so the gateway and source path are observed correctly.</p>';
+        print '<div class="gk-demo-actions"><a href="http://'.appDemoEsc($dbIp).'/gatekeeper/index.php?f=appDemos#demo2">Open Demo 2 on the DB server</a></div>';
+    } else {
+        print '<p class="gk-demo-bad">The global DB server is not configured on this host.</p>';
+    }
+} else {
+?>
 <div id="gk-demo2-client">
     <p id="gk-demo2-message" class="gk-demo-muted">Loading the configured Demo 2 path…</p>
     <div id="gk-demo2-setup"></div>
@@ -194,7 +210,9 @@ if(appDemoTableExists($c,'demoSshSession')){
     }
     init();
 })();
-</script></div>
+</script>
+<?php } ?>
+</div>
 
 <div class="gk-demo-card"><h2>Demo 3 — community containment</h2>
 <?php
