@@ -38,10 +38,11 @@ function appDemo2()
 <div class="gk-demo-card" id="demo2"><h2>Demo 2 — SSH rejection and clearing</h2>
 <?php
 if(appDemoTableExists($c,'demoSshSession')){
-    $q=$c->query("SELECT s.demoSshSessionId id,s.state,INET_NTOA(s.sourceIp) sourceIp,s.created,s.expires,s.completed,INET_NTOA(d.nodeAIp) nodeA,d.nodeAPort,INET_NTOA(n.ip) nodeB,n.port nodeBPort FROM demoSshSession s JOIN demoSshSetup d ON d.demoSshSetupId=s.demoSshSetupId JOIN demoSshNodeB n ON n.demoSshNodeBId=s.demoSshNodeBId ORDER BY s.demoSshSessionId DESC LIMIT 5");
-    if($q && $q->num_rows){ print '<table><tr><th>ID</th><th>State</th><th>Path</th></tr>'; while($r=$q->fetch_assoc()){
-        print '<tr><td>'.(int)$r['id'].'</td><td>'.appDemoEsc($r['state']).'</td><td>'.appDemoEsc($r['sourceIp']).' → '.appDemoEsc($r['nodeA']).':'.(int)$r['nodeAPort'].' → '.appDemoEsc($r['nodeB']).':'.(int)$r['nodeBPort'].'</td></tr>';
-    } print '</table>'; $q->free(); } else print '<p class="gk-demo-muted">No Demo 2 sessions yet.</p>';
+    $q=$c->query("SELECT s.demoSshSessionId id,s.state,INET_NTOA(s.sourceIp) sourceIp,s.created,s.expires,s.completed,INET_NTOA(d.nodeAIp) nodeA,d.nodeAPort,INET_NTOA(n.ip) nodeB,n.port nodeBPort FROM demoSshSession s JOIN demoSshSetup d ON d.demoSshSetupId=s.demoSshSetupId JOIN demoSshNodeB n ON n.demoSshNodeBId=s.demoSshNodeBId ORDER BY s.demoSshSessionId DESC LIMIT 1");
+    if($q && $q->num_rows){ $r=$q->fetch_assoc();
+        print '<p class="gk-demo-muted"><b>Latest session:</b> #'.(int)$r['id'].' · '.appDemoEsc($r['state']).' · '.appDemoEsc($r['sourceIp']).' → '.appDemoEsc($r['nodeA']).':'.(int)$r['nodeAPort'].' → '.appDemoEsc($r['nodeB']).':'.(int)$r['nodeBPort'].'</p>';
+        $q->free();
+    } else print '<p class="gk-demo-muted">No Demo 2 sessions yet.</p>';
 } else print '<p class="gk-demo-muted">Demo 2 tables are not installed.</p>';
 ?>
 <p class="gk-demo-muted">The browser uses the same authoritative Demo 2 API as the Android app. You still make the two SSH connections with an SSH client.</p>
