@@ -141,7 +141,10 @@ try {
         if(!groupAccess3($c,$sid,(string)($b['join_code']??''))) reply3(403,['ok'=>false,'error'=>'invalid_group_code']);
         $cur=session3($c,$sid); if(!$cur||$cur['state']!=='active'||$cur['seconds_remaining']<=15) reply3(409,['ok'=>false,'error'=>'session_not_joinable']);
         $nick=trim((string)($b['nickname']??'')); if(mb_strlen($nick)>80) reply3(400,['ok'=>false,'error'=>'invalid_nickname']);
-        $pt=token3(); $ip=trim((string)($_SERVER['REMOTE_ADDR']??'')); $s=$c->prepare("INSERT INTO demoAssistanceParticipant(sessionId,participantToken,nickname,observedIp,lastSeenAt,decision) VALUES(?,?,?,?,NULL,'pending')");
+        // Joining is the participant's first successful poll. Store that evidence
+        // immediately so every client sees the new row without waiting for the
+        // browser's next heartbeat timer.
+        $pt=token3(); $ip=trim((string)($_SERVER['REMOTE_ADDR']??'')); $s=$c->prepare("INSERT INTO demoAssistanceParticipant(sessionId,participantToken,nickname,observedIp,lastSeenAt,decision) VALUES(?,?,?,?,UTC_TIMESTAMP(),'connected')");
         $s->bind_param('isss',$sid,$pt,$nick,$ip); $s->execute(); $pid=(int)$s->insert_id; $s->close(); reply3(201,['ok'=>true,'participant_id'=>$pid,'participant_token'=>$pt,'session'=>session3($c,$sid)]);
     }
     if($a==='severity'){
