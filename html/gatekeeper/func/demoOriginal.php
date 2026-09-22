@@ -206,7 +206,10 @@ function toggleText(link) {
 			{
 				$szLanIp = $data["ip"];	//NOTE! This is sometimes wrong... Maybe because conntrack data is not yet in unitPort table...
 				print "<tr>";
-				print "<td>Source device:</td><td style=\"text-align: left;\">".$szLanIp;\n\t\t\t\tif (isset($data["nickname"]) && strlen($data["nickname"]))\n\t\t\t\t\tprint " (".$data["nickname"].")";\n\t\t\t\tprint " &mdash; attributed by the gateway from this connection\'s NAT source port.</td></tr>";
+				print "<td>Source device:</td><td style=\"text-align: left;\">".$szLanIp;
+				if (isset($data["nickname"]) && strlen($data["nickname"]))
+					print " (".$data["nickname"].")";
+				print " &mdash; attributed by the gateway from this connection\'s NAT source port.</td></tr>";
 				print "";
 				if ($data["sec"]+0 > 10000)
 					print "<tr><td>Seconds since seen:</td><td><font color=\"red\">Port assignemtn data are ".$data["sec"]." seconds old. The servier has obviously not been updated!</font></td</tr>";
