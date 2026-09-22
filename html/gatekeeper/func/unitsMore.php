@@ -157,7 +157,6 @@ function unitsMore()
 		if (!isset($_GET["view"]) || $_GET["view"] !== "all")
 		{
 			print '<h2><a href="'.htmlspecialchars($allStatusUrl, ENT_QUOTES, "UTF-8").'">All status details</a></h2>';
-			print "</table>";
 			$conn->close();
 			return;
 		}
