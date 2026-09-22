@@ -70,10 +70,12 @@ if (!$isDbServer) {
         <table>
             <tr><th>Session</th><td id="gk-demo2-id">—</td></tr>
             <tr><th>State</th><td id="gk-demo2-state">—</td></tr>
+            <tr><th>Session source seen by DB</th><td id="gk-demo2-source">—</td></tr>
             <tr><th>Node A report</th><td id="gk-demo2-a-status">⚪ Waiting</td></tr>
             <tr><th>Gateway/DB</th><td id="gk-demo2-gateway-status">⚪ Waiting</td></tr>
             <tr><th>Node B report</th><td id="gk-demo2-b-status">⚪ Waiting</td></tr>
             <tr><th>Time remaining</th><td id="gk-demo2-time">—</td></tr>
+            <tr><th>Status polling</th><td id="gk-demo2-poll">Not checked yet</td></tr>
         </table>
         <h3>1 · Connect to Node A</h3>
         <p>Node A rejects the connection. That rejection is reported through TaraSec and marks this unit as infected.</p>
@@ -99,7 +101,7 @@ if (!$isDbServer) {
     const api='../script/appDemoSshSession.php';
     const configApi='../script/appDemoConfiguration.php';
     const storageKey='tarasec_http_demo2_session';
-    let setup=null, session=null, timer=null;
+    let setup=null, session=null, timer=null, pollCount=0, configuration=null;
 
     function el(id){ return document.getElementById(id); }
     function message(text,bad){
@@ -119,6 +121,7 @@ if (!$isDbServer) {
         const state=s.state||'unknown';
         el('gk-demo2-id').textContent='#'+s.session_id;
         el('gk-demo2-state').textContent=state.replaceAll('_',' ');
+        el('gk-demo2-source').textContent=s.source_ip||configuration?.gateway_ip||'unknown';
         el('gk-demo2-a-status').textContent=s.node_a_observed?'🔴 SSH rejection received':'⚪ Waiting';
         el('gk-demo2-gateway-status').textContent=state==='cleared'?'🟢 Demo infection cleared':(s.unit_marked?'🔴 Unit marked infected':'⚪ Waiting');
         el('gk-demo2-b-status').textContent=s.node_b_login_accepted===true?(state==='cleared'?'🟢 Login accepted · evidence validated':'🟢 Login accepted · validation pending'):(s.node_b_login_accepted===false?'🔴 Login rejected':(s.node_b_observed?'🟡 Report received · checking login':'⚪ Waiting'));
@@ -153,9 +156,13 @@ if (!$isDbServer) {
         if(!session) return;
         try{
             const fresh=await json(api+'?action=status&session_id='+encodeURIComponent(session.session_id)+'&session_token='+encodeURIComponent(session.session_token));
-            session=Object.assign(session,fresh); save(); statusText(session);
+            session=Object.assign(session,fresh); save(); statusText(session); pollCount++;
+            el('gk-demo2-poll').textContent='Checked '+new Date().toLocaleTimeString()+' · '+pollCount+' successful refresh(es)';
             if(['cleared','owner_clear_required','expired','cancelled'].includes(session.state)) stopPolling();
-        }catch(e){ message(e.message,true); }
+        }catch(e){
+            if(el('gk-demo2-poll')) el('gk-demo2-poll').textContent='Polling failed: '+e.message;
+            message(e.message,true);
+        }
     };
     window.gkDemo2Close=async function(){
         if(!session) return;
@@ -197,6 +204,8 @@ if (!$isDbServer) {
             '[session]',
             'session_id='+(current.session_id||0),
             'state='+(current.state||'not_started'),
+            'session_source_seen_by_db='+(current.source_ip||configuration?.gateway_ip||'unknown'),
+            'status_poll_successes='+pollCount,
             'attempts='+(current.attempts||0),
             'seconds_remaining='+(current.seconds_remaining??current.expires_in??0),
             'node_a_observed='+Boolean(current.node_a_observed),
@@ -212,7 +221,7 @@ if (!$isDbServer) {
     function stopPolling(){ if(timer){ clearInterval(timer); timer=null; } }
     async function init(){
         try{
-            const configuration=await json(configApi);
+            configuration=await json(configApi);
             setup=(configuration.demo_ssh_setups||[]).find(x=>x.id===configuration.selection?.demo2_setup_id)||(configuration.demo_ssh_setups||[])[0];
             if(!setup){ throw new Error('No active Demo 2 setup is configured.'); }
             el('gk-demo2-setup').textContent=setup.name+': '+setup.node_a+':'+setup.node_a_port+' → '+setup.node_b+':'+setup.node_b_port;

@@ -42,6 +42,7 @@ function demoPublicSession(array $row): array
     return [
         'session_id' => (int)$row['demoSshSessionId'],
         'state' => (string)$row['state'],
+        'source_ip' => isset($row['sourceIpText']) ? (string)$row['sourceIpText'] : '',
         'node_a' => (string)$row['node_a'],
         'node_a_port' => (int)$row['nodeAPort'],
         'node_b' => (string)$row['node_b'],
@@ -212,7 +213,7 @@ try {
         $stmt->close();
         $conn->commit();
         $operationalWarning = demoOperationalWarning($conn, ['gateway' => $sender, 'Node A' => $setup['node_a'], 'Node B' => $node['node_b']]);
-        demoReply(201, ['ok' => true, 'session_id' => $sessionId, 'session_token' => $accessToken, 'state' => 'awaiting_node_a', 'node_a' => $setup['node_a'], 'node_a_port' => (int)$setup['nodeAPort'], 'node_b' => $node['node_b'], 'node_b_port' => (int)$node['nodeBPort'], 'username' => $node['username'], 'password' => $node['passwordPlain'], 'credential_generation' => (int)$node['credentialGeneration'], 'expires_in' => $ttl, 'operational_warning' => $operationalWarning, 'operationally_ready' => $operationalWarning === '']);
+        demoReply(201, ['ok' => true, 'session_id' => $sessionId, 'session_token' => $accessToken, 'state' => 'awaiting_node_a', 'source_ip' => $sender, 'node_a' => $setup['node_a'], 'node_a_port' => (int)$setup['nodeAPort'], 'node_b' => $node['node_b'], 'node_b_port' => (int)$node['nodeBPort'], 'username' => $node['username'], 'password' => $node['passwordPlain'], 'credential_generation' => (int)$node['credentialGeneration'], 'expires_in' => $ttl, 'operational_warning' => $operationalWarning, 'operationally_ready' => $operationalWarning === '']);
     }
 
     if ($action === 'cancel') {
@@ -388,7 +389,7 @@ try {
         if ($sessionId === false) demoReply(400, ['ok' => false, 'error' => 'Valid session_id required']);
         if (strlen($sessionToken) < 32) demoReply(403, ['ok' => false, 'error' => 'Session token required']);
         $accessHash = hash('sha256', $sessionToken);
-        $stmt = $conn->prepare("SELECT s.*,GREATEST(0,TIMESTAMPDIFF(SECOND,NOW(),s.expires)) secondsRemaining,INET_NTOA(d.nodeAIp) node_a,d.nodeAPort,INET_NTOA(n.ip) node_b,n.port nodeBPort,n.username,(SELECT CAST(a.credentialValid AS UNSIGNED) FROM demoSshAttempt a WHERE a.demoSshSessionId=s.demoSshSessionId ORDER BY a.demoSshAttemptId DESC LIMIT 1) nodeBLoginAccepted FROM demoSshSession s JOIN demoSshSetup d ON d.demoSshSetupId=s.demoSshSetupId JOIN demoSshNodeB n ON n.demoSshNodeBId=s.demoSshNodeBId WHERE s.demoSshSessionId=? AND s.accessTokenHash=? LIMIT 1");
+        $stmt = $conn->prepare("SELECT s.*,INET_NTOA(s.sourceIp) sourceIpText,GREATEST(0,TIMESTAMPDIFF(SECOND,NOW(),s.expires)) secondsRemaining,INET_NTOA(d.nodeAIp) node_a,d.nodeAPort,INET_NTOA(n.ip) node_b,n.port nodeBPort,n.username,(SELECT CAST(a.credentialValid AS UNSIGNED) FROM demoSshAttempt a WHERE a.demoSshSessionId=s.demoSshSessionId ORDER BY a.demoSshAttemptId DESC LIMIT 1) nodeBLoginAccepted FROM demoSshSession s JOIN demoSshSetup d ON d.demoSshSetupId=s.demoSshSetupId JOIN demoSshNodeB n ON n.demoSshNodeBId=s.demoSshNodeBId WHERE s.demoSshSessionId=? AND s.accessTokenHash=? LIMIT 1");
         $stmt->bind_param('is', $sessionId, $accessHash);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
