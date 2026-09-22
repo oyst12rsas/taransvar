@@ -156,7 +156,7 @@ if (!$isDbServer) {
         if(!session) return;
         try{
             const fresh=await json(api+'?action=status&session_id='+encodeURIComponent(session.session_id)+'&session_token='+encodeURIComponent(session.session_token));
-            session=Object.assign(session,fresh); save(); statusText(session); pollCount++;
+            const status=fresh.session||fresh;\n            session=Object.assign(session,status); save(); statusText(session); pollCount++;
             el('gk-demo2-poll').textContent='Checked '+new Date().toLocaleTimeString()+' · '+pollCount+' successful refresh(es)';
             if(['cleared','owner_clear_required','expired','cancelled'].includes(session.state)) stopPolling();
         }catch(e){
