@@ -129,17 +129,16 @@ try {
 
     $changed = 0;
     if ($isDemo) {
-        // Demo control may arrive over NetBird while the protected traffic
-        // arrives through the phone tunnel, giving the same phone two source
-        // addresses. Reset the gateway's demo-only lane rather than guessing
-        // which address represents the device. Demo 3 permits one active
-        // exercise on a gateway; genuine security findings remain untouched.
+        // Reset every demo-only row for this device on the current gateway.
+        // Genuine security findings are deliberately left active.
         $stmt = $conn->prepare(
             "UPDATE internalInfections
                 SET active = b'0', handled = b'0', lastSeen = NOW()
-              WHERE active = b'1'
+              WHERE ip = INET_ATON(?)
+                AND active = b'1'
                 AND why LIKE 'DEMO:%'"
         );
+        $stmt->bind_param('s', $sender);
         $stmt->execute();
         $changed = $stmt->affected_rows;
         $stmt->close();
