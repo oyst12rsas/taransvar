@@ -105,6 +105,20 @@ If you're not yet infected, you can go to <a href="<?php print $szGwLogin; ?>">y
 <?php
 }
 
+function printDirectDemoStatus($szIP)
+{
+	// Direct NetBird/VPN access does not pass through gateway NAT, so there may
+	// be no unitPort mapping. Demo1 can still show the status observed for the
+	// browser's source IP.
+	$data = getTagData();
+	print "<tr><td colspan=\"2\">";
+	print "<p>No NAT port mapping was available. Showing status for the directly observed IP ($szIP).</p>";
+	printTagStatusExplanation($data, $szIP);
+	if (isAdmin())
+		print "<p><b>Info for admin:</b></p><p>Current status: <br>".str_replace(",", "<br>", json_encode($data))."</p>";
+	print "</td></tr>";
+}
+
 function isLanSide($szIP)
 {
 	//NOTE! This is based on TaraSec IP addresses..
@@ -163,7 +177,8 @@ function toggleText(link) {
 
 			if (!is_array($data))
 			{
-				print "<tr><td colspan=\"2\"><font color=\"red\">The gateway returned an empty or invalid unit-IP response. Please refresh once; if it continues, check config_update.php on the gateway.</font></td></tr>";
+				print "<tr><td colspan=\"2\"><font color=\"red\">The gateway did not return usable NAT attribution data.</font></td></tr>";
+				printDirectDemoStatus($szIP);
 			}
 			else if (isset($data["error"]))
 			{
@@ -182,7 +197,9 @@ function toggleText(link) {
 					}
 				}
 				else
-					print "Unknown error... should be investigated..<br>";
+					print "Unknown unit-IP lookup error.<br>";
+
+				printDirectDemoStatus($szIP);
 			}
 			else
 			{
