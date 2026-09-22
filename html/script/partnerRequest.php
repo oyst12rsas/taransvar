@@ -41,6 +41,7 @@ $port = filter_var($_GET["port"], FILTER_VALIDATE_INT, ["options" => ["min_range
 if ($port === false) { http_response_code(400); exit("invalid port"); }
 $category = isset($_GET["cat"]) ? trim((string)$_GET["cat"]) : "other";
 if ($category === "" || strlen($category) > 64) { http_response_code(400); exit("invalid category"); }
+$isDemo = preg_match('/^demo3_[1-9][0-9]*$/', $category) === 1;
 $requestQuality = isset($_GET["qual"]) ? intval($_GET["qual"]) : 0;
 $wantSpoofed = isset($_GET["sp"]) ? intval($_GET["sp"]) : 0;
 $active = isset($_GET["active"]) ? intval($_GET["active"]) : 1;
@@ -62,6 +63,14 @@ try {
        release.  An inactive event must create a tombstone when its start has
        not arrived yet. */
     $conn->begin_transaction();
+    if ($isDemo && $active === 1) {
+        // A newly issued Demo 3 request owns the demo lane on this gateway.
+        // Remove stale demo copies only; production assistance is untouched.
+        $stmt = $conn->prepare("DELETE FROM assistanceRequest WHERE isDemo=b'1' AND category<>?");
+        $stmt->bind_param("s", $category);
+        $stmt->execute();
+        $stmt->close();
+    }
     $stmt = $conn->prepare("SELECT requestId,COALESCE(regardingRequestId,0) sourceRequestId,CAST(active AS UNSIGNED) active,COALESCE(requestQuality,0) requestQuality,CAST(COALESCE(wantSpoofed,b'0') AS UNSIGNED) wantSpoofed FROM assistanceRequest WHERE purpose='fromPartner' AND ip=inet_aton(?) AND port=? AND category=? AND senderIp=inet_aton(?) ORDER BY requestId DESC LIMIT 1 FOR UPDATE");
     $stmt->bind_param("siss", $requestedIp, $port, $category, $senderIp);
     $stmt->execute();
@@ -79,13 +88,15 @@ try {
     if (!$stale && !$duplicate) {
         if ($latest) {
             $comment = $active ? 'Updated by global DB' : 'Released by global DB';
-            $stmt = $conn->prepare("UPDATE assistanceRequest SET regardingRequestId=?,senderPort=?,requestQuality=?,wantSpoofed=?,active=?,handled=NULL,sentPartners=b'1',handlingComment=? WHERE requestId=?");
+            $stmt = $conn->prepare("UPDATE assistanceRequest SET regardingRequestId=?,senderPort=?,requestQuality=?,wantSpoofed=?,active=?,isDemo=?,handled=NULL,sentPartners=b'1',handlingComment=? WHERE requestId=?");
             $requestId = intval($latest["requestId"]);
-            $stmt->bind_param("iiiiisi", $sourceRequestId, $senderPort, $requestQuality, $wantSpoofed, $active, $comment, $requestId);
+            $demoInt = $isDemo ? 1 : 0;
+            $stmt->bind_param("iiiiiisi", $sourceRequestId, $senderPort, $requestQuality, $wantSpoofed, $active, $demoInt, $comment, $requestId);
         } else {
-            $sql = "INSERT INTO assistanceRequest (purpose,ip,port,senderIp,senderPort,category,regardingRequestId,requestQuality,wantSpoofed,comment,fromOther,handled,sentPartners,active) VALUES ('fromPartner',inet_aton(?),?,inet_aton(?),?,?,?,?,?,'From DB server',b'1',NULL,b'1',?)";
+            $sql = "INSERT INTO assistanceRequest (purpose,ip,port,senderIp,senderPort,category,regardingRequestId,requestQuality,wantSpoofed,comment,fromOther,handled,sentPartners,active,isDemo) VALUES ('fromPartner',inet_aton(?),?,inet_aton(?),?,?,?,?,?,'From DB server',b'1',NULL,b'1',?,?)";
             $stmt = $conn->prepare($sql);
-            $stmt->bind_param("sisisiiii", $requestedIp, $port, $senderIp, $senderPort, $category, $sourceRequestId, $requestQuality, $wantSpoofed, $active);
+            $demoInt = $isDemo ? 1 : 0;
+            $stmt->bind_param("sisisiiiii", $requestedIp, $port, $senderIp, $senderPort, $category, $sourceRequestId, $requestQuality, $wantSpoofed, $active, $demoInt);
         }
         $stmt->execute();
         $stmt->close();
