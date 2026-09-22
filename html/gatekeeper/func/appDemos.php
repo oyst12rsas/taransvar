@@ -87,12 +87,12 @@ if (!$isDbServer) {
         <div class="gk-demo-actions">
             <button type="button" onclick="gkDemo2Refresh()">Refresh session</button>
             <button type="button" onclick="gkDemo2Close()">Close session</button>
-            <button type="button" onclick="gkDemo2Debug()">Copy debug info for AI</button>
         </div>
     </div>
     <div id="gk-demo2-start" class="gk-demo-actions" style="display:none">
         <button type="button" id="gk-demo2-start-button" onclick="gkDemo2Start()">Start SSH demo</button>
     </div>
+    <div class="gk-demo-actions"><button type="button" onclick="gkDemo2Debug()">Copy debug info for AI</button></div>
 </div>
 <script>
 (function(){
@@ -166,12 +166,23 @@ if (!$isDbServer) {
             await eligibility();
         }catch(e){ message(e.message,true); }
     };
+    function copyText(text){
+        if(navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+        return new Promise(function(resolve,reject){
+            const area=document.createElement('textarea');
+            area.value=text; area.setAttribute('readonly',''); area.style.position='fixed'; area.style.opacity='0';
+            document.body.appendChild(area); area.focus(); area.select();
+            try { document.execCommand('copy') ? resolve() : reject(new Error('copy_failed')); }
+            catch(error){ reject(error); }
+            finally { document.body.removeChild(area); }
+        });
+    }
     window.gkDemo2Copy=function(id){
-        const text=el(id).textContent;
-        navigator.clipboard.writeText(text).catch(()=>window.prompt('Copy this command:',text));
+        const copied=el(id).textContent;
+        copyText(copied).then(()=>message('SSH command copied.',false)).catch(()=>window.prompt('Copy this command:',copied));
     };
     window.gkDemo2Debug=function(){
-        if(!session) return;
+        const current=session||{};
         const report=[
             'TaraSec HTTP Demo 2 debug report',
             'ai_background=https://tarasec.org/ai/demo-guide/',
@@ -180,21 +191,22 @@ if (!$isDbServer) {
             '[setup]',
             'setup_id='+(setup?.id||0),
             'setup_name='+(setup?.name||'unknown'),
-            'node_a='+(session.node_a||'unknown')+':'+(session.node_a_port||0),
-            'node_b='+(session.node_b||'unknown')+':'+(session.node_b_port||0),
+            'node_a='+(current.node_a||setup?.node_a||'unknown')+':'+(current.node_a_port||setup?.node_a_port||0),
+            'node_b='+(current.node_b||setup?.node_b||'unknown')+':'+(current.node_b_port||setup?.node_b_port||0),
             '',
             '[session]',
-            'session_id='+(session.session_id||0),
-            'state='+(session.state||'unknown'),
-            'attempts='+(session.attempts||0),
-            'seconds_remaining='+(session.seconds_remaining??session.expires_in??0),
-            'node_a_observed='+Boolean(session.node_a_observed),
-            'unit_marked='+Boolean(session.unit_marked),
-            'node_b_observed='+Boolean(session.node_b_observed),
-            'node_b_login_accepted='+(session.node_b_login_accepted??'unknown'),
-            'progress_message='+(session.progress_message||'none')
-        ].join('\n');
-        navigator.clipboard.writeText(report).then(()=>message('Debug information copied. Paste it into AI and ask what happened.',false)).catch(()=>window.prompt('Copy this debug report:',report));
+            'session_id='+(current.session_id||0),
+            'state='+(current.state||'not_started'),
+            'attempts='+(current.attempts||0),
+            'seconds_remaining='+(current.seconds_remaining??current.expires_in??0),
+            'node_a_observed='+Boolean(current.node_a_observed),
+            'unit_marked='+Boolean(current.unit_marked),
+            'node_b_observed='+Boolean(current.node_b_observed),
+            'node_b_login_accepted='+(current.node_b_login_accepted??'unknown'),
+            'progress_message='+(current.progress_message||'none'),
+            'page_message='+(el('gk-demo2-message')?.textContent||'none')
+        ].join('\\n');
+        copyText(report).then(()=>message('Debug information copied. Paste it into AI and ask what happened.',false)).catch(()=>window.prompt('Copy this debug report:',report));
     };
     function startPolling(){ stopPolling(); timer=setInterval(window.gkDemo2Refresh,2000); }
     function stopPolling(){ if(timer){ clearInterval(timer); timer=null; } }
