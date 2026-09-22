@@ -203,6 +203,7 @@ function unitsMore()
 		unset($status["sqlThrds"]);
 		print '<tr><td>Open SQL connections</td><td>'.(isset($status["sqlConns"]) ? (int)$status["sqlConns"] : "Not set (old version)").'</td></tr>';
 		unset($status["sqlConns"]);
+		checkPrint($status, "sqlActive", "Active SQL thread states");
 
 		//*********** rsyslog ***************** */
 		$szRsyslog = $status["rsyslog"];
@@ -265,9 +266,11 @@ function unitsMore()
 	*/
 
 		if (isset($_GET["json"]))
-			print '<tr><td colspan="2">'.$row["status"].'</td></tr>';
-		else
-			print '<tr><td colspan="2"><a href="index.php?f=unitsMore&id='.$_GET["id"].'&json">See full json</a></td></tr>';
+			print '<tr><td colspan="2"><pre style="white-space:pre-wrap;word-break:break-word">'.htmlspecialchars(json_encode(json_decode($row["status"], true), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), ENT_QUOTES, "UTF-8").'</pre></td></tr>';
+		else {
+			$jsonUrl = "index.php?f=unitsMore".($routerId > 0 ? "&id=".$routerId : "")."&view=all&json=1";
+			print '<tr><td colspan="2"><a href="'.htmlspecialchars($jsonUrl, ENT_QUOTES, "UTF-8").'">See full JSON</a></td></tr>';
+		}
 
 		//if (isset($row["len"]) && $row["len"]+0 > 200)	//NOTE! Field is being changed to text so this test will soon be obsolete
 		//	print '<tr><td colspan="2"><font color="red">'.$row["len"].' characters of 255 available used for status! Consider switch to text field.</font></td></tr>';

@@ -55,9 +55,9 @@ function aiStatusIssues($secondsSince, $status)
         $issues[] = 'NOTICE: traffic data is ' . (int)$status['trfc'] . ' seconds old; this may be normal when there are no users';
     }
     if (isset($status['sqlThrds']) && (int)$status['sqlThrds'] >= 25) {
-        $issues[] = 'ERROR: high MariaDB connection count (' . (int)$status['sqlThrds'] . ')';
+        $issues[] = 'ERROR: high MariaDB running-thread count (' . (int)$status['sqlThrds'] . ')';
     } elseif (isset($status['sqlThrds']) && (int)$status['sqlThrds'] > 12) {
-        $issues[] = 'WARNING: elevated MariaDB connection count (' . (int)$status['sqlThrds'] . ')';
+        $issues[] = 'WARNING: elevated MariaDB running-thread count (' . (int)$status['sqlThrds'] . ')';
     }
     if (!empty($status['bootReq'])) {
         $issues[] = 'WARNING: reboot required';
@@ -168,7 +168,9 @@ function aiStatus()
 		'- sshListen: 1 means the configured administrative SSH port is listening; the port number is not reported.',
         '- dmesg and trfc: seconds since newest local record; old data alone does not mean failure.',
 		'- dmesgOk and trfcOk: 1 means the corresponding collection/reporting pipeline is running.',
-        '- sqlThrds: current MariaDB connected threads.',
+        '- sqlThrds: current actively running MariaDB threads.',
+        '- sqlConns: current open MariaDB connections, including sleeping connections.',
+        '- sqlActive: command/state breakdown for active MariaDB threads (query text omitted).',
 		'- dbScan: rows/second scanned by this unit\'s own cron database session; it excludes other units.',
         '- ld: 1, 5 and 15 minute load averages.',
         '- updates: total;security updates.',

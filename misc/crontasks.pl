@@ -388,7 +388,7 @@ sub reportStatus {
 	$sth->execute() or die "execution failed: $sthSetup->errstr()";
 	my $cSeconds = $sth->fetchrow_hashref();
 	$json{"dmesg"} = $cSeconds->{"seconds_since"};
-	$sthCount->finish();
+	$sth->finish();
 
 	#Find seconds since last traffic record
 	$szSQL = "SELECT  TIMESTAMPDIFF(SECOND, coalesce(lastSeen, created), NOW()) AS seconds_since from traffic T order by trafficId desc limit 1";
@@ -396,7 +396,7 @@ sub reportStatus {
 	$sthLast->execute() or die "execution failed: $sthSetup->errstr()";
 	$cSeconds = $sthLast->fetchrow_hashref();
 	$json{"trfc"} = $cSeconds->{"seconds_since"};
-	$sthCount->finish();
+	$sthLast->finish();
 
 	# Report active SQL work separately from idle/open connections.  The old
 	# sqlThrds value used Threads_connected and was consequently labelled as
@@ -412,6 +412,20 @@ sub reportStatus {
 		}
 	}
 	$sth->finish();
+
+	# A count alone is not enough to diagnose a growing Threads_running value.
+	# Report a compact command/state breakdown without query text or credentials.
+	$szSQL = "SELECT COMMAND, COALESCE(NULLIF(STATE,''),'no state') AS threadState, COUNT(*) AS threadCount " .
+		"FROM information_schema.PROCESSLIST WHERE ID <> CONNECTION_ID() AND COMMAND <> 'Sleep' " .
+		"GROUP BY COMMAND, COALESCE(NULLIF(STATE,''),'no state') ORDER BY threadCount DESC LIMIT 8";
+	$sth = $dbh->prepare($szSQL);
+	$sth->execute() or die "execution failed: $sth->errstr()";
+	my @cSqlActive;
+	while (my $rec = $sth->fetchrow_hashref()) {
+		push @cSqlActive, $rec->{"COMMAND"}.":".$rec->{"threadState"}."=".$rec->{"threadCount"};
+	}
+	$sth->finish();
+	$json{"sqlActive"} = join(",", @cSqlActive);
 
 	#Check if boot is required, updates available and time of last automatic update
 	$json{"bootReq"} = -e "/var/run/reboot-required" ? 1 : 0;
