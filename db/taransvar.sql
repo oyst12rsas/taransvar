@@ -44,6 +44,7 @@ CREATE TABLE `assistanceRequest` (
   `fromOther` bit(1) NOT NULL DEFAULT b'0',
   `handled` bit(1) DEFAULT NULL,
   `sentPartners` bit(1) NOT NULL DEFAULT b'0',
+  `isDemo` bit(1) NOT NULL DEFAULT b'0',
   `purpose` enum('internalRequest','forDistribution','fromPartner') DEFAULT NULL,
   PRIMARY KEY (`requestId`),
   KEY `idx_assistance_outbound` (`sentPartners`,`requestId`),
@@ -738,4 +739,3 @@ CREATE TABLE `workshop` (
   `lastseen` timestamp NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`workshopId`,`ip`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-

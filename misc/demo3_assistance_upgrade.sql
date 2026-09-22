@@ -14,4 +14,9 @@ ALTER TABLE demoAssistanceParticipant
 -- Demo 3 assistance requests use category demo3_<sessionId>. The historical
 -- assistanceRequest ENUM rejects those values under strict SQL mode.
 ALTER TABLE assistanceRequest
-    MODIFY category VARCHAR(64) NULL;
+    MODIFY category VARCHAR(64) NULL,
+    ADD COLUMN IF NOT EXISTS isDemo BIT(1) NOT NULL DEFAULT b'0' AFTER sentPartners;
+
+UPDATE assistanceRequest
+SET isDemo=b'1'
+WHERE category LIKE 'demo3\\_%';

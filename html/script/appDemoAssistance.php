@@ -26,7 +26,7 @@ function queueAssistance3(mysqli $c, int $sid, string $targetIp, int $threshold,
     $category=category3($sid);
     $comment=($active?'DEMO3 start ':'DEMO3 release ').$sid;
     $activeInt=$active?1:0;
-    $s=$c->prepare("INSERT INTO assistanceRequest (purpose,ip,port,category,comment,requestQuality,wantSpoofed,active) VALUES ('forDistribution',INET_ATON(?),0,?,?,?,b'0',?)");
+    $s=$c->prepare("INSERT INTO assistanceRequest (purpose,ip,port,category,comment,requestQuality,wantSpoofed,active,isDemo) VALUES ('forDistribution',INET_ATON(?),0,?,?,?,b'0',?,b'1')");
     $s->bind_param('sssii',$targetIp,$category,$comment,$threshold,$activeInt);
     $s->execute(); $id=(int)$s->insert_id; $s->close(); return $id;
 }
@@ -100,8 +100,21 @@ try {
         $name=trim((string)($b['name']??'Community infection exercise')); $threshold=(int)($b['threshold']??7); $delay=(int)($b['delay_seconds']??120); $containment=(int)($b['containment_seconds']??120); $targetIp=trim((string)($b['target_ip']??''));
         $groupLabel=trim((string)($b['group_label']??'')); $joinCode=trim((string)($b['join_code']??'')); $joinCodeHash=codeHash3($joinCode); $visibility=$joinCodeHash===null?'public':'group';
         if($name===''||mb_strlen($name)>120||mb_strlen($groupLabel)>120||($joinCode!==''&&(mb_strlen($joinCode)<4||mb_strlen($joinCode)>64))||$threshold<0||$threshold>10||$delay<15||$delay>300||$containment<15||$containment>600||!filter_var($targetIp,FILTER_VALIDATE_IP,FILTER_FLAG_IPV4)) reply3(400,['ok'=>false,'error'=>'invalid_demo_settings']);
-        $controller=token3(); $s=$c->prepare("INSERT INTO demoAssistanceSession(name,threshold,state,controllerToken,targetIp,visibility,groupLabel,joinCodeHash,containmentSeconds,startsAt,blockAt) VALUES(?,?,'active',?,?,?,?,?, ?,UTC_TIMESTAMP(),DATE_ADD(UTC_TIMESTAMP(),INTERVAL ? SECOND))");
-        $s->bind_param('sisssssii',$name,$threshold,$controller,$targetIp,$visibility,$groupLabel,$joinCodeHash,$containment,$delay); $s->execute(); $sid=(int)$s->insert_id; $s->close();
+        $controller=token3();
+        $c->begin_transaction();
+        try {
+            // A new exercise owns the Demo 3 lane. Remove only explicitly
+            // demo-owned requests and close older demo sessions; production
+            // assistance requests are never eligible for this cleanup.
+            $c->query("UPDATE demoAssistanceSession SET state='closed',closedAt=UTC_TIMESTAMP() WHERE state<>'closed'");
+            $c->query("DELETE FROM assistanceRequest WHERE isDemo=b'1'");
+            $s=$c->prepare("INSERT INTO demoAssistanceSession(name,threshold,state,controllerToken,targetIp,visibility,groupLabel,joinCodeHash,containmentSeconds,startsAt,blockAt) VALUES(?,?,'active',?,?,?,?,?, ?,UTC_TIMESTAMP(),DATE_ADD(UTC_TIMESTAMP(),INTERVAL ? SECOND))");
+            $s->bind_param('sisssssii',$name,$threshold,$controller,$targetIp,$visibility,$groupLabel,$joinCodeHash,$containment,$delay); $s->execute(); $sid=(int)$s->insert_id; $s->close();
+            $c->commit();
+        } catch(Throwable $e) {
+            $c->rollback();
+            throw $e;
+        }
         reply3(201,['ok'=>true,'controller_token'=>$controller,'session'=>session3($c,$sid)]);
     }
     if($a==='list'){

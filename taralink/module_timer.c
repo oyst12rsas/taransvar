@@ -80,8 +80,8 @@ static void checkDemo3AssistanceTimer(void)
 
             const char *insertSql =
                 "INSERT INTO assistanceRequest "
-                "(purpose,ip,port,category,comment,requestQuality,wantSpoofed,active) "
-                "VALUES ('forDistribution',INET_ATON(?),0,?,?,?,b'0',b'1')";
+                "(purpose,ip,port,category,comment,requestQuality,wantSpoofed,active,isDemo) "
+                "VALUES ('forDistribution',INET_ATON(?),0,?,?,?,b'0',b'1',b'1')";
 
             if (mysql_stmt_prepare(stmt, insertSql, strlen(insertSql)) == 0)
             {
@@ -167,8 +167,8 @@ static void checkDemo3AssistanceTimer(void)
 
                 const char *insertSql =
                     "INSERT INTO assistanceRequest "
-                    "(purpose,ip,port,category,comment,requestQuality,wantSpoofed,active) "
-                    "VALUES ('forDistribution',INET_ATON(?),0,?,?,?,b'0',b'0')";
+                    "(purpose,ip,port,category,comment,requestQuality,wantSpoofed,active,isDemo) "
+                    "VALUES ('forDistribution',INET_ATON(?),0,?,?,?,b'0',b'0',b'1')";
 
                 if (mysql_stmt_prepare(stmt, insertSql, strlen(insertSql)) == 0)
                 {

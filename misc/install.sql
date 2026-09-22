@@ -548,8 +548,15 @@ update setup set dbVersion = 95;
 alter table demoAssistanceParticipant modify severity tinyint unsigned null default null;
 update setup set dbVersion = 96;
 
+#version 97 (260922)
+#Demo-owned assistance requests are explicitly marked so a new Demo 3 can
+#remove stale demo requests without touching real production assistance.
+alter table assistanceRequest add column if not exists isDemo bit(1) not null default b'0' after sentPartners;
+update assistanceRequest set isDemo=b'1' where category like 'demo3\\_%';
+update setup set dbVersion = 97;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 97;
+#update setup set dbVersion = 98;
 
 #NOTE! The versions (#version nn ...) are imported by the installed
 #diagnostics script. Deploy misc to /root/taransvar/perl, then run:
