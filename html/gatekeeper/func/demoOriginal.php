@@ -142,6 +142,14 @@ function toggleText(link) {
     shortText.style.display = showingLong ? "block" : "none";
     longText.style.display = showingLong ? "none" : "block";
 }
+function copyDemoDebug() {
+    const debug = document.getElementById("demo-ai-debug");
+    if (!debug) return;
+    navigator.clipboard.writeText(debug.value).then(function () {
+        const button = document.getElementById("copy-demo-debug");
+        if (button) { button.textContent = "Copied"; setTimeout(function () { button.textContent = "Copy debug info for AI"; }, 1500); }
+    }).catch(function () { debug.style.display = "block"; debug.focus(); debug.select(); });
+}
 </script>
 <table><tr><td colspan="2"><h1>Demo 1 - browser</h1></td></tr>
 <tr><td colspan="2"><b>What this demonstrates:</b> traffic from your source device reaches this receiving TaraSec node through a TaraSec gateway. The gateway can identify the source unit behind NAT, and the receiver can show whether that unit\'s traffic is tagged.</td></tr>
@@ -270,6 +278,22 @@ function toggleText(link) {
 	}
 
 	print '<tr><td colspan="2"><b>Demo action:</b> <a href="index.php?f=selfRegInfected">Register this demo traffic as infected</a>. Use this to demonstrate the change from clean to tagged traffic.</td></tr>';
+
+	$debugInfo = "TaraSec Browser Demo 1 debug report\n";
+	$debugInfo .= "receiving_node=".gethostname()."\nreceiving_node_ip=".$_SERVER["SERVER_ADDR"]."\n";
+	$debugInfo .= "gateway_seen_by_receiver=".$szIP."\ngateway_source_port=".$_SERVER["REMOTE_PORT"]."\n";
+	$debugInfo .= "source_device_ip=".(isset($szLanIp) ? $szLanIp : "unresolved")."\n";
+	if (isset($data) && is_array($data)) {
+		if (isset($data["nickname"])) $debugInfo .= "source_nickname=".$data["nickname"]."\n";
+		foreach (["infectionSeverity","hackReportSeverity","trafficSeverity","severity"] as $field)
+			if (isset($data[$field])) $debugInfo .= $field."=".$data[$field]."\n";
+		if (isset($data["error"])) $debugInfo .= "attribution_error=".json_encode($data)."\n";
+	}
+	$debugInfo .= "\nExpected path: source device -> TaraSec gateway -> receiving node.\n";
+	$debugInfo .= "Explain what happened, whether source attribution and tagging worked, and point out inconsistencies. Do not assume the gateway address is the source device.\n";
+	$debugInfo .= "AI background: https://tarasec.org/demo\n";
+	print '<tr><td colspan="2"><button type="button" id="copy-demo-debug" onclick="copyDemoDebug()">Copy debug info for AI</button>';
+	print '<textarea id="demo-ai-debug" readonly style="display:none;width:100%;min-height:16em;margin-top:8px;">'.htmlspecialchars($debugInfo, ENT_QUOTES, "UTF-8").'</textarea></td></tr>';
 
 
 	print "</table>";
