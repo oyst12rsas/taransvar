@@ -31,7 +31,7 @@ function demo()
     <div class="demo-hub-card">
         <h2>Current TaraSec demos</h2>
         <p>The newer demonstrations use the TaraSec app and centrally coordinated demo sessions, including the community assistance/containment exercise.</p>
-        <a class="demo-button" href="https://tarasec.org/challenge/">Open TaraSec Challenge</a>
+        <a class="demo-button" href="index.php?f=appDemos">Open HTTP app demos</a>\n        <a class="demo-button" href="https://tarasec.org/challenge/">Open TaraSec Challenge</a>
     </div>
 </div>
 
