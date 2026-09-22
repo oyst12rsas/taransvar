@@ -398,12 +398,19 @@ sub reportStatus {
 	$json{"trfc"} = $cSeconds->{"seconds_since"};
 	$sthCount->finish();
 
-	#Find open mysql connections
-	$szSQL = "SHOW STATUS LIKE 'Threads_connected'";
+	# Report active SQL work separately from idle/open connections.  The old
+	# sqlThrds value used Threads_connected and was consequently labelled as
+	# "busy" even when every connection was sleeping.
+	$szSQL = "SHOW STATUS WHERE Variable_name IN ('Threads_running','Threads_connected')";
 	$sth = $dbh->prepare($szSQL);
 	$sth->execute() or die "execution failed: $sthSetup->errstr()";
-	my $rec = $sth->fetchrow_hashref();
-	$json{"sqlThrds"} = $rec->{"Value"};
+	while (my $rec = $sth->fetchrow_hashref()) {
+		if ($rec->{"Variable_name"} eq "Threads_running") {
+			$json{"sqlThrds"} = $rec->{"Value"};
+		} elsif ($rec->{"Variable_name"} eq "Threads_connected") {
+			$json{"sqlConns"} = $rec->{"Value"};
+		}
+	}
 	$sth->finish();
 
 	#Check if boot is required, updates available and time of last automatic update
