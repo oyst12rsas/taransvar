@@ -22,6 +22,94 @@ function checkPrint(&$status, $szFld, $szLabel)
 }
 
 
+function addUnitIssue(&$issues, $severity, $label, $message)
+{
+    $issues[] = array("severity" => $severity, "label" => $label, "message" => $message);
+}
+
+function collectUnitIssues($status, $secondsSince)
+{
+    $issues = array();
+
+    if ($secondsSince > 200)
+        addUnitIssue($issues, "red", "Status reporting", "No status received for ".$secondsSince." seconds.");
+    elseif ($secondsSince > 130)
+        addUnitIssue($issues, "yellow", "Status reporting", "Last status was ".$secondsSince." seconds ago.");
+
+    foreach (array(
+        "knl" => array("Tarakernel", "tarakernel is not running"),
+        "lnk" => array("Taralink", "taralink is not running"),
+        "cron" => array("Cron task", "crontasks.pl is not running"),
+        "sshListen" => array("Administrative SSH", "Administrative SSH is not listening"),
+        "dmesgOk" => array("Kernel log collection", "dmesg collection worker is not running"),
+        "trfcOk" => array("Traffic reporting", "Traffic reporting pipeline is not running")
+    ) as $field => $info) {
+        if (array_key_exists($field, $status) && (string)$status[$field] !== "1")
+            addUnitIssue($issues, "red", $info[0], $info[1].".");
+    }
+
+    if (isset($status["sqlThrds"])) {
+        $v = $status["sqlThrds"] + 0;
+        if ($v >= 25) addUnitIssue($issues, "red", "SQL threads", $v." SQL threads are busy.");
+        elseif ($v > 12) addUnitIssue($issues, "yellow", "SQL threads", $v." SQL threads are busy.");
+    }
+    if (!empty($status["bootReq"]))
+        addUnitIssue($issues, "red", "Reboot required", "The system requires a reboot after upgrading.");
+
+    if (isset($status["updates"])) {
+        $u = explode(";", $status["updates"]);
+        $total = intval($u[0] ?? 0); $security = intval($u[1] ?? 0);
+        if ($security >= 1) addUnitIssue($issues, "red", "Security updates", $security." security update(s) are waiting.");
+        elseif ($total >= 30) addUnitIssue($issues, "red", "Updates", $total." updates are waiting.");
+        elseif ($total > 15) addUnitIssue($issues, "yellow", "Updates", $total." updates are waiting.");
+    }
+    if (isset($status["lstUp"])) {
+        $v = $status["lstUp"] + 0;
+        if ($v >= 60*60*24*30) addUnitIssue($issues, "red", "System update", "Last update was ".round($v/86400)." days ago.");
+        elseif ($v > 60*60*24*7) addUnitIssue($issues, "yellow", "System update", "Last update was ".round($v/86400)." days ago.");
+    }
+    if (isset($status["ld"])) {
+        $loads = array_map("floatval", explode(" ", trim($status["ld"])));
+        $v = max(array_slice($loads, 0, 2));
+        if ($v >= 2) addUnitIssue($issues, "red", "Server load", "Load is ".$v.".");
+        elseif ($v > .7) addUnitIssue($issues, "yellow", "Server load", "Load is ".$v.".");
+    }
+    foreach (array("cpu" => array(70,90,"CPU usage","%"), "cpuWait" => array(10,25,"CPU I/O wait","%"), "dbScan" => array(100,1000,"DB scan rate"," rows/second")) as $field => $cfg) {
+        if (!isset($status[$field])) continue;
+        $v = $status[$field] + 0;
+        if ($v >= $cfg[1]) addUnitIssue($issues, "red", $cfg[2], $v.$cfg[3].".");
+        elseif ($v > $cfg[0]) addUnitIssue($issues, "yellow", $cfg[2], $v.$cfg[3].".");
+    }
+    if (isset($status["srvcNtOk"])) {
+        $services = array_values(array_filter(array_map("trim", explode(",", $status["srvcNtOk"])), function($s) { return $s !== "" && $s !== "tarasec-gateway.service"; }));
+        if (count($services)) addUnitIssue($issues, "red", "Services", "Not running: ".implode(", ", $services).".");
+    }
+    if (isset($status["usr"])) {
+        $v=$status["usr"]+0;
+        if ($v >= 3) addUnitIssue($issues, "red", "Active users", $v." users are active.");
+        elseif ($v > 1) addUnitIssue($issues, "yellow", "Active users", $v." users are active.");
+    }
+
+    usort($issues, function($a,$b) { return ($a["severity"] === $b["severity"]) ? 0 : ($a["severity"] === "red" ? -1 : 1); });
+    return $issues;
+}
+
+function printUnitIssues($status, $secondsSince)
+{
+    $issues = collectUnitIssues($status, $secondsSince);
+    print '<h2>Issues</h2>';
+    if (!count($issues)) {
+        print '<p><b><font color="green">No issues detected.</font></b></p>';
+        return;
+    }
+    print '<table>';
+    foreach ($issues as $issue) {
+        $color = $issue["severity"] === "red" ? "red" : "#9a6b00";
+        print '<tr><td><span style="color:'.$color.'">&#9679;</span> '.htmlspecialchars($issue["label"]).'</td><td>'.htmlspecialchars($issue["message"]).'</td></tr>';
+    }
+    print '</table>';
+}
+
 function unitsMore()
 {
 	/*if (!isAdmin())
@@ -58,6 +146,10 @@ function unitsMore()
 		//$status = '{"ld":"0.00 0.00 0.00","knl":"1","df":"19G 9.8G 8.6G","updates":"3;0","boot":1000000,"cron":1,"mem":"552Mi/1.9Gi","sqlThrds":"3","nett":0,"dmesg":1,"msg":null,"lnk":1,"usr":0,"rsyslog":"log:1,byte:360,log:10,burst:20,prefix:TARASEC_tomato,rsyslog:active,setup:@100.68.181.35","trfc":58,"bootReq":0,"ip":0,"lstUp":885}';
 
 		$status = json_decode($status, true);
+
+		// Mobile-first summary: tapping the status dots lands here and shows only non-green checks first.
+		printUnitIssues($status, $row["seconds_since"]+0);
+		print "<h2>All status details</h2>";
 
 		print '<tr><td>Name</td><td>'.$row["name"].'</td></tr>';
 
