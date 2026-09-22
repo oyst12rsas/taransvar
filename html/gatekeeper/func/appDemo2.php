@@ -153,7 +153,7 @@ if (!$isDbServer) {
         }catch(e){ message(e.message,true); }
     };
     window.gkDemo2Refresh=async function(){
-        if(!session || pollBusy) return;
+        if(document.hidden || !session || pollBusy) return;
         pollBusy=true;
         try{
             const fresh=await json(api+'?action=status&session_id='+encodeURIComponent(session.session_id)+'&session_token='+encodeURIComponent(session.session_token));
@@ -219,8 +219,17 @@ if (!$isDbServer) {
         ].join('\\n');
         copyText(report).then(()=>message('Debug information copied. Paste it into AI and ask what happened.',false)).catch(()=>window.prompt('Copy this debug report:',report));
     };
-    function startPolling(){ stopPolling(); timer=setInterval(window.gkDemo2Refresh,3000); }
+    function startPolling(){ stopPolling(); if(!document.hidden) timer=setInterval(window.gkDemo2Refresh,3000); }
     function stopPolling(){ if(timer){ clearInterval(timer); timer=null; } }
+    document.addEventListener('visibilitychange',function(){
+        if(document.hidden){
+            stopPolling();
+            if(session && el('gk-demo2-poll')) el('gk-demo2-poll').textContent='Polling paused while this tab is in the background.';
+        }else if(session){
+            startPolling();
+            window.gkDemo2Refresh();
+        }
+    });
     async function init(){
         try{
             configuration=await json(configApi);
