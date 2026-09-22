@@ -53,7 +53,7 @@ if (!$isDbServer) {
     if ($dbResult) $dbResult->free();
     if (filter_var($dbIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
         print '<p class="gk-demo-warn">Demo 2 sessions are controlled by the DB server so the gateway and source path are observed correctly.</p>';
-        print '<div class="gk-demo-actions"><a href="http://'.appDemoEsc($dbIp).'/gatekeeper/index.php?f=appDemos#demo2">Open Demo 2 on the DB server</a></div>';
+        print '<div class="gk-demo-actions"><a href="http://'.appDemoEsc($dbIp).'/gatekeeper/index.php?f=appDemo2">Open Demo 2 on the DB server</a></div>';
     } else {
         print '<p class="gk-demo-bad">The global DB server is not configured on this host.</p>';
     }
