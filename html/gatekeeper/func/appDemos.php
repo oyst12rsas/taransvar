@@ -14,8 +14,6 @@ function appDemoTableExists($c,$name){
 }
 function appDemos()
 {
-    global $setupRow;
-    $isDb=isset($setupRow['isDbServer']) && (int)$setupRow['isDbServer']===1;
 ?>
 <style>
 .gk-app-demos{max-width:1100px;margin:0 auto;text-align:left}.gk-app-demos h1{text-align:center}
@@ -27,12 +25,8 @@ function appDemos()
 </style>
 <div class="gk-app-demos">
 <h1>HTTP demo dashboard</h1>
-<p class="gk-demo-help"><b>This is the browser view of the same demos used by the TaraSec app.</b> It reads the shared demo state from the database. Refresh at any time, or copy what you see to AI for an explanation. Operations that need SSH, participant/controller secrets, or a registered gateway remain protected by the existing demo endpoints.</p>
+<p class="gk-demo-help"><b>This is the browser view of the same demos used by the TaraSec app.</b> It can be opened from any Gatekeeper and reads the authoritative shared demo state from the central database. Demo traffic and actions are directed to the configured demo nodes/gateway rather than treating the web host as the demo target. Refresh at any time, or copy what you see to AI for an explanation. Operations that need SSH, participant/controller secrets, or a registered gateway remain protected by the existing demo endpoints.</p>
 <?php
-    if(!$isDb){
-        print '<div class="gk-demo-card"><b>DB server required.</b> Open this page on the TaraSec DB Gatekeeper to see coordinated demo state.</div></div>';
-        return;
-    }
     $c=null;
     try {
         $c=getConnection(); $c->query("SET time_zone='+00:00'");
