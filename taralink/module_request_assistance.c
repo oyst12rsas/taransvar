@@ -84,6 +84,91 @@ static int urlEncodeComponent(const char *src, char *dst, size_t dstSize)
         return 1;
 }
 
+/*
+ * The minute-oriented pendingWget worker can delay a Demo 3 release after the
+ * DB timer has fired. Deliver to gateways currently participating in this
+ * session immediately; keep the queued request as a retry if delivery fails.
+ * partnerRequest.php authenticates the DB peer and is idempotent by rid.
+ */
+struct demo3FastReply {
+        char body[16];
+        size_t used;
+};
+
+static size_t demo3FastReplyWrite(char *data, size_t size, size_t count, void *context)
+{
+        struct demo3FastReply *reply = context;
+        size_t bytes = size * count;
+        size_t copy = bytes;
+        if (copy > sizeof(reply->body) - reply->used - 1)
+                copy = sizeof(reply->body) - reply->used - 1;
+        memcpy(reply->body + reply->used, data, copy);
+        reply->used += copy;
+        reply->body[reply->used] = 0;
+        return bytes;
+}
+
+static int deliverDemo3ReleaseNow(MYSQL *conn, const char *url,
+                                   const char *partnerIp, unsigned long requestId)
+{
+        CURL *curl = curl_easy_init();
+        CURLcode result;
+        long status = 0;
+        struct demo3FastReply reply = {{0}, 0};
+        MYSQL_STMT *stmt;
+        MYSQL_BIND bind[2];
+        unsigned long long requestIdArg = requestId;
+        unsigned long urlLength = strlen(url);
+
+        if (!curl)
+                return 0;
+        curl_easy_setopt(curl, CURLOPT_URL, url);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 500L);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
+        curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+        curl_easy_setopt(curl, CURLOPT_PROXY, "");
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, demo3FastReplyWrite);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &reply);
+        result = curl_easy_perform(curl);
+        if (result == CURLE_OK)
+                curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
+        curl_easy_cleanup(curl);
+
+        if (result != CURLE_OK || status != 200 || strcmp(reply.body, "ok") != 0)
+        {
+                fprintf(stderr, "Demo 3 immediate release %lu to %s failed (curl=%d HTTP=%ld); queued retry retained\n",
+                        requestId, partnerIp, (int)result, status);
+                return 0;
+        }
+
+        /* The old worker need not send this successful delivery again. If this
+         * update fails, its queued duplicate is harmless and remains retryable. */
+        stmt = mysql_stmt_init(conn);
+        if (stmt)
+        {
+                const char *sql =
+                        "UPDATE pendingWget SET handled=UTC_TIMESTAMP(),"
+                        "reply='ok (immediate Demo 3 release)' "
+                        "WHERE regardingId=? AND url=? AND handled IS NULL";
+                memset(bind, 0, sizeof(bind));
+                bind[0].buffer_type = MYSQL_TYPE_LONGLONG;
+                bind[0].buffer = &requestIdArg;
+                bind[0].is_unsigned = 1;
+                bind[1].buffer_type = MYSQL_TYPE_STRING;
+                bind[1].buffer = (void *)url;
+                bind[1].buffer_length = urlLength;
+                bind[1].length = &urlLength;
+                if (mysql_stmt_prepare(stmt, sql, strlen(sql)) ||
+                    mysql_stmt_bind_param(stmt, bind) ||
+                    mysql_stmt_execute(stmt))
+                        fprintf(stderr, "Demo 3 immediate release %lu reached %s, but queue acknowledgement failed: %s\n",
+                                requestId, partnerIp, mysql_stmt_error(stmt));
+                mysql_stmt_close(stmt);
+        }
+        printf("Demo 3 immediate release %lu delivered to %s\n", requestId, partnerIp);
+        return 1;
+}
+
 void checkRequestAssistance()
 {
         MYSQL *conn, *setupConn;
@@ -98,7 +183,7 @@ void checkRequestAssistance()
         /* fromPartner rows have already completed distribution and must never
          * occupy this outbound work scan. Bound each timer pass as well, so a
          * historical assistance backlog cannot starve hack-report delivery. */
-        char *szSQL = "select hex(ip) as ip, port, category, comment, coalesce(requestQuality,0) as requestQuality, wantSpoofed, requestId, senderIp, hex(senderIp) as senderIpHex, purpose, CAST(active AS UNSIGNED) as active from assistanceRequest where sentPartners = b'0' and (purpose is null or purpose <> 'fromPartner') order by requestId limit 100";
+        char *szSQL = "select hex(ip) as ip, port, category, comment, coalesce(requestQuality,0) as requestQuality, wantSpoofed, requestId, senderIp, hex(senderIp) as senderIpHex, purpose, CAST(active AS UNSIGNED) as active, CAST(isDemo AS UNSIGNED) as isDemo from assistanceRequest where sentPartners = b'0' and (purpose is null or purpose <> 'fromPartner') order by requestId limit 100";
 
         if (mysql_query(conn, szSQL))
         {
@@ -206,8 +291,12 @@ void checkRequestAssistance()
                 else if (lpPurpose && !strcmp(lpPurpose, "forDistribution"))
                 {
                         MYSQL *partnerConn;
+                        MYSQL *fastConn = NULL;
                         MYSQL_RES *partnerRes;
+                        MYSQL_RES *participants = NULL;
                         MYSQL_ROW partnerRow;
+                        unsigned long demoSid = 0;
+                        char trailing;
                         printf("Unhandled assistanceRequest for distribution found\n");
                         partnerConn = getConnection();
                         if (mysql_query(partnerConn, "select inet_ntoa(ip) as ip from partnerRouter"))
@@ -223,6 +312,28 @@ void checkRequestAssistance()
                                 addWarningRecord("***** ERROR ***** reading partners for assistance distribution");
                                 mysql_close(partnerConn);
                                 continue;
+                        }
+
+                        /* Only an inactive demo-owned release may use the fast
+                         * path. A participant's observed address must also be
+                         * an explicitly registered partner destination below. */
+                        if (row[11] && atoi(row[11]) == 1 && !nActive &&
+                            row[2] && sscanf(row[2], "demo3_%lu%c", &demoSid, &trailing) == 1 &&
+                            demoSid > 0)
+                        {
+                                char participantsSql[256];
+                                fastConn = getConnection();
+                                if (fastConn)
+                                {
+                                        snprintf(participantsSql, sizeof(participantsSql),
+                                                "SELECT DISTINCT observedIp FROM demoAssistanceParticipant "
+                                                "WHERE sessionId=%lu", demoSid);
+                                        if (mysql_query(fastConn, participantsSql) == 0)
+                                                participants = mysql_store_result(fastConn);
+                                        if (!participants)
+                                                fprintf(stderr, "Demo 3 release %s: participant lookup failed; queued delivery retained\n",
+                                                        lpRequestId);
+                                }
                         }
 
                         bHandled = 1;
@@ -260,6 +371,21 @@ void checkRequestAssistance()
                                 printf("Adding to pendingWget: %s\n", cUrl);
                                 if (!addPendingWgetOk(e_wget_assistanceRequest, cUrl, atoi(lpRequestId)))
                                         bHandled = 0;
+                                else if (participants && fastConn)
+                                {
+                                        MYSQL_ROW participant;
+                                        mysql_data_seek(participants, 0);
+                                        while ((participant = mysql_fetch_row(participants)) != NULL)
+                                        {
+                                                if (participant[0] && !strcmp(participant[0], partnerRow[0]))
+                                                {
+                                                        deliverDemo3ReleaseNow(fastConn, cUrl,
+                                                                               partnerRow[0],
+                                                                               strtoul(lpRequestId, NULL, 10));
+                                                        break;
+                                                }
+                                        }
+                                }
                         }
 
                         if (destinations == 0)
@@ -269,6 +395,10 @@ void checkRequestAssistance()
                         }
                         mysql_free_result(partnerRes);
                         mysql_close(partnerConn);
+                        if (participants)
+                                mysql_free_result(participants);
+                        if (fastConn)
+                                mysql_close(fastConn);
                 }
                 else if (!lpPurpose)
                 {
