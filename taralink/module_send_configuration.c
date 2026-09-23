@@ -149,6 +149,79 @@ static int appendDemoPartnersFromConfig(char *reply, size_t replySize)
     return added;
 }
 
+
+/*
+ * Demo 4's authorized destination is explicitly set by the gateway operator
+ * in the same root-owned file used by the policy route. Send it to tarakernel
+ * as a kernel-only /32 partner; never insert it into the local partnerRouter
+ * table, whose entries carry wider production trust and expire via cron.
+ * Only an IPv4 host route is accepted.
+ */
+static int appendDemo4DestinationFromConfig(char *reply, size_t replySize)
+{
+    FILE *config = fopen("/etc/tarasec/demo4-wireguard-hotspot.conf", "r");
+    char line[512];
+    int added = 0;
+
+    if (!config)
+        return 0;
+
+    while (fgets(line, sizeof(line), config)) {
+        char *p = line;
+        char *end;
+        unsigned int a, b, c, d;
+        char extra;
+        char entry[32];
+        size_t needed;
+
+        while (*p == ' ' || *p == '\t')
+            p++;
+        if (strncmp(p, "PARTNER_DESTINATION", 19) != 0)
+            continue;
+        p += 19;
+        while (*p == ' ' || *p == '\t')
+            p++;
+        if (*p++ != '=')
+            continue;
+        while (*p == ' ' || *p == '\t')
+            p++;
+
+        end = p + strlen(p);
+        while (end > p && (end[-1] == '\n' || end[-1] == '\r' ||
+                           end[-1] == ' ' || end[-1] == '\t'))
+            *--end = '\0';
+        if ((*p == '"' || *p == '\'') && end > p + 1 && end[-1] == *p) {
+            end[-1] = '\0';
+            p++;
+        }
+
+        if (sscanf(p, "%u.%u.%u.%u/32%c", &a, &b, &c, &d, &extra) != 4 ||
+            a > 255 || b > 255 || c > 255 || d > 255) {
+            fprintf(stderr, "Ignoring invalid Demo 4 destination (requires IPv4 /32)\n");
+            break;
+        }
+
+        snprintf(entry, sizeof(entry), "%08X:FFFFFFFF^",
+                 (a << 24) | (b << 16) | (c << 8) | d);
+        if (strstr(reply, entry))
+            break;
+        needed = strlen(reply) + strlen(entry) + strlen("PARTNER|") + 2;
+        if (needed >= replySize) {
+            fprintf(stderr, "Demo 4 partner exceeds configuration buffer\n");
+            break;
+        }
+        strcat(reply, "PARTNER|");
+        strcat(reply, entry);
+        strcat(reply, "|");
+        printf("Demo 4 destination sent to kernel: %u.%u.%u.%u/32\n",
+               a, b, c, d);
+        added = 1;
+        break;
+    }
+    fclose(config);
+    return added;
+}
+
 void updateHandled(MYSQL *updateConn, char *lpTableName, char *lpKeyField, char *lpId)
 {
 	char cSQL[300];
@@ -919,6 +992,10 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 
 		/* Add explicitly configured demo destinations without persisting trust. */
 		if (appendDemoPartnersFromConfig(cReply, sizeof(cReply)) > 0)
+			bFoundData = 1;
+
+		/* Scope Demo 4 tagging to the operator's configured /32 only. */
+		if (appendDemo4DestinationFromConfig(cReply, sizeof(cReply)) > 0)
 			bFoundData = 1;
 		//else
 		//	printf("No routers updated\n", nFound);
