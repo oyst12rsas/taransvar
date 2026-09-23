@@ -80,7 +80,7 @@ ensure_chain() {
   # are urg_ptr. Only an authorized partner destination can acquire the mark.
   iptables -t mangle -A "$CHAIN" \
     -d "$PARTNER_DESTINATION" -p tcp \
-    -m u32 --u32 '0>>22&0x3C@16&0xFFFF!=0' \
+    -m u32 --u32 '0>>22&0x3C@16&0xFFFF=0x1:0xFFFF' \
     -j MARK --set-xmark "${DEMO4_MARK}/${DEMO4_MARK_MASK}"
 
   # Persist the route selection for ACK/data packets whose urg_ptr is zero.
@@ -94,6 +94,11 @@ ensure_chain() {
 
 setup() {
   command -v iptables >/dev/null || { echo "iptables is required" >&2; exit 1; }
+
+  # Validate and install packet classification before changing policy routing.
+  # If the local iptables backend rejects the u32 expression, setup stops
+  # without leaving a marked-route rule or blackhole rule behind.
+  ensure_chain
 
   if [[ "$DEMO4_TRANSPORT" == wireguard ]]; then
     command -v wg >/dev/null || { echo "wireguard-tools (wg) is required" >&2; exit 1; }
@@ -130,8 +135,6 @@ setup() {
   # do not continue into 'main' and leak it untagged through the normal uplink.
   blackhole_rule_exists || ip rule add priority "$DEMO4_BLACKHOLE_PRIORITY" \
     blackhole fwmark "${DEMO4_MARK}/${DEMO4_MARK_MASK}"
-
-  ensure_chain
 
   # Hide the hotspot/client source behind the selected overlay interface.
   iptables -t nat -C POSTROUTING -m mark --mark "${DEMO4_MARK}/${DEMO4_MARK_MASK}" \
