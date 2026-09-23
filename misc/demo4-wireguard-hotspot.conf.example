@@ -1,5 +1,8 @@
-# Demo 4 hotspot-side example configuration
+# Demo 4 hotspot-side example configuration.
 # Copy to /etc/tarasec/demo4-wireguard-hotspot.conf on the hotspot.
+
+# Use wireguard for a dedicated tunnel, or netbird for an existing peer.
+DEMO4_TRANSPORT=wireguard
 
 WG_INTERFACE=wg-demo4
 WG_ADDRESS=10.47.40.2/30
@@ -13,3 +16,8 @@ DEMO4_TABLE=404
 DEMO4_RULE_PRIORITY=10404
 DEMO4_BLACKHOLE_PRIORITY=10405
 WG_KEEPALIVE=25
+
+# NetBird example (the WG_* values above are ignored in this mode):
+# DEMO4_TRANSPORT=netbird
+# NETBIRD_INTERFACE=wt0
+# NETBIRD_RELAY=100.68.53.242

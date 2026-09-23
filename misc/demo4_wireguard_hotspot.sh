@@ -1,13 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-# Demo 4 hotspot-side selective WireGuard routing.
+# Demo 4 hotspot-side selective partner routing.
 #
 # A TaraSec TCP tag is currently carried in tcp.urg_ptr. tarakernel runs in
 # PREROUTING immediately after conntrack, before the iptables mangle hook.
 # This script therefore detects a non-zero urg_ptr only for an explicitly
 # authorized partner destination, converts that decision to an skb/conntrack
-# mark, and policy-routes the complete flow through a plain WireGuard tunnel.
+# mark, and policy-routes the complete flow through either a plain WireGuard
+# tunnel or an existing NetBird peer.
 #
 # Normal/untagged traffic is untouched. If the marked routing table has no
 # route, a second fwmark rule blackholes the flow so it cannot silently fall
@@ -30,11 +31,9 @@ fi
 # shellcheck disable=SC1090
 source "$CONFIG"
 
+: "${DEMO4_TRANSPORT:=wireguard}"
 : "${WG_INTERFACE:=wg-demo4}"
-: "${WG_ADDRESS:?WG_ADDRESS is required, e.g. 10.47.40.2/30}"
-: "${WG_PRIVATE_KEY_FILE:?WG_PRIVATE_KEY_FILE is required}"
-: "${WG_PEER_PUBLIC_KEY:?WG_PEER_PUBLIC_KEY is required}"
-: "${WG_ENDPOINT:?WG_ENDPOINT is required, e.g. 203.0.113.10:51820}"
+: "${NETBIRD_INTERFACE:=wt0}"
 : "${PARTNER_DESTINATION:?PARTNER_DESTINATION is required, e.g. 85.190.98.245/32}"
 : "${DEMO4_MARK:=0x44}"
 : "${DEMO4_MARK_MASK:=0xff}"
@@ -42,6 +41,21 @@ source "$CONFIG"
 : "${DEMO4_RULE_PRIORITY:=10404}"
 : "${DEMO4_BLACKHOLE_PRIORITY:=10405}"
 : "${WG_KEEPALIVE:=25}"
+
+case "$DEMO4_TRANSPORT" in
+  wireguard)
+    : "${WG_ADDRESS:?WG_ADDRESS is required for wireguard transport}"
+    : "${WG_PRIVATE_KEY_FILE:?WG_PRIVATE_KEY_FILE is required for wireguard transport}"
+    : "${WG_PEER_PUBLIC_KEY:?WG_PEER_PUBLIC_KEY is required for wireguard transport}"
+    : "${WG_ENDPOINT:?WG_ENDPOINT is required for wireguard transport}"
+    ROUTE_INTERFACE=$WG_INTERFACE
+    ;;
+  netbird)
+    : "${NETBIRD_RELAY:?NETBIRD_RELAY is required for netbird transport, e.g. 100.68.53.242}"
+    ROUTE_INTERFACE=$NETBIRD_INTERFACE
+    ;;
+  *) echo "Unsupported DEMO4_TRANSPORT: $DEMO4_TRANSPORT" >&2; exit 1 ;;
+esac
 
 mark_rule_exists() {
   ip rule show | grep -Eq "(^|[[:space:]])${DEMO4_RULE_PRIORITY}:.*fwmark ${DEMO4_MARK}(/${DEMO4_MARK_MASK}|[[:space:]]).*lookup ${DEMO4_TABLE}"
@@ -79,29 +93,35 @@ ensure_chain() {
 }
 
 setup() {
-  command -v wg >/dev/null || { echo "wireguard-tools (wg) is required" >&2; exit 1; }
   command -v iptables >/dev/null || { echo "iptables is required" >&2; exit 1; }
-  [[ -r "$WG_PRIVATE_KEY_FILE" ]] || { echo "Cannot read $WG_PRIVATE_KEY_FILE" >&2; exit 1; }
 
-  if ! ip link show "$WG_INTERFACE" >/dev/null 2>&1; then
-    ip link add dev "$WG_INTERFACE" type wireguard
+  if [[ "$DEMO4_TRANSPORT" == wireguard ]]; then
+    command -v wg >/dev/null || { echo "wireguard-tools (wg) is required" >&2; exit 1; }
+    [[ -r "$WG_PRIVATE_KEY_FILE" ]] || { echo "Cannot read $WG_PRIVATE_KEY_FILE" >&2; exit 1; }
+    if ! ip link show "$WG_INTERFACE" >/dev/null 2>&1; then
+      ip link add dev "$WG_INTERFACE" type wireguard
+    fi
+    ip address flush dev "$WG_INTERFACE"
+    ip address add "$WG_ADDRESS" dev "$WG_INTERFACE"
+    wg set "$WG_INTERFACE" \
+      private-key "$WG_PRIVATE_KEY_FILE" \
+      peer "$WG_PEER_PUBLIC_KEY" \
+      endpoint "$WG_ENDPOINT" \
+      allowed-ips 0.0.0.0/0 \
+      persistent-keepalive "$WG_KEEPALIVE"
+    ip link set up dev "$WG_INTERFACE"
+    ip route replace table "$DEMO4_TABLE" default dev "$WG_INTERFACE"
+  else
+    ip link show "$NETBIRD_INTERFACE" >/dev/null 2>&1 || {
+      echo "NetBird interface not found: $NETBIRD_INTERFACE" >&2; exit 1;
+    }
+    ip route get "$NETBIRD_RELAY" | grep -Eq "[[:space:]]dev ${NETBIRD_INTERFACE}([[:space:]]|$)" || {
+      echo "NetBird relay $NETBIRD_RELAY is not routed through $NETBIRD_INTERFACE" >&2; exit 1;
+    }
+    # Destination-specific by design: never capture clean/default traffic.
+    ip route replace table "$DEMO4_TABLE" "$PARTNER_DESTINATION" \
+      via "$NETBIRD_RELAY" dev "$NETBIRD_INTERFACE" onlink
   fi
-
-  ip address flush dev "$WG_INTERFACE"
-  ip address add "$WG_ADDRESS" dev "$WG_INTERFACE"
-
-  # AllowedIPs=0/0 only defines what this peer may carry inside WireGuard.
-  # It does NOT install a main-table default route because we use wg directly,
-  # not wg-quick. The fwmark policy below decides which flows enter the tunnel.
-  wg set "$WG_INTERFACE" \
-    private-key "$WG_PRIVATE_KEY_FILE" \
-    peer "$WG_PEER_PUBLIC_KEY" \
-    endpoint "$WG_ENDPOINT" \
-    allowed-ips 0.0.0.0/0 \
-    persistent-keepalive "$WG_KEEPALIVE"
-  ip link set up dev "$WG_INTERFACE"
-
-  ip route replace table "$DEMO4_TABLE" default dev "$WG_INTERFACE"
 
   mark_rule_exists || ip rule add priority "$DEMO4_RULE_PRIORITY" \
     fwmark "${DEMO4_MARK}/${DEMO4_MARK_MASK}" lookup "$DEMO4_TABLE"
@@ -113,12 +133,11 @@ setup() {
 
   ensure_chain
 
-  # Hide the hotspot/client source behind the WireGuard interface address.
-  # This lets the egress peer use a tight AllowedIPs entry for this hotspot.
+  # Hide the hotspot/client source behind the selected overlay interface.
   iptables -t nat -C POSTROUTING -m mark --mark "${DEMO4_MARK}/${DEMO4_MARK_MASK}" \
-    -o "$WG_INTERFACE" -j MASQUERADE 2>/dev/null || \
+    -o "$ROUTE_INTERFACE" -j MASQUERADE 2>/dev/null || \
   iptables -t nat -A POSTROUTING -m mark --mark "${DEMO4_MARK}/${DEMO4_MARK_MASK}" \
-    -o "$WG_INTERFACE" -j MASQUERADE
+    -o "$ROUTE_INTERFACE" -j MASQUERADE
 
   echo "Demo 4 hotspot policy enabled."
   status
@@ -130,28 +149,36 @@ remove() {
   iptables -t mangle -X "$CHAIN" 2>/dev/null || true
 
   while iptables -t nat -C POSTROUTING -m mark --mark "${DEMO4_MARK}/${DEMO4_MARK_MASK}" \
-      -o "$WG_INTERFACE" -j MASQUERADE 2>/dev/null; do
+      -o "$ROUTE_INTERFACE" -j MASQUERADE 2>/dev/null; do
     iptables -t nat -D POSTROUTING -m mark --mark "${DEMO4_MARK}/${DEMO4_MARK_MASK}" \
-      -o "$WG_INTERFACE" -j MASQUERADE
+      -o "$ROUTE_INTERFACE" -j MASQUERADE
   done
 
   ip rule del priority "$DEMO4_RULE_PRIORITY" 2>/dev/null || true
   ip rule del priority "$DEMO4_BLACKHOLE_PRIORITY" 2>/dev/null || true
   ip route flush table "$DEMO4_TABLE" 2>/dev/null || true
-  ip link del dev "$WG_INTERFACE" 2>/dev/null || true
+  if [[ "$DEMO4_TRANSPORT" == wireguard ]]; then
+    ip link del dev "$WG_INTERFACE" 2>/dev/null || true
+  fi
 
   echo "Demo 4 hotspot policy removed. Normal routing is unchanged."
 }
 
 status() {
   echo "=== DEMO 4 HOTSPOT ==="
+  echo "Transport           : $DEMO4_TRANSPORT"
   echo "Partner destination : $PARTNER_DESTINATION"
-  echo "WireGuard interface : $WG_INTERFACE"
+  echo "Overlay interface   : $ROUTE_INTERFACE"
+  if [[ "$DEMO4_TRANSPORT" == netbird ]]; then
+    echo "NetBird relay       : $NETBIRD_RELAY"
+  fi
   echo "Routing mark        : $DEMO4_MARK/$DEMO4_MARK_MASK"
   echo "Routing table       : $DEMO4_TABLE"
   echo
-  ip -brief address show dev "$WG_INTERFACE" 2>/dev/null || true
-  wg show "$WG_INTERFACE" 2>/dev/null || true
+  ip -brief address show dev "$ROUTE_INTERFACE" 2>/dev/null || true
+  if [[ "$DEMO4_TRANSPORT" == wireguard ]]; then
+    wg show "$WG_INTERFACE" 2>/dev/null || true
+  fi
   echo
   echo "=== POLICY RULES ==="
   ip rule show | grep -E "${DEMO4_RULE_PRIORITY}:|${DEMO4_BLACKHOLE_PRIORITY}:" || true
@@ -162,8 +189,8 @@ status() {
   echo "=== TAG/MARK COUNTERS ==="
   iptables -t mangle -nvL "$CHAIN" 2>/dev/null || true
   echo
-  echo "=== WIREGUARD NAT COUNTER ==="
-  iptables -t nat -nvL POSTROUTING 2>/dev/null | grep -F "$WG_INTERFACE" || true
+  echo "=== OVERLAY NAT COUNTER ==="
+  iptables -t nat -nvL POSTROUTING 2>/dev/null | grep -F "$ROUTE_INTERFACE" || true
 }
 
 case "${1:-status}" in

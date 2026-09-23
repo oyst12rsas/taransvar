@@ -71,13 +71,17 @@ Every Demo 4 implementation should preserve these properties:
 
 ## Current Demo 4 test architecture
 
-The next test uses plain WireGuard rather than NetBird network-route management:
+The policy-routing implementation supports plain WireGuard or an existing
+NetBird peer. NetBird mode uses a destination-specific route in the dedicated
+policy table; it does not install a NetBird network route or alter the main
+routing table:
 
 - `tarakernel` creates the existing TaraSec TCP tag;
 - hotspot firewall rules detect the tag after tarakernel's PREROUTING processing;
 - the decision is stored in conntrack and represented as a Linux `fwmark`;
 - an `ip rule` sends only marked flows to a dedicated routing table;
-- that table sends the flow through `wg-demo4`;
+- that table sends the flow through `wg-demo4`, or through the configured
+  NetBird relay on `wt0`;
 - the remote TaraSec egress router only forwards authorized tagged flows;
 - the egress router SNATs accepted flows to its stable public address;
 - a second policy rule blackholes selected traffic if the WireGuard route cannot resolve, preventing silent fallback to the hotspot's ordinary ISP route.
