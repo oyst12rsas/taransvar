@@ -555,8 +555,33 @@ alter table assistanceRequest add column if not exists isDemo bit(1) not null de
 update assistanceRequest set isDemo=b'1' where category like 'demo3\\_%';
 update setup set dbVersion = 97;
 
+#version 98 (260923)
+#Demo 4 sessions tie gateway-confirmed status to website observations.
+#Session evidence expires after 30 minutes.
+CREATE TABLE IF NOT EXISTS demo4Session (
+    sessionId CHAR(32) NOT NULL,
+    tokenHash CHAR(64) NOT NULL,
+    gatewayIp INT UNSIGNED NOT NULL,
+    routerId INT NOT NULL,
+    destinationIp INT UNSIGNED NOT NULL,
+    relayIp INT UNSIGNED NOT NULL,
+    createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expiresAt DATETIME NOT NULL,
+    cleanGatewayAt DATETIME NULL,
+    infectedGatewayAt DATETIME NULL,
+    cleanWebsiteIp INT UNSIGNED NULL,
+    cleanWebsiteAt DATETIME NULL,
+    infectedWebsiteIp INT UNSIGNED NULL,
+    infectedWebsiteAt DATETIME NULL,
+    PRIMARY KEY (sessionId),
+    KEY idx_demo4_session_expiry (expiresAt),
+    KEY idx_demo4_session_gateway (gatewayIp, createdAt),
+    CONSTRAINT fk_demo4_session_route FOREIGN KEY (routerId) REFERENCES partnerRouter(routerId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+update setup set dbVersion = 98;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 98;
+#update setup set dbVersion = 99;
 
 #NOTE! The versions (#version nn ...) are imported by the installed
 #diagnostics script. Deploy misc to /root/taransvar/perl, then run:
