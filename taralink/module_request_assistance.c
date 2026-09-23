@@ -133,6 +133,8 @@ static int deliverDemo3ReleaseNow(MYSQL *conn, const char *url,
         if (result == CURLE_OK)
                 curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
         curl_easy_cleanup(curl);
+        while (reply.used > 0 && isspace((unsigned char)reply.body[reply.used - 1]))
+                reply.body[--reply.used] = 0;
 
         if (result != CURLE_OK || status != 200 || strcmp(reply.body, "ok") != 0)
         {
