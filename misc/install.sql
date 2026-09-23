@@ -575,8 +575,7 @@ CREATE TABLE IF NOT EXISTS demo4Session (
     infectedWebsiteAt DATETIME NULL,
     PRIMARY KEY (sessionId),
     KEY idx_demo4_session_expiry (expiresAt),
-    KEY idx_demo4_session_gateway (gatewayIp, createdAt),
-    CONSTRAINT fk_demo4_session_route FOREIGN KEY (routerId) REFERENCES partnerRouter(routerId)
+    KEY idx_demo4_session_gateway (gatewayIp, createdAt)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 update setup set dbVersion = 98;
 
