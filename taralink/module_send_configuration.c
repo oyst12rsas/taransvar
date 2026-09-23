@@ -169,7 +169,7 @@ static int appendDemo4DestinationFromConfig(char *reply, size_t replySize)
     while (fgets(line, sizeof(line), config)) {
         char *p = line;
         char *end;
-        unsigned int a, b, c, d;
+        unsigned int a, b, c, d, prefix;
         char extra;
         char entry[32];
         size_t needed;
@@ -195,8 +195,8 @@ static int appendDemo4DestinationFromConfig(char *reply, size_t replySize)
             p++;
         }
 
-        if (sscanf(p, "%u.%u.%u.%u/32%c", &a, &b, &c, &d, &extra) != 4 ||
-            a > 255 || b > 255 || c > 255 || d > 255) {
+        if (sscanf(p, "%u.%u.%u.%u/%u%c", &a, &b, &c, &d, &prefix, &extra) != 5 ||
+            a > 255 || b > 255 || c > 255 || d > 255 || prefix != 32) {
             fprintf(stderr, "Ignoring invalid Demo 4 destination (requires IPv4 /32)\n");
             break;
         }
