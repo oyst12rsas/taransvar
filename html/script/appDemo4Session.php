@@ -57,6 +57,7 @@ try {
         $route->bind_param('s', $remote); $route->execute();
         $selected = $route->get_result()->fetch_assoc(); $route->close();
         if (!$selected) demo4SessionReply(403, ['ok'=>false,'error'=>'selected_gateway_route_required']);
+        $db->query("DELETE FROM demo4Session WHERE expiresAt<DATE_SUB(UTC_TIMESTAMP(),INTERVAL 1 DAY)");
         $id = bin2hex(random_bytes(16));
         $token = bin2hex(random_bytes(32));
         $hash = hash('sha256', $token);
