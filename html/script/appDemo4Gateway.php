@@ -61,7 +61,7 @@ try {
     } else {
         $context = stream_context_create(['http'=>[
             'method'=>'POST',
-            'header'=>"Content-Type: application/x-www-form-urlencoded\\r\\n",
+            'header'=>"Content-Type: application/x-www-form-urlencoded\r\n",
             'content'=>$form,
             'timeout'=>8,
             'ignore_errors'=>true,
