@@ -85,9 +85,10 @@ static int urlEncodeComponent(const char *src, char *dst, size_t dstSize)
 }
 
 /*
- * The minute-oriented pendingWget worker can delay a Demo 3 release after the
- * DB timer has fired. Deliver to gateways currently participating in this
- * session immediately; keep the queued request as a retry if delivery fails.
+ * The minute-oriented pendingWget worker can consume much of a Demo 3
+ * containment period before the start reaches its gateway. Deliver both
+ * start and release to gateways participating in this session immediately;
+ * retain the queued delivery if the immediate request fails.
  * partnerRequest.php authenticates the DB peer and is idempotent by rid.
  */
 struct demo3FastReply {
@@ -108,11 +109,13 @@ static size_t demo3FastReplyWrite(char *data, size_t size, size_t count, void *c
         return bytes;
 }
 
-static int deliverDemo3ReleaseNow(MYSQL *conn, const char *url,
-                                   const char *partnerIp, unsigned long requestId)
+static int deliverDemo3TransitionNow(MYSQL *conn, const char *url,
+                                     const char *partnerIp, unsigned long requestId,
+                                     int active)
 {
         CURL *curl = curl_easy_init();
         CURLcode result;
+        const char *phase = active ? "start" : "release";
         long status = 0;
         struct demo3FastReply reply = {{0}, 0};
         MYSQL_STMT *stmt;
@@ -138,8 +141,8 @@ static int deliverDemo3ReleaseNow(MYSQL *conn, const char *url,
 
         if (result != CURLE_OK || status != 200 || strcmp(reply.body, "ok") != 0)
         {
-                fprintf(stderr, "Demo 3 immediate release %lu to %s failed (curl=%d HTTP=%ld); queued retry retained\n",
-                        requestId, partnerIp, (int)result, status);
+                fprintf(stderr, "Demo 3 immediate %s %lu to %s failed (curl=%d HTTP=%ld); queued retry retained\n",
+                        phase, requestId, partnerIp, (int)result, status);
                 return 0;
         }
 
@@ -148,10 +151,13 @@ static int deliverDemo3ReleaseNow(MYSQL *conn, const char *url,
         stmt = mysql_stmt_init(conn);
         if (stmt)
         {
-                const char *sql =
-                        "UPDATE pendingWget SET handled=UTC_TIMESTAMP(),"
-                        "reply='ok (immediate Demo 3 release)' "
-                        "WHERE regardingId=? AND url=? AND handled IS NULL";
+                const char *sql = active
+                        ? "UPDATE pendingWget SET handled=UTC_TIMESTAMP(),"
+                          "reply='ok (immediate Demo 3 start)' "
+                          "WHERE regardingId=? AND url=? AND handled IS NULL"
+                        : "UPDATE pendingWget SET handled=UTC_TIMESTAMP(),"
+                          "reply='ok (immediate Demo 3 release)' "
+                          "WHERE regardingId=? AND url=? AND handled IS NULL";
                 memset(bind, 0, sizeof(bind));
                 bind[0].buffer_type = MYSQL_TYPE_LONGLONG;
                 bind[0].buffer = &requestIdArg;
@@ -163,11 +169,11 @@ static int deliverDemo3ReleaseNow(MYSQL *conn, const char *url,
                 if (mysql_stmt_prepare(stmt, sql, strlen(sql)) ||
                     mysql_stmt_bind_param(stmt, bind) ||
                     mysql_stmt_execute(stmt))
-                        fprintf(stderr, "Demo 3 immediate release %lu reached %s, but queue acknowledgement failed: %s\n",
-                                requestId, partnerIp, mysql_stmt_error(stmt));
+                        fprintf(stderr, "Demo 3 immediate %s %lu reached %s, but queue acknowledgement failed: %s\n",
+                                phase, requestId, partnerIp, mysql_stmt_error(stmt));
                 mysql_stmt_close(stmt);
         }
-        printf("Demo 3 immediate release %lu delivered to %s\n", requestId, partnerIp);
+        printf("Demo 3 immediate %s %lu delivered to %s\n", phase, requestId, partnerIp);
         return 1;
 }
 
@@ -316,10 +322,10 @@ void checkRequestAssistance()
                                 continue;
                         }
 
-                        /* Only an inactive demo-owned release may use the fast
-                         * path. A participant's observed address must also be
-                         * an explicitly registered partner destination below. */
-                        if (row[11] && atoi(row[11]) == 1 && !nActive &&
+                        /* Only demo-owned start/release events may use the fast path.
+                         * A participant's observed address must also be an
+                         * explicitly registered partner destination below. */
+                        if (row[11] && atoi(row[11]) == 1 &&
                             row[2] && sscanf(row[2], "demo3_%lu%c", &demoSid, &trailing) == 1 &&
                             demoSid > 0)
                         {
@@ -333,8 +339,8 @@ void checkRequestAssistance()
                                         if (mysql_query(fastConn, participantsSql) == 0)
                                                 participants = mysql_store_result(fastConn);
                                         if (!participants)
-                                                fprintf(stderr, "Demo 3 release %s: participant lookup failed; queued delivery retained\n",
-                                                        lpRequestId);
+                                                fprintf(stderr, "Demo 3 %s %s: participant lookup failed; queued delivery retained\n",
+                                                        nActive ? "start" : "release", lpRequestId);
                                 }
                         }
 
@@ -381,9 +387,10 @@ void checkRequestAssistance()
                                         {
                                                 if (participant[0] && !strcmp(participant[0], partnerRow[0]))
                                                 {
-                                                        deliverDemo3ReleaseNow(fastConn, cUrl,
-                                                                               partnerRow[0],
-                                                                               strtoul(lpRequestId, NULL, 10));
+                                                        deliverDemo3TransitionNow(fastConn, cUrl,
+                                                                                  partnerRow[0],
+                                                                                  strtoul(lpRequestId, NULL, 10),
+                                                                                  nActive);
                                                         break;
                                                 }
                                         }
