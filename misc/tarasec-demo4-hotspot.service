@@ -1,0 +1,16 @@
+[Unit]
+Description=TaraSec Demo 4 selective tagged traffic route
+Documentation=https://github.com/oyst12rsas/taransvar/blob/main/docs/DEMO_CONFIGURATION.md
+Wants=network-online.target
+After=network-online.target netbird.service
+ConditionPathExists=/etc/tarasec/demo4-wireguard-hotspot.conf
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/tarasec-demo4-hotspot setup
+ExecStop=/usr/local/sbin/tarasec-demo4-hotspot remove
+TimeoutStartSec=45
+
+[Install]
+WantedBy=multi-user.target
