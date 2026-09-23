@@ -43,21 +43,35 @@ try {
         demo4GatewayReply(503,['ok'=>false,'error'=>'global_db_not_configured']);
 
     $url = 'http://'.$server.'/script/appDemo4Session.php?action=gateway';
-    $ch = curl_init($url);
-    curl_setopt_array($ch,[
-        CURLOPT_POST=>true,
-        CURLOPT_POSTFIELDS=>http_build_query([
-            'session_id'=>$id,'token'=>$token,'phase'=>$phase
-        ]),
-        CURLOPT_RETURNTRANSFER=>true,
-        CURLOPT_FOLLOWLOCATION=>false,
-        CURLOPT_CONNECTTIMEOUT=>3,
-        CURLOPT_TIMEOUT=>8,
-        CURLOPT_HTTPHEADER=>['Content-Type: application/x-www-form-urlencoded'],
-    ]);
-    $response = curl_exec($ch);
-    $code = (int)curl_getinfo($ch,CURLINFO_RESPONSE_CODE);
-    curl_close($ch);
+    $form = http_build_query(['session_id'=>$id,'token'=>$token,'phase'=>$phase]);
+    if (function_exists('curl_init')) {
+        $ch = curl_init($url);
+        curl_setopt_array($ch,[
+            CURLOPT_POST=>true,
+            CURLOPT_POSTFIELDS=>$form,
+            CURLOPT_RETURNTRANSFER=>true,
+            CURLOPT_FOLLOWLOCATION=>false,
+            CURLOPT_CONNECTTIMEOUT=>3,
+            CURLOPT_TIMEOUT=>8,
+            CURLOPT_HTTPHEADER=>['Content-Type: application/x-www-form-urlencoded'],
+        ]);
+        $response = curl_exec($ch);
+        $code = (int)curl_getinfo($ch,CURLINFO_RESPONSE_CODE);
+        curl_close($ch);
+    } else {
+        $context = stream_context_create(['http'=>[
+            'method'=>'POST',
+            'header'=>"Content-Type: application/x-www-form-urlencoded\\r\\n",
+            'content'=>$form,
+            'timeout'=>8,
+            'ignore_errors'=>true,
+            'follow_location'=>0,
+        ]]);
+        $response = @file_get_contents($url,false,$context);
+        $code = 0;
+        foreach (($http_response_header ?? []) as $line)
+            if (preg_match('~^HTTP/\\S+ (\\d{3})~',$line,$match)) $code=(int)$match[1];
+    }
     $result = is_string($response) ? json_decode($response,true) : null;
     if ($code!==200 || !is_array($result) || ($result['ok'] ?? false)!==true)
         demo4GatewayReply(503,['ok'=>false,'error'=>'central_session_report_failed']);
