@@ -924,19 +924,42 @@ void storeAssistanceRequest(char *lpSpec)
 	if ((nError = kstrtoul(cIP, 16, &nVal)))
 		pr_info("tarakernel: *********** kstrtoul returned %d for ip (ERANGE=%d, EINVAL=%d) for %s\n", nError, ERANGE, EINVAL, cIP);
 
+	cNewElement.ipAddress = swappedEndian(nVal);
+	cNewElement.port = nPort;
+	cNewElement.nQuality = nQuality;
+	cNewElement.bWantsSpoofed = nWantsSpoofed;
+
         if (nActive)
         {
-		cNewElement.ipAddress = swappedEndian(nVal); //Store IP-address as "little endian" unsigned int.
-        	cNewElement.port = nPort;
-        	cNewElement.nQuality = nQuality;
-        	cNewElement.bWantsSpoofed = nWantsSpoofed;
-
-		pRequests[pSetup->nElementsInArray[BLOCK_DESCRIPTIOR_ASSIST]]= cNewElement;
-		pSetup->nElementsInArray[BLOCK_DESCRIPTIOR_ASSIST]++;
+		/* Assistance updates are state, not append-only events. Reusing the
+		 * existing slot prevents repeated start/configuration messages from
+		 * leaving duplicate active entries that a later release cannot clear. */
+		int n;
+		int nUpdated = 0;
+		for (n=0;n<pSetup->nElementsInArray[BLOCK_DESCRIPTIOR_ASSIST];n++)
+		{
+			if (pRequests[n].ipAddress == cNewElement.ipAddress)
+			{
+				if (!nUpdated)
+				{
+					pRequests[n] = cNewElement;
+					nUpdated = 1;
+				}
+				else
+				{
+					memset(&pRequests[n], 0, sizeof(struct _AssistanceRequest));
+				}
+			}
+		}
+		if (!nUpdated)
+		{
+			pRequests[pSetup->nElementsInArray[BLOCK_DESCRIPTIOR_ASSIST]]= cNewElement;
+			pSetup->nElementsInArray[BLOCK_DESCRIPTIOR_ASSIST]++;
+		}
 	}
 	else
 	{
-	        pr_info("********* Instructed to remove assistance request...\n");
+	        pr_info("********* Instructed to remove all matching assistance requests...\n");
 		int n;
 		struct _AssistanceRequest *pArray = (struct _AssistanceRequest *)pSetup->pConfiguration[BLOCK_DESCRIPTIOR_ASSIST];
 
@@ -944,17 +967,10 @@ void storeAssistanceRequest(char *lpSpec)
 		{
 		        if (pArray[n].ipAddress == swappedEndian(nVal))
 		        {
-		        	pr_info("tarakernel: Requested to remove assistance request.. but for now just nulling it out...\n");
-				cNewElement.ipAddress = 0;
-        			cNewElement.port = 0;
-        			cNewElement.nQuality = 0;
-        			cNewElement.bWantsSpoofed = 0;
-  				pRequests[n]= cNewElement;
-  				break;
+				pr_info("tarakernel: Nulling matching assistance request at index %d...\n", n);
+				memset(&pRequests[n], 0, sizeof(struct _AssistanceRequest));
 		        }
 		}
-
-	        //asdf
 	}
 	listAssistRequests();
 }//storeAssistanceRequest()
@@ -1092,5 +1108,3 @@ bool portForwarded(unsigned int nCheckIfPortForwarding)
 
 	return false;
 }//portForwarded()
-
-
