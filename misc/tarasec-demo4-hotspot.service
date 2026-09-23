@@ -4,6 +4,7 @@ Documentation=https://github.com/oyst12rsas/taransvar/blob/main/docs/DEMO_CONFIG
 Wants=network-online.target
 After=network-online.target netbird.service
 ConditionPathExists=/etc/tarasec/demo4-wireguard-hotspot.conf
+ConditionPathIsExecutable=/usr/local/sbin/tarasec-demo4-hotspot
 
 [Service]
 Type=oneshot
