@@ -3,11 +3,18 @@
 TaraSec gateways keep normal LAN-to-NetBird access. Demo selection controls only which
 nodes the Android app presents. It does not create a restrictive allow-list.
 
-## Shared defaults
+## Shared topology
 
-- Demo 1 receiver: Tomato (`100.68.22.33`)
+- Squash is the WireGuard gateway for Tomato (`100.68.22.33`).
+- Audi is the WireGuard gateway for Porsche.
+- Standard gateway is the WireGuard gateway for Roquefort, Camembert, Gouda, and other nonexclusive nodes.
+- A directly connected TaraSec hotspot can present its own configured nodes.
 - Demo 2 Node A: Roquefort (`100.68.176.110`)
 - Demo 2 Node B: Camembert (`100.68.149.164`)
+
+Demo 1 endpoints come from the gateway's `DEMO_NODES` and `DEMO_NODE_NAMES`.
+There is no universal Tomato default. Set `DEMO1_NODE` only when the gateway
+should prefer a particular endpoint that it actually routes to.
 
 Demo 2 alternatives are active rows in `demoSshSetup` joined to
 `demoSshNodeB`. Existing installations continue to use the first active setup
@@ -22,8 +29,8 @@ INSERT INTO gatewayDemoConfiguration
     (gatewayIp,gatewayName,demo1ReceiverIp,demo1ReceiverName,
      demoSshSetupId,demo4RouterId,organisationLabel)
 VALUES
-    (INET_ATON('100.68.51.247'),'Gouda',
-     INET_ATON('100.68.22.33'),'Tomato',
+    (INET_ATON('100.68.165.190'),'Standard gateway',
+     INET_ATON('100.68.176.110'),'Roquefort',
      1,NULL,'')
 ON DUPLICATE KEY UPDATE
     gatewayName=VALUES(gatewayName),
@@ -42,8 +49,8 @@ A gateway-local deployment can override Demo 1 and the selected setup through
 `/etc/tarasecfw.conf`:
 
 ```sh
-DEMO1_NODE=100.68.22.33
-DEMO1_NODE_NAME=Tomato
+DEMO1_NODE=100.68.176.110
+DEMO1_NODE_NAME=Roquefort
 DEMO2_SETUP_ID=1
 DEMO4_ROUTER_ID=1
 ```
