@@ -408,7 +408,16 @@ static void checkHackReportsWorker()
 		if (nSeverity > 15) nSeverity = 15;
 
 		int bDemoReport = row[10] && !strcmp(row[10], "demo");
-		if (nNumericIp == nMyIp || isMeOrMine(nNumericIp, nInternalIp, nNettmask))
+		/* A peer on a VPN can fall inside the configured internal subnet.
+		 * Registered partners are remote even when an old unit row also names
+		 * their address. Never create a local infection for such a peer. */
+		char szPartnerIp[50];
+		uint32_t nPartnerIp = 0;
+		if (nNumericIp != nMyIp && isMeOrMine(nNumericIp, nInternalIp, nNettmask))
+			nPartnerIp = getIpOfRegisteredPartnerRouter(updateConn, nNumericIp,
+			                                            szPartnerIp, sizeof(szPartnerIp));
+		if (nNumericIp == nMyIp ||
+		    (isMeOrMine(nNumericIp, nInternalIp, nNettmask) && !nPartnerIp))
 		{
 			strcpy(cWhat, "Me or my unit. ");
 			printf("Me or my unit caused hackReport to be filed..\n");
