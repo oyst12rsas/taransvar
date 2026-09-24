@@ -40,7 +40,9 @@ $selection = [
     'gateway_ip' => $senderIp,
     'gateway_name' => $gatewayName,
     'organisation' => '',
-    'demo1' => ['name' => $values['DEMO1_NODE_NAME'] ?? 'Tomato', 'address' => $values['DEMO1_NODE'] ?? '100.68.22.33'],
+    'demo1' => isset($values['DEMO1_NODE'])
+        ? ['name' => $values['DEMO1_NODE_NAME'] ?? $values['DEMO1_NODE'], 'address' => $values['DEMO1_NODE']]
+        : null,
     'demo2_setup_id' => isset($values['DEMO2_SETUP_ID']) ? (int)$values['DEMO2_SETUP_ID'] : null,
     'demo4_router_id' => isset($values['DEMO4_ROUTER_ID']) ? (int)$values['DEMO4_ROUTER_ID'] : null
 ];
@@ -55,8 +57,10 @@ try {
         $stmt->bind_param('s',$senderIp); $stmt->execute(); $row=$stmt->get_result()->fetch_assoc(); $stmt->close();
         if ($row) {
             if ($row['gatewayName'] !== '') $selection['gateway_name']=$row['gatewayName'];
-            if ($row['demo1Ip']) $selection['demo1']['address']=$row['demo1Ip'];
-            if ($row['demo1ReceiverName'] !== '') $selection['demo1']['name']=$row['demo1ReceiverName'];
+            if ($row['demo1Ip']) $selection['demo1']=[
+                'address'=>$row['demo1Ip'],
+                'name'=>$row['demo1ReceiverName'] !== '' ? $row['demo1ReceiverName'] : $row['demo1Ip']
+            ];
             if ($row['demoSshSetupId'] !== null) $selection['demo2_setup_id']=(int)$row['demoSshSetupId'];
             if ($row['demo4RouterId'] !== null) $selection['demo4_router_id']=(int)$row['demo4RouterId'];
             $selection['organisation']=(string)$row['organisationLabel'];
@@ -68,7 +72,7 @@ try {
 }
 if ($selection['demo2_setup_id'] === null && count($demoSetups)>0) $selection['demo2_setup_id']=$demoSetups[0]['id'];
 
-$demo1Alternatives=[['name'=>'Tomato','address'=>'100.68.22.33']];
+$demo1Alternatives=[];
 foreach($nodes as $node) {
     if (!array_filter($demo1Alternatives, fn($item) => $item['address']===$node['address'])) {
         $demo1Alternatives[]=['name'=>$node['name'] ?: $node['address'],'address'=>$node['address']];
@@ -83,7 +87,7 @@ echo json_encode([
     'demo_ssh_setups'=>$demoSetups,
     'selection'=>$selection,
     'defaults'=>[
-        'demo1'=>['name'=>'Tomato','address'=>'100.68.22.33'],
+        'demo1'=>null,
         'demo2'=>['node_a'=>['name'=>'Roquefort','address'=>'100.68.176.110'],'node_b'=>['name'=>'Camembert','address'=>'100.68.149.164']]
     ],
     'demo1_alternatives'=>$demo1Alternatives,
