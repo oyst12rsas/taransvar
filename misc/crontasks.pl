@@ -398,6 +398,31 @@ sub reportStatus {
 	$json{"trfc"} = $cSeconds->{"seconds_since"};
 	$sthLast->finish();
 
+	# A running taralink process is insufficient proof that its kernel traffic
+	# feed reaches the database. Recent partner threat reports establish that
+	# packets are arriving even on a node with no local users. Only flag stale
+	# traffic when that independent evidence exists; idle nodes stay healthy.
+	if (!$isGlobalDbServer && $json{"trfcOk"} &&
+	    (!defined($json{"trfc"}) || $json{"trfc"} > 300)) {
+		my $sthThreat = $dbh->prepare(
+			"SELECT TIMESTAMPDIFF(SECOND, created, NOW()) AS seconds_since " .
+			"FROM hackReport ORDER BY reportId DESC LIMIT 1"
+		);
+		$sthThreat->execute();
+		my $cThreat = $sthThreat->fetchrow_hashref();
+		$sthThreat->finish();
+		if ($cThreat && defined($cThreat->{"seconds_since"}) &&
+		    $cThreat->{"seconds_since"} >= 0 && $cThreat->{"seconds_since"} < 300) {
+			$json{"trfcOk"} = 0;
+			$json{"trfcGap"} = 1;
+			if (($json{"errSev"} // 0) < 8) {
+				$json{"err"} = "Traffic reporting stalled: threat reports arrive, but no traffic records have been saved for over five minutes.";
+				$json{"errSev"} = 8;
+				$json{"errAge"} = 0;
+			}
+		}
+	}
+
 	# Report active SQL work separately from idle/open connections.  The old
 	# sqlThrds value used Threads_connected and was consequently labelled as
 	# "busy" even when every connection was sleeping.
