@@ -182,6 +182,13 @@ function getTagData()
 	// A recent traffic tag is the receiver's freshest evidence and has priority over hackReport.
 	if ($nTrafficSecondsSince>=0 && $nTrafficSecondsSince<45) {
 		$nSeverity=$nTrafficSeverity;
+	} else if ($nHackReportPort === $clientPort && $nHackReportSecondsSince>=0 &&
+	           $nHackReportSecondsSince<15 &&
+	           (taraSecRegisteredPartner($conn, $szSenderIp) || taraSecConfigFlag('DEMO_NODE', false))) {
+		// A current report for this exact connection also supersedes an old
+		// IP-wide infection row when traffic ingestion is delayed or stalled.
+		// General (port-zero) and historical reports never clear that row.
+		$nSeverity=$nHackSeverity;
 	} else if ($nHackSeverity>$nSeverity) {
 		$nSeverity=$nHackSeverity;
 	}
