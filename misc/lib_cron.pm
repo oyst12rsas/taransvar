@@ -17,7 +17,7 @@ our @ISA= qw( Exporter );
 our @EXPORT_OK = qw();
 
 # these are exported by default.
-our @EXPORT = qw( getActiveLink setCronLibDbh runningAsCron runningBootCheck saveWarning isInternal createDirectories columnExists url_encode getWgetResult sendStatus updateStatus logDmesg updateWhoIsId checkWhoIs sendPendingWgets systemBootedMinutesAgo fixDevicesOldWay updateGlobalDemo startTaraKernelOk startTaraLinkOk startTaraSystemsOk checkDbVersion workshopSetup checkRequests );
+our @EXPORT = qw( getActiveLink setCronLibDbh setSystemError runningAsCron runningBootCheck saveWarning isInternal createDirectories columnExists url_encode getWgetResult sendStatus updateStatus logDmesg updateWhoIsId checkWhoIs sendPendingWgets systemBootedMinutesAgo fixDevicesOldWay updateGlobalDemo startTaraKernelOk startTaraLinkOk startTaraSystemsOk checkDbVersion workshopSetup checkRequests );
 
 use autodie;
 use DBI;

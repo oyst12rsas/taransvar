@@ -138,12 +138,13 @@ function getTagData()
 	$result->close(); $stmt->close();
 	$retval["infectionSeverity"]=$nInfectionSeverity; $retval["infectionDisabled"]=$nInfectionDisabled;
 
-	$szSQL = "select reportId, severity, infoSharePartners, why, inet_ntoa(partnerIp) as reportedByIp, TIMESTAMPDIFF(SECOND, coalesce(lastSeen, created), NOW()) AS seconds_since from hackReport where ip = inet_aton(?) and (port = 0 || port = ?) order by lastSeen desc limit 1";
+	$szSQL = "select reportId, port, severity, infoSharePartners, why, inet_ntoa(partnerIp) as reportedByIp, TIMESTAMPDIFF(SECOND, coalesce(lastSeen, created), NOW()) AS seconds_since from hackReport where ip = inet_aton(?) and (port = 0 || port = ?) order by lastSeen desc limit 1";
 	$stmt=$conn->prepare($szSQL); $stmt->bind_param("si",$szSenderIp,$clientPort); $stmt->execute(); $result=$stmt->get_result();
-	$nHackReportSecondsSince=-1; $nHackSeverity=0;
-	if ($result->num_rows>0 && ($row=$result->fetch_assoc())) { $nHackSeverity=(int)$row["severity"]; $nHackReportSecondsSince=$row["seconds_since"]; }
+	$nHackReportSecondsSince=-1; $nHackSeverity=0; $nHackReportPort=0;
+	if ($result->num_rows>0 && ($row=$result->fetch_assoc())) { $nHackSeverity=(int)$row["severity"]; $nHackReportSecondsSince=$row["seconds_since"]; $nHackReportPort=(int)$row["port"]; }
 	$result->close(); $stmt->close();
 	$retval["hackReportSeverity"]=$nHackSeverity; $retval["hackReportSecondsSince"]=$nHackReportSecondsSince;
+	$retval["hackReportExactPort"]=$nHackReportPort === $clientPort;
 
 	$nTrafficSecondsSince=-1; $nTrafficSeverity=0;
 	$sql="SELECT trafficId, created, lastSeen, count, tag, TIMESTAMPDIFF(SECOND, COALESCE(lastSeen, created), NOW()) AS seconds_since FROM traffic T WHERE ipFrom = INET_ATON(?) AND portFrom = ? ORDER BY trafficId DESC LIMIT 1";
@@ -181,6 +182,13 @@ function getTagData()
 	// A recent traffic tag is the receiver's freshest evidence and has priority over hackReport.
 	if ($nTrafficSecondsSince>=0 && $nTrafficSecondsSince<45) {
 		$nSeverity=$nTrafficSeverity;
+	} else if ($nHackReportPort === $clientPort && $nHackReportSecondsSince>=0 &&
+	           $nHackReportSecondsSince<15 &&
+	           (taraSecRegisteredPartner($conn, $szSenderIp) || taraSecConfigFlag('DEMO_NODE', false))) {
+		// A current report for this exact connection also supersedes an old
+		// IP-wide infection row when traffic ingestion is delayed or stalled.
+		// General (port-zero) and historical reports never clear that row.
+		$nSeverity=$nHackSeverity;
 	} else if ($nHackSeverity>$nSeverity) {
 		$nSeverity=$nHackSeverity;
 	}
