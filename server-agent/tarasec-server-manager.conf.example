@@ -1,0 +1,5 @@
+# Only these systemd units can be inspected or restarted.
+SERVICE_ALLOWLIST=tarasec-gateway.service
+OPENAI_MODEL=gpt-6-astra
+STATE_DIRECTORY=/var/lib/tarasec-server-manager
+# Put OPENAI_API_KEY in /etc/tarasec-server-manager.env.
