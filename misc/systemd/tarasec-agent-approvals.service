@@ -1,0 +1,12 @@
+[Unit]
+Description=TaraSec operator-approved agent worker
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/tarasec/agent_approval_worker.py
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+TimeoutStartSec=120
