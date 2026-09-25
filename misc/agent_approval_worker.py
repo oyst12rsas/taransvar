@@ -69,8 +69,20 @@ def health(evidence):
         concerns.append("Broad VPN INPUT acceptance")
     if evidence["services"]["tarasec-gateway.service"]["stdout"].find("ActiveState=failed") >= 0:
         concerns.append("Failed local service")
-    if evidence["filter_rules"].get("exit_code") != 0:
-        concerns.append("Firewall evidence unavailable")
+    if evidence["filter_rules"].get("exit_code") != 0 or not rules:
+        concerns.append("IPv4 firewall evidence unavailable")
+    # An SSH listener on IPv6 needs separately inspected IPv6 firewall policy.
+    ipv6_listener = any("[::]:" + port in line and "sshd" in line
+                        for line in listeners.splitlines())
+    if ipv6_listener:
+        ipv6 = evidence.get("ipv6_filter_rules", {})
+        ipv6_rules = ipv6.get("stdout", "").splitlines()
+        if ipv6.get("exit_code") != 0 or not ipv6_rules:
+            concerns.append("IPv6 firewall evidence unavailable")
+        elif "-P INPUT ACCEPT" in ipv6_rules:
+            concerns.append("IPv6 INPUT policy accepts traffic by default")
+        if "-A INPUT -i " + interface + " -j ACCEPT" in ipv6_rules:
+            concerns.append("Broad VPN IPv6 INPUT acceptance")
     return concerns
 
 
@@ -79,7 +91,7 @@ def obsolete_unit_candidate(evidence):
     gateway = evidence["services"]["tarasec-gateway.service"]
     persistent = evidence["services"]["netfilter-persistent.service"]
     return (
-        fields.get("IS_GATEWAY", "0") == "0"
+        fields.get("IS_GATEWAY") == "0"
         and "ActiveState=failed" in gateway.get("stdout", "")
         and "ExecMainStatus=203" in gateway.get("stdout", "")
         and gateway.get("enabled", {}).get("stdout", "").strip() == "enabled"
