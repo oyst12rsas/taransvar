@@ -34,3 +34,7 @@ The DB server must register the VM as an allowed reporting source. Do not expose
 ## Forking
 
 Server owners can fork this directory and add bounded health fields relevant to their service. Keep the following invariants: outbound only; no remote command execution; minimum 60-second interval; bounded request size; short network timeout; no automatic target discovery; one configured DB endpoint.
+
+## Optional AI manager
+
+For the policy-gated Ubuntu AI manager pilot, including installation, approval flow, and safety limits, see [`AI_MANAGER.md`](AI_MANAGER.md).
