@@ -129,7 +129,8 @@ def main():
     evidence = ssh_security_evidence.collect()
     concerns = health(evidence)
     api("heartbeat", {"nickname": nickname,
-                      "level": "attention" if concerns else "ok"}, token)
+                      "level": "attention" if concerns else "ok",
+                      "findings": concerns}, token)
     print("Agent status: " + ("needs review (" + str(len(concerns)) + " checks)" if concerns else "operating"))
     if obsolete_unit_candidate(evidence):
         proposal = api("propose", {"operation": "disable_obsolete_gateway_unit"}, token)
