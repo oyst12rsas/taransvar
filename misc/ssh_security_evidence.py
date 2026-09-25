@@ -85,6 +85,7 @@ def collect():
         "sshd_syntax": command("/usr/sbin/sshd", "-t"),
         "ssh_listeners": command("ss", "-lntp"),
         "filter_rules": command("iptables-save", "-t", "filter"),
+        "ipv6_filter_rules": command("ip6tables-save", "-t", "filter"),
         "nat_rules": command("iptables-save", "-t", "nat"),
         "ip_forward": None,
         "services": {},
