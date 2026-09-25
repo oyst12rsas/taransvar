@@ -355,7 +355,7 @@ function setupMenu()
 <td bgcolor="white"><a href="index.php?f=honey">Honey</a></td>
 <!----------------- <td bgcolor="white"><a href="index.php?f=workshops">Workshop</a></td> ------------->
 <td bgcolor="white"><a href="index.php?f=setup">Setup</a></td>
-<?php if (isAdmin()) { ?><td bgcolor="white"><a href="index.php?f=aiStatus">AI status</a></td><?php } ?>
+<?php if (isAdmin()) { ?><td bgcolor="white"><a href="index.php?f=aiStatus">AI status</a></td><td bgcolor="white"><a href="https://tarasec.org/ops/agent/">Agent approvals</a></td><?php } ?>
 </tr>
 </table>
 <?php
