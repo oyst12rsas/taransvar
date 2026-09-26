@@ -24,8 +24,11 @@ For each node:
    `/etc/tarasec/agent-node.token`; owner root, mode 0600.
 3. Add `hash('sha256', token)` to the site's `node_token_hashes` with a
    private ID. The raw token must never go into Git or the public page.
-4. Install with `sudo bash misc/install_agent_approvals.sh` from a current
-   taransvar checkout. The installer copies scripts to a root-owned path
+4. On the intended node, run
+   `sudo bash misc/install_agent_approvals.sh --expect-netbird-ip NODE_NETBIRD_IP`
+   from a current taransvar checkout. The installer checks that this machine
+   owns that IP on `wt0` before changing files or services. For Roquefort,
+   use `--expect-netbird-ip 100.68.176.110`. It copies scripts to a root-owned path
    and enables a one-minute systemd timer. Inspect its journal before
    allowing any operations.
 
