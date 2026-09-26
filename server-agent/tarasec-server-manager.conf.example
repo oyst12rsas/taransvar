@@ -1,4 +1,8 @@
-# Only these systemd units can be inspected or restarted.
+# AI authority: disabled, conservative, defensive, or autonomous.
+# Full definitions and current implementation status:
+# https://tarasec.org/ai/server-manager/
+AI_AGENT_MODE=conservative
+# Only these systemd units can be inspected or restarted by the current pilot.
 SERVICE_ALLOWLIST=tarasec-gateway.service
 OPENAI_MODEL=gpt-6-astra
 STATE_DIRECTORY=/var/lib/tarasec-server-manager
