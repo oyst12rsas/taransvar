@@ -5,6 +5,13 @@ from pathlib import Path
 spec=importlib.util.spec_from_file_location("manager",Path(__file__).with_name("tarasec-server-manager.py")); manager=importlib.util.module_from_spec(spec); spec.loader.exec_module(manager)
 
 class PolicyTests(unittest.TestCase):
+    def test_agent_mode_defaults_conservative(self):
+        self.assertEqual(manager.agent_mode({}), "conservative")
+    def test_agent_mode_accepts_documented_values(self):
+        for value in ("disabled", "conservative", "defensive", "autonomous"):
+            self.assertEqual(manager.agent_mode({"AI_AGENT_MODE":value}), value)
+    def test_agent_mode_unknown_falls_back_conservative(self):
+        self.assertEqual(manager.agent_mode({"AI_AGENT_MODE":"surprise"}), "conservative")
     def test_rejects_shell_text(self):
         with self.assertRaises(RuntimeError): manager.services({"SERVICE_ALLOWLIST":"ok.service;reboot"})
     def test_rejects_unlisted_action(self):
