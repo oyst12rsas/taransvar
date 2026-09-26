@@ -8,6 +8,21 @@ This pilot extends the outbound-only status framework without allowing the datab
 
 Version 1 cannot install packages, edit files, run a shell, change SSH, firewall, routing, NetBird/WireGuard, execute SQL, deploy code, reboot, or restart a unit absent from `SERVICE_ALLOWLIST`.
 
+## Authority mode
+
+Set `AI_AGENT_MODE` in `/etc/tarasec-server-manager.conf`. New installations default to `conservative`.
+
+- `disabled`: skip AI assessment and refuse approval or application.
+- `conservative`: diagnose and propose; require local human approval before changes.
+- `defensive`: reserved for automatic active-threat containment as those tools are implemented.
+- `autonomous`: reserved for broad locally executed repair authority as those tools are implemented.
+
+Unknown values produce a warning and use `conservative`. The mode is reread before approval and application, and is written into snapshots, proposals, approvals, and audit events. The agent cannot change its own mode.
+
+**Current implementation status:** all enabled modes still expose only `none` and an approved `restart_service` action. Selecting `defensive` or `autonomous` does not yet grant additional commands. This avoids presenting planned authority as implemented behavior.
+
+The public definitions and current status are maintained at <https://tarasec.org/ai/server-manager/>.
+
 ## Pilot installation
 
 Run on the **pilot Ubuntu server**, not the DB server:
