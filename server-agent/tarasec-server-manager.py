@@ -8,6 +8,7 @@ VERSION = "0.1"
 DEFAULT_CONFIG = "/etc/tarasec-server-manager.conf"
 DEFAULT_STATE = "/var/lib/tarasec-server-manager"
 MAX_OUTPUT, MAX_RESPONSE, APPROVAL_TTL = 12000, 128000, 600
+AGENT_MODES = ("disabled", "conservative", "defensive", "autonomous")
 UNIT_RE = re.compile(r"^[A-Za-z0-9_.@:-]+\.service$")
 REDACTIONS = (
     re.compile(r"(?i)(authorization\s*[:=]\s*)(\S+)"),
@@ -24,6 +25,13 @@ def read_conf(path):
                 key, value = line.split("=", 1)
                 cfg[key.strip()] = value.strip()
     return cfg
+
+def agent_mode(cfg):
+    raw = cfg.get("AI_AGENT_MODE", "conservative").strip().lower()
+    if raw not in AGENT_MODES:
+        print("TaraSec server manager: invalid AI_AGENT_MODE %r; using conservative" % raw, file=sys.stderr)
+        return "conservative"
+    return raw
 
 def services(cfg):
     units = list(dict.fromkeys(x.strip() for x in cfg.get("SERVICE_ALLOWLIST", "").split(",") if x.strip()))
@@ -68,7 +76,7 @@ def snapshot(cfg):
     try: load = [round(x, 2) for x in os.getloadavg()]
     except OSError: load = []
     return {"schemaVersion": 1, "agentVersion": VERSION, "generatedAt": int(time.time()),
-            "hostname": socket.gethostname()[:128], "load": load,
+            "hostname": socket.gethostname()[:128], "agentMode": agent_mode(cfg), "load": load,
             "memoryAvailableKb": mem.get("MemAvailable"), "memoryTotalKb": mem.get("MemTotal"),
             "diskRootUsedPercent": round(disk.used * 100 / disk.total, 1) if disk.total else None,
             "rebootRequired": os.path.exists("/var/run/reboot-required"), "services": statuses}
@@ -124,16 +132,24 @@ def audit(cfg, event, **fields):
         handle.write(json.dumps({"at":int(time.time()),"event":event,**fields}, sort_keys=True, separators=(",", ":"))+"\n")
 
 def advise(cfg):
+    mode = agent_mode(cfg)
+    if mode == "disabled":
+        envelope = {"createdAt":int(time.time()),"agentMode":mode,"status":"disabled","proposal":None}
+        audit(cfg,"assessment_skipped",agentMode=mode)
+        print(json.dumps(envelope,indent=2))
+        return
     proposal = call_model(cfg, snapshot(cfg))
     for action in proposal.get("proposedActions", []): validate(cfg, action)
     proposal_id = hashlib.sha256(json.dumps(proposal, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:20]
-    envelope = {"proposalId":proposal_id,"createdAt":int(time.time()),"proposal":proposal}
-    atomic_json(state_dir(cfg)/"proposal.json", envelope); audit(cfg,"proposal_created",proposalId=proposal_id,severity=proposal.get("severity")); print(json.dumps(envelope,indent=2))
+    envelope = {"proposalId":proposal_id,"createdAt":int(time.time()),"agentMode":mode,"proposal":proposal}
+    atomic_json(state_dir(cfg)/"proposal.json", envelope); audit(cfg,"proposal_created",proposalId=proposal_id,severity=proposal.get("severity"),agentMode=mode); print(json.dumps(envelope,indent=2))
 
 def load(path):
     with open(path, encoding="utf-8") as handle: return json.load(handle)
 
 def approve(cfg, proposal_id, index):
+    mode = agent_mode(cfg)
+    if mode == "disabled": raise RuntimeError("AI agent is disabled")
     envelope = load(state_dir(cfg)/"proposal.json")
     if not secrets.compare_digest(envelope.get("proposalId", ""), proposal_id): raise RuntimeError("proposal id mismatch")
     actions = envelope.get("proposal",{}).get("proposedActions",[])
@@ -141,10 +157,12 @@ def approve(cfg, proposal_id, index):
     action = actions[index]; validate(cfg, action)
     if action.get("action") == "none": raise RuntimeError("no-op cannot be approved")
     approval_id = secrets.token_hex(16)
-    value = {"approvalId":approval_id,"proposalId":proposal_id,"createdAt":int(time.time()),"expiresAt":int(time.time())+APPROVAL_TTL,"action":action}
-    atomic_json(state_dir(cfg)/("approval-"+approval_id+".json"), value); audit(cfg,"action_approved",approvalId=approval_id,proposalId=proposal_id,service=action["service"]); print(json.dumps(value,indent=2))
+    value = {"approvalId":approval_id,"proposalId":proposal_id,"agentMode":mode,"createdAt":int(time.time()),"expiresAt":int(time.time())+APPROVAL_TTL,"action":action}
+    atomic_json(state_dir(cfg)/("approval-"+approval_id+".json"), value); audit(cfg,"action_approved",approvalId=approval_id,proposalId=proposal_id,service=action["service"],agentMode=mode); print(json.dumps(value,indent=2))
 
 def apply(cfg, approval_id):
+    mode = agent_mode(cfg)
+    if mode == "disabled": raise RuntimeError("AI agent is disabled")
     if os.geteuid() != 0: raise RuntimeError("apply must run as root")
     if not re.fullmatch(r"[0-9a-f]{32}", approval_id): raise RuntimeError("invalid approval id")
     directory = state_dir(cfg); path, used = directory/("approval-"+approval_id+".json"), directory/("used-"+approval_id+".json")
@@ -154,7 +172,7 @@ def apply(cfg, approval_id):
     if int(value.get("expiresAt",0)) < int(time.time()): raise RuntimeError("approval expired")
     action = value.get("action",{}); validate(cfg, action); os.replace(path, used)
     proc = subprocess.run(["/usr/bin/systemctl","restart",action["service"]],capture_output=True,text=True,timeout=30,check=False,env={"PATH":"/usr/sbin:/usr/bin:/sbin:/bin"})
-    audit(cfg,"action_applied",approvalId=approval_id,service=action["service"],exitCode=proc.returncode)
+    audit(cfg,"action_applied",approvalId=approval_id,service=action["service"],exitCode=proc.returncode,agentMode=mode)
     if proc.returncode: raise RuntimeError("restart failed: "+redact((proc.stdout+proc.stderr)[:MAX_OUTPUT]))
 
 def main():
