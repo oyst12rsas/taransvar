@@ -1,6 +1,18 @@
 #!/bin/bash
 set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo "Run as root" >&2; exit 1; }
+if [[ $# -ne 2 || $1 != --expect-netbird-ip || ! $2 =~ ^[0-9]+(\.[0-9]+){3}$ ]]; then
+    echo "Usage: sudo bash $0 --expect-netbird-ip NODE_NETBIRD_IP" >&2
+    echo "Specify the intended node's NetBird IP; installation stops if this machine does not own it." >&2
+    exit 2
+fi
+expected_ip=$2
+actual_addresses=$(ip -o -4 addr show dev wt0 2>/dev/null || true)
+echo "Installing on hostname $(hostname); expected NetBird IP $expected_ip"
+if ! awk -v expected="$expected_ip" '$4 ~ "^" expected "/" { found=1 } END { exit !found }' <<< "$actual_addresses"; then
+    echo "This machine does not have $expected_ip on wt0. No files or services were changed." >&2
+    exit 1
+fi
 root="$(cd "$(dirname "$0")" && pwd)"
 test -r /etc/tarasec/agent-node.token || { echo "Missing /etc/tarasec/agent-node.token" >&2; exit 1; }
 grep -Eq '^AGENT_PUBLIC_NICKNAME=' /etc/tarasecfw.conf || {
