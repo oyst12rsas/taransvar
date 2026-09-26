@@ -1,0 +1,28 @@
+[Unit]
+Description=TaraSec AI server diagnostic adviser
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=tarasec-manager
+Group=tarasec-manager
+SupplementaryGroups=systemd-journal
+EnvironmentFile=/etc/tarasec-server-manager.env
+ExecStart=/usr/local/lib/tarasec/tarasec-server-manager.py advise
+StateDirectory=tarasec-server-manager
+StateDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native

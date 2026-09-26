@@ -1,0 +1,11 @@
+[Unit]
+Description=Run TaraSec AI diagnostic adviser hourly
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1h
+RandomizedDelaySec=5min
+Persistent=false
+
+[Install]
+WantedBy=timers.target
