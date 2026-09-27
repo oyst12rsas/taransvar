@@ -135,6 +135,7 @@ def advise(cfg):
     mode = agent_mode(cfg)
     if mode == "disabled":
         envelope = {"createdAt":int(time.time()),"agentMode":mode,"status":"disabled","proposal":None}
+        atomic_json(state_dir(cfg)/"proposal.json", envelope)
         audit(cfg,"assessment_skipped",agentMode=mode)
         print(json.dumps(envelope,indent=2))
         return
