@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import importlib.util, os, tempfile, unittest
+import importlib.util, json, os, tempfile, unittest
 from pathlib import Path
 
 spec=importlib.util.spec_from_file_location("manager",Path(__file__).with_name("tarasec-server-manager.py")); manager=importlib.util.module_from_spec(spec); spec.loader.exec_module(manager)
@@ -22,5 +22,13 @@ class PolicyTests(unittest.TestCase):
     def test_atomic_permissions(self):
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/"value.json"; manager.atomic_json(path,{"ok":True}); self.assertEqual(os.stat(path).st_mode&0o777,0o600)
+    def test_disabled_mode_replaces_old_proposal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cfg={"AI_AGENT_MODE":"disabled","STATE_DIRECTORY":directory}
+            manager.atomic_json(Path(directory)/"proposal.json",{"proposal":{"severity":"critical"}})
+            manager.advise(cfg)
+            with open(Path(directory)/"proposal.json",encoding="utf-8") as handle: saved=json.load(handle)
+            self.assertEqual(saved["status"],"disabled")
+            self.assertIsNone(saved["proposal"])
 
 if __name__=="__main__": unittest.main()
