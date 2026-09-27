@@ -54,3 +54,10 @@ sudo /usr/local/lib/tarasec/tarasec-server-manager.py apply APPROVAL_ID
 ```
 
 The first command only creates a ten-minute approval. The second performs exactly that approved restart. Review `audit.jsonl` in the state directory for the local audit trail.
+
+The normal `crontasks.pl` heartbeat sent to the configured DB servers once per
+minute includes the latest structured assessment as `aiAssessment`. It carries
+the assessment timestamp and `ageSeconds`, because the adviser normally runs
+hourly and is not called again by the minute heartbeat. If no assessment has
+run, the heartbeat reports `status: not_run`; disabled mode reports
+`status: disabled` and clears any earlier proposal from the exported state.
