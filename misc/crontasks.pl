@@ -191,6 +191,58 @@ sub checkDisableSshChange {
 	$sthSetup->finish();
 }
 
+sub readAiAgentAssessment {
+	my $szAssessmentFile = "/var/lib/tarasec-server-manager/proposal.json";
+	my %assessment = (
+		status => "not_run",
+		available => 0,
+	);
+
+	return \%assessment unless -f $szAssessmentFile;
+
+	# The manager already bounds model responses to 128 KiB. Keep the same
+	# ceiling here so a damaged/replaced state file cannot inflate every minute
+	# heartbeat sent to the DB servers.
+	my $nSize = -s $szAssessmentFile;
+	if (!defined($nSize) || $nSize > 128000) {
+		$assessment{"status"} = "invalid";
+		$assessment{"error"} = "assessment file exceeds size limit";
+		return \%assessment;
+	}
+
+	my $fhAssessment;
+	if (!open($fhAssessment, "<", $szAssessmentFile)) {
+		$assessment{"status"} = "unreadable";
+		return \%assessment;
+	}
+	local $/;
+	my $szAssessment = <$fhAssessment>;
+	close($fhAssessment);
+
+	my $cEnvelope = eval { decode_json($szAssessment) };
+	if ($@ || ref($cEnvelope) ne "HASH") {
+		$assessment{"status"} = "invalid";
+		$assessment{"error"} = "assessment file is not valid JSON";
+		return \%assessment;
+	}
+
+	$assessment{"status"} = $cEnvelope->{"status"} // "available";
+	$assessment{"agentMode"} = $cEnvelope->{"agentMode"} if defined $cEnvelope->{"agentMode"};
+	$assessment{"createdAt"} = $cEnvelope->{"createdAt"}+0 if defined $cEnvelope->{"createdAt"};
+	$assessment{"ageSeconds"} = time() - $assessment{"createdAt"} if defined $assessment{"createdAt"};
+	$assessment{"proposalId"} = $cEnvelope->{"proposalId"} if defined $cEnvelope->{"proposalId"};
+
+	if (ref($cEnvelope->{"proposal"}) eq "HASH") {
+		$assessment{"available"} = 1;
+		$assessment{"severity"} = $cEnvelope->{"proposal"}->{"severity"} if defined $cEnvelope->{"proposal"}->{"severity"};
+		$assessment{"summary"} = $cEnvelope->{"proposal"}->{"summary"} if defined $cEnvelope->{"proposal"}->{"summary"};
+		$assessment{"findings"} = $cEnvelope->{"proposal"}->{"findings"} if ref($cEnvelope->{"proposal"}->{"findings"}) eq "ARRAY";
+		$assessment{"proposedActions"} = $cEnvelope->{"proposal"}->{"proposedActions"} if ref($cEnvelope->{"proposal"}->{"proposedActions"}) eq "ARRAY";
+	}
+
+	return \%assessment;
+}
+
 sub reportStatus {
 	my ($dbh, $nTimeStarted) = @_;
 	use JSON;
@@ -532,6 +584,11 @@ sub reportStatus {
 		$json{"dbScan"} = int((($cSessionScans->{"Value"} // 0) + 0) / $nElapsed);
 	}
 	$sthSessionScans->finish();
+
+	# Republish the most recent structured AI assessment with each minute
+	# heartbeat. The adviser normally runs hourly; ageSeconds makes that cadence
+	# explicit and avoids an unnecessary model call from cron every minute.
+	$json{"aiAssessment"} = readAiAgentAssessment();
 
 	my $cJson = encode_json(\%json);
 	print "Status: $cJson\n";
