@@ -61,6 +61,22 @@ class ServerManagerTests(unittest.TestCase):
         self.assertNotIn("FORWARD", argv)
         self.assertIn("NEW", argv)
 
+    def test_established_sessions_are_limited_to_admin_port_and_sshd(self):
+        listing = mock.Mock(returncode=0, stdout=(
+            '0 0 10.0.0.1:48222 10.0.0.2:50000 users:(("sshd",pid=321,fd=4))\n'
+            '0 0 10.0.0.1:443 10.0.0.3:50001 users:(("nginx",pid=22,fd=8))\n'
+            '0 0 [::1]:48222 [::1]:50002 users:(("sshd",pid=654,fd=4))\n'))
+        with mock.patch.object(worker, "run", return_value=listing):
+            self.assertEqual(worker.established_ssh_session_pids(48222), [321, 654])
+
+    def test_existing_session_termination_requires_all_guards(self):
+        with mock.patch.object(worker, "enabled", return_value=True), \
+                mock.patch.object(worker, "established_ssh_session_pids", return_value=[321]), \
+                mock.patch.object(worker.os, "kill") as kill:
+            self.assertIsNone(worker.terminate_existing_ssh_sessions(
+                evidence(), {"verified": False}, {"ongoing": True}))
+            kill.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
