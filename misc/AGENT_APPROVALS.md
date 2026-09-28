@@ -73,6 +73,13 @@ period. Existing sessions and the FORWARD chain are unchanged. A transient
 systemd timer removes the rule; if that timer cannot be created, the worker
 immediately removes the rule and reports a safe failure.
 
+`AI_MAY_TERMINATE_EXISTING_SSH_SESSIONS=yes` separately permits the agent to
+send SIGTERM to `sshd` processes owning established connections on the
+administrative SSH port while the same attack and console guards are true. It
+does not stop the listener or touch forwarded sessions. Because this can
+disconnect a legitimate administrator, it is disabled by default; the action
+report includes the aggregate number of sessions terminated.
+
 The manager configuration also declares supported operator authentication
 methods. Passkeys/FIDO, TOTP, OIDC, email verification, SMS fallback, and
 recovery codes are separate capabilities. The operator website must enforce

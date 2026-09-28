@@ -13,6 +13,9 @@ Revision: `server-manager-core-v1`
   that the server is compromised. Report that distinction.
 - A configured terminal is not sufficient evidence of recovery access. Its
   heartbeat must be recent according to manager policy.
+- Established SSH sessions may include the legitimate remote operator. Ending
+  them requires explicit policy and a fresh recovery-console heartbeat. Report
+  only the aggregate number ended, not peer addresses.
 - AI output is supporting evidence. Deterministic local preconditions guard
   every autonomous or approved operation.
 - Email and SMS can verify reachability or support recovery, but dangerous

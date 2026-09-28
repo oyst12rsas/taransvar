@@ -4,6 +4,7 @@
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -195,6 +196,55 @@ def contain_ssh(evidence, terminal, attack):
     return action
 
 
+def established_ssh_session_pids(port):
+    """Find sshd processes owning established sockets on the admin port."""
+    result = run("ss", "-Htnp", "state", "established")
+    if result.returncode != 0:
+        raise RuntimeError("Could not inspect established SSH sessions")
+    pids = set()
+    for line in result.stdout.splitlines():
+        columns = line.split()
+        if len(columns) < 5 or columns[2].rsplit(":", 1)[-1] != str(port):
+            continue
+        for match in re.finditer(r'\("sshd",pid=([0-9]+),', line):
+            pid = int(match.group(1))
+            if pid > 1:
+                pids.add(pid)
+    return sorted(pids)
+
+
+def terminate_existing_ssh_sessions(evidence, terminal, attack):
+    if (not enabled("AI_MAY_TERMINATE_EXISTING_SSH_SESSIONS")
+            or not terminal["verified"] or not attack["ongoing"]):
+        return None
+    port = int(evidence["tarasecfw_selected_fields"].get("SSH_PORT", "22"))
+    try:
+        pids = established_ssh_session_pids(port)
+    except RuntimeError as exc:
+        audit({"action": "terminate_existing_ssh_sessions", "success": False,
+               "error": str(exc)})
+        return {"action": "terminate_existing_ssh_sessions", "result": "inspection_failed",
+                "sessions_terminated": 0}
+    terminated = 0
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+            terminated += 1
+        except ProcessLookupError:
+            continue
+        except OSError as exc:
+            audit({"action": "terminate_existing_ssh_sessions", "success": False,
+                   "sessions_terminated": terminated, "error": str(exc)})
+            return {"action": "terminate_existing_ssh_sessions", "result": "partially_applied",
+                    "sessions_terminated": terminated}
+    action = {"action": "terminate_existing_ssh_sessions", "result": "applied",
+              "reason": "ongoing_attack_with_verified_console",
+              "sessions_terminated": terminated,
+              "forwarding_after": forwarding_health(ssh_security_evidence.collect())}
+    audit({**action, "success": True})
+    return action
+
+
 def health(evidence):
     fields = evidence["tarasecfw_selected_fields"]
     port = fields.get("SSH_PORT", "22")
@@ -285,6 +335,9 @@ def main():
     contained = contain_ssh(evidence, terminal, attack)
     if contained:
         actions.append(contained)
+    terminated = terminate_existing_ssh_sessions(evidence, terminal, attack)
+    if terminated:
+        actions.append(terminated)
     current_assessment = assessment(evidence, concerns, terminal, attack, actions)
     needs_attention = bool(concerns or attack["ongoing"] or actions)
     api("heartbeat", {"nickname": nickname,
