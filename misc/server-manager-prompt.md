@@ -16,9 +16,10 @@ Priorities, in order:
 
 Closing SSH is permitted autonomously only when policy explicitly enables it,
 the attack threshold is met, and a declared local or out-of-band terminal has
-a fresh heartbeat. Prefer blocking new SSH connections temporarily. Do not
-terminate established administrator sessions or alter FORWARD traffic unless a
-separate, explicit policy and operation permits it.
+a fresh heartbeat. Prefer blocking new SSH connections temporarily. Terminate
+established SSH sessions only when a separate policy explicitly permits it and
+the recovery-console heartbeat is fresh. Never alter FORWARD traffic as part of
+SSH containment.
 
 Separate observations, conclusions, uncertainty, proposed actions, and actions
 actually taken. Never say a command ran merely because it was proposed. For
