@@ -38,6 +38,17 @@ def manager_setting(name, default=""):
     return setting(name, MANAGER_CONF) or default
 
 
+def agent_mode():
+    mode = manager_setting("AI_AGENT_MODE", "conservative").lower()
+    return mode if mode in ("conservative", "protective") else "conservative"
+
+
+def policy_warnings():
+    if agent_mode() == "protective" and not enabled("AI_MAY_TERMINATE_EXISTING_SSH_SESSIONS"):
+        return ["Protective mode does not terminate existing SSH sessions"]
+    return []
+
+
 def enabled(name, default="no"):
     return manager_setting(name, default).lower() in ("1", "yes", "true", "on")
 
@@ -118,7 +129,7 @@ def assessment(evidence, concerns, terminal, attack, actions):
         "schema_version": 1,
         "prompt_version": "server-manager-v1",
         "knowledge_revision": "server-manager-core-v1",
-        "agent_mode": manager_setting("AI_AGENT_MODE", "conservative"),
+        "agent_mode": agent_mode(),
         "priority": priority,
         "summary": ("Ongoing SSH authentication attack detected" if attack["ongoing"] else
                     ("Configuration or service findings need review" if concerns else "No issue found by bounded checks")),
@@ -160,7 +171,10 @@ def rollback_containment():
 
 
 def contain_ssh(evidence, terminal, attack):
-    if not enabled("AI_MAY_CLOSE_SSH_DURING_ACTIVE_ATTACK") or not terminal["verified"] or not attack["ongoing"]:
+    # Protective mode opts into bounded NEW-connection containment. The
+    # verified recovery console and attack threshold remain mandatory.
+    allowed = agent_mode() == "protective" or enabled("AI_MAY_CLOSE_SSH_DURING_ACTIVE_ATTACK")
+    if not allowed or not terminal["verified"] or not attack["ongoing"]:
         return None
     if os.path.exists(CONTAINMENT_STATE):
         return {"action": "ssh_new_connections_blocked", "result": "already_active"}
@@ -329,6 +343,10 @@ def main():
         raise RuntimeError("Set AGENT_PUBLIC_NICKNAME in /etc/tarasecfw.conf")
     evidence = ssh_security_evidence.collect()
     concerns = health(evidence)
+    warnings = policy_warnings()
+    concerns.extend(warnings)
+    for warning in warnings:
+        print("Agent warning: " + warning)
     terminal = terminal_state()
     attack = ssh_attack_evidence()
     actions = []
