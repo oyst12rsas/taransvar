@@ -98,7 +98,7 @@ if [[ "$IS_GATEWAY" == "0" ]]; then
     [[ "$MAX_LOGS_PER_MIN" =~ ^[1-9][0-9]*$ && "$MAX_BURSTS" =~ ^[1-9][0-9]*$ ]] || {
         echo "Logging limits must be positive integers" >&2; exit 1;
     }
-    [[ "$NODE" =~ ^[a-zA-Z0-9_.-]+$ ]] || { echo "Invalid NODE_NAME for firewall log prefix" >&2; exit 1; }
+    [[ "$NODE" =~ ^[a-zA-Z0-9_.-]+$ && ${#NODE} -le 19 ]] || { echo "Invalid NODE_NAME for firewall log prefix" >&2; exit 1; }
     for family in iptables ip6tables; do
         command -v "$family" >/dev/null || { echo "$family is required" >&2; exit 1; }
         "$family" -S NETBIRD-ACL-INPUT >/dev/null 2>&1 || {
