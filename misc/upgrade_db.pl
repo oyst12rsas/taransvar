@@ -41,8 +41,8 @@ my $ok = eval {
     my $current = $rows->[0][0] + 0;
     die "DB version $current is newer than checkout version $latest\n"
         if $current > $latest;
-    die "DB version $current predates the reviewed migration range (90-98)\n"
-        if $current < 90 && $current != $latest;
+    die "DB version $current predates the reviewed migration range (89-98)\n"
+        if $current < 89 && $current != $latest;
     die "Checkout version $latest exceeds reviewed version $reviewed_through\n"
         if $latest > $reviewed_through && $current < $latest;
 
