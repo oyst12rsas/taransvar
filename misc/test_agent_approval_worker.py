@@ -52,6 +52,44 @@ class ServerManagerTests(unittest.TestCase):
             self.assertIsNone(worker.contain_ssh(evidence(), terminal, attack))
             rule.assert_not_called()
 
+    def test_protective_mode_requires_attack_and_verified_console(self):
+        with mock.patch.object(worker, "agent_mode", return_value="protective"), \
+                mock.patch.object(worker, "enabled", return_value=False), \
+                mock.patch.object(worker, "containment_rule") as rule:
+            self.assertIsNone(worker.contain_ssh(evidence(), {"verified": False}, {"ongoing": True}))
+            self.assertIsNone(worker.contain_ssh(evidence(), {"verified": True}, {"ongoing": False}))
+            rule.assert_not_called()
+
+    def test_protective_mode_applies_bounded_new_connection_rule(self):
+        done = mock.Mock(returncode=0)
+        with mock.patch.object(worker, "agent_mode", return_value="protective"), \
+                mock.patch.object(worker, "enabled", return_value=False), \
+                mock.patch.object(worker, "containment_rule", return_value=done) as rule, \
+                mock.patch.object(worker, "run", return_value=done), \
+                mock.patch.object(worker, "forwarding_health", return_value={"is_gateway": False}), \
+                mock.patch.object(worker.ssh_security_evidence, "collect", return_value=evidence()), \
+                mock.patch.object(worker, "audit"), \
+                mock.patch.object(worker.os.path, "exists", return_value=False), \
+                mock.patch.object(worker.os, "makedirs"), \
+                mock.patch("builtins.open", mock.mock_open()):
+            result = worker.contain_ssh(evidence(), {"verified": True}, {"ongoing": True})
+        self.assertEqual(result["result"], "applied")
+        self.assertFalse(result["existing_sessions_interrupted"])
+        rule.assert_called_once_with(48222)
+
+    def test_unrecognized_mode_falls_back_to_conservative(self):
+        with mock.patch.object(worker, "manager_setting", return_value="unrestricted"):
+            self.assertEqual(worker.agent_mode(), "conservative")
+
+    def test_protective_mode_warns_when_existing_sessions_remain(self):
+        with mock.patch.object(worker, "agent_mode", return_value="protective"), \
+                mock.patch.object(worker, "enabled", return_value=False):
+            self.assertEqual(worker.policy_warnings(),
+                             ["Protective mode does not terminate existing SSH sessions"])
+        with mock.patch.object(worker, "agent_mode", return_value="protective"), \
+                mock.patch.object(worker, "enabled", return_value=True):
+            self.assertEqual(worker.policy_warnings(), [])
+
     def test_containment_rule_changes_input_not_forward(self):
         completed = mock.Mock(returncode=0)
         with mock.patch.object(worker, "run", return_value=completed) as run:

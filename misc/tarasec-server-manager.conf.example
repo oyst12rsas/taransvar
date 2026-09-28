@@ -6,7 +6,7 @@
 # Full setting reference: misc/AGENT_APPROVALS.md in the taransvar repository.
 #
 # Current implementation: deterministic checks, a structured assessment, and
-# two optional SSH actions. No LLM or unrestricted sudo command executor is
+# bounded SSH actions. No LLM or unrestricted sudo command executor is
 # connected. Values described as "declared" below do not enforce website login.
 #
 # Booleans accepted by the worker: yes/no (also 1/0, true/false, on/off).
@@ -14,9 +14,11 @@
 # Integer values outside the documented range are clamped; malformed values
 # fall back to the default. Avoid inline comments on value lines.
 
-# The only documented mode today is conservative (default). It is reported in
-# assessments, but it does not itself enable/disable an action; the two action
-# flags below are the actual controls. Other mode values have no defined effect.
+# conservative (default): assess/report; NEW SSH blocking requires the explicit
+# flag below. protective: opt into bounded NEW SSH blocking during a confirmed
+# attack, but only with a verified recovery console. Both modes leave existing
+# sessions untouched unless their separate flag is yes. Unknown values fall
+# back to conservative. Mode is reported in the assessment.
 AI_AGENT_MODE=conservative
 
 # Set yes ONLY for a genuinely usable local or out-of-band recovery console.
@@ -32,12 +34,15 @@ TERMINAL_HEARTBEAT_MAX_AGE_SECONDS=120
 # With a verified console and threshold-confirmed SSH attack, reject NEW TCP
 # connections to SSH_PORT from /etc/tarasecfw.conf for a bounded period.
 # This touches INPUT, not FORWARD; the listener and established sessions stay.
-# A transient systemd timer rolls back the rule. Default no.
+# A transient systemd timer rolls back the rule. Default no. In protective
+# mode, NEW-connection containment is enabled by the mode regardless of this
+# flag; use conservative mode to disable it.
 AI_MAY_CLOSE_SSH_DURING_ACTIVE_ATTACK=no
 
 # Separate opt-in: with the SAME guards, SIGTERM sshd processes holding
 # established connections on SSH_PORT. This can disconnect a legitimate
-# administrator and has no automatic reconnection. Default no.
+# administrator and has no automatic reconnection. Default no. Protective
+# mode with this set to no reports a warning to the operator and journal.
 AI_MAY_TERMINATE_EXISTING_SSH_SESSIONS=no
 
 # Count journal lines matching SSH authentication failures in the last window.
