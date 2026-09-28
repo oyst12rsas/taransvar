@@ -64,11 +64,11 @@ the supplied example; values shown are defaults.
 
 | Setting | Values and current effect |
 | --- | --- |
-| `AI_AGENT_MODE=conservative` | Assessment label only. `conservative` is the only documented value. This key does not grant privileges or select an LLM. |
+| `AI_AGENT_MODE=conservative` | `conservative` assesses/reports and uses only explicitly enabled bounded actions. `protective` also enables temporary rejection of **new** admin-SSH connections during a threshold-confirmed attack, but only with a verified recovery console. Unknown values fall back to `conservative`. Neither mode selects an LLM or grants arbitrary command access. |
 | `TERMINAL_AVAILABLE=no` | Boolean declaration of a genuine independent recovery console. SSH on the protected port does not qualify. |
 | `TERMINAL_HEARTBEAT_FILE=/run/tarasec/operator-terminal.heartbeat` | Local path whose modification time proves that an operator recently checked the console. Do not refresh it automatically. |
 | `TERMINAL_HEARTBEAT_MAX_AGE_SECONDS=120` | Maximum age, clamped to 30–3600 seconds. Console is verified only when declared and fresh. |
-| `AI_MAY_CLOSE_SSH_DURING_ACTIVE_ATTACK=no` | Boolean permission to temporarily reject **new** admin-SSH connections after the attack threshold and console checks. |
+| `AI_MAY_CLOSE_SSH_DURING_ACTIVE_ATTACK=no` | In `conservative` mode, boolean permission to temporarily reject **new** admin-SSH connections after the attack threshold and console checks. `protective` mode enables this bounded action even when the flag is `no`. |
 | `AI_MAY_TERMINATE_EXISTING_SSH_SESSIONS=no` | Independent boolean permission to SIGTERM established admin-SSH sessions after the same checks. A legitimate session may be disconnected. |
 | `SSH_ATTACK_WINDOW_SECONDS=120` | Journal lookback, clamped to 60–900 seconds. |
 | `SSH_ATTACK_FAILURE_THRESHOLD=20` | Minimum matching journal lines, clamped to 5–10000. Counts lines, not distinct attackers. |
@@ -108,6 +108,16 @@ only **new** connections to the real administrative SSH port for a bounded
 period. Existing sessions and the FORWARD chain are unchanged. A transient
 systemd timer removes the rule; if that timer cannot be created, the worker
 immediately removes the rule and reports a safe failure.
+
+`AI_AGENT_MODE=protective` enables that same bounded new-connection action
+without separately setting `AI_MAY_CLOSE_SSH_DURING_ACTIVE_ATTACK=yes`.
+It does nothing to SSH traffic without both a fresh recovery-console heartbeat
+and a threshold-confirmed active attack. It does not imply permission to
+terminate established SSH sessions, stop sshd, change FORWARD rules, or run
+arbitrary commands. Use `AI_AGENT_MODE=conservative` to turn off the
+mode-based opt-in while keeping the explicit action flag under your control.
+When protective mode is selected while established-session termination remains
+disabled, the worker reports a warning in its journal and operator findings.
 
 `AI_MAY_TERMINATE_EXISTING_SSH_SESSIONS=yes` separately permits the agent to
 send SIGTERM to `sshd` processes owning established connections on the
