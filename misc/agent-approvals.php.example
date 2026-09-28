@@ -1,0 +1,24 @@
+<?php
+// Example for the TaraSec operator website, not a node configuration.
+// Install as /etc/tarasec/agent-approvals.php on the website host, outside
+// the document root. Keep the real file private and never commit its values.
+// The operator website implementation is currently maintained separately.
+return [
+    // Google OAuth Web application client. Register the website's exact origin
+    // (for example https://tarasec.org) as an Authorized JavaScript origin.
+    'google_client_id' => 'REPLACE_WITH_WEB_CLIENT_ID.apps.googleusercontent.com',
+    'operator_emails' => ['operator@example.com'],
+    // Optional: pin the Google account's stable subject after a verified login.
+    'operator_subjects' => [],
+    // A unique 20-byte or longer Base32 authenticator secret for each operator.
+    // The email key must exactly match an entry in operator_emails.
+    'operator_totp_secrets' => [
+        'operator@example.com' => 'REPLACE_WITH_PRIVATE_BASE32_SECRET',
+    ],
+    // Private IDs map to SHA-256 hashes of each node's random 64-character
+    // /etc/tarasec/agent-node.token. Never put the raw token here or in Git.
+    'node_token_hashes' => [
+        'node-001' => 'REPLACE_WITH_SHA256_HEX_OF_NODE_TOKEN',
+    ],
+    'state_dir' => '/var/lib/tarasec/agent-approvals',
+];
