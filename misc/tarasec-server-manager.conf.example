@@ -1,0 +1,28 @@
+# TaraSec server-manager policy. Install as /etc/tarasec-server-manager.conf
+# owned by root with mode 0600.
+
+# conservative: assess, report, and use only explicitly enabled bounded actions.
+AI_AGENT_MODE=conservative
+
+# A declared terminal is trusted only while its local heartbeat is fresh.
+TERMINAL_AVAILABLE=no
+TERMINAL_HEARTBEAT_FILE=/run/tarasec/operator-terminal.heartbeat
+TERMINAL_HEARTBEAT_MAX_AGE_SECONDS=120
+
+# Explicit opt-in. This inserts a time-limited INPUT rule for NEW connections
+# to the configured administrative SSH port. It does not stop sshd, terminate
+# existing sessions, or modify FORWARD traffic.
+AI_MAY_CLOSE_SSH_DURING_ACTIVE_ATTACK=no
+SSH_ATTACK_WINDOW_SECONDS=120
+SSH_ATTACK_FAILURE_THRESHOLD=20
+SSH_CONTAINMENT_SECONDS=600
+
+# Human approval methods are enforced by the operator website. Strong methods
+# are required for changes; email/SMS are verification and recovery channels.
+AUTH_PASSKEY_ENABLED=yes
+AUTH_TOTP_ENABLED=yes
+AUTH_EMAIL_VERIFICATION_ENABLED=yes
+AUTH_SMS_VERIFICATION_ENABLED=no
+AUTH_OIDC_ENABLED=yes
+AUTH_RECOVERY_CODES_ENABLED=yes
+AUTH_DANGEROUS_ACTION_MINIMUM=phishing_resistant_mfa
