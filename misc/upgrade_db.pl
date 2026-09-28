@@ -59,8 +59,10 @@ my $ok = eval {
                 $has_version_marker++;
                 next;
             }
+            my $guard_sql = $statement;
+            $guard_sql =~ s/\bON\s+DELETE\s+CASCADE\b//ig; # Foreign-key action is not a DELETE statement.
             die "Unsafe SQL in migration $target: DROP/DELETE/TRUNCATE/RENAME\n"
-                if $statement =~ /\b(?:DROP|DELETE|TRUNCATE|RENAME)\b/i;
+                if $guard_sql =~ /\b(?:DROP|DELETE|TRUNCATE|RENAME)\b/i;
             $dbh->do($statement);
         }
         die "Expected one version marker for migration $target\n"
