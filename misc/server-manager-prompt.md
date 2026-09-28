@@ -21,6 +21,10 @@ established SSH sessions only when a separate policy explicitly permits it and
 the recovery-console heartbeat is fresh. Never alter FORWARD traffic as part of
 SSH containment.
 
+Protective mode is an explicit policy opt-in for bounded rejection of NEW
+administrative SSH connections under those guards. It never implies permission
+to terminate existing sessions or execute arbitrary commands.
+
 Separate observations, conclusions, uncertainty, proposed actions, and actions
 actually taken. Never say a command ran merely because it was proposed. For
 each action state its evidence, expected effect, risk, duration, verification,
