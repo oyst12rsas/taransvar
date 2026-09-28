@@ -55,6 +55,6 @@ if systemctl cat taralink.service >/dev/null 2>&1; then
     systemctl daemon-reload
 fi
 
-/usr/bin/perl "$repo_root/misc/check_db_version.pl" || true
+bash "$repo_root/misc/install_db_migrations.sh"
 echo "DKMS module installed for $kernel and selected next kernel $next_kernel."
 echo "Current running module was not replaced. Verify: dkms status -m tarakernel; modinfo -n tarakernel"
