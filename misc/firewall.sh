@@ -84,7 +84,52 @@ parse_honeypot_ports() {
     done
     [ "${#SSH_HONEYPOT_PORT_SPECS[@]}" -gt 0 ] || { echo "No honeypot ports configured" >&2; exit 1; }
 }
-parse_honeypot_ports
+if is_on "$SSH_HONEYPOT"; then
+    parse_honeypot_ports
+fi
+
+# A node coexists with the host's NetBird firewall. Insert a rate-limited
+# logging rule immediately before NetBird's terminal overlay DROP, without
+# changing forwarding, existing ACLs, interface policy, or live SSH sessions.
+IS_GATEWAY="${IS_GATEWAY:-}"
+if [[ "$IS_GATEWAY" == "0" ]]; then
+    WAN_INTERFACE="${WAN_INTERFACE:-wt0}"
+    [[ "$WAN_INTERFACE" =~ ^[a-zA-Z0-9_.:-]+$ ]] || { echo "Invalid WAN_INTERFACE" >&2; exit 1; }
+    [[ "$MAX_LOGS_PER_MIN" =~ ^[1-9][0-9]*$ && "$MAX_BURSTS" =~ ^[1-9][0-9]*$ ]] || {
+        echo "Logging limits must be positive integers" >&2; exit 1;
+    }
+    [[ "$NODE" =~ ^[a-zA-Z0-9_.-]+$ && ${#NODE} -le 19 ]] || { echo "Invalid NODE_NAME for firewall log prefix" >&2; exit 1; }
+    for family in iptables ip6tables; do
+        command -v "$family" >/dev/null || { echo "$family is required" >&2; exit 1; }
+        "$family" -S NETBIRD-ACL-INPUT >/dev/null 2>&1 || {
+            echo "No NetBird ACL chain in $family; refusing to change firewall" >&2; exit 1;
+        }
+        "$family" -S INPUT | awk -v iface="$WAN_INTERFACE" '
+            $0 == "-A INPUT -i " iface " -j DROP" { found=1 }
+            END { exit !found }' || {
+            echo "No terminal NetBird DROP for $WAN_INTERFACE in $family; refusing to change firewall" >&2; exit 1;
+        }
+    done
+    for family in iptables ip6tables; do
+        chain=TARASEC_NODE_LOG
+        "$family" -N "$chain" 2>/dev/null || true
+        "$family" -F "$chain"
+        "$family" -A "$chain" -m limit --limit "${MAX_LOGS_PER_MIN}/min" --limit-burst "$MAX_BURSTS" \
+            -j LOG --log-prefix "TARASEC_${NODE}: " --log-level 5
+        "$family" -A "$chain" -j RETURN
+        if ! "$family" -C INPUT -i "$WAN_INTERFACE" -j "$chain" 2>/dev/null; then
+            position=$("$family" -S INPUT | awk -v iface="$WAN_INTERFACE" '
+                $0 == "-A INPUT -i " iface " -j DROP" { print NR - 1; exit }')
+            "$family" -I INPUT "$position" -i "$WAN_INTERFACE" -j "$chain"
+        fi
+    done
+    echo "Node firewall logging installed before NetBird's terminal DROP (IPv4 and IPv6)."
+    exit 0
+fi
+if [[ "$IS_GATEWAY" != "1" ]]; then
+    echo "Set IS_GATEWAY=0 or IS_GATEWAY=1 explicitly in $CONF" >&2
+    exit 1
+fi
 
 iptables -F
 iptables -X
