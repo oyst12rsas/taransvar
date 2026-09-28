@@ -47,3 +47,34 @@ result to its systemd journal.
 This first worker uses deterministic checks to generate proposals. The
 AI can inspect its evidence and propose additional typed operations after
 each new operation has an explicit local safety check and rollback.
+
+## Server-manager policy, prompt, and knowledge
+
+The installer also installs `/etc/tarasec-server-manager.conf`, a versioned
+agent prompt, and a small trusted knowledge document. The prompt and knowledge
+are the initial retrieval corpus; current host state continues to come directly
+from bounded local diagnostics rather than cached documents.
+
+`TERMINAL_AVAILABLE=yes` declares that a local or out-of-band recovery terminal
+exists. It is considered usable only while
+`TERMINAL_HEARTBEAT_FILE` is newer than
+`TERMINAL_HEARTBEAT_MAX_AGE_SECONDS`. An operator at that terminal can refresh
+the default heartbeat with:
+
+```bash
+sudo install -d -m 0755 /run/tarasec
+sudo touch /run/tarasec/operator-terminal.heartbeat
+```
+
+When `AI_MAY_CLOSE_SSH_DURING_ACTIVE_ATTACK=yes`, a fresh terminal heartbeat
+and the configured authentication-failure threshold permit the agent to reject
+only **new** connections to the real administrative SSH port for a bounded
+period. Existing sessions and the FORWARD chain are unchanged. A transient
+systemd timer removes the rule; if that timer cannot be created, the worker
+immediately removes the rule and reports a safe failure.
+
+The manager configuration also declares supported operator authentication
+methods. Passkeys/FIDO, TOTP, OIDC, email verification, SMS fallback, and
+recovery codes are separate capabilities. The operator website must enforce
+`AUTH_DANGEROUS_ACTION_MINIMUM`; merely enabling email or SMS must not weaken
+approval requirements.
