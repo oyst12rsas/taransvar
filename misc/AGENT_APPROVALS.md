@@ -1,20 +1,17 @@
 # Operator-approved node changes
 
-The HTTPS page at `https://tarasec.org/ops/agent/` accepts Google sign-in
-for configured operators. Its companion public page `/status/` displays
+TaraSec operates the live approval page at
+`https://tarasec.org/ops/agent/` for configured operators. Its companion
+public page at `https://tarasec.org/status/` displays
 only short health labels and the pseudonym each node supplies from
 `AGENT_PUBLIC_NICKNAME` in `/etc/tarasecfw.conf`. Avoid hostnames, IP
 addresses, personal names, and location clues in that nickname.
 
-The node's worker makes outbound HTTPS requests; no inbound SSH or agent
-port is opened. A distinct random 32-byte token identifies each node.
-The site stores only its SHA-256 digest in
-`/etc/tarasec/agent-approvals.php`, mounted read-only into the web container.
-Create that file from `ops/agent/config.example.php` in the tarasec.org
-repository. Add the same read-only mount to the live compose file. Configure
-Google Identity Services with the authorized JavaScript origin
-`https://tarasec.org`, and set its Web client ID in the private PHP config.
-The website's existing `/var/lib/tarasec` mount holds the approval state.
+The node's worker makes outbound HTTPS requests to TaraSec; no inbound SSH
+or agent port is opened. A distinct random 32-byte token identifies each
+node. TaraSec registers only its SHA-256 hash. The node installer does not
+create an operator account or enroll a node in the live service; arrange
+registration with a TaraSec operator before expecting the worker to report.
 
 For each node:
 
@@ -22,14 +19,17 @@ For each node:
    `AGENT_PUBLIC_NICKNAME="Blue Lantern"`.
 2. Generate `openssl rand -hex 32` into
    `/etc/tarasec/agent-node.token`; owner root, mode 0600.
-3. Add `hash('sha256', token)` to the site's `node_token_hashes` with a
-   private ID. The raw token must never go into Git or the public page.
+3. Give the SHA-256 hash of the node token and its intended public nickname
+   to a TaraSec operator for registration. Keep the raw token on the node;
+   never send or publish it. A node that is not registered receives
+   `node_not_registered` from the live service.
 4. Install with `sudo bash misc/install_agent_approvals.sh` from a current
    taransvar checkout. The installer copies scripts to a root-owned path
    and enables a one-minute systemd timer. Inspect its journal before
    allowing any operations.
 
-The first executable proposal is `disable_obsolete_gateway_unit`. The
+The first operator-approved executable proposal is
+`disable_obsolete_gateway_unit`. The
 worker proposes it only on a non-gateway with a failed, non-executable,
 enabled `tarasec-gateway.service` while `netfilter-persistent` is active
 and enabled. It rechecks these conditions after approval. The operation
@@ -44,9 +44,9 @@ are checked server-side. Each approval applies to one typed operation and
 expires in one hour. The worker rejects unknown operations and logs the
 result to its systemd journal.
 
-This first worker uses deterministic checks to generate proposals. The
-AI can inspect its evidence and propose additional typed operations after
-each new operation has an explicit local safety check and rollback.
+The worker uses deterministic checks to generate proposals. An AI model is
+not connected by the node installer. Additional typed operations would need
+explicit local checks and recovery behavior.
 
 ## Server-manager policy, prompt, and knowledge
 
@@ -54,6 +54,42 @@ The installer also installs `/etc/tarasec-server-manager.conf`, a versioned
 agent prompt, and a small trusted knowledge document. The prompt and knowledge
 are the initial retrieval corpus; current host state continues to come directly
 from bounded local diagnostics rather than cached documents.
+
+### Configuration reference
+
+Edit the installed `/etc/tarasec-server-manager.conf` on the **intended node**.
+The installer creates it only if absent, so later installs preserve local
+policy. The worker reads the file on each run. The following are all keys in
+the supplied example; values shown are defaults.
+
+| Setting | Values and current effect |
+| --- | --- |
+| `AI_AGENT_MODE=conservative` | Assessment label only. `conservative` is the only documented value. This key does not grant privileges or select an LLM. |
+| `TERMINAL_AVAILABLE=no` | Boolean declaration of a genuine independent recovery console. SSH on the protected port does not qualify. |
+| `TERMINAL_HEARTBEAT_FILE=/run/tarasec/operator-terminal.heartbeat` | Local path whose modification time proves that an operator recently checked the console. Do not refresh it automatically. |
+| `TERMINAL_HEARTBEAT_MAX_AGE_SECONDS=120` | Maximum age, clamped to 30–3600 seconds. Console is verified only when declared and fresh. |
+| `AI_MAY_CLOSE_SSH_DURING_ACTIVE_ATTACK=no` | Boolean permission to temporarily reject **new** admin-SSH connections after the attack threshold and console checks. |
+| `AI_MAY_TERMINATE_EXISTING_SSH_SESSIONS=no` | Independent boolean permission to SIGTERM established admin-SSH sessions after the same checks. A legitimate session may be disconnected. |
+| `SSH_ATTACK_WINDOW_SECONDS=120` | Journal lookback, clamped to 60–900 seconds. |
+| `SSH_ATTACK_FAILURE_THRESHOLD=20` | Minimum matching journal lines, clamped to 5–10000. Counts lines, not distinct attackers. |
+| `SSH_CONTAINMENT_SECONDS=600` | New-connection rejection duration, clamped to 60–3600 seconds. Established-session termination is not timed. |
+| `AUTH_PASSKEY_ENABLED=yes`, `AUTH_TOTP_ENABLED=yes`, `AUTH_EMAIL_VERIFICATION_ENABLED=yes`, `AUTH_SMS_VERIFICATION_ENABLED=no`, `AUTH_OIDC_ENABLED=yes`, `AUTH_RECOVERY_CODES_ENABLED=yes` | **Declarations only** in this file. The node worker does not read these settings. The operator website currently enforces its own Google login and TOTP configuration. |
+| `AUTH_DANGEROUS_ACTION_MINIMUM=phishing_resistant_mfa` | **Declaration only**; does not alter the website's approval policy. |
+
+For worker action flags, `yes`, `1`, `true`, and `on` enable a
+setting (case-insensitive); absent or other values leave it disabled.
+Malformed integers use defaults and out-of-range integers are clamped.
+`SSH_PORT` and `IS_GATEWAY` come from `/etc/tarasecfw.conf`, while
+`AGENT_PUBLIC_NICKNAME` identifies the node on the public status page.
+Changes to the worker or prompt files require rerunning the installer;
+policy value changes are read on the next timer run.
+
+The worker currently uses deterministic checks and sends a structured
+assessment. The prompt and knowledge documents are installed for a future
+model integration, but no model runs because of this configuration alone.
+TaraSec manages the live approval page, operator accounts, node enrollment,
+and authenticator setup separately. Node configuration changes do not change
+website login or approval requirements.
 
 `TERMINAL_AVAILABLE=yes` declares that a local or out-of-band recovery terminal
 exists. It is considered usable only while
@@ -80,8 +116,7 @@ does not stop the listener or touch forwarded sessions. Because this can
 disconnect a legitimate administrator, it is disabled by default; the action
 report includes the aggregate number of sessions terminated.
 
-The manager configuration also declares supported operator authentication
-methods. Passkeys/FIDO, TOTP, OIDC, email verification, SMS fallback, and
-recovery codes are separate capabilities. The operator website must enforce
-`AUTH_DANGEROUS_ACTION_MINIMUM`; merely enabling email or SMS must not weaken
-approval requirements.
+The `AUTH_*` keys record intended authentication capabilities; they do not
+enable methods on TaraSec's live approval page. That page currently uses
+Google sign-in and a separate authenticator code for approvals. TaraSec must
+enforce any stronger approval policy in the live service itself.

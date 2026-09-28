@@ -1,27 +1,60 @@
-# TaraSec server-manager policy. Install as /etc/tarasec-server-manager.conf
-# owned by root with mode 0600.
+# TaraSec server-manager policy
+# Installed to /etc/tarasec-server-manager.conf (root:root, mode 0600).
+# This is a KEY=value file, not a shell script. Edit the installed copy; rerunning
+# the installer preserves it. The worker reads it at each timer run (about once
+# per minute), so ordinary value changes need no service restart.
+# Full setting reference: misc/AGENT_APPROVALS.md in the taransvar repository.
+#
+# Current implementation: deterministic checks, a structured assessment, and
+# two optional SSH actions. No LLM or unrestricted sudo command executor is
+# connected. Values described as "declared" below do not enforce website login.
+#
+# Booleans accepted by the worker: yes/no (also 1/0, true/false, on/off).
+# Any other or missing value for an action flag behaves as no.
+# Integer values outside the documented range are clamped; malformed values
+# fall back to the default. Avoid inline comments on value lines.
 
-# conservative: assess, report, and use only explicitly enabled bounded actions.
+# The only documented mode today is conservative (default). It is reported in
+# assessments, but it does not itself enable/disable an action; the two action
+# flags below are the actual controls. Other mode values have no defined effect.
 AI_AGENT_MODE=conservative
 
-# A declared terminal is trusted only while its local heartbeat is fresh.
+# Set yes ONLY for a genuinely usable local or out-of-band recovery console.
+# A live SSH session on the port being protected is not a recovery console.
+# Even with yes, containment requires a fresh heartbeat file on this node.
 TERMINAL_AVAILABLE=no
+# File mtime represents an operator at that console confirming availability.
+# A one-time touch expires; never automate the touch from the agent timer.
 TERMINAL_HEARTBEAT_FILE=/run/tarasec/operator-terminal.heartbeat
+# Freshness limit: 30..3600 seconds; default 120.
 TERMINAL_HEARTBEAT_MAX_AGE_SECONDS=120
 
-# Explicit opt-in. This inserts a time-limited INPUT rule for NEW connections
-# to the configured administrative SSH port. It does not stop sshd, terminate
-# existing sessions, or modify FORWARD traffic.
+# With a verified console and threshold-confirmed SSH attack, reject NEW TCP
+# connections to SSH_PORT from /etc/tarasecfw.conf for a bounded period.
+# This touches INPUT, not FORWARD; the listener and established sessions stay.
+# A transient systemd timer rolls back the rule. Default no.
 AI_MAY_CLOSE_SSH_DURING_ACTIVE_ATTACK=no
-# With the same guards, permit SIGTERM of sshd processes that own established
-# connections on SSH_PORT. A fresh console heartbeat is mandatory.
+
+# Separate opt-in: with the SAME guards, SIGTERM sshd processes holding
+# established connections on SSH_PORT. This can disconnect a legitimate
+# administrator and has no automatic reconnection. Default no.
 AI_MAY_TERMINATE_EXISTING_SSH_SESSIONS=no
+
+# Count journal lines matching SSH authentication failures in the last window.
+# Window: 60..900 seconds (default 120).
 SSH_ATTACK_WINDOW_SECONDS=120
+# Minimum matching lines that define "ongoing": 5..10000 (default 20).
+# This is a count of journal lines, not a count of distinct attackers.
 SSH_ATTACK_FAILURE_THRESHOLD=20
+# Duration of NEW connection rejection: 60..3600 seconds (default 600).
+# This setting does not limit established-session termination.
 SSH_CONTAINMENT_SECONDS=600
 
-# Human approval methods are enforced by the operator website. Strong methods
-# are required for changes; email/SMS are verification and recovery channels.
+# DECLARATIONS / FUTURE WEBSITE CAPABILITIES:
+# The current node worker does not read the AUTH_* keys. The website's actual
+# operator authentication is configured separately in its private PHP config.
+# Changing any value here does not activate passkeys, email, SMS, or change the
+# website's approval requirements. Keep these values as intent/documentation.
 AUTH_PASSKEY_ENABLED=yes
 AUTH_TOTP_ENABLED=yes
 AUTH_EMAIL_VERIFICATION_ENABLED=yes
