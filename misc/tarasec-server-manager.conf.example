@@ -13,6 +13,9 @@ TERMINAL_HEARTBEAT_MAX_AGE_SECONDS=120
 # to the configured administrative SSH port. It does not stop sshd, terminate
 # existing sessions, or modify FORWARD traffic.
 AI_MAY_CLOSE_SSH_DURING_ACTIVE_ATTACK=no
+# With the same guards, permit SIGTERM of sshd processes that own established
+# connections on SSH_PORT. A fresh console heartbeat is mandatory.
+AI_MAY_TERMINATE_EXISTING_SSH_SESSIONS=no
 SSH_ATTACK_WINDOW_SECONDS=120
 SSH_ATTACK_FAILURE_THRESHOLD=20
 SSH_CONTAINMENT_SECONDS=600
