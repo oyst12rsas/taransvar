@@ -3,7 +3,7 @@
 DKMS compiles tarakernel for newly installed kernels using their matching
 headers. Install it separately on each node **before rebooting into a new
 kernel**. It builds and registers the module without starting taralink or
-running `compile.pl`; no database migration is performed. Ubuntu recommends
+running `compile.pl`; it also runs reviewed local database migrations. Ubuntu recommends
 DKMS for modules maintained outside the kernel tree.
 
 On each Ubuntu machine with a generic kernel:
@@ -21,12 +21,12 @@ Run commands on the node being prepared, not on the virtualization host.
 For a different kernel flavour, install its matching header metapackage.
 Check that the new kernel's headers are available before a reboot. DKMS
 automatically builds registered modules when Ubuntu installs a new kernel;
-the installer also builds for the currently selected next kernel if that kernel
+the installer also builds for the newest installed boot kernel if that kernel
 was installed before DKMS registration. The installed `AUTOINSTALL=yes` configuration also supports its boot-time
 autoinstaller. The taralink systemd unit loads the module at startup.
 
 The installer applies reviewed, compatible local database migrations from
-version 90 through 98 in order. It also installs a timer that retries after
+version 89 through 98 in order. It also installs a timer that retries after
 boot and every five minutes. Each migration updates `setup.dbVersion` only
 after its SQL statements succeed. A failure is reported and retried; it does
 not stop the separately managed `taralink.service`. No fields or tables are

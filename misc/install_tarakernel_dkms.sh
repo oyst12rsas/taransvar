@@ -9,11 +9,17 @@ fi
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 kernel="$(uname -r)"
+# /vmlinuz may still point at the running kernel while a newer one is pending.
 next_kernel="$kernel"
-if test -e /vmlinuz; then
-    candidate="$(basename -- "$(readlink -f -- /vmlinuz)")"
-    if [[ "$candidate" == vmlinuz-* ]]; then
-        next_kernel="${candidate#vmlinuz-}"
+installed_kernels=()
+for image in /boot/vmlinuz-*; do
+    [[ -f "$image" ]] || continue
+    installed_kernels+=("${image##*/vmlinuz-}")
+done
+if (( ${#installed_kernels[@]} )); then
+    newest="$(printf '%s\n' "${installed_kernels[@]}" | sort -V | tail -n 1)"
+    if [[ "$(printf '%s\n%s\n' "$kernel" "$newest" | sort -V | tail -n 1)" == "$newest" ]]; then
+        next_kernel="$newest"
     fi
 fi
 version=1.0
