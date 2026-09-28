@@ -25,13 +25,29 @@ the installer also builds for the currently selected next kernel if that kernel
 was installed before DKMS registration. The installed `AUTOINSTALL=yes` configuration also supports its boot-time
 autoinstaller. The taralink systemd unit loads the module at startup.
 
-The installer compares `misc/install.sql`'s latest `#version` against the
-connected database's `setup.dbVersion`. The same **read-only** check runs
-whenever `taralink.service` starts. A mismatch or DB outage is logged but
-does not stop taralink: schema migrations require a separate review and
-`diagnose.pl` can change files and settings. Run
-`sudo perl misc/check_db_version.pl` to check manually (0 means match,
-2 means mismatch).
+The installer applies reviewed, compatible local database migrations from
+version 90 through 98 in order. It also installs a timer that retries after
+boot and every five minutes. Each migration updates `setup.dbVersion` only
+after its SQL statements succeed. A failure is reported and retried; it does
+not stop the separately managed `taralink.service`. No fields or tables are
+deleted by these reviewed migrations. Future migrations must be reviewed and
+added to the allowed range before they run automatically.
+
+A machine that already installed DKMS before this migration feature can
+enable the database updater separately:
+
+```bash
+clear
+cd /path/to/taransvar
+git pull --ff-only
+sudo bash misc/install_db_migrations.sh
+systemctl status tarasec-db-migrate.service --no-pager
+```
+
+The existing read-only version check still runs when `taralink.service`
+starts. Run `sudo perl misc/check_db_version.pl` manually to inspect a
+mismatch. Inspect migration failures with
+`journalctl -u tarasec-db-migrate.service -b`.
 
 The installer registers source version 1.0 once. If it finds an existing
 `/usr/src/tarakernel-1.0`, it stops instead of silently replacing registered

@@ -491,7 +491,7 @@ update setup set dbVersion = 90;
 #version 91 (260919)
 #Per-gateway demo selection. This chooses what the app presents; it does not
 #restrict the gateway's normal LAN-to-NetBird connectivity.
-create table gatewayDemoConfiguration (
+create table if not exists gatewayDemoConfiguration (
 	gatewayIp int unsigned not null,
 	gatewayName varchar(120) not null default '',
 	demo1ReceiverIp int unsigned null,
@@ -504,7 +504,7 @@ create table gatewayDemoConfiguration (
 	constraint fk_gatewayDemoConfiguration_ssh foreign key(demoSshSetupId) references demoSshSetup(demoSshSetupId),
 	constraint fk_gatewayDemoConfiguration_demo4 foreign key(demo4RouterId) references partnerRouter(routerId)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-create table demo4GatewayState (
+create table if not exists demo4GatewayState (
 	gatewayIp int unsigned not null,
 	routerId int not null,
 	state enum('configured','applied','error') not null default 'configured',
