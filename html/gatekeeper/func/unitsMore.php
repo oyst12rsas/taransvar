@@ -150,11 +150,14 @@ function unitsMore()
 
 		$status = json_decode($status, true);
 
-		// Mobile-first summary: tapping the status dots lands here and shows only non-green checks first.
-		printUnitIssues($status, $row["seconds_since"]+0);
+		// Show the issue summary only when there is something to act on.
+		// Healthy units open directly to the complete status list.
+		$issues = collectUnitIssues($status, $row["seconds_since"]+0);
+		if (count($issues))
+			printUnitIssues($status, $row["seconds_since"]+0);
 		$routerId = isset($row["routerId"]) ? (int)$row["routerId"] : 0;
 		$allStatusUrl = "index.php?f=unitsMore".($routerId > 0 ? "&id=".$routerId : "")."&view=all";
-		if (!isset($_GET["view"]) || $_GET["view"] !== "all")
+		if (count($issues) && (!isset($_GET["view"]) || $_GET["view"] !== "all"))
 		{
 			print '<h2><a href="'.htmlspecialchars($allStatusUrl, ENT_QUOTES, "UTF-8").'">All status details</a></h2>';
 			$conn->close();
