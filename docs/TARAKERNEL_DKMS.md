@@ -21,6 +21,8 @@ Run commands on the node being prepared, not on the virtualization host.
 For a different kernel flavour, install its matching header metapackage.
 Check that the new kernel's headers are available before a reboot. DKMS
 automatically builds registered modules when Ubuntu installs a new kernel;
+the installer also builds for the currently selected next kernel if that kernel
+was installed before DKMS registration.
 the installed `AUTOINSTALL=yes` configuration also supports its boot-time
 autoinstaller. The taralink systemd unit loads the module at startup.
 
