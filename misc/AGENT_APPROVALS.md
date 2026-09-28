@@ -10,8 +10,12 @@ The node's worker makes outbound HTTPS requests; no inbound SSH or agent
 port is opened. A distinct random 32-byte token identifies each node.
 The site stores only its SHA-256 digest in
 `/etc/tarasec/agent-approvals.php`, mounted read-only into the web container.
-Create that file from `ops/agent/config.example.php` in the tarasec.org
-repository. Add the same read-only mount to the live compose file. Configure
+A placeholder-only template is available publicly at
+`misc/agent-approvals.php.example` in this repository. Copy it to the website
+host and supply real private values there. The operator website API itself is
+currently in a separate private repository; the node installer alone does not
+provide a deployable operator website. Add the host config as a read-only
+mount to the website's live compose file. Configure
 Google Identity Services with the authorized JavaScript origin
 `https://tarasec.org`, and set its Web client ID in the private PHP config.
 The website's existing `/var/lib/tarasec` mount holds the approval state.
