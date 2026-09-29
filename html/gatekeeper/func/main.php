@@ -31,7 +31,7 @@ function main()
 		$conn->close();
 		if ($local && is_string($local['status']) && $local['status'] !== '') {
 			$age = (int)$local['seconds_since'];
-			print '<p><a href="index.php?f=unitsMore">Status details</a>: '.getServerStatus($age, $local['status'], 0).'</p>';
+			print '<table><tr><td><a href="index.php?f=unitsMore">Status details</a></td><td>'.getServerStatus($age, $local['status'], 0).'</td></tr></table>';
 			$status = json_decode($local['status'], true);
 			if (is_array($status) && count(collectUnitIssues($status, $age)))
 				printUnitIssues($status, $age);
