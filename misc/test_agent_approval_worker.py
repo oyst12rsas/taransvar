@@ -25,6 +25,27 @@ def evidence(gateway=False):
 
 
 class ServerManagerTests(unittest.TestCase):
+    def test_minute_status_is_bounded_and_keeps_pending_approval(self):
+        item = evidence()
+        item.update({
+            "sshd_effective_selected_fields": {"stdout": "authenticationmethods publickey,password\npasswordauthentication yes\n"},
+            "ssh_listeners": {"exit_code": 0}, "sshd_syntax": {"exit_code": 0},
+            "filter_rules": {"exit_code": 0}, "ipv6_filter_rules": {"exit_code": 0},
+        })
+        report = worker.status_snapshot(item, ["Failed local service"],
+                                        {"verified": True}, {"ongoing": False}, [],
+                                        ["Approval pending: disable obsolete gateway service"],
+                                        "connected")
+        self.assertEqual(report["status"], "attention")
+        self.assertEqual(report["ssh_protection"]["authentication_methods"], "publickey,password")
+        self.assertFalse(report["ssh_protection"]["password_alone_possible"])
+        self.assertEqual(len(report["pending_operator_messages"]), 2)
+        self.assertNotIn("48222", str(report))
+        with tempfile.TemporaryDirectory() as folder, \
+                mock.patch.object(worker, "STATUS_PATH", os.path.join(folder, "status.json")):
+            worker.write_status_snapshot(report)
+            self.assertEqual(os.stat(worker.STATUS_PATH).st_mode & 0o777, 0o600)
+
     def test_terminal_requires_declaration_and_fresh_heartbeat(self):
         with tempfile.NamedTemporaryFile() as heartbeat:
             values = {
