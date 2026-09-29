@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/agentStatusView.php';
 //unitsMore.php
     print "More info about node in network.";
 
@@ -30,6 +31,12 @@ function addUnitIssue(&$issues, $severity, $label, $message)
 function collectUnitIssues($status, $secondsSince)
 {
     $issues = array();
+
+    if (array_key_exists('aiAgent', $status)) {
+        $agentView = agentStatusView($status['aiAgent']);
+        if ($agentView['issue'])
+            addUnitIssue($issues, $agentView['color'], 'Server manager', $agentView['reason']);
+    }
 
     if ($secondsSince > 200)
         addUnitIssue($issues, "red", "Status reporting", "No status received for ".$secondsSince." seconds.");
@@ -167,6 +174,23 @@ function unitsMore()
 		print "<table>";
 
 		print '<tr><td>Name</td><td>'.$row["name"].'</td></tr>';
+		if (array_key_exists('aiAgent', $status)) {
+			$agent = $status['aiAgent'];
+			$view = agentStatusView($agent);
+			$details = '<span style="color:'.agentStatusEscape($view['color']).'">&#9679;</span> <b>'.agentStatusEscape($view['label']).'</b> — '.agentStatusEscape($view['reason']);
+			if (is_array($agent)) {
+				$ssh = is_array($agent['ssh_protection'] ?? null) ? $agent['ssh_protection'] : array();
+				$details .= '<br>Mode: '.agentStatusEscape($agent['mode'] ?? 'unknown');
+				$details .= ' · Overall: '.agentStatusEscape($agent['status'] ?? 'unknown');
+				$details .= ' · SSH: '.agentStatusEscape($ssh['status'] ?? 'unknown');
+				$details .= '<br>Approval service: '.agentStatusEscape($agent['approval_service'] ?? 'unknown');
+				if (isset($agent['age_seconds'])) $details .= ' · Assessment age: '.(int)$agent['age_seconds'].' seconds';
+				if (!empty($agent['pending_operator_messages']) && is_array($agent['pending_operator_messages']))
+					$details .= '<br>For operator: '.agentStatusEscape(implode('; ', array_filter($agent['pending_operator_messages'], 'is_string')));
+			}
+			print '<tr><td>Server manager</td><td>'.$details.'</td></tr>';
+			unset($status['aiAgent']);
+		}
 
 		$nSecondsSince = $row["seconds_since"]+0;
 		print '<tr><td>Reported</td><td>'.($nSecondsSince > 65?'<font color="red">':'').$nSecondsSince.($nSecondsSince > 65?'</font>':'').'</td></tr>';

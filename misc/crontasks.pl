@@ -224,6 +224,18 @@ sub agentStatusForReport {
 	return $value;
 }
 
+sub configuredNodeGatewayRole {
+	my ($szConfig) = @_;
+	$szConfig //= "/etc/tarasecfw.conf";
+	open(my $fh, "<", $szConfig) or return undef;
+	my $role;
+	while (my $line = <$fh>) {
+		$role = $1 if $line =~ /^\s*IS_GATEWAY\s*=\s*['"]?([01])['"]?\s*(?:#.*)?$/;
+	}
+	close($fh);
+	return $role;
+}
+
 sub reportStatus {
 	my ($dbh, $nTimeStarted) = @_;
 	use JSON;
@@ -239,11 +251,15 @@ sub reportStatus {
 	# headless NetBird router with only an active MASQUERADE rule (for example
 	# Squash). Derive this here instead of depending on a nonexistent helper.
 	my $szNatPostrouting = $isGlobalDbServer ? "" : `/usr/sbin/iptables -t nat -S POSTROUTING 2>/dev/null`;
-	my $isGateway = !$isGlobalDbServer && (
+	my $inferredGateway = (
 		(defined($cSetup->{"hotspot"}) && $cSetup->{"hotspot"}+0 == 1) ||
 		(defined($cSetup->{"internalNic"}) && $cSetup->{"internalNic"} ne "") ||
 		$szNatPostrouting =~ /(?:^|\\s)-j\\s+MASQUERADE(?:\\s|$)/m
 	);
+	# Explicit node role takes precedence over legacy hotspot and NAT inference.
+	my $configuredRole = configuredNodeGatewayRole();
+	my $isGateway = !$isGlobalDbServer &&
+		(defined($configuredRole) ? $configuredRole eq "1" : $inferredGateway);
 	$json{"role"} = $isGlobalDbServer ? "global_db" : ($isGateway ? "gateway" : "node");
 	$json{"sshListen"} = tcpPortListening(configuredSshPort()) ? 1 : 0;
 	my $agentStatus = agentStatusForReport();

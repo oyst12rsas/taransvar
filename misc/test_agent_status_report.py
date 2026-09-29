@@ -10,6 +10,20 @@ import unittest
 
 
 class AgentMinuteStatusTests(unittest.TestCase):
+    def test_explicit_non_gateway_role(self):
+        with open(os.path.join(os.path.dirname(__file__), "crontasks.pl"), encoding="utf-8") as source:
+            script = source.read()
+        helper = re.search(r"sub configuredNodeGatewayRole \{.*?\n\}\n\nsub reportStatus", script, re.S)
+        self.assertIsNotNone(helper)
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as config:
+            config.write("IS_GATEWAY=0\n")
+            config.flush()
+            perl = (helper.group(0).removesuffix("\n\nsub reportStatus") +
+                    "\nmy $role = configuredNodeGatewayRole($ARGV[0]); print defined($role) ? $role : 'missing';")
+            result = subprocess.run(["perl", "-e", perl, config.name],
+                                    text=True, capture_output=True, check=True)
+            self.assertEqual(result.stdout, "0")
+
     def test_disabled_fresh_and_stale(self):
         with open(os.path.join(os.path.dirname(__file__), "crontasks.pl"), encoding="utf-8") as target:
             source = target.read()
