@@ -41,6 +41,14 @@ class ServerManagerTests(unittest.TestCase):
         self.assertFalse(report["ssh_protection"]["password_alone_possible"])
         self.assertEqual(len(report["pending_operator_messages"]), 2)
         self.assertNotIn("48222", str(report))
+
+        with mock.patch.object(worker, "manager_setting", return_value="conservative"):
+            report = worker.status_snapshot(item, ["Password alone may authenticate"],
+                                            {"verified": False}, {"ongoing": False}, [], [],
+                                            "connected")
+        self.assertEqual(report["ssh_protection"]["status"], "needs_review")
+        self.assertEqual(report["ssh_protection"]["findings"],
+                         ["Password alone may authenticate"])
         with tempfile.TemporaryDirectory() as folder, \
                 mock.patch.object(worker, "STATUS_PATH", os.path.join(folder, "status.json")):
             worker.write_status_snapshot(report)
