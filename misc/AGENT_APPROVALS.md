@@ -65,6 +65,7 @@ the supplied example; values shown are defaults.
 | Setting | Values and current effect |
 | --- | --- |
 | `AI_AGENT_MODE=conservative` | Assessment label only. `conservative` is the only documented value. This key does not grant privileges or select an LLM. |
+| `AI_STATUS_REPORT_ENABLED=yes` | Include the latest agent summary in the normal per-minute node status. Set `no` to send `"aiAgent":"report disabled"` instead. This does not stop the worker or its separate approval heartbeat. |
 | `TERMINAL_AVAILABLE=no` | Boolean declaration of a genuine independent recovery console. SSH on the protected port does not qualify. |
 | `TERMINAL_HEARTBEAT_FILE=/run/tarasec/operator-terminal.heartbeat` | Local path whose modification time proves that an operator recently checked the console. Do not refresh it automatically. |
 | `TERMINAL_HEARTBEAT_MAX_AGE_SECONDS=120` | Maximum age, clamped to 30–3600 seconds. Console is verified only when declared and fresh. |
@@ -83,6 +84,17 @@ Malformed integers use defaults and out-of-range integers are clamped.
 `AGENT_PUBLIC_NICKNAME` identifies the node on the public status page.
 Changes to the worker or prompt files require rerunning the installer;
 policy value changes are read on the next timer run.
+
+The worker writes `/var/lib/tarasec/agent-status.json` after each assessment.
+The normal `crontasks.pl` status includes `aiAgent` when the manager is installed:
+mode, overall status, bounded operator messages, SSH protection checks, attack
+activity, recovery-console verification, forwarding health, bounded actions,
+approval-service connection and assessment age. The assessment has no IPs,
+port numbers, tokens, usernames or transcript. If no recent snapshot exists,
+the report says unavailable or stale rather than reusing old findings as live
+status. After updating the checkout on an installed node, rerun
+`sudo bash misc/install_agent_approvals.sh` to install the updated worker and
+sync `misc/crontasks.pl` to the installed `/root/taransvar/perl/crontasks.pl`.
 
 The worker currently uses deterministic checks and sends a structured
 assessment. The prompt and knowledge documents are installed for a future
