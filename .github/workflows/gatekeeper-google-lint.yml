@@ -1,0 +1,19 @@
+name: Gatekeeper Google login PHP syntax
+on:
+  pull_request:
+    paths:
+      - 'html/gatekeeper/google_*.php'
+      - 'html/gatekeeper/func/login.php'
+      - 'html/gatekeeper/func/main.php'
+      - '.github/workflows/gatekeeper-google-lint.yml'
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          php -l html/gatekeeper/google_config.example.php
+          php -l html/gatekeeper/google_start.php
+          php -l html/gatekeeper/google_callback.php
+          php -l html/gatekeeper/func/login.php
+          php -l html/gatekeeper/func/main.php
