@@ -7,6 +7,7 @@ import re
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -18,6 +19,7 @@ MANAGER_CONF = "/etc/tarasec-server-manager.conf"
 TOKEN_PATH = "/etc/tarasec/agent-node.token"
 URL = "https://tarasec.org/ops/agent/api.php"
 AUDIT_PATH = "/var/log/tarasec/server-manager-actions.jsonl"
+STATUS_PATH = "/var/lib/tarasec/agent-status.json"
 CONTAINMENT_STATE = "/run/tarasec/ssh-containment.json"
 CONTAINMENT_COMMENT = "tarasec-ai-temporary-ssh-containment"
 
@@ -129,6 +131,62 @@ def assessment(evidence, concerns, terminal, attack, actions):
         "findings": concerns,
         "actions_taken": actions,
     }
+
+
+def status_snapshot(evidence, concerns, terminal, attack, actions, pending, remote):
+    """Bounded local status for the node's normal minute report, with no secrets."""
+    fields = evidence["tarasecfw_selected_fields"]
+    auth = evidence["sshd_effective_selected_fields"].get("stdout", "").lower()
+    ssh_concerns = [item for item in concerns if "ssh" in item.lower() or
+                    "firewall" in item.lower() or "vpn input" in item.lower() or
+                    "honeypot" in item.lower() or "ipv6 input" in item.lower()]
+    ssh = {
+        "status": "needs_review" if ssh_concerns else "no_findings_in_bounded_checks",
+        "listener_checked": evidence["ssh_listeners"].get("exit_code") == 0,
+        "syntax_valid": evidence["sshd_syntax"].get("exit_code") == 0,
+        "authentication_methods": next((line.split(None, 1)[1] for line in auth.splitlines()
+                                         if line.startswith("authenticationmethods ")), "unknown"),
+        "password_alone_possible": "authenticationmethods any" in auth and
+                                   "passwordauthentication yes" in auth,
+        "honeypot_configured": fields.get("SSH_HONEYPOT", "").lower() in ("on", "yes", "1"),
+        "ipv4_firewall_checked": evidence["filter_rules"].get("exit_code") == 0,
+        "ipv6_firewall_checked": evidence.get("ipv6_filter_rules", {}).get("exit_code") == 0,
+        "findings": ssh_concerns[:8],
+    }
+    messages = list(dict.fromkeys((concerns + pending)))[:12]
+    return {
+        "checked_at": int(time.time()),
+        "engine": "bounded_checks",
+        "mode": manager_setting("AI_AGENT_MODE", "conservative").lower(),
+        "status": ("checking" if remote == "checking" else
+                   "attention" if concerns or attack["ongoing"] or actions or pending or
+                   remote == "unavailable" else "ok"),
+        "summary": ("Ongoing SSH authentication attack detected" if attack["ongoing"] else
+                    "Operator review needed" if messages else "No findings in bounded checks"),
+        "pending_operator_messages": messages,
+        "ssh_protection": ssh,
+        "ssh_attack_ongoing": bool(attack["ongoing"]),
+        "recovery_console_verified": bool(terminal["verified"]),
+        "forwarding": forwarding_health(evidence),
+        "actions": [dict(action=a.get("action", "unknown"), result=a.get("result", "unknown"))
+                    for a in actions[:8]],
+        "approval_service": remote,
+    }
+
+
+def write_status_snapshot(status):
+    directory = os.path.dirname(STATUS_PATH)
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".agent-status-", dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as target:
+            os.fchmod(target.fileno(), 0o600)
+            json.dump(status, target, separators=(",", ":"), sort_keys=True)
+            target.write("\n")
+        os.replace(temporary, STATUS_PATH)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def containment_rule(port, delete=False):
@@ -340,26 +398,41 @@ def main():
         actions.append(terminated)
     current_assessment = assessment(evidence, concerns, terminal, attack, actions)
     needs_attention = bool(concerns or attack["ongoing"] or actions)
-    api("heartbeat", {"nickname": nickname,
-                      "level": "attention" if needs_attention else "ok",
-                      "findings": concerns,
-                      "assessment": current_assessment}, token)
-    print("Agent status: " + ("needs review (" + str(len(concerns)) + " checks)" if concerns else "operating"))
-    if obsolete_unit_candidate(evidence):
-        proposal = api("propose", {"operation": "disable_obsolete_gateway_unit"}, token)
-        print("Proposal " + proposal["id"] + ": " + proposal["state"])
-    job = api("poll", {}, token).get("job")
-    if not job:
-        return
-    success = False
+    pending = []
+    remote = "checking"
+    write_status_snapshot(status_snapshot(evidence, concerns, terminal, attack, actions, pending, remote))
     try:
-        if job.get("operation") != "disable_obsolete_gateway_unit":
-            raise RuntimeError("Unknown operation; refusing to execute")
-        success = disable_obsolete_gateway_unit()
-    except Exception as exc:
-        print("Approved operation failed: " + str(exc), file=sys.stderr)
-    api("result", {"id": job["id"], "nonce": job["nonce"], "success": success}, token)
-    print("Approved operation " + ("completed" if success else "failed"))
+        api("heartbeat", {"nickname": nickname,
+                          "level": "attention" if needs_attention else "ok",
+                          "findings": concerns,
+                          "assessment": current_assessment}, token)
+        remote = "connected"
+        print("Agent status: " + ("needs review (" + str(len(concerns)) + " checks)" if concerns else "operating"))
+        if obsolete_unit_candidate(evidence):
+            proposal = api("propose", {"operation": "disable_obsolete_gateway_unit"}, token)
+            if proposal["state"] == "pending":
+                pending.append("Approval pending: disable obsolete gateway service")
+            print("Proposal " + proposal["id"] + ": " + proposal["state"])
+        job = api("poll", {}, token).get("job")
+        if not job:
+            return
+        success = False
+        try:
+            if job.get("operation") != "disable_obsolete_gateway_unit":
+                raise RuntimeError("Unknown operation; refusing to execute")
+            success = disable_obsolete_gateway_unit()
+        except Exception as exc:
+            print("Approved operation failed: " + str(exc), file=sys.stderr)
+        api("result", {"id": job["id"], "nonce": job["nonce"], "success": success}, token)
+        if not success:
+            pending.append("Approved operation failed; operator review needed")
+        print("Approved operation " + ("completed" if success else "failed"))
+    except (OSError, ValueError, RuntimeError, urllib.error.URLError):
+        remote = "unavailable"
+        pending.append("Approval service unavailable; check agent journal")
+        raise
+    finally:
+        write_status_snapshot(status_snapshot(evidence, concerns, terminal, attack, actions, pending, remote))
 
 
 if __name__ == "__main__":

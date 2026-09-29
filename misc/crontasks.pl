@@ -191,6 +191,39 @@ sub checkDisableSshChange {
 	$sthSetup->finish();
 }
 
+sub agentStatusForReport {
+	my ($szConfig, $szSnapshot, $now) = @_;
+	$szConfig //= "/etc/tarasec-server-manager.conf";
+	$szSnapshot //= "/var/lib/tarasec/agent-status.json";
+	$now //= time();
+	return undef unless -e $szConfig || -e $szSnapshot;
+	if (open(my $fhConfig, "<", $szConfig)) {
+		while (my $line = <$fhConfig>) {
+			if ($line =~ /^\s*AI_STATUS_REPORT_ENABLED\s*=\s*['"]?(no|false|off|0)['"]?\s*(?:#.*)?$/i) {
+				close($fhConfig);
+				return "report disabled";
+			}
+		}
+		close($fhConfig);
+	}
+	return { status => "unavailable", reason => "no_recent_assessment" }
+		unless -f $szSnapshot && -r $szSnapshot && (-s $szSnapshot // 0) <= 16384;
+	open(my $fhSnapshot, "<", $szSnapshot) or
+		return { status => "unavailable", reason => "no_recent_assessment" };
+	local $/;
+	my $szRaw = <$fhSnapshot>;
+	close($fhSnapshot);
+	my $value = eval { JSON::decode_json($szRaw // "") };
+	return { status => "unavailable", reason => "invalid_assessment" }
+		unless ref($value) eq "HASH" && defined($value->{checked_at}) &&
+		$value->{checked_at} =~ /^\d+$/;
+	my $age = $now - $value->{checked_at};
+	return { status => "stale", age_seconds => $age }
+		if $age > 180 || $age < -60;
+	$value->{age_seconds} = $age < 0 ? 0 : $age;
+	return $value;
+}
+
 sub reportStatus {
 	my ($dbh, $nTimeStarted) = @_;
 	use JSON;
@@ -213,6 +246,8 @@ sub reportStatus {
 	);
 	$json{"role"} = $isGlobalDbServer ? "global_db" : ($isGateway ? "gateway" : "node");
 	$json{"sshListen"} = tcpPortListening(configuredSshPort()) ? 1 : 0;
+	my $agentStatus = agentStatusForReport();
+	$json{"aiAgent"} = $agentStatus if defined $agentStatus;
 
 	$json{"ip"} = (defined $cSetup->{"nAdminIP"}?$cSetup->{"nAdminIP"}+0:0);
 	$json{"nett"} = (defined $cSetup->{"nNettmask"}?$cSetup->{"nNettmask"}:0);
