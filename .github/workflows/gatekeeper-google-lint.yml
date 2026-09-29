@@ -5,6 +5,7 @@ on:
       - 'html/gatekeeper/google_*.php'
       - 'html/gatekeeper/func/login.php'
       - 'html/gatekeeper/func/main.php'
+      - 'html/gatekeeper/func/unitsMore.php'
       - '.github/workflows/gatekeeper-google-lint.yml'
 jobs:
   lint:
@@ -17,3 +18,4 @@ jobs:
           php -l html/gatekeeper/google_callback.php
           php -l html/gatekeeper/func/login.php
           php -l html/gatekeeper/func/main.php
+          php -l html/gatekeeper/func/unitsMore.php

@@ -18,11 +18,26 @@ function main()
 		dbServer();
 	}
 
-	// The same live dots used on Units belong on Home for operators.
+	// Show only this server's status on Home. Units owns the network-wide list.
 	if (isAdmin()) {
-		print '<h2>Node status</h2><p><a href="index.php?f=aiStatus">AI status report</a> · <a href="https://tarasec.org/ops/agent/">Agent approvals</a> · <a href="index.php?f=units">All units</a></p>';
-		require_once 'func/units.php';
-		vpn_demo();
+		print '<h2>This computer</h2>';
+		print '<p><a href="index.php?f=aiStatus">AI status report</a> · <a href="https://tarasec.org/ops/agent/">Agent approvals</a> · <a href="index.php?f=units">All units</a></p>';
+		require_once 'ajax/units_partners.php';
+		require_once 'func/unitsMore.php';
+		$conn = getConnection();
+		$result = $conn->query('SELECT networkStatus AS status, TIMESTAMPDIFF(SECOND, networkStatusChecked, NOW()) AS seconds_since FROM setup LIMIT 1');
+		$local = $result ? $result->fetch_assoc() : null;
+		if ($result) $result->free();
+		$conn->close();
+		if ($local && is_string($local['status']) && $local['status'] !== '') {
+			$age = (int)$local['seconds_since'];
+			print '<p><a href="index.php?f=unitsMore">Status details</a>: '.getServerStatus($age, $local['status'], 0).'</p>';
+			$status = json_decode($local['status'], true);
+			if (is_array($status) && count(collectUnitIssues($status, $age)))
+				printUnitIssues($status, $age);
+		} else {
+			print '<p><a href="index.php?f=unitsMore"><img src="img/yellow_dot.png" alt="Status unavailable"> Status unavailable for this computer</a></p>';
+		}
 	}
 
 	// Administrators can see recent manager requests on Home, including
