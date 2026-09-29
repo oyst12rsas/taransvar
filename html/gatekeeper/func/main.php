@@ -18,6 +18,13 @@ function main()
 		dbServer();
 	}
 
+	// The same live dots used on Units belong on Home for operators.
+	if (isAdmin()) {
+		print '<h2>Node status</h2><p><a href="index.php?f=aiStatus">AI status report</a> · <a href="https://tarasec.org/ops/agent/">Agent approvals</a> · <a href="index.php?f=units">All units</a></p>';
+		require_once 'func/units.php';
+		vpn_demo();
+	}
+
 	// Administrators can see recent manager requests on Home, including
 	// completed requests, so approval results remain visible.
 	if (isAdmin())
