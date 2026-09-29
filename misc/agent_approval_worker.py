@@ -138,6 +138,7 @@ def status_snapshot(evidence, concerns, terminal, attack, actions, pending, remo
     fields = evidence["tarasecfw_selected_fields"]
     auth = evidence["sshd_effective_selected_fields"].get("stdout", "").lower()
     ssh_concerns = [item for item in concerns if "ssh" in item.lower() or
+                    "password" in item.lower() or "authentication" in item.lower() or
                     "firewall" in item.lower() or "vpn input" in item.lower() or
                     "honeypot" in item.lower() or "ipv6 input" in item.lower()]
     ssh = {
