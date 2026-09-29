@@ -38,6 +38,8 @@ function login()
 
 //	if (!strcmp($_SERVER['SERVER_ADDR']), "10.100.1.1")
 	print "<b>NOTE!</b> You no longer need to login - except for disabled menu choices.<br>";
+	if (is_readable('/etc/tarasec/gatekeeper-google.php'))
+		print '<p><a href="google_start.php">Continue with Google (administrator)</a></p>';
 
 	?>
 	<form action="index.php">
