@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/../func/agentStatusView.php';
 error_reporting( E_ALL );
 ini_set('display_errors', '1');
 ini_set('display_startup_errors', 1); 
@@ -189,6 +190,10 @@ function getServerStatus($seconds_since, $status, $nId)
 
 	// Keep the two status-dot rows balanced: update counts finish the first row.
 	$szServerStatus .= "<br>";
+	if (array_key_exists('aiAgent', $json)) {
+		$agentView = agentStatusView($json['aiAgent']);
+		$szServerStatus .= '<span title="'.agentStatusEscape('Server manager: '.$agentView['label'].'. '.$agentView['reason']).'"><img src="img/'.$agentView['color'].'_dot.png" alt="Server manager: '.agentStatusEscape($agentView['label']).'"></span>';
+	}
 
 	if (isset($json["lstUp"]))
 	{
