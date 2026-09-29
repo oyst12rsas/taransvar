@@ -175,20 +175,7 @@ function unitsMore()
 
 		print '<tr><td>Name</td><td>'.$row["name"].'</td></tr>';
 		if (array_key_exists('aiAgent', $status)) {
-			$agent = $status['aiAgent'];
-			$view = agentStatusView($agent);
-			$details = '<span style="color:'.agentStatusEscape($view['color']).'">&#9679;</span> <b>'.agentStatusEscape($view['label']).'</b> — '.agentStatusEscape($view['reason']);
-			if (is_array($agent)) {
-				$ssh = is_array($agent['ssh_protection'] ?? null) ? $agent['ssh_protection'] : array();
-				$details .= '<br>Mode: '.agentStatusEscape($agent['mode'] ?? 'unknown');
-				$details .= ' · Overall: '.agentStatusEscape($agent['status'] ?? 'unknown');
-				$details .= ' · SSH: '.agentStatusEscape($ssh['status'] ?? 'unknown');
-				$details .= '<br>Approval service: '.agentStatusEscape($agent['approval_service'] ?? 'unknown');
-				if (isset($agent['age_seconds'])) $details .= ' · Assessment age: '.(int)$agent['age_seconds'].' seconds';
-				if (!empty($agent['pending_operator_messages']) && is_array($agent['pending_operator_messages']))
-					$details .= '<br>For operator: '.agentStatusEscape(implode('; ', array_filter($agent['pending_operator_messages'], 'is_string')));
-			}
-			print '<tr><td>Server manager</td><td>'.$details.'</td></tr>';
+			print '<tr><td>Server manager</td><td>'.agentStatusDetails($status['aiAgent']).'</td></tr>';
 			unset($status['aiAgent']);
 		}
 
@@ -279,8 +266,18 @@ function unitsMore()
 
 		//************ remaining (unhandled) */
 
-		if (count($status))
-			print '<tr><td>Remaining</td><td>'.json_encode($status).'</td></tr>';
+		foreach (array('role' => 'Node role', 'trfcOk' => 'Traffic reporting', 'dmesgOk' => 'Kernel log collection', 'sshListen' => 'Administrative SSH listener', 'cpu' => 'CPU usage', 'cpuWait' => 'CPU I/O wait', 'dbScan' => 'DB scan rate', 'err' => 'System error', 'errSev' => 'Error severity', 'errAge' => 'Error age', 'mailCfg' => 'Mail configured', 'mailRelay' => 'Mail relay', 'mailSend' => 'Mail delivery', 'mailChecked' => 'Mail checked', 'mailErr' => 'Mail error') as $field => $label) {
+			if (array_key_exists($field, $status)) {
+				print '<tr><td>'.agentStatusEscape($label).'</td><td>'.agentStatusEscape($status[$field] === '' ? 'none' : $status[$field]).'</td></tr>';
+				unset($status[$field]);
+			}
+		}
+		if (count($status)) {
+			print '<tr><td>Other reported data</td><td><table>';
+			foreach ($status as $field => $value)
+				print '<tr><td>'.agentStatusEscape($field).'</td><td>'.agentStatusEscape(is_scalar($value) || $value === null ? ($value ?? 'null') : json_encode($value, JSON_INVALID_UTF8_SUBSTITUTE)).'</td></tr>';
+			print '</table></td></tr>';
+		}
 
 	/*	print '<td>'.sjekk($status["lnk"]).'</td>';
 		$szLoad = $status["ld"];
