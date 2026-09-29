@@ -1,7 +1,6 @@
 <?php
 require_once __DIR__.'/agentStatusView.php';
 //unitsMore.php
-    print "More info about node in network.";
 
 
 function getBitStatus($szStatus)
@@ -124,6 +123,7 @@ function printUnitIssues($status, $secondsSince)
 
 function unitsMore()
 {
+	print "More info about node in network.";
 	/*if (!isAdmin())
 	{
 		print "You have to login as admin to view this info.";
