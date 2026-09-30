@@ -14,6 +14,16 @@ Before drawing conclusions from individual source files, read **[AI_TRAINING.md]
 
 In particular, TaraSec is currently a **research and deployment prototype**, not a production-hardened security product. Experimental defects should be reported plainly, but they should also be distinguished from the architectural hypotheses being tested.
 
+## NetBird and TaraSec service connectivity
+
+NetBird is the encrypted overlay used by the current TaraSec deployment for communication between routers, nodes and DB servers: administration, status/security reporting, coordination and access to shared services. Demo 4 also uses it for selective partner routing; it is not NetBird's only TaraSec role.
+
+Local AP networking, DHCP/NAT and openNDS create the captive-portal hotspot. NetBird does not create that hotspot and must not replace the ordinary customer Internet uplink.
+
+For a router or hotspot joining the current TaraSec network, include NetBird enrollment. An alternative transport is acceptable only when explicitly configured and verified to reach the required TaraSec services. A working local portal alone does not establish cooperative-security connectivity.
+
+See **[AI_INSTALL_GUIDE.md](AI_INSTALL_GUIDE.md#netbird-and-tarasec-service-connectivity)** for enrollment and completion checks.
+
 ## Demo design documents
 
 - **[Demo 4: NATed Hotspot Contribution Through a TaraSec VPS Partner](docs/DEMO4_WHITEPAPER.md)** — proposed use of NetBird and policy routing so only tagged traffic to registered TaraSec participants uses the overlay.
