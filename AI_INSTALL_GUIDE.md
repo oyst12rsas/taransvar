@@ -54,7 +54,7 @@ The intended roles are:
 
 - WAN/uplink: existing Internet connection; leave it working.
 - hotspot/client interface: spare Wi-Fi AP interface.
-- NetBird `wt0`/`wt*`: TaraSec management only; not customer Internet.
+- NetBird `wt0`/`wt*`: TaraSec management, reporting and coordination; not the normal customer Internet path.
 
 ## openNDS and TaraSec captive portal
 
@@ -122,7 +122,35 @@ The maintained flow is:
 
 Do not replace this with a cosmetic ThemeSpec that simply grants access. The TaraSec `access` table remains the enforcement source of truth.
 
-## NetBird
+## NetBird and TaraSec service connectivity
+
+NetBird is the encrypted overlay used by the current TaraSec deployment for communication between routers, nodes and DB servers: administration, status/security reporting, coordination and access to shared services. Demo 4 also uses it for selective partner routing; it is not NetBird's only TaraSec role.
+
+Local AP networking, DHCP/NAT and openNDS create the captive-portal hotspot. NetBird does not create that hotspot and must not replace the ordinary customer Internet uplink.
+
+For a router or hotspot joining the current TaraSec network, include NetBird enrollment. An alternative transport is acceptable only when explicitly configured and verified to reach the required TaraSec services. A working local portal alone does not establish cooperative-security connectivity.
+
+From the checkout on the **router/hotspot being installed**, enroll using the maintained helper:
+
+```sh
+sudo bash misc/install_netbird_management.sh
+netbird status
+ip route
+```
+
+Do not enroll the user's laptop by accident. Do not place a shared server API token or reusable enrollment secret in the instructions.
+
+Before declaring the connected installation complete:
+
+1. Confirm NetBird management connectivity and the assigned overlay address.
+2. Verify access to the configured DB/service endpoints and required ports from this router. Management connected alone does not prove peer/service access: routing and NetBird policy must also allow it.
+3. Verify a real TaraSec status/security report reaches its intended DB server and identify the reporting node.
+4. Verify the normal client Internet route remains on the WAN/uplink.
+5. If enrollment, policy approval or service access fails, report **local setup working; TaraSec network integration incomplete**, explain the failed check and continue troubleshooting. Do not silently skip NetBird or describe it as only an optional Demo 4 component.
+
+Restricted bootstrap enrollment does not automatically grant full operational access. The operator must approve the appropriate peer policies after registration. Use configured endpoint addresses rather than assuming the test deployment's private IPs apply to every installer.
+
+## NetBird enrollment details
 
 `misc/install_netbird_management.sh` performs zero-touch management enrollment through:
 
