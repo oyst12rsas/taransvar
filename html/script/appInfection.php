@@ -17,8 +17,8 @@ function appInfectionFail(int $status, string $message): never
 }
 
 try {
-    // This endpoint deliberately contains no independent infection logic.
-    // It is the JSON view of the same canonical assessment used by the web UI.
+    // Start with the canonical assessment shared with the web UI, then
+    // reconcile evidence that arrives during this request's short wait.
     $data = getTagData();
 
     /*
@@ -32,7 +32,15 @@ try {
         // A mobile client can quickly reuse a TCP source port. Only an
         // observation updated in the current second proves that this request,
         // rather than a preceding red/green request, has reached the database.
-        if ($trafficAge === 0) {
+        $conflictingEvidence = $trafficAge === 0
+            && (bool)($data['hackReportExactPort'] ?? false)
+            && (int)($data['hackReportSecondsSince'] ?? -1) >= 0
+            && (int)($data['hackReportSecondsSince'] ?? -1) <= 2
+            && (int)($data['hackReportSeverity'] ?? 0) > (int)($data['trafficSeverity'] ?? 0);
+        // The first packet can be recorded at severity 1 before later packets
+        // update this same flow to severity 3. Give the traffic row time to
+        // catch up with a current, exact-port threat report.
+        if ($trafficAge === 0 && !$conflictingEvidence) {
             break;
         }
         if (microtime(true) >= $deadline) {
@@ -42,11 +50,24 @@ try {
         $data = getTagData();
     }
 
+    // If the traffic writer still lags, a threat report for this exact TCP
+    // connection in the last two seconds is stronger evidence than its first
+    // severity-1 packet. Port-zero and older reports cannot override a tag.
+    $freshExactPortReport = (bool)($data['hackReportExactPort'] ?? false)
+        && (int)($data['hackReportSecondsSince'] ?? -1) >= 0
+        && (int)($data['hackReportSecondsSince'] ?? -1) <= 2
+        && (int)($data['trafficSecondsSince'] ?? -1) >= 0
+        && (int)($data['trafficSecondsSince'] ?? -1) <= 2
+        && (int)($data['hackReportSeverity'] ?? 0) > (int)($data['trafficSeverity'] ?? 0);
+    $severity = $freshExactPortReport
+        ? (int)$data['hackReportSeverity']
+        : (int)($data['severity'] ?? 0);
+
     echo json_encode([
         'ok' => true,
-        'infected' => ((int)($data['severity'] ?? 0)) > 1,
-        'severity' => (int)($data['severity'] ?? 0),
-        'source' => (
+        'infected' => $severity > 1,
+        'severity' => $severity,
+        'source' => $freshExactPortReport ? 'hackReport' : (
             ((int)($data['trafficSecondsSince'] ?? -1) >= 0 && (int)($data['trafficSecondsSince'] ?? -1) < 45)
                 ? 'traffic'
                 : (((int)($data['hackReportSecondsSince'] ?? -1) >= 0) ? 'hackReport' : 'internalInfections')
