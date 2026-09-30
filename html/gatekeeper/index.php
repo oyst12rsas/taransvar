@@ -70,10 +70,14 @@ function printTitle()
 
 //$bOk = 0;
 
+// Stable public product marker for discovery; no node identity or secrets.
+$tarasecDiscoveryMeta = '<meta name="tarasec-product" content="gatekeeper">' . "\n";
+
 if ($bOk)
 {
 	if (intval($setupRow["dbVersion"])+0 < $nRequiredDbVersion)
 	{
+		print $tarasecDiscoveryMeta;
 		print "Your database is not properly upgraded. Deploy the current misc files, then run: sudo bash -c 'cd /root/taransvar/perl && perl diagnose.pl' to upgrade to version $nRequiredDbVersion.";
 		print "<br><br>This script is made for version ".$nRequiredDbVersion.". Your database is version ".$setupRow["dbVersion"].". <br><br>Aborting...";
 		return;
@@ -81,6 +85,7 @@ if ($bOk)
 }
 else
 {
+	print $tarasecDiscoveryMeta;
 	print "Database not properly set up... Aborting..";
 	return;
 }
@@ -206,6 +211,7 @@ else
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta name="tarasec-product" content="gatekeeper">
 <style>
 
 .center {
