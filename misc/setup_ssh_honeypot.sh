@@ -108,6 +108,30 @@ if [ "$SSH_HONEYPOT_DEMO_PORT" != "0" ]; then
     [ "${#SSH_HONEYPOT_DEMO_NODE_TOKEN}" -ge 32 ] || { echo "Demo mode requires a node token of at least 32 characters" >&2; exit 1; }
 fi
 SSH_HONEYPOT_LISTEN_PORTS="$SSH_HONEYPOT_PORT"
+if [[ "${FIREWALL_MODE:-}" == "host" ]]; then
+    case "${SSH_FAILSAFE,,}" in on|yes|true|1) ;; *) echo "Host SSH migration requires SSH_FAILSAFE=on" >&2; exit 1;; esac
+    SSH_HONEYPOT_LISTEN_PORTS="$SSH_HONEYPOT_PORTS"
+    # The Python listener supports at most 64 bound ports; check before SSH changes.
+    count=0
+    for spec in "${SSH_HONEYPOT_PORT_SPECS[@]}"; do
+        if [[ "$spec" == *-* ]]; then
+            first=${spec%-*}; last=${spec#*-}
+            count=$((count + last - first + 1))
+        else count=$((count + 1)); fi
+    done
+    (( count <= 64 )) || { echo "Host mode allows at most 64 direct honeypot ports" >&2; exit 1; }
+    for spec in "${SSH_HONEYPOT_PORT_SPECS[@]}"; do
+        first=${spec%-*}; last=${spec#*-}
+        for (( port=first; port<=last; port++ )); do
+            # Port 22 may still be the current SSH listener during migration.
+            if [[ "$port" != "$SSH_HONEYPOT_PORT" ]] && ss -H -ltn "sport = :$port" | grep -q .; then
+                echo "Host honeypot port $port is already occupied; refusing SSH migration" >&2
+                exit 1
+            fi
+        done
+    done
+    honeypot_specs_include_port "$SSH_HONEYPOT_PORT" || { echo "Include SSH_HONEYPOT_PORT in SSH_HONEYPOT_PORTS" >&2; exit 1; }
+fi
 if [ "$SSH_HONEYPOT_DEMO_PORT" != "0" ] && [ "$SSH_HONEYPOT_DEMO_PORT" != "$SSH_HONEYPOT_PORT" ]; then
     SSH_HONEYPOT_LISTEN_PORTS+=",$SSH_HONEYPOT_DEMO_PORT"
 fi
@@ -156,8 +180,11 @@ if [ -f "$SSHD_DROPIN" ]; then
 else
     rm -f "$ROLLBACK_DIR/90-tarasec.conf.previous"
 fi
-if command -v iptables-save >/dev/null 2>&1; then iptables-save > "$ROLLBACK_DIR/iptables.previous"; else rm -f "$ROLLBACK_DIR/iptables.previous"; fi
-if command -v ip6tables-save >/dev/null 2>&1; then ip6tables-save > "$ROLLBACK_DIR/ip6tables.previous"; else rm -f "$ROLLBACK_DIR/ip6tables.previous"; fi
+if [[ "${FIREWALL_MODE:-}" == "host" ]]; then
+    # Do not restore a global firewall snapshot over changing VM/NetBird rules.
+    rm -f "$ROLLBACK_DIR/iptables.previous" "$ROLLBACK_DIR/ip6tables.previous"
+elif command -v iptables-save >/dev/null 2>&1; then iptables-save > "$ROLLBACK_DIR/iptables.previous"; else rm -f "$ROLLBACK_DIR/iptables.previous"; fi
+if [[ "${FIREWALL_MODE:-}" != "host" ]] && command -v ip6tables-save >/dev/null 2>&1; then ip6tables-save > "$ROLLBACK_DIR/ip6tables.previous"; else rm -f "$ROLLBACK_DIR/ip6tables.previous"; fi
 
 # Keep the proposed administrative port reachable even if a later setup step
 # fails before firewall.sh is run. The rollback snapshot above removes these
@@ -167,6 +194,7 @@ temporary_rule_count=0
 IFS=',' read -ra temporary_source_list <<< "$temporary_sources"
 declare -A temporary_source_seen=()
 for source in "${temporary_source_list[@]}"; do
+    [[ "${FIREWALL_MODE:-}" == "host" ]] && break
     source="${source//[[:space:]]/}"
     [ -z "$source" ] && continue
     [ -n "${temporary_source_seen[$source]:-}" ] && continue
@@ -174,7 +202,7 @@ for source in "${temporary_source_list[@]}"; do
     iptables -I INPUT 1 -p tcp -s "$source" --dport "$SSH_PORT" -j ACCEPT
     temporary_rule_count=$((temporary_rule_count + 1))
 done
-if [ "$temporary_rule_count" -eq 0 ]; then
+if [[ "${FIREWALL_MODE:-}" != "host" ]] && [ "$temporary_rule_count" -eq 0 ]; then
     iptables -I INPUT 1 -p tcp --dport "$SSH_PORT" -j ACCEPT
 fi
 echo "Temporary firewall access installed for TCP/$SSH_PORT until final firewall policy or rollback."
@@ -194,6 +222,7 @@ set -e
 DROPIN="/etc/ssh/sshd_config.d/90-tarasec.conf"
 STATE="/var/lib/tarasec/ssh-rollback"
 HONEYPOT_SERVICE="tarasec-ssh-honeypot.service"
+systemctl stop "$HONEYPOT_SERVICE" 2>/dev/null || true
 if [ -s "$STATE/iptables.previous" ] && command -v iptables-restore >/dev/null 2>&1; then iptables-restore < "$STATE/iptables.previous"; fi
 if [ -s "$STATE/ip6tables.previous" ] && command -v ip6tables-restore >/dev/null 2>&1; then ip6tables-restore < "$STATE/ip6tables.previous" || true; fi
 if [ -f "$STATE/90-tarasec.conf.previous" ]; then cp -a "$STATE/90-tarasec.conf.previous" "$DROPIN"; else rm -f "$DROPIN"; fi
@@ -308,7 +337,9 @@ case "${SSH_HONEYPOT,,}" in
         ;;
 esac
 
-if [ -n "${DBSERVER:-}" ] && [ -r "$REPO_DIR/misc/setup_backoffice_ai.sh" ]; then
+if [[ "${FIREWALL_MODE:-}" == "host" ]]; then
+    echo "Host telemetry forwarding is managed by firewall.sh."
+elif [ -n "${DBSERVER:-}" ] && [ -r "$REPO_DIR/misc/setup_backoffice_ai.sh" ]; then
     bash "$REPO_DIR/misc/setup_backoffice_ai.sh" sensor "$DBSERVER"
     echo "Honeypot telemetry forwarding configured for DB server $DBSERVER (TCP/5514)."
 else
@@ -353,3 +384,4 @@ if [ -n "$NETBIRD_IP" ]; then
 else
     echo "WARNING: No NetBird IPv4 address in 100.64.0.0/10 was found; test commands were not generated."
 fi
+
