@@ -76,7 +76,7 @@ try {
     $result->free();
 
     $infectionActive = $infection && (int)$infection['active'] === 1;
-    $infectionSeverity = $infection ? (int)$infection['severity'] : 0;
+    $infectionSeverity = $infectionActive ? (int)$infection['severity'] : 0;
     $threatSeverity = $threat ? (int)$threat['severity'] : 0;
     $aiSeverity = $ai ? (int)($ai['severity'] ?? 0) : 0;
     $severity = max($infectionSeverity,$threatSeverity,$aiSeverity);
@@ -93,9 +93,11 @@ try {
         'unit'=>['unitId'=>$unitId,'ownerId'=>$ownerId ?: null,'hostname'=>(string)$row['hostname'],'description'=>(string)$row['description']],
         'threat'=>[
             'warning'=>$infectionActive || $severity>1,'confirmedLocalInfection'=>$infectionActive,'severity'=>$severity,
+            'infectionLastSeen'=>$infection['lastSeen'] ?? null,
             'infectionStatus'=>$infection ? $infection['status'] : null,'why'=>$infection ? $infection['why'] : null,
             'recentThreatRecords24h'=>$threat ? (int)$threat['cnt'] : 0,'maxThreatSeverity24h'=>$threatSeverity,
             'aiSeverity'=>$aiSeverity,'aiSummary'=>$ai ? (string)($ai['summary'] ?? '') : '',
+            'aiConfidence'=>$ai['confidence'] ?? null,'assessmentSource'=>'gateway_unit_status',
             'aiCategory'=>$ai ? (string)($ai['category'] ?? '') : '','aiResponseId'=>$aiResponseId
         ],
         'privacy'=>['managerAccess'=>false,'singleUnitOnly'=>true,'personalIdentityReturned'=>false],
