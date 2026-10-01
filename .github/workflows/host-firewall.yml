@@ -1,0 +1,15 @@
+name: Host firewall checks
+on:
+  pull_request:
+    paths:
+      - 'misc/firewall.sh'
+      - 'misc/setup_ssh_honeypot.sh'
+      - 'misc/test_host_firewall.py'
+      - '.github/workflows/host-firewall.yml'
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash -n misc/firewall.sh && bash -n misc/setup_ssh_honeypot.sh
+      - run: python3 misc/test_host_firewall.py
