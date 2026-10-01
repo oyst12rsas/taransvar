@@ -88,6 +88,86 @@ if is_on "$SSH_HONEYPOT"; then
     parse_honeypot_ports
 fi
 
+# Host mode observes INPUT only. It never flushes built-in chains, changes
+# policies, touches FORWARD/NAT/sysctls, or saves other services' live rules.
+if [[ "${FIREWALL_MODE:-}" == "host" ]]; then
+    [[ -z "${2:-}" || "${2:-}" == "--setup-ssh" ]] || { echo "Unknown host option: $2" >&2; exit 1; }
+    [[ "${IS_GATEWAY:-0}" == "0" ]] || { echo "Host mode requires IS_GATEWAY=0" >&2; exit 1; }
+    [[ "$NODE" =~ ^[a-zA-Z0-9_.-]+$ && ${#NODE} -le 16 ]] || { echo "Invalid host NODE_NAME" >&2; exit 1; }
+    [[ "$MAX_LOGS_PER_MIN" =~ ^[1-9][0-9]*$ && "$MAX_BURSTS" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid logging limits" >&2; exit 1; }
+    for family in iptables ip6tables; do
+        command -v "$family" >/dev/null
+        "$family" -w -S INPUT >/dev/null
+    done
+    if is_on "${HOST_RSYSLOG_FORWARD:-on}"; then
+        [[ "${DBSERVER:-}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || { echo "Host forwarding requires literal IPv4 DBSERVER" >&2; exit 1; }
+        IFS=. read -ra octets <<< "$DBSERVER"
+        for octet in "${octets[@]}"; do (( 10#$octet <= 255 )) || { echo "Invalid DBSERVER" >&2; exit 1; }; done
+        valid_port "${HOST_RSYSLOG_PORT:-5514}" || { echo "Invalid HOST_RSYSLOG_PORT" >&2; exit 1; }
+        command -v rsyslogd >/dev/null
+        destination=/etc/rsyslog.d/33-tarasec-host.conf
+        candidate=$(mktemp)
+        cat > "$candidate" <<EOF
+# Managed by TaraSec firewall.sh host mode.
+template(name="TaraSecManagedHostFormat" type="string"
+         string="<%pri%>1 %timestamp:::date-rfc3339% %hostname% %programname% - - %msg%\n")
+if (\$msg contains "TARASEC_${NODE}" or
+    \$programname == "sshd" or \$programname == "sshd-session" or
+    \$programname == "tarasec-ssh-honeypot") then {
+    action(type="omfwd" target="$DBSERVER" port="${HOST_RSYSLOG_PORT:-5514}"
+           protocol="tcp" template="TaraSecManagedHostFormat"
+           action.resumeRetryCount="-1" queue.type="LinkedList"
+           queue.filename="tarasec_managed_host" queue.saveOnShutdown="on"
+           queue.maxDiskSpace="64m")
+}
+EOF
+        if ! cmp -s "$candidate" "$destination"; then
+            previous=$(mktemp)
+            existed=0
+            if [ -e "$destination" ]; then cp -a "$destination" "$previous"; existed=1; fi
+            install -m 0644 "$candidate" "$destination"
+            if ! rsyslogd -N1; then
+                if (( existed )); then cp -a "$previous" "$destination"; else rm -f "$destination"; fi
+                rm -f "$candidate" "$previous"
+                echo "Invalid rsyslog configuration; previous file restored" >&2
+                exit 1
+            fi
+            rm -f "$previous"
+            systemctl restart rsyslog
+        fi
+        rm -f "$candidate"
+    elif [ -e /etc/rsyslog.d/33-tarasec-host.conf ]; then
+        rm /etc/rsyslog.d/33-tarasec-host.conf
+        rsyslogd -N1
+        systemctl restart rsyslog
+    fi
+    if [[ "${2:-}" == "--setup-ssh" ]]; then
+        [[ "$CONF" == /etc/tarasecfw.conf ]] || { echo "SSH setup requires /etc/tarasecfw.conf" >&2; exit 1; }
+        # Explicit provisioning only; never move/restart SSH from a timer.
+        bash "$(dirname "$0")/setup_ssh_honeypot.sh"
+    elif [[ -n "${2:-}" ]]; then
+        echo "Unknown host option: $2" >&2; exit 1
+    fi
+    for family in iptables ip6tables; do
+        chain=TARASEC_HOST_LOG
+        "$family" -w -N "$chain" 2>/dev/null || true
+        "$family" -w -F "$chain"
+        if is_on "$SSH_HONEYPOT"; then
+            for spec in "${SSH_HONEYPOT_PORT_SPECS[@]}"; do
+                "$family" -w -A "$chain" -p tcp --syn --dport "${spec/-/:}" \
+                    -m limit --limit "${MAX_LOGS_PER_MIN}/min" --limit-burst "$MAX_BURSTS" \
+                    -j LOG --log-prefix "TARASEC_${NODE}_PROBE: " --log-level 5
+            done
+        fi
+        "$family" -w -A "$chain" -j RETURN
+        while "$family" -w -D INPUT -j "$chain" 2>/dev/null; do :; done
+        "$family" -w -I INPUT 1 -j "$chain"
+    done
+    echo "Host logging installed (IPv4/IPv6); existing access, VM forwarding and NAT preserved."
+    echo "Honeypot provisioning is explicit: bash $0 /etc/tarasecfw.conf --setup-ssh"
+    exit 0
+fi
+
 # A node coexists with the host's NetBird firewall. Insert a rate-limited
 # logging rule immediately before NetBird's terminal overlay DROP, without
 # changing forwarding, existing ACLs, interface policy, or live SSH sessions.
@@ -299,3 +379,4 @@ if ! dpkg-query -W -f='${Status}' netfilter-persistent 2>/dev/null | grep -q "in
     apt-get install -y netfilter-persistent
 fi
 netfilter-persistent save
+
