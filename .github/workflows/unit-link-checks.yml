@@ -1,0 +1,19 @@
+name: Unit account link checks
+on:
+  pull_request:
+    paths:
+      - 'html/script/unit*.php'
+      - 'misc/unit*'
+      - 'misc/setup_unit_link.sh'
+      - 'misc/test_unit_link.php'
+      - '.github/workflows/unit-link-checks.yml'
+jobs:
+  identity-boundaries:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP syntax and identity boundary tests
+        run: |
+          for file in html/script/unit*.php misc/unit-link.example.php; do php -l "$file"; done
+          php -n misc/test_unit_link.php
+          bash -n misc/setup_unit_link.sh
