@@ -863,42 +863,46 @@ sub getRouterIpOf
 
 sub trySendWarningToRouter
 {
-	#asdf
-	my ($row) = @_;
-	print "About to look for the router of $row->{'src'}\n";
-	my $szRouterIp = getRouterIpOf($row->{'src'});
-	if ($szRouterIp ne "") {
-		print "$row->{'src'} belongs to $szRouterIp. Send message.\n";
-		#asdfasdf
-#		my $url = "http://$szRouterIp/script/config_update.php?f=report&ip=".$row->{'src'}."&port=".(defined $row->{'src_port'}?$row->{'src_port'}:0)."&wt=".$row->{'description'};
-		my $url = "http://$szRouterIp/script/config_update.php";
-
-		my %params = (
-		    f    => "report",
-    		ip   => $row->{'src'},
-    		port => defined $row->{'src_port'} ? $row->{'src_port'} : 0,
-    		wt   => $row->{'description'},
-		);
-
-		#my $urlStr = $url."?f=".$params->{'f'}."&ip=".$params['ip']."&port=".$params['port']."&wt=".$params['wt'];
-		#print "$urlStr\n";
-
-		my $szReply = getUrl($url, %params);
-		$szReply = trim($szReply);
-
-		#my $urlStr = $url."?".join ", ", map { "$_=%params{$_}" } keys %params;
-		
-		if ($szReply eq "ok") {
-			print "SUCCESS sending message!\n";
-		} else {
-			print "ERROR SENDING MESSAGE: $szReply\n";
-		}
-
-		#asdfasdf
-	}
-	else {
-		print "Unable to find the router of $row->{'src'}\n";
-	}
+    my ($row, $conn) = @_;
+    my @destinations;
+    my $router = getRouterIpOf($row->{'src'});
+    push @destinations, $router if $router ne '';
+    my $cfg = $conn->selectrow_hashref("select inet_ntoa(globalDb1ip) db1, inet_ntoa(globalDb2ip) db2, inet_ntoa(globalDb3ip) db3 from setup limit 1");
+    push @destinations, grep { defined && length && $_ ne '0.0.0.0' } @{$cfg}{qw(db1 db2 db3)};
+    my %seen;
+    @destinations = grep { !$seen{$_}++ } @destinations;
+    return 0 unless @destinations;
+    my %params = (
+        ip => $row->{'src'}, port => $row->{'src_port'} || 0,
+        wt => $row->{'description'} || 'receiver rejection',
+        code => ($row->{'service'} || '') eq 'iptables' ? 'iptables' : 'ssh_fail',
+        severity => defined $row->{'severity'} ? $row->{'severity'} : 7,
+    );
+    # Associate the full observed connection with its contemporaneous tag.
+    # Missing capture is unknown, not a clean/zero tag. Use the event time,
+    # not the later cron/report time, so replay cannot masquerade as a new attack.
+    my $packet = $conn->selectrow_hashref(
+        "select tag,unix_timestamp(coalesce(lastSeen,created)) observedAt from traffic " .
+        "where ipFrom=? and portFrom=? and ipTo=? and portTo=? and tag is not null " .
+        "and coalesce(lastSeen,created) between date_sub(from_unixtime(?),interval 5 second) " .
+        "and date_add(from_unixtime(?),interval 5 second) order by coalesce(lastSeen,created) desc limit 1",
+        undef, $row->{'src_ip'}, $row->{'src_port'} || 0, $row->{'dst_ip'}, $row->{'dst_port'} || 0,
+        $row->{'eventEpoch'}, $row->{'eventEpoch'});
+    if ($packet && defined $packet->{'tag'}) {
+        $params{'observed_tag'} = $packet->{'tag'};
+        $params{'observed_at'} = $packet->{'observedAt'};
+    } elsif ($row->{'eventEpoch'}) {
+        $params{'observed_at'} = $row->{'eventEpoch'};
+    }
+    my $delivered = 1;
+    for my $destination (@destinations) {
+        my $reply = trim(getUrl("http://$destination/script/report.php", %params));
+        if ($reply ne 'ok') {
+            warn "Receiver report delivery failed to $destination; keeping event pending\n";
+            $delivered = 0;
+        }
+    }
+    return $delivered;
 }
 
 sub handle_syslogThreat_record {
@@ -936,7 +940,7 @@ sub handle_syslogThreat_record {
 
 	} else {
 		#print "***** WARNING! $row{target_ip}:$args{target_port} not found by conntrack! Because it's external attacking honeypot I'm port forwarding to? (if so, report to global DB server)\n";
-		trySendWarningToRouter($row);
+		return unless trySendWarningToRouter($row, $conn);
 
     	print "No conntrack match found.\n";
 		my $szSQL = "update syslogThreat set handled = b'1', handling = 'Alien unit: $row->{'dst'}:$row->{'dst_port'}' where syslogThreatId = ?";
@@ -952,7 +956,7 @@ sub handle_syslogThreat_table
 	#finding unitId for records in syslogThreat by calling conntrack... Should probably also put in 
 	my ($dbh) = @_;
 
-	my $szSQL = "select syslogId, syslogThreatId, src_ip, inet_ntoa(src_ip) as src, src_port, dst_ip, inet_ntoa(dst_ip) as dst, dst_port, protocol, service, description from syslogThreat where handled is null limit 100";
+	my $szSQL = "select t.syslogId, t.syslogThreatId, t.src_ip, inet_ntoa(t.src_ip) as src, t.src_port, t.dst_ip, inet_ntoa(t.dst_ip) as dst, t.dst_port, t.protocol, t.service, t.description, t.severity, unix_timestamp(l.created) eventEpoch from syslogThreat t join syslog l on l.syslogId=t.syslogId where t.handled is null order by t.syslogThreatId desc limit 100";
 	my $sth = $dbh->prepare($szSQL);
 	print "\n\nFinding unhandled syslogThreat records.\n";
 	$sth->execute() or die "execution failed: $sth->errstr()";
@@ -1004,9 +1008,7 @@ sub handle_syslogThreat_table
 				} else {
 					if ($row->{'service'} eq 'iptable' || $row->{'service'} eq 'iptables') {
 						print ("iptables found $row->{'src'}:$row->{'src_port'} -> $row->{'dst'}:$row->{'dst_port'} (set to handled)\n");
-						handle_syslogThreat_record($dbh, $row);	#Used for both cowrie and iptables for now
-						#asdfasdf
-						push @cIDs, $row->{'syslogThreatId'};
+						handle_syslogThreat_record($dbh, $row);	#Failed delivery remains pending.
 					} else {
 						print "Unknown record found: $row->{'service'}. Setting to handled.\n";
 						push @cIDs, $row->{'syslogThreatId'};
