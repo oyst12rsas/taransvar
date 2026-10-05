@@ -352,7 +352,7 @@ public function accessLevel($szTryingToAccessWhat, $szId, $nRequiredLevel = 1)  
                 case "Public":
                     return max(1,$nClubAccess);
                     
-                case "Internal";
+                case "Internal":
                     return $nClubAccess;
                     
                 case "Private":
