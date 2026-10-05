@@ -640,3 +640,50 @@ update setup set dbVersion = 98;
 #NOTE! The versions (#version nn ...) are imported by the installed
 #diagnostics script. Deploy misc to /root/taransvar/perl, then run:
 #sudo bash -c 'cd /root/taransvar/perl && perl diagnose.pl'
+
+
+#version 99
+
+CREATE TABLE IF NOT EXISTS unitAppToken (
+    unitAppTokenId BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    unitId INT NOT NULL,
+    created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    tokenHash CHAR(64) NOT NULL,
+    label VARCHAR(100) NULL,
+    active BIT(1) NOT NULL DEFAULT b'1',
+    lastUsed TIMESTAMP NULL,
+    expires TIMESTAMP NULL,
+    PRIMARY KEY (unitAppTokenId),
+    UNIQUE KEY uq_unit_app_token_hash (tokenHash),
+    KEY idx_unit_app_token_unit (unitId),
+    KEY idx_unit_app_token_active (active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS unitGoogleLink (
+    linkId BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    unitId INT NOT NULL,
+    subjectHash CHAR(64) NOT NULL,
+    created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    active BIT(1) NOT NULL DEFAULT b'1',
+    UNIQUE KEY uq_unit_google_link(subjectHash,unitId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS unitGoogleGrant (
+    linkId BIGINT UNSIGNED NOT NULL,
+    clientHash CHAR(64) NOT NULL,
+    unitAppTokenId BIGINT UNSIGNED NOT NULL,
+    PRIMARY KEY(linkId,clientHash),
+    UNIQUE KEY uq_unit_google_grant_token(unitAppTokenId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS unitPairCode (
+    codeHash CHAR(64) NOT NULL PRIMARY KEY,
+    unitId INT NOT NULL,
+    ownerId INT NULL,
+    peerIp INT UNSIGNED NOT NULL,
+    created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires TIMESTAMP NOT NULL,
+    consumed TIMESTAMP NULL,
+    KEY idx_pair_unit_created (unitId, created),
+    KEY idx_pair_expires (expires)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+UPDATE setup SET dbVersion = 99;

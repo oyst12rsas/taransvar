@@ -24,7 +24,7 @@ my $latest = (sort { $b <=> $a } keys %migration)[0]
 
 # The reviewed range is additive, widens types, or adds demo metadata.
 # Future versions must be reviewed before enabling unattended execution.
-my $reviewed_through = 98;
+my $reviewed_through = 99;
 my $dbh = DBI->connect(
     'DBI:mysql:database=taransvar;host=localhost', 'root', '',
     { RaiseError => 1, PrintError => 0, AutoCommit => 1 }
@@ -41,7 +41,7 @@ my $ok = eval {
     my $current = $rows->[0][0] + 0;
     die "DB version $current is newer than checkout version $latest\n"
         if $current > $latest;
-    die "DB version $current predates the reviewed migration range (89-98)\n"
+    die "DB version $current predates the reviewed migration range (89-99)\n"
         if $current < 89 && $current != $latest;
     die "Checkout version $latest exceeds reviewed version $reviewed_through\n"
         if $latest > $reviewed_through && $current < $latest;
@@ -83,3 +83,4 @@ my $error = $@;
 $dbh->selectrow_array('SELECT RELEASE_LOCK(?)', undef, $lock);
 $dbh->disconnect;
 die "DB migration stopped: $error" unless $ok;
+

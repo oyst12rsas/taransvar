@@ -71,3 +71,4 @@ function unitRedeemIdentity(string $ticket,array $cfg): string {
         throw new UnitLinkException('Identity handoff expired or could not be verified. Sign in again and retry.');
     return unitSubjectHash((string)$json['subject'],$cfg);
 }
+

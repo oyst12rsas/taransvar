@@ -14,3 +14,4 @@ CREATE TABLE IF NOT EXISTS unitGoogleGrant (
     PRIMARY KEY(linkId,clientHash),
     UNIQUE KEY uq_unit_google_grant_token(unitAppTokenId)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+

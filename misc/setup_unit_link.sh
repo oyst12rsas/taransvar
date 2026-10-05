@@ -9,6 +9,8 @@ install -d -m 0755 /opt/tarasec-google
 COMPOSER_ALLOW_SUPERUSER=1 composer --working-dir=/opt/tarasec-google require --no-interaction --no-dev 'google/apiclient:^2.18'
 mysql taransvar < "$repo_dir/misc/unit_app_token.sql"
 mysql taransvar < "$repo_dir/misc/unit_google_link.sql"
+mysql taransvar < "$repo_dir/misc/unit_pair_code.sql"
+command -v qrencode >/dev/null || apt-get install -y qrencode
 install -d -m 0750 -o root -g www-data /etc/tarasec
 config_path=/etc/tarasec/unit-link.php
 if [[ -f "$config_path" ]]; then
@@ -20,4 +22,5 @@ else
 fi
 bash "$repo_dir/misc/deploy_web.sh"
 echo 'Configure HTTPS on this gateway and register its origin and /script/unitLink.php login URI in Google before linking.'
-echo 'Then open /script/unitLink.php from each unit on this gateway LAN. See docs/unit-app-pairing.md.'
+echo 'Then open the gateway home page from each laptop and choose Link to my app. See docs/unit-app-pairing.md.'
+
