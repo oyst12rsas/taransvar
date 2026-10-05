@@ -1,0 +1,8 @@
+[Unit]
+Description=Apply TaraSec DB partner restrictions and acknowledge enforcement
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/php /root/taransvar/misc/partner_restriction_worker.php
+TimeoutStartSec=60
