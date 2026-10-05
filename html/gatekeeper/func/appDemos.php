@@ -49,6 +49,10 @@ function appDemos()
   <p>Tagged traffic routed through a selected partner ISP router with a recognizable public address.</p>
   <?php if ($dbBase !== '') { ?><a href="<?php print htmlspecialchars($dbBase.'appDemo4', ENT_QUOTES, 'UTF-8'); ?>">Open Demo 4</a><?php } else { ?><p class="http-demo-error">Unavailable: no valid global DB server is configured on this node.</p><?php } ?>
  </div>
+ <div class="http-demo-card">
+  <h2>Demo 5</h2><p>Partner tagging failure, normal rejection reports, DB distribution and temporary receiver restrictions.</p>
+  <?php if ($dbBase !== '') { ?><a href="<?php print htmlspecialchars($dbBase.'appDemo5', ENT_QUOTES, 'UTF-8'); ?>">Open Demo 5 observer</a><?php } else { ?><p class="http-demo-error">DB server is not configured.</p><?php } ?>
+ </div>
 </div>
 <div class="http-demo-note">At any time, use the debug-copy button on the individual demo page and paste the report into AI for an explanation. AI background: <a href="https://tarasec.org/ai/demo-guide/">tarasec.org/ai/demo-guide/</a></div>
 <p><a href="index.php?f=demo">Back to Demo</a></p>
