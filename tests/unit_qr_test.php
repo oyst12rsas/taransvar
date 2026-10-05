@@ -29,14 +29,28 @@ file_put_contents($temp.'/invoke.php', <<<'PHP'
 <?php
 $case=json_decode(base64_decode($argv[2]),true);
 $_SERVER=$case['server']; $_POST=$case['post']??[];
-register_shutdown_function(function(){fwrite(STDERR,(string)http_response_code());});
+if(isset($_POST['csrf'])) {session_id('tarasecqrfixture');session_start();$_SESSION['unit_pair_csrf']=$_POST['csrf'];session_write_close();}
+register_shutdown_function(function(){fwrite(STDERR,'HTTP_STATUS='.(string)http_response_code());});
 include __DIR__.'/'.$argv[1];
 PHP);
 function invoke(string $temp,string $file,array $server,array $post=[]): array {
     $p=proc_open([PHP_BINARY,$temp.'/invoke.php',$file,base64_encode(json_encode(['server'=>$server,'post'=>$post]))],[['pipe','r'],['pipe','w'],['pipe','w']],$pipes);
     fclose($pipes[0]);$out=stream_get_contents($pipes[1]);fclose($pipes[1]);$err=stream_get_contents($pipes[2]);fclose($pipes[2]);check(proc_close($p)===0,'Child failed: '.$err);
-    return ['out'=>$out,'status'=>(int)$err];
+    preg_match('/HTTP_STATUS=(\d+)/',$err,$m);
+    return ['out'=>$out,'status'=>(int)($m[1]??200)];
 }
+$local=['REQUEST_METHOD'=>'POST','HTTPS'=>'on','REMOTE_ADDR'=>'10.0.0.2'];
+$page=invoke($temp,'link.php',$local,['csrf'=>str_repeat('9',64)]);
+check(str_contains($page['out'],'data:image/svg+xml;base64,'),'Browser must render a local QR');
+check(preg_match('/<textarea readonly>(.*?)<\/textarea>/s',$page['out'],$m)===1,'Private copy fallback');
+$created=json_decode(html_entity_decode($m[1],ENT_QUOTES|ENT_HTML5,'UTF-8'),true,512,JSON_THROW_ON_ERROR);
+check($created['gateway']==='https://gateway.example' && $created['unit_name']==='Laptop' && !isset($created['token']),'QR holds short-lived handoff, not app token');
+$stored=$db->query('SELECT codeHash FROM unitPairCode')->fetch_assoc();
+check($stored['codeHash']===hash('sha256',$created['code']),'Code stored only as hash');
+$local['REMOTE_ADDR']='100.68.1.2';
+check(!str_contains(invoke($temp,'link.php',$local,['csrf'=>str_repeat('9',64)])['out'],'data:image/svg+xml;base64,'),'Overlay must not receive QR');
+$local['REMOTE_ADDR']='10.0.0.2';unset($local['HTTPS']);
+check(invoke($temp,'link.php',$local)['status']===303,'HTTP page redirects before generating secrets');
 $server=['REQUEST_METHOD'=>'POST','HTTPS'=>'on','REMOTE_ADDR'=>'100.68.1.2'];
 $code=str_repeat('c',64);$hash=hash('sha256',$code);
 function seed(mysqli $db,string $hash,string $expiry='NOW()+INTERVAL 5 MINUTE'): void {
