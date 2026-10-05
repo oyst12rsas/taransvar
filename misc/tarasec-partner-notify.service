@@ -1,0 +1,6 @@
+[Unit]
+Description=TaraSec partner incident notification
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/php /root/taransvar/misc/partner_incident_notify.php
+TimeoutStartSec=70

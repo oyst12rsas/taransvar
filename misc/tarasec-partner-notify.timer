@@ -1,0 +1,7 @@
+[Unit]
+Description=Retry TaraSec partner incident notifications
+[Timer]
+OnBootSec=10
+OnUnitInactiveSec=5
+[Install]
+WantedBy=timers.target

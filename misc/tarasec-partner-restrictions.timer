@@ -1,0 +1,7 @@
+[Unit]
+Description=Poll TaraSec partner restrictions
+[Timer]
+OnBootSec=10
+OnUnitInactiveSec=5
+[Install]
+WantedBy=timers.target

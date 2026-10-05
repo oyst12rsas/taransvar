@@ -679,6 +679,31 @@ static void checkHackReportsWorker()
 			snprintf(szParams, sizeof(szParams), "ip=%s&port=%s&wt=%s&code=from_partner&severity=%d",
 			         row[3]?row[3]:"", row[2]?row[2]:"", czCodedWhat, nSeverity);
 
+            /* Forward on-wire evidence only for a locally observed rejection.
+             * No matching packet is unknown; never invent a zero tag. */
+            if (!row[7] || !strcmp(row[7], cMyIp) || !strcmp(row[7], "127.0.0.1")) {
+                char tagSql[700];
+                snprintf(tagSql, sizeof(tagSql),
+                    "SELECT tag,UNIX_TIMESTAMP(COALESCE(lastSeen,created)) FROM traffic "
+                    "WHERE ipFrom=%u AND portFrom=%u AND ipTo=%u "
+                    "AND COALESCE(lastSeen,created) BETWEEN DATE_SUB('%s',INTERVAL 5 SECOND) "
+                    "AND DATE_ADD('%s',INTERVAL 5 SECOND) "
+                    "AND tag IS NOT NULL ORDER BY COALESCE(lastSeen,created) DESC LIMIT 1",
+                    nNumericIp, (unsigned int)atoi(row[2]), nMyIp, row[4], row[4]);
+                if (!mysql_query(lookupConn, tagSql)) {
+                    MYSQL_RES *tagRes = mysql_store_result(lookupConn);
+                    MYSQL_ROW tagRow = tagRes ? mysql_fetch_row(tagRes) : NULL;
+                    if (tagRow && tagRow[0] && tagRow[1]) {
+                        size_t used = strlen(szParams);
+                        snprintf(szParams + used, sizeof(szParams) - used,
+                                 "&observed_tag=%u&observed_at=%lu",
+                                 (unsigned int)strtoul(tagRow[0], NULL, 10),
+                                 strtoul(tagRow[1], NULL, 10));
+                    }
+                    if (tagRes) mysql_free_result(tagRes);
+                }
+            }
+
             int partnerDeliveryFailed = 0;
             int globalDeliveryFailed = 0;
             char partnerError[500];
