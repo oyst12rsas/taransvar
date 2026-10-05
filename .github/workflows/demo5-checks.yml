@@ -1,0 +1,35 @@
+name: Demo 5 incident checks
+on:
+  pull_request:
+    paths: ['html/script/**', 'misc/partner_*.php', 'misc/demo5*', 'tests/demo5*', '.github/workflows/demo5-checks.yml']
+jobs:
+  php:
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: demo5-test-only
+        ports: ['3307:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint and check state transitions
+        run: |
+          php -l html/script/report.php
+          php -l html/script/appDemo5.php
+          php -l html/script/appPartnerStatus.php
+          php -l html/script/partnerIncidentLib.php
+          php -l html/script/partnerRestrictions.php
+          php -l misc/partner_incident_notify.php
+          php -l misc/partner_restriction_worker.php
+          php -l html/gatekeeper/func/appDemo5.php
+          php tests/demo5_transition_test.php
+          perl tests/demo5_report_forwarding_test.pl
+      - name: Check migration and DB incident transitions
+        env:
+          DEMO5_TEST_PORT: '3307'
+          DEMO5_TEST_PASSWORD: demo5-test-only
+        run: php tests/demo5_database_test.php
