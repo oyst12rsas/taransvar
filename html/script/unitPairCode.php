@@ -10,7 +10,7 @@ function codeReply(int $status,array $data): never {
     http_response_code($status); echo json_encode($data,JSON_UNESCAPED_SLASHES); exit;
 }
 try {
-    unitLinkHttps(); $cfg=unitLinkConfig();
+    unitLinkHttps(); $cfg=unitGatewayConfig();
     if (($_SERVER['REQUEST_METHOD'] ?? '')!=='POST') codeReply(405,['ok'=>false,'error'=>'post_required']);
     $code=(string)($_POST['code'] ?? ''); $client=(string)($_POST['client_id'] ?? '');
     if (!preg_match('/^[a-f0-9]{64}$/D',$code) || !preg_match('/^[a-f0-9]{32}$/D',$client))

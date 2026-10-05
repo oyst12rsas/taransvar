@@ -15,7 +15,7 @@ foreach (['unit_app_token','unit_google_link','unit_pair_code'] as $name) {
     $db->multi_query($sql); do { if($r=$db->store_result())$r->free(); } while($db->more_results() && $db->next_result());
 }
 $temp=sys_get_temp_dir().'/tarasec-qr-'.bin2hex(random_bytes(6)); mkdir($temp); mkdir($temp.'/script');
-$cfg=['gateway_id'=>str_repeat('a',32),'subject_key'=>str_repeat('b',64),'google_client_id'=>'fixture.apps.googleusercontent.com','base_url'=>'https://gateway.example'];
+$cfg=['gateway_id'=>str_repeat('a',32),'subject_key'=>str_repeat('b',64),'base_url'=>'https://gateway.example'];
 file_put_contents($temp.'/config.php','<?php return '.var_export($cfg,true).';');
 $common=file_get_contents(__DIR__.'/../html/script/unitLinkCommon.php');
 $common=str_replace("'/etc/tarasec/unit-link.php'",var_export($temp.'/config.php',true),$common);

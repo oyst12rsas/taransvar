@@ -16,7 +16,7 @@ git pull --ff-only origin main
 sudo bash misc/setup_unit_qr.sh
 ```
 
-For first-time linking setup, use `misc/setup_unit_link.sh HTTPS_ORIGIN GOOGLE_WEB_CLIENT_ID`. Configure HTTPS with a trusted certificate and a hostname that resolves to the gateway on its LAN before testing. The setup script does not provision certificates or change network routing. Entering a plain IP on HTTP is supported as a starting point: **Link to my app** redirects to the configured HTTPS origin without creating or exposing a code on HTTP.
+For first-time QR setup, use `sudo bash misc/setup_unit_qr.sh https://YOUR_GATEWAY_HOST`. A per-gateway Google web client is not required for QR linking; Google sign-in happens on the phone. Optional browser Google linking still uses `misc/setup_unit_link.sh HTTPS_ORIGIN GOOGLE_WEB_CLIENT_ID`. Configure HTTPS with a trusted certificate and a hostname that resolves to the gateway on its LAN before testing. The setup script does not provision certificates or change network routing. Entering a plain IP on HTTP is supported as a starting point: **Link to my app** redirects to the configured HTTPS origin without creating or exposing a code on HTTP.
 
 Migration 99 creates the three linking tables additively. The setup helper also applies their idempotent definitions for gateways whose automatic migration timer has not run. Existing Google and gateway-manager configuration is preserved.
 

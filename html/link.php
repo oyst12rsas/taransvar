@@ -9,7 +9,7 @@ header("Content-Security-Policy: default-src 'none'; img-src data:; style-src 'u
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 $error=''; $qr=''; $payload=''; $unit=null;
 try {
-    $cfg=unitLinkConfig();
+    $cfg=unitGatewayConfig();
     // A plain-IP home page may send the browser to the configured HTTPS origin.
     // No credential is created or transmitted until HTTPS is established.
     if (strtolower((string)($_SERVER['HTTPS'] ?? ''))!=='on' && (string)($_SERVER['HTTPS'] ?? '')!=='1') {

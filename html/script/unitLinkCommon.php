@@ -3,12 +3,11 @@ declare(strict_types=1);
 
 class UnitLinkException extends RuntimeException {}
 
-function unitLinkConfig(): array {
+function unitGatewayConfig(): array {
     $path='/etc/tarasec/unit-link.php';
     $cfg=is_readable($path) ? require $path : null;
     if (!is_array($cfg) || !preg_match('/^[a-f0-9]{32}$/D',(string)($cfg['gateway_id'] ?? ''))
-        || !preg_match('/^[a-f0-9]{64}$/D',(string)($cfg['subject_key'] ?? ''))
-        || !preg_match('/^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$/D',(string)($cfg['google_client_id'] ?? '')))
+        || !preg_match('/^[a-f0-9]{64}$/D',(string)($cfg['subject_key'] ?? '')))
         throw new UnitLinkException('Unit linking is not configured on this gateway.');
     $parts=parse_url((string)($cfg['base_url'] ?? ''));
     if (!$parts || ($parts['scheme'] ?? '')!=='https' || empty($parts['host'])
@@ -16,6 +15,13 @@ function unitLinkConfig(): array {
         || !in_array($parts['path'] ?? '', ['', '/'],true))
         throw new UnitLinkException('Unit linking requires a configured HTTPS origin.');
     $cfg['base_url']=rtrim($cfg['base_url'],'/');
+    return $cfg;
+}
+
+function unitLinkConfig(): array {
+    $cfg=unitGatewayConfig();
+    if (!preg_match('/^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$/D',(string)($cfg['google_client_id'] ?? '')))
+        throw new UnitLinkException('Browser Google linking is not configured. Use the QR linking page instead.');
     return $cfg;
 }
 
