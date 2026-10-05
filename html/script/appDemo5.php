@@ -54,7 +54,7 @@ try {
         INET_NTOA(s.receiverIp) receiver_ip,r.taggingState,r.taggingStateUpdated,
         GREATEST(0,TIMESTAMPDIFF(SECOND,NOW(),s.expiresAt)) seconds_remaining,
         GREATEST(0,TIMESTAMPDIFF(SECOND,NOW(),s.restrictionUntil)) restriction_seconds_remaining,
-        c.graceSeconds FROM demo5Session s JOIN partnerRouter r ON r.routerId=s.routerId
+        GREATEST(15,LEAST(120,c.graceSeconds)) graceSeconds FROM demo5Session s JOIN partnerRouter r ON r.routerId=s.routerId
         JOIN demo5Configuration c ON c.routerId=s.routerId WHERE sessionId=?");
     $q->bind_param('s',$id); $q->execute(); $s=$q->get_result()->fetch_assoc(); $q->close();
     if (!$s||!hash_equals($s['tokenHash'],hash('sha256',$token))) demo5Reply(403,['ok'=>false,'error'=>'invalid_session_token']);
