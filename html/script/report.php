@@ -15,7 +15,8 @@ function reportFail(int $status, string $message): void
     exit;
 }
 
-$sender = getSenderIp();
+// Reports authorize the observed peer, not caller-supplied forwarding headers.
+$sender = (string)($_SERVER['REMOTE_ADDR'] ?? '');
 if (strncasecmp($sender, '::ffff:', 7) === 0) {
     $sender = substr($sender, 7);
 }
@@ -74,6 +75,21 @@ $severity = isset($_GET['severity'])
     : 7;
 if ($severity === false) {
     reportFail(400, 'invalid severity');
+}
+
+$observedTag = isset($_GET['observed_tag']) ? filter_var($_GET['observed_tag'], FILTER_VALIDATE_INT,
+    ['options'=>['min_range'=>0,'max_range'=>65535]]) : null;
+$observedAt = isset($_GET['observed_at']) ? filter_var($_GET['observed_at'], FILTER_VALIDATE_INT,
+    ['options'=>['min_range'=>1,'max_range'=>time()+5]]) : null;
+if ($observedTag === false || $observedAt === false) reportFail(400, 'invalid tag observation');
+
+function recordPartnerIncident(mysqli $conn,int $reportId,string $ip,int $port,string $sender,?int $tag,?int $at): void {
+    // Installing the report endpoint before the optional migration must not break
+    // ordinary incident ingestion. Failure is logged, and the demo cannot succeed.
+    try {
+        require_once __DIR__.'/partnerIncidentLib.php';
+        partnerIncidentRecord($conn,$reportId,$ip,$port,$sender,$tag,$at);
+    } catch(Throwable $e) { error_log('Partner incident processing failed: '.$e->getMessage()); }
 }
 
 $ourId = isset($_GET['ourid']) ? (int)$_GET['ourid'] : 0;
@@ -139,6 +155,7 @@ try {
         $stmt->bind_param('sissisii', $sender, $fromPort, $category, $why, $severity, $sender, $ourId, $reportId);
         $stmt->execute();
         $stmt->close();
+        recordPartnerIncident($conn,$reportId,$ip,(int)$port,$sender,$observedTag,$observedAt);
         $conn->close();
         error_log('Hack report completed confession-first reportId=' . $reportId . ' sender=' . $sender);
         echo 'ok';
@@ -179,6 +196,7 @@ try {
         $stmt->close();
     }
 
+    recordPartnerIncident($conn,$reportId,$ip,(int)$port,$sender,$observedTag,$observedAt);
     $conn->close();
     error_log('Hack report accepted reportId=' . $reportId . ' sender=' . $sender . ' source=' . $ip . ':' . $port . ' category=' . $category);
     echo 'ok';
