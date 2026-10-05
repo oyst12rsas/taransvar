@@ -44,3 +44,46 @@ check($db->query('SELECT restrictionUntil FROM demo5Session')->fetch_assoc()['re
 $db->query("INSERT INTO colorListings VALUES(INET_ATON('100.68.1.1'),'black',b'1',NULL,'manual',NULL),(INET_ATON('100.68.2.2'),'black',b'1',NULL,'partner_db',DATE_ADD(NOW(),INTERVAL 120 SECOND))");
 check((int)$db->query('SELECT COUNT(*) n FROM vListings')->fetch_assoc()['n']===1,'Expiring DB restrictions must not stick in legacy kernel list');
 echo "Demo 5 migration and database checks passed\n";
+// Exercise real API scripts using an isolated fixture DB, without an HTTP server.
+$temp=sys_get_temp_dir().'/tarasec-demo5-api-'.bin2hex(random_bytes(6));mkdir($temp);mkdir($temp.'/script');
+file_put_contents($temp.'/dbfunc.php', <<<'PHP'
+<?php
+function getConnection(){return new mysqli(getenv('DEMO5_TEST_PORT')?'127.0.0.1':'localhost','root',getenv('DEMO5_TEST_PASSWORD')?:'','tarasec_demo5_test',(int)(getenv('DEMO5_TEST_PORT')?:0),getenv('DEMO5_TEST_PORT')?null:getenv('DEMO5_TEST_SOCKET'));}
+PHP);
+foreach(['appDemo5.php','appPartnerStatus.php','partnerRestrictions.php'] as $file)copy(__DIR__.'/../html/script/'.$file,$temp.'/script/'.$file);
+file_put_contents($temp.'/invoke.php', <<<'PHP'
+<?php
+$case=json_decode(base64_decode($argv[2]),true);
+$_SERVER=$case['server'];$_GET=$case['get']??[];$_POST=$case['post']??[];
+chdir(__DIR__.'/script');include $argv[1];
+PHP);
+function api(string $temp,string $file,array $case):array{
+ $p=proc_open([PHP_BINARY,$temp.'/invoke.php',$file,base64_encode(json_encode($case))],[0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']],$pipes);
+ fclose($pipes[0]);$out=stream_get_contents($pipes[1]);fclose($pipes[1]);$err=stream_get_contents($pipes[2]);fclose($pipes[2]);$code=proc_close($p);
+ if($code)throw new RuntimeException('API child failed: '.$err);
+ return json_decode($out,true,512,JSON_THROW_ON_ERROR);
+}
+$server=['REQUEST_METHOD'=>'GET','REMOTE_ADDR'=>'100.68.165.190','SERVER_ADDR'=>'100.68.126.0'];
+$r=api($temp,'appDemo5.php',['server'=>$server,'get'=>['session_id'=>$id]]);check(($r['error']??'')==='invalid_session_token','Token required for status');
+$server['HTTP_X_TARASEC_DEMO_TOKEN']='session_token';
+$r=api($temp,'appDemo5.php',['server'=>$server,'get'=>['session_id'=>$id]]);check($r['distribution_state']==='pending' && $r['expected_receivers']===2,'Unacknowledged distribution must stay pending');
+$server['REMOTE_ADDR']='100.68.176.110';$server['HTTP_X_TARASEC_NODE_TOKEN']='wrong';
+$r=api($temp,'partnerRestrictions.php',['server'=>$server]);check(($r['error']??'')==='registered_receiver_token_required','Receiver feed rejects invalid token');
+$receiverToken=str_repeat('r',64);$hash=hash('sha256',$receiverToken);
+$q=$db->prepare('UPDATE partnerRestrictionReceiver SET tokenHash=? WHERE receiverIp=INET_ATON(\'100.68.176.110\')');$q->bind_param('s',$hash);$q->execute();
+$server['HTTP_X_TARASEC_NODE_TOKEN']=$receiverToken;
+$r=api($temp,'partnerRestrictions.php',['server'=>$server]);check(count($r['restrictions'])===1 && (int)$r['restrictions'][0]['ttl']>0,'Enrolled receiver receives bounded restriction');
+$server['REMOTE_ADDR']='100.68.165.190';unset($server['HTTP_X_TARASEC_NODE_TOKEN']);
+$server['HTTP_X_TARASEC_DEMO_TOKEN']='session_token';$server['REQUEST_METHOD']='POST';
+$r=api($temp,'appDemo5.php',['server'=>$server,'get'=>['action'=>'release'],'post'=>['session_id'=>$id]]);check($r['ok']===true,'Owner session token can release test');
+$server['REQUEST_METHOD']='GET';
+$r=api($temp,'appDemo5.php',['server'=>$server,'get'=>['session_id'=>$id]]);check(!$r['blacklist_active'] && $r['state']==='released','Release must deactivate DB restriction');
+$server['REMOTE_ADDR']='100.68.9.9';
+$r=api($temp,'appPartnerStatus.php',['server'=>$server,'get'=>['gateway_ip'=>'100.68.165.190']]);check($r['lookup_basis']==='selected_gateway' && $r['partner']['gateway_ip']==='100.68.165.190','Selected gateway status must not confuse the DB route');
+$server['REQUEST_METHOD']='POST';$server['REMOTE_ADDR']='100.68.165.190';
+$r=api($temp,'appDemo5.php',['server'=>$server,'get'=>['action'=>'create'],'post'=>['source_ip'=>'100.68.9.9']]);
+check(!empty($r['ok']) && $r['source_ip']==='100.68.165.190' && strlen($r['token'])===64,'Create must use DB-observed source, not posted source');
+$server['REMOTE_ADDR']='100.68.9.9';
+$r=api($temp,'appDemo5.php',['server'=>$server,'get'=>['action'=>'create']]);check(($r['error']??'')==='demo5_gateway_not_enabled_or_wrong_route','Unregistered path cannot create exercise');
+foreach(glob($temp.'/script/*') as $file)unlink($file);rmdir($temp.'/script');unlink($temp.'/dbfunc.php');unlink($temp.'/invoke.php');rmdir($temp);
+echo "Demo 5 API authorization, distribution and release checks passed\n";
