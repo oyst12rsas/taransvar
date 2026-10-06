@@ -39,10 +39,10 @@ class Windows(unittest.TestCase):
             apply.assert_not_called()
 
     def test_close_survives_policy_opt_out(self):
-        with patch.object(w, "configuration", return_value=(5822, [])) as cfg, patch.object(w, "read_state", return_value={"id": "a"*32}), patch.object(w, "write_state") as write, patch.object(w, "apply_rules") as apply:
+        with patch.object(w, "configuration", return_value=(5822, [])) as cfg, patch.object(w, "read_state", return_value={"id": "a"*32, "port": 5822}), patch.object(w, "write_state") as write, patch.object(w, "apply_rules") as apply:
             w.close_window("a"*32)
-            cfg.assert_called_once_with(require_enabled=False)
-            write.assert_called_once_with({"id": "a"*32, "until": 0})
+            cfg.assert_not_called()
+            write.assert_called_once_with({"id": "a"*32, "until": 0, "port": 5822})
             apply.assert_called_once_with(5822, [], 0)
 
     def test_both_families_guarded_before_rebuild_and_no_forward_mutation(self):

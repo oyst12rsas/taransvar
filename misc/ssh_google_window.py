@@ -120,22 +120,24 @@ def open_window(job_id, until):
             "--unit=tarasec-ssh-window-" + job_id,
             "--on-active=%ds" % max(1, until-int(time.time())),
             "/usr/bin/python3", "/usr/local/lib/tarasec/ssh_google_window.py", "close", job_id)
-    write_state({"id": job_id, "until": until})
+    write_state({"id": job_id, "until": until, "port": port})
     try:
         apply_rules(port, sources, until)
     except Exception:
-        write_state({"id": job_id, "until": 0})
+        write_state({"id": job_id, "until": 0, "port": port})
         apply_rules(port, sources, 0)
         raise
 
 def close_window(job_id):
-    port, sources = configuration(require_enabled=False)
     state = read_state()
     # An old timer must never close a later, independently approved window.
     if state.get("id") != job_id:
         return
-    write_state({"id": job_id, "until": 0})
-    apply_rules(port, sources, 0)
+    port = int(state["port"])
+    if not 1 <= port <= 65535:
+        raise ValueError("Invalid saved SSH port")
+    write_state({"id": job_id, "until": 0, "port": port})
+    apply_rules(port, [], 0)
 
 def main():
     if os.geteuid() != 0:
