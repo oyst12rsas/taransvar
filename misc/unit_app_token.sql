@@ -18,3 +18,4 @@ CREATE TABLE IF NOT EXISTS unitAppToken (
     KEY idx_unit_app_token_unit (unitId),
     KEY idx_unit_app_token_active (active)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+

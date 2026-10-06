@@ -1,0 +1,28 @@
+name: Unit QR linking
+on:
+  pull_request:
+    paths:
+      - 'html/link.php'
+      - 'html/script/unitPairCode.php'
+      - 'html/script/unitLinkCommon.php'
+      - 'misc/unit_pair_code.sql'
+      - 'misc/setup_unit_qr.sh'
+      - 'misc/setup_unit_link.sh'
+      - 'misc/install.sql'
+      - 'misc/upgrade_db.pl'
+      - 'tests/unit_qr_test.php'
+      - '.github/workflows/unit-qr-link.yml'
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y php-cli php-mysql mariadb-server qrencode
+      - name: Lint and database integration checks
+        run: |
+          php -l html/link.php
+          php -l html/script/unitPairCode.php
+          php -l html/script/unitLinkCommon.php
+          bash -n misc/setup_unit_qr.sh misc/setup_unit_link.sh
+          sudo systemctl start mariadb
+          sudo php tests/unit_qr_test.php

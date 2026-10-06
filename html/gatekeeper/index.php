@@ -334,6 +334,7 @@ global $setupRow;
 <table>
 <tr>
 <td bgcolor="white"><?php printMenuChoice("main", "Home"); ?></td>
+<td bgcolor="white"><a href="/link.php">Link to my app</a></td>
 <td bgcolor="white"><?php printMenuChoice("infections", "Infections"); ?></td>
 <td bgcolor="white"><?php printMenuChoice("listLog", "Log"); ?></td>
 <td bgcolor="white"><?php printMenuChoice("traffic", "Traffic"); ?></td>
@@ -688,3 +689,4 @@ if (isset($_GET['f']))
 
 </body>
 </html>
+
