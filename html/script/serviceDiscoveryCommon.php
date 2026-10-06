@@ -37,7 +37,12 @@ function taraAccountServices(?array $config = null): array {
 }
 
 // Gatekeeper admin credentials remain separate from subscriber credentials.
-function taraAdminServices(array $gatewayConfig = [], ?array $services = null): array {
+function taraAdminServices(?array $gatewayConfig = null, ?array $services = null): array {
+    if ($gatewayConfig === null) {
+        $path = '/etc/tarasec/gatekeeper-google.php';
+        $gatewayConfig = is_readable($path) ? require $path : [];
+        if (!is_array($gatewayConfig)) throw new RuntimeException('Invalid administrator service configuration.');
+    }
     $services ??= taraServiceConfig();
     $api = trim((string)($services['admin_api_url'] ?? ''));
     $login = trim((string)($services['admin_sign_in_url'] ?? ''));
