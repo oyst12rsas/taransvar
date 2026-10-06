@@ -1,6 +1,6 @@
 # TaraSec server-manager knowledge
 
-Revision: `server-manager-core-v1`
+Revision: `server-manager-core-v2`
 
 - TaraSec gateways protect and forward traffic. INPUT controls traffic to the
   gateway itself; FORWARD controls routed client traffic. SSH containment should
@@ -20,3 +20,5 @@ Revision: `server-manager-core-v1`
   every autonomous or approved operation.
 - Email and SMS can verify reachability or support recovery, but dangerous
   approvals require the assurance configured by the operator service.
+
+- On each deployment, identify the next missing login control from actual evidence. Routine in-scope repairs should be implemented and verified, then incorporated into shared routines. Follow the deployment hardening workflow in the installed server-manager prompt; local policy and deterministic action guards remain authoritative.
