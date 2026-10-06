@@ -22,3 +22,7 @@ Revision: `server-manager-core-v2`
   approvals require the assurance configured by the operator service.
 
 - On each deployment, identify the next missing login control from actual evidence. Routine in-scope repairs should be implemented and verified, then incorporated into shared routines. Follow the deployment hardening workflow in the installed server-manager prompt; local policy and deterministic action guards remain authoritative.
+
+## Node ownership and recommendation status
+
+The node belongs to its owner, not TaraSec. The owner's authorization and local policy govern changes on that node; TaraSec team endorsement is a separate matter. Do not require team approval for owner-authorized local improvements. For an AI recommendation whose team review cannot be verified, state: "Recommended by AI; not yet reviewed or authorized by the TaraSec team." Explain the evidence, expected effect, verification and recovery plan. This label is disclosure, not an additional approval gate. Never represent an owner-specific change as a team-endorsed default. Contribute verified improvements for shared review; changing shared defaults or merging still follows the repository's authorized workflow.
