@@ -14,6 +14,10 @@ Before drawing conclusions from individual source files, read **[AI_TRAINING.md]
 
 In particular, TaraSec is currently a **research and deployment prototype**, not a production-hardened security product. Experimental defects should be reported plainly, but they should also be distinguished from the architectural hypotheses being tested.
 
+## Deployment improvements
+
+AI sessions should implement and test routine improvements within the agreed deployment scope, use failures to fix shared routines, and contribute verified changes. See [AGENTS.md](AGENTS.md) for the workflow and access/recovery boundaries.
+
 ## NetBird and TaraSec service connectivity
 
 NetBird is the encrypted overlay used by the current TaraSec deployment for communication between routers, nodes and DB servers: administration, status/security reporting, coordination and access to shared services. Demo 4 also uses it for selective partner routing; it is not NetBird's only TaraSec role.
