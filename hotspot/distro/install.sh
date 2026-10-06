@@ -426,6 +426,10 @@ if lsmod | awk '{print $1}' | grep -qx tarakernel && \
     fi
 fi
 
+echo "Next: review and verify your node security at https://tarasec.org/safety/#deployment"
+echo "Hardening priorities: https://tarasec.org/safety/#hardening-priorities"
+echo "Ask your AI assistant to check the next missing control, test it and fix in-scope routine failures."
+
 read -n 1 -s -p "********** The system should now restart. Press Ctrl-C to abort or any other key to reboot. "
 echo
 reboot
