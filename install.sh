@@ -146,3 +146,7 @@ esac
     cd misc
     perl startup.pl
 )
+
+echo "Next: review and verify your node security at https://tarasec.org/safety/#deployment"
+echo "Hardening priorities: https://tarasec.org/safety/#hardening-priorities"
+echo "Ask your AI assistant to check the next missing control, test it and fix in-scope routine failures."
