@@ -89,6 +89,9 @@ function recordPartnerIncident(mysqli $conn,int $reportId,string $ip,int $port,s
     try {
         require_once __DIR__.'/partnerIncidentLib.php';
         partnerIncidentRecord($conn,$reportId,$ip,$port,$sender,$tag,$at);
+        require_once __DIR__.'/partnerObservationLib.php';
+        global $severity,$category,$why;
+        partnerObservationStart($conn,$reportId,$ip,$tag,$at,(int)$severity,$category,$why);
     } catch(Throwable $e) { error_log('Partner incident processing failed: '.$e->getMessage()); }
 }
 
@@ -204,3 +207,4 @@ try {
     error_log('Hack report endpoint failed. Sender=' . $sender . ' IP=' . $ip . ':' . $port . ' Error=' . $e->getMessage());
     reportFail(500, 'database failure');
 }
+

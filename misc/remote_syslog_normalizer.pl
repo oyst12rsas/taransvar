@@ -26,9 +26,10 @@ sub parse_event {
         ($e{dst_port}) = $msg =~ /DPT=(\d+)/;
         ($e{protocol}) = $msg =~ /PROTO=([A-Za-z0-9_+-]+)/;
         $e{service} = 'iptables';
-        $e{is_attack} = ($msg =~ /(?:DROP|REJECT|DENY)/i) ? 1 : 0;
+        $e{is_attack} = ($msg =~ /(?:DROP|REJECT|DENY|DENIED)/i) ? 1 : 0;
         $e{action} = $e{is_attack} ? 'deny' : '';
-        $e{description} = 'remote rsyslog firewall event';
+        $e{description} = $msg =~ /TARASEC_SSH_DENIED/ ? 'SSH access policy denial' : 'remote rsyslog firewall event';
+        $e{severity} = $msg =~ /TARASEC_HONEYPOT_REJECT:/ ? 7 : 0;
         return \%e;
     }
 
@@ -120,3 +121,4 @@ while (1) {
     seek($fh, 0, 1) or die "Cannot clear EOF state for $logFile: $!\n";
     sleep 1;
 }
+

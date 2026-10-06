@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS domain(domainId INT PRIMARY KEY,color ENUM('white','b
 CREATE TABLE IF NOT EXISTS domainIp(domainId INT,ip INT UNSIGNED,handled BIT);
 DELETE FROM setup; INSERT INTO setup VALUES(b'1',INET_ATON('100.68.126.0'));");
 $migration=file_get_contents(__DIR__.'/../misc/demo5_partner_containment.sql');sqlFile($db,$migration);sqlFile($db,$migration);
+sqlFile($db,file_get_contents(__DIR__.'/../misc/partner_observation.sql'));
+sqlFile($db,file_get_contents(__DIR__.'/../misc/demo5_gateway_control.sql'));
 foreach(['partnerRestrictionDelivery','partnerIncidentEvidence','demo5Session','demo5Configuration','partnerRestrictionReceiver','partnerRouter','colorListings'] as $table)$db->query("DELETE FROM $table");
 $db->query("INSERT INTO partnerRouter(routerId,ip,nettmask,demo5Enabled) VALUES(1,INET_ATON('100.68.165.190'),4294967295,1)");
 $db->query("INSERT INTO demo5Configuration VALUES(1,INET_ATON('100.68.176.110'),22,30,120)");
@@ -50,9 +52,11 @@ file_put_contents($temp.'/dbfunc.php', <<<'PHP'
 <?php
 function getConnection(){return new mysqli(getenv('DEMO5_TEST_PORT')?'127.0.0.1':'localhost','root',getenv('DEMO5_TEST_PASSWORD')?:'','tarasec_demo5_test',(int)(getenv('DEMO5_TEST_PORT')?:0),getenv('DEMO5_TEST_PORT')?null:getenv('DEMO5_TEST_SOCKET'));}
 PHP);
-foreach(['appDemo5.php','appPartnerStatus.php','partnerRestrictions.php'] as $file)copy(__DIR__.'/../html/script/'.$file,$temp.'/script/'.$file);
+file_put_contents($temp.'/observation-config.php',"<?php return ['enabled'=>true];");
+foreach(['appDemo5.php','appPartnerStatus.php','partnerRestrictions.php','partnerObservationLib.php'] as $file)copy(__DIR__.'/../html/script/'.$file,$temp.'/script/'.$file);
 file_put_contents($temp.'/invoke.php', <<<'PHP'
 <?php
+define('TARASEC_PARTNER_OBSERVATION_CONFIG',__DIR__.'/observation-config.php');
 $case=json_decode(base64_decode($argv[2]),true);
 $_SERVER=$case['server'];$_GET=$case['get']??[];$_POST=$case['post']??[];
 chdir(__DIR__.'/script');include $argv[1];
@@ -85,5 +89,6 @@ $r=api($temp,'appDemo5.php',['server'=>$server,'get'=>['action'=>'create'],'post
 check(!empty($r['ok']) && $r['source_ip']==='100.68.165.190' && strlen($r['token'])===64,'Create must use DB-observed source, not posted source');
 $server['REMOTE_ADDR']='100.68.9.9';
 $r=api($temp,'appDemo5.php',['server'=>$server,'get'=>['action'=>'create']]);check(($r['error']??'')==='demo5_gateway_not_enabled_or_wrong_route','Unregistered path cannot create exercise');
-foreach(glob($temp.'/script/*') as $file)unlink($file);rmdir($temp.'/script');unlink($temp.'/dbfunc.php');unlink($temp.'/invoke.php');rmdir($temp);
+foreach(glob($temp.'/script/*') as $file)unlink($file);rmdir($temp.'/script');unlink($temp.'/observation-config.php');unlink($temp.'/dbfunc.php');unlink($temp.'/invoke.php');rmdir($temp);
 echo "Demo 5 API authorization, distribution and release checks passed\n";
+

@@ -47,7 +47,8 @@ int checkFixTagging(struct _PacketInspection *pPacket, bool bForwarding, const s
 					pr_info("tarakernel: %s Target has requested assistance, but this unit is %s (so sending)..: %s->%s, request: %d, this IP: %d\n", lpPrOrFw, lpThisComputer, pPacket->cSourceIp, pPacket->cDestIp, nRequestedAssistance, nSenderIsInfected);
 			}
                               
-			if (nSenderIsInfected)
+			if (nSenderIsInfected &&
+                (unsigned long)ktime_get_boottime_seconds() >= READ_ONCE(demo5_pause_deadline))
 				if (tagThePacket(pPacket, state, pInfected) == NF_STOLEN)
 					return NF_STOLEN;
 		}
@@ -283,3 +284,4 @@ static unsigned int module_forwarding_handler(void *priv, struct sk_buff *skb, c
         
 	return NF_ACCEPT;
 }
+
