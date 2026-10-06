@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/serviceDiscoveryCommon.php';
+
 class UnitLinkException extends RuntimeException {}
 
 function unitLinkConfig(): array {
@@ -60,7 +62,8 @@ function unitLinkHttps(): void {
 
 function unitRedeemIdentity(string $ticket,array $cfg): string {
     if (!preg_match('/^[a-f0-9]{64}$/D',$ticket)) throw new UnitLinkException('Invalid identity handoff.');
-    $ch=curl_init('https://tarasec.org/api/v1/identity/unit-identity.php');
+    $services=taraAccountServices();
+    $ch=curl_init($services['identity_api_base'].'/unit-identity.php');
     curl_setopt_array($ch,[CURLOPT_POST=>true,CURLOPT_POSTFIELDS=>http_build_query([
         'action'=>'redeem','gateway_id'=>$cfg['gateway_id'],'ticket'=>$ticket
     ]),CURLOPT_RETURNTRANSFER=>true,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_CONNECTTIMEOUT=>5,CURLOPT_TIMEOUT=>12]);

@@ -31,3 +31,14 @@ Gatekeeper client can redeem it. Gatekeeper binds it to its initiating session
 and regenerates the session ID after login. Keep NetBird transport and access
 control on the callback HTTP endpoint; a publicly exposed Gatekeeper should
 use HTTPS instead.
+
+## Self-hosted identity/approval service
+
+The URLs are no longer restricted to tarasec.org. Configure a compatible trusted
+HTTPS `agent_api` and `sign_in_url` on the gateway, or use the administrator service
+pair in `/etc/tarasec/services.php` described in [service-discovery.md](service-discovery.md).
+The gateway's configured `agent_api` must match the chosen API, and its client ID,
+callback and separate shared secret must be registered there. The provider that
+started sign-in must still be configured when its callback arrives. Missing local
+service configuration retains the existing tarasec.org flow; outages and auth
+failures do not switch providers. Existing local admin eligibility still applies.

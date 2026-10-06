@@ -53,7 +53,7 @@ QR scanning remains a follow-up.
 
 The subscriber token stays at the central identity service. A gateway-bound,
 single-use ticket expires after 60 seconds. The gateway redeems it over verified
-TLS at the fixed public identity endpoint and hashes the stable Google subject
+TLS at the gateway-selected identity endpoint (tarasec.org by default) and hashes the stable Google subject
 locally. The central service does not receive unit IDs or security observations
 from this linking flow. Expired handoff rows are deleted by its deployment cron.
 
@@ -67,3 +67,5 @@ read a different unit or enter manager APIs. Confirm HTTPS certificates, Google
 origin/login registration, local attribution, cron operation and schema availability.
 Do not claim immediate interactive AI assistance: this flow presents available
 unit assessments and guidance, not an implemented remediation chat.
+
+Gateway-first identity service discovery and self-hosting are documented in [service-discovery.md](service-discovery.md). Existing gateway HTTPS and unit-link setup requirements still apply.

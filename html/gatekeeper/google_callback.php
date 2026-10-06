@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/../script/serviceDiscoveryCommon.php';
 session_start();
 header('Cache-Control: no-store');
 function gatekeeperGoogleFail(string $message): never {
@@ -12,13 +13,17 @@ if (!preg_match('/^[a-f0-9]{48}$/D', $state) || !preg_match('/^[a-f0-9]{64}$/D',
     || !hash_equals((string)($_SESSION['google_admin_state'] ?? ''), $state)
     || (int)($_SESSION['google_admin_until'] ?? 0) < time())
     gatekeeperGoogleFail('Sign-in request expired. Please try again.');
-unset($_SESSION['google_admin_state'], $_SESSION['google_admin_until']);
+$startedService = $_SESSION['google_admin_service'] ?? null;
+unset($_SESSION['google_admin_state'], $_SESSION['google_admin_until'], $_SESSION['google_admin_service']);
 $cfgPath = '/etc/tarasec/gatekeeper-google.php';
 $cfg = is_readable($cfgPath) ? require $cfgPath : null;
-if (!is_array($cfg) || !preg_match('/^[a-f0-9]{64}$/D', (string)($cfg['shared_secret'] ?? ''))
-    || ($cfg['agent_api'] ?? '') !== 'https://tarasec.org/ops/agent/api.php')
+if (!is_array($cfg) || !preg_match('/^[a-f0-9]{64}$/D', (string)($cfg['shared_secret'] ?? '')))
     gatekeeperGoogleFail('Google sign-in is not configured.');
-$curl = curl_init($cfg['agent_api'].'?action=gatekeeper_redeem');
+try { $provider = taraAdminServices($cfg); }
+catch (Throwable $e) { gatekeeperGoogleFail('Administrator identity service is not configured.'); }
+if (($cfg['agent_api'] ?? '') !== $provider['agent_api']) { gatekeeperGoogleFail('Administrator service credential configuration changed.'); }
+if ($startedService !== $provider) gatekeeperGoogleFail('Administrator identity service changed. Start sign-in again.');
+$curl = curl_init($provider['agent_api'].'?action=gatekeeper_redeem');
 curl_setopt_array($curl, [CURLOPT_POST=>true, CURLOPT_HTTPHEADER=>[
     'Authorization: Bearer '.$cfg['shared_secret'], 'Content-Type: application/json'
 ], CURLOPT_POSTFIELDS=>json_encode(['id'=>$cfg['client_id'],'state'=>$state,'code'=>$code]),
