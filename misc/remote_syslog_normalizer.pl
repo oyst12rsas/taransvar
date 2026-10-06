@@ -26,7 +26,7 @@ sub parse_event {
         ($e{dst_port}) = $msg =~ /DPT=(\d+)/;
         ($e{protocol}) = $msg =~ /PROTO=([A-Za-z0-9_+-]+)/;
         $e{service} = 'iptables';
-        $e{is_attack} = ($msg =~ /(?:DROP|REJECT|DENY)/i) ? 1 : 0;
+        $e{is_attack} = ($msg =~ /(?:DROP|REJECT|DENY|DENIED)/i) ? 1 : 0;
         $e{action} = $e{is_attack} ? 'deny' : '';
         $e{description} = 'remote rsyslog firewall event';
         return \%e;
