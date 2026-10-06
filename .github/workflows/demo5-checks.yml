@@ -36,4 +36,13 @@ jobs:
           DEMO5_TEST_PORT: '3307'
           DEMO5_TEST_PASSWORD: demo5-test-only
         run: php tests/demo5_database_test.php
-
+  kernel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build kernel module with bounded tagging pause
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y linux-headers-generic build-essential
+          kernel_version=$(ls /lib/modules | sort -V | tail -n 1)
+          make -C tarakernel KVER="$kernel_version"
