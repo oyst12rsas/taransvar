@@ -1,0 +1,2 @@
+# Local manager app activity; no account/source data in shared partner reports.
+SSH_LOGIN_REPORT_ENABLED=yes

@@ -104,12 +104,15 @@ try {
     }
     $result->free();
 
+    require_once __DIR__ . '/sshLoginReportLib.php';
+    $sshLogins = managerSshLoginReport();
     $conn->close();
     overviewReply(200, [
         'ok' => true,
         'local' => $local,
         'sites' => $sites,
         'activeUnits' => $units,
+        'sshLogins' => $sshLogins,
         'server_time' => gmdate('c')
     ]);
 } catch (Throwable $e) {

@@ -1,0 +1,16 @@
+name: SSH login report checks
+on:
+  pull_request:
+    paths:
+      - 'misc/*ssh*login*'
+      - 'html/script/sshLoginReportLib.php'
+      - 'html/script/managerOverview.php'
+      - '.github/workflows/ssh-login-report.yml'
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 misc/test_ssh_login_report.py
+      - run: bash -n misc/install_ssh_login_report.sh
+      - run: php -l html/script/sshLoginReportLib.php && php -l html/script/managerOverview.php
