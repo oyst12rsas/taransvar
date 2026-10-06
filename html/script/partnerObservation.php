@@ -29,7 +29,7 @@ try {
     $raw=file_get_contents('php://input',false,null,0,4097);
     if (strlen($raw)>4096) observationReply(413,['ok'=>false]);
     $b=json_decode($raw,true,512,JSON_THROW_ON_ERROR);$id=$b['id']??null;
-    if (!is_numeric($id)|| (int)$id<1) observationReply(400,['ok'=>false]);
+    if (!is_int($id)||$id<1) observationReply(400,['ok'=>false]);
     $values=[];
     foreach(['untagged','tagged','unknownTag','maliciousUntagged','policyDeniedUntagged'] as $key) {
         $v=$b[$key]??null;
@@ -37,6 +37,10 @@ try {
         $values[]=$v;
     }
     if ($values[3]+$values[4]>$values[0]) observationReply(400,['ok'=>false]);
+    $q=$db->prepare('SELECT 1 FROM partnerObservation WHERE observationId=? AND expiresAt>NOW()
+        AND sourceIp<>INET_ATON(?) AND notifiedAt<DATE_SUB(NOW(),INTERVAL ? SECOND)');
+    $q->bind_param('isi',$id,$peer,$grace);$q->execute();$eligible=$q->get_result()->fetch_row();$q->close();
+    if (!$eligible) observationReply(409,['ok'=>false,'error'=>'observation_not_eligible']);
     $q=$db->prepare('INSERT INTO partnerObservationSample
         (observationId,receiverIp,untagged,tagged,unknownTag,maliciousUntagged,policyDeniedUntagged)
         SELECT observationId,INET_ATON(?),?,?,?,?,? FROM partnerObservation

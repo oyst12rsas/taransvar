@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 install -d -m 0755 /etc/tarasec
 if [ ! -e /etc/tarasec/partner-observation.php ]; then
-    install -m 0640 misc/partner-observation.example.php /etc/tarasec/partner-observation.php
+    install -o root -g www-data -m 0640 misc/partner-observation.example.php /etc/tarasec/partner-observation.php
 fi
 ROOT=$(pwd)
 cat >/etc/systemd/system/tarasec-partner-observation.service <<EOF

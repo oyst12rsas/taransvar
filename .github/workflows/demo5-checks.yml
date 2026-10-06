@@ -28,7 +28,7 @@ jobs:
           php -l html/gatekeeper/func/appDemo5.php
           php tests/demo5_transition_test.php
           php tests/partner_observation_test.php
-          for file in html/script/partnerObservation*.php html/script/demo5GatewayControl.php misc/partner_observation_worker.php misc/demo5_gateway_worker.php html/gatekeeper/func/partnerObservation.php; do php -l "$file"; done
+          for file in html/script/partnerObservation*.php html/script/demo5GatewayControl.php misc/partner_observation_worker.php misc/partner_observation_rejections.php misc/demo5_gateway_worker.php html/gatekeeper/func/partnerObservation.php; do php -l "$file"; done
           bash -n misc/install_partner_observation.sh misc/install_demo5_gateway.sh misc/install_demo5_rejection_target.sh
           perl tests/demo5_report_forwarding_test.pl
       - name: Check migration and DB incident transitions

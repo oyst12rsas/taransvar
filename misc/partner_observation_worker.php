@@ -24,7 +24,7 @@ try {
                 $q->bind_param('i',$r['observationId']);$q->execute();$q->close();
             }
         }
-        $rows=$db->query("SELECT observationId FROM partnerObservation WHERE expiresAt>NOW() AND notifiedAt IS NOT NULL AND status<>'alarm' LIMIT 100")->fetch_all(MYSQLI_ASSOC);
+        $rows=$db->query("SELECT observationId,sessionId FROM partnerObservation WHERE expiresAt>NOW() AND notifiedAt IS NOT NULL AND status<>'alarm' LIMIT 100")->fetch_all(MYSQLI_ASSOC);
         foreach($rows as $r) {
             $q=$db->prepare('SELECT * FROM partnerObservationSample WHERE observationId=? AND checkedAt>DATE_SUB(NOW(),INTERVAL 90 SECOND)');
             $q->bind_param('i',$r['observationId']);$q->execute();$samples=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
@@ -33,7 +33,7 @@ try {
                 $q=$db->prepare("UPDATE partnerObservation SET status='alarm' WHERE observationId=?");
                 $q->bind_param('i',$r['observationId']);$q->execute();$q->close();
                 error_log('TaraSec partner alarm: observation='.$r['observationId'].' malicious_untagged_ratio='.$decision['ratio']);
-                $warning='Partner tagging alarm: observation '.$r['observationId'].'; high malicious rejection ratio among untagged connections. Review partner observation evidence.';
+                $warning=($r['sessionId']?'Demo 5 test: ':'').'Partner tagging alarm: observation '.$r['observationId'].'; high malicious rejection ratio among untagged connections. Review partner observation evidence.';
                 $q=$db->prepare('INSERT INTO warning(warning) VALUES(?)');$q->bind_param('s',$warning);$q->execute();$q->close();
             }
         }
@@ -43,6 +43,8 @@ try {
     $cfg=json_decode(file_get_contents($argv[1]??'/etc/tarasec/partner-restrictions.json'),true,512,JSON_THROW_ON_ERROR);
     $base=rtrim((string)$cfg['db_url'],'/');$token=(string)$cfg['node_token'];
     if (!filter_var($base,FILTER_VALIDATE_URL)||!in_array(parse_url($base,PHP_URL_SCHEME),['http','https'],true)||strlen($token)<32) throw new RuntimeException('Invalid receiver configuration');
+    require_once __DIR__.'/partner_observation_rejections.php';
+    partnerObservationCollectRejections($db,$base);
     $url=$base.'/script/partnerObservation.php';
     $options=['timeout'=>5,'follow_location'=>0,'ignore_errors'=>true,'header'=>"X-TaraSec-Node-Token: $token\r\n"];
     $raw=file_get_contents($url,false,stream_context_create(['http'=>$options]));

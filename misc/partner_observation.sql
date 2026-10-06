@@ -16,3 +16,9 @@ CREATE TABLE IF NOT EXISTS partnerObservationSample (
  checkedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
  PRIMARY KEY(observationId,receiverIp)
 );
+CREATE TABLE IF NOT EXISTS partnerObservationLocalEvidence (
+ cursorHash char(64) PRIMARY KEY,syslogId int unsigned NOT NULL,
+ created timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_observation_threat_tuple
+ ON syslogThreat(src_ip,src_port,dst_ip,dst_port,syslogId);

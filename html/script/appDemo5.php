@@ -59,6 +59,7 @@ try {
     if (!preg_match('/^[a-f0-9]{32}$/D',$id)) demo5Reply(400,['ok'=>false,'error'=>'invalid_session']);
     $q=$db->prepare("SELECT s.*,INET_NTOA(s.sourceIp) source_ip,INET_NTOA(r.ip) gateway_ip,
         INET_NTOA(s.receiverIp) receiver_ip,r.taggingState,r.taggingStateUpdated,
+        UNIX_TIMESTAMP(s.created) created_epoch,UNIX_TIMESTAMP(s.expiresAt) expires_epoch,
         GREATEST(0,TIMESTAMPDIFF(SECOND,NOW(),s.expiresAt)) seconds_remaining,
         GREATEST(0,TIMESTAMPDIFF(SECOND,NOW(),s.restrictionUntil)) restriction_seconds_remaining,
         GREATEST(15,LEAST(120,c.graceSeconds)) graceSeconds FROM demo5Session s JOIN partnerRouter r ON r.routerId=s.routerId
@@ -103,7 +104,7 @@ try {
     demo5Reply(200,['ok'=>true,'demo'=>5,'checked_at'=>gmdate('c'),'session_id'=>$id,
         'test_targets'=>$targets,'observation'=>$observation,'observation_metrics'=>$metrics,
         'pause_state'=>$s['pauseState'],'pause_message'=>$s['pauseMessage'],'pause_checked_at'=>$s['pauseCheckedAt'],
-        'pause_until_epoch'=>min(strtotime($s['expiresAt']),strtotime($s['created'])+180),
+        'pause_until_epoch'=>min((int)$s['expires_epoch'],(int)$s['created_epoch']+180),
         'state'=>$state,'source_ip'=>$s['source_ip'],'gateway_ip'=>$s['gateway_ip'],
         'origin'=>'router_or_subnode_unknown','receiver_ip'=>$s['receiver_ip'],'receiver_port'=>(int)$s['receiverPort'],
         'first_report_id'=>$s['firstReportId'],'latest_report_id'=>$s['latestReportId'],'partner_notified_at'=>$s['notifiedAt'],
@@ -116,4 +117,3 @@ try {
         'deliveries'=>$deliveries,'evidence'=>$evidence,
         'reason'=>'Repeated untagged rejection after successful partner notification is required. Missing tag evidence is unknown, not zero.']);
 } catch(Throwable $e) { error_log('appDemo5: '.$e->getMessage()); demo5Reply(503,['ok'=>false,'error'=>'demo5_unavailable_check_migration']); }
-
