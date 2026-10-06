@@ -21,3 +21,7 @@ install -o root -g root -m 0644 "$root/systemd/tarasec-agent-approvals.timer" /e
 systemctl daemon-reload
 systemctl enable --now tarasec-agent-approvals.timer
 echo "Agent timer installed; check journalctl -u tarasec-agent-approvals.service"
+
+echo "Next: review and verify your node security at https://tarasec.org/safety/#deployment"
+echo "Hardening priorities: https://tarasec.org/safety/#hardening-priorities"
+echo "Ask your AI assistant to check the next missing control, test it and fix in-scope routine failures."

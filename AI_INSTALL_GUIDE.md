@@ -2,6 +2,10 @@
 
 This file is intended for ChatGPT and other AI assistants helping a user install or test TaraSec from this repository.
 
+## Security checklist for every deployment
+
+Use https://tarasec.org/safety/#deployment for the baseline checks and https://tarasec.org/safety/#hardening-priorities for continuing mitigation priorities. Include these links in the installation handoff. Check actual enforcement; installation completion does not certify that every listed protection is active. Select and verify the next missing control using the workflow below.
+
 ## Deployment hardening and shared improvements
 
 The node belongs to its owner, not TaraSec. The owner's authorization and local policy govern changes on that node; TaraSec team endorsement is a separate matter. Do not require team approval for owner-authorized local improvements. For an AI recommendation whose team review cannot be verified, state: "Recommended by AI; not yet reviewed or authorized by the TaraSec team." Explain the evidence, expected effect, verification and recovery plan. This label is disclosure, not an additional approval gate. Never represent an owner-specific change as a team-endorsed default. Contribute verified improvements for shared review; changing shared defaults or merging still follows the repository's authorized workflow.
