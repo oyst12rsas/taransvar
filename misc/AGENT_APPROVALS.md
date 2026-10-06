@@ -132,3 +132,41 @@ The `AUTH_*` keys record intended authentication capabilities; they do not
 enable methods on TaraSec's live approval page. That page currently uses
 Google sign-in and a separate authenticator code for approvals. TaraSec must
 enforce any stronger approval policy in the live service itself.
+
+## Google-controlled temporary SSH access
+
+Deploy the companion operator-site PR first, then update the node checkout.
+This mode is opt-in and is separate from temporary attack containment.
+The node continues polling over outbound HTTPS while SSH is closed.
+
+On the intended node, set `SSH_GOOGLE_REOPEN_ENABLED=yes` in
+`/etc/tarasec-server-manager.conf`, and set the real `SSH_PORT` and an explicit
+comma-separated IP/CIDR `SSH_ALLOWED_SOURCES` in `/etc/tarasecfw.conf`.
+An empty allowlist or /0 is refused. Run
+`sudo bash misc/install_agent_approvals.sh` from a recovery console: enabling
+this mode immediately closes NEW admin SSH connections in both IPv4 and IPv6.
+The boot service restores closure after reboot; the minute worker repairs
+its INPUT hooks after firewall refreshes. No NAT or FORWARD rules are changed.
+A firewall manager which continually replaces INPUT rules must be coordinated
+with this service; the minute repair is not a substitute for testing that integration.
+
+At https://tarasec.org/ops/agent/, sign in with an allowlisted Google account.
+Find the node's “Open SSH temporarily” proposal, choose 5, 10 or 15 minutes,
+enter a fresh authenticator code and approve. The window runs from approval,
+not job delivery; polling delay reduces usable time. Approval is not proof of
+execution: check the job state and try the real SSH connection.
+Normal SSH credentials are still required and only configured sources may connect.
+Allowed sources return to the existing firewall rules; the baseline firewall must
+permit the configured admin port for those sources. An opening never bypasses
+another firewall rejection, including attack containment.
+
+Closure is scheduled locally before any opening rule is installed.
+Retries do not extend the deadline. Reboot loses the window and returns to
+closed. Expiry blocks NEW connections; existing authenticated SSH sessions
+remain connected. The independent attack policy can still reject connections
+during a window. Disabling the opt-in flag does not remove installed firewall
+protection; use the recovery console to deliberately change this policy.
+
+Before production use, verify IPv4 and IPv6 closure, authorized opening,
+unlisted-source rejection, expiry, website outage, worker restart, reboot,
+and coexistence with NetBird/firewall refreshes on the intended node.

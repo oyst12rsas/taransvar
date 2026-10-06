@@ -386,6 +386,11 @@ def main():
     nickname = setting("AGENT_PUBLIC_NICKNAME")
     if not re.fullmatch(r"[A-Za-z][A-Za-z0-9 _-]{2,31}", nickname):
         raise RuntimeError("Set AGENT_PUBLIC_NICKNAME in /etc/tarasecfw.conf")
+    google_ssh = enabled("SSH_GOOGLE_REOPEN_ENABLED")
+    if google_ssh:
+        result = run("/usr/bin/python3", "/usr/local/lib/tarasec/ssh_google_window.py", "reconcile")
+        if result.returncode:
+            raise RuntimeError("Google-controlled SSH reconciliation failed")
     evidence = ssh_security_evidence.collect()
     concerns = health(evidence)
     terminal = terminal_state()
@@ -409,6 +414,8 @@ def main():
                           "assessment": current_assessment}, token)
         remote = "connected"
         print("Agent status: " + ("needs review (" + str(len(concerns)) + " checks)" if concerns else "operating"))
+        if google_ssh:
+            api("propose", {"operation": "open_ssh_temporarily"}, token)
         if obsolete_unit_candidate(evidence):
             proposal = api("propose", {"operation": "disable_obsolete_gateway_unit"}, token)
             if proposal["state"] == "pending":
@@ -419,9 +426,21 @@ def main():
             return
         success = False
         try:
-            if job.get("operation") != "disable_obsolete_gateway_unit":
+            if job.get("operation") == "open_ssh_temporarily":
+                if not enabled("SSH_GOOGLE_REOPEN_ENABLED"):
+                    raise RuntimeError("Google-controlled SSH disabled by owner")
+                until = job.get("open_until")
+                if not isinstance(until, int) or isinstance(until, bool):
+                    raise RuntimeError("Invalid SSH window deadline")
+                result = run("/usr/bin/python3", "/usr/local/lib/tarasec/ssh_google_window.py",
+                             "open", str(job["id"]), str(until))
+                success = result.returncode == 0
+                audit({"action": "open_ssh_temporarily", "success": success,
+                       "approved_until": until, "proposal_id": job["id"]})
+            elif job.get("operation") == "disable_obsolete_gateway_unit":
+                success = disable_obsolete_gateway_unit()
+            else:
                 raise RuntimeError("Unknown operation; refusing to execute")
-            success = disable_obsolete_gateway_unit()
         except Exception as exc:
             print("Approved operation failed: " + str(exc), file=sys.stderr)
         api("result", {"id": job["id"], "nonce": job["nonce"], "success": success}, token)
