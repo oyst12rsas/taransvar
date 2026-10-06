@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/partnerObservationLib.php';
 
 // Demo 5 uses ordinary report.php ingestion. Only DB-enabled, bounded exercises
 // can escalate automatically; production partner policy is deliberately separate.
@@ -30,6 +31,16 @@ function partnerIncidentRecord(mysqli $db, int $reportId, string $source, int $p
             $id = $row['sessionId'];
             $decision = $observedAt === null ? 'unknown' : partnerIncidentTransition($row,$tag,$observedAt,time(),max(15,min(120,(int)$row['graceSeconds'])));
             if ($decision === 'ignore') continue;
+            // The new observation-enabled exercise tests ordinary ratio handling.
+            // Never let an early single rejection preempt the sample window.
+            $policy=partnerObservationConfig();
+            if ($decision==='restrict' && !empty($policy['enabled'])) {
+                $samples=$db->prepare('SELECT p.* FROM partnerObservationSample p JOIN partnerObservation o ON o.observationId=p.observationId WHERE o.sessionId=? AND p.checkedAt>DATE_SUB(NOW(),INTERVAL 90 SECOND)');
+                $samples->bind_param('s',$id);$samples->execute();
+                $assessment=partnerObservationDecision($samples->get_result()->fetch_all(MYSQLI_ASSOC),$policy);
+                $samples->close();
+                if ($assessment['status']!=='alarm') $decision='reported';
+            }
             $at = $observedAt ?? time();
             $e = $db->prepare("INSERT IGNORE INTO partnerIncidentEvidence
                 (sessionId,reportId,receiverIp,sourcePort,observedTag,observedAt)
@@ -74,3 +85,4 @@ function partnerIncidentRecord(mysqli $db, int $reportId, string $source, int $p
         $db->commit();
     } catch (Throwable $e) { $db->rollback(); throw $e; }
 }
+

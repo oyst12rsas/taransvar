@@ -10,13 +10,16 @@ function sqlFile(mysqli $db,string $sql):void {
     $db->multi_query($sql);do {if($r=$db->store_result())$r->free();}while($db->more_results()&&$db->next_result());
 }
 function check(bool $condition,string $case):void {if(!$condition)throw new RuntimeException($case);}
-sqlFile($db,"CREATE TABLE IF NOT EXISTS setup (isGlobalDbServer BIT,adminIP INT UNSIGNED);
+sqlFile($db,"CREATE TABLE IF NOT EXISTS syslogThreat(syslogThreatId INT PRIMARY KEY,syslogId INT,src_ip INT UNSIGNED,src_port INT,dst_ip INT UNSIGNED,dst_port INT);
+CREATE TABLE IF NOT EXISTS setup (isGlobalDbServer BIT,adminIP INT UNSIGNED);
 CREATE TABLE IF NOT EXISTS partnerRouter(routerId INT PRIMARY KEY,ip INT UNSIGNED,nettmask INT UNSIGNED);
 CREATE TABLE IF NOT EXISTS colorListings(ip INT UNSIGNED PRIMARY KEY,color ENUM('white','black'),active BIT,handled BIT);
 CREATE TABLE IF NOT EXISTS domain(domainId INT PRIMARY KEY,color ENUM('white','black'));
 CREATE TABLE IF NOT EXISTS domainIp(domainId INT,ip INT UNSIGNED,handled BIT);
 DELETE FROM setup; INSERT INTO setup VALUES(b'1',INET_ATON('100.68.126.0'));");
 $migration=file_get_contents(__DIR__.'/../misc/demo5_partner_containment.sql');sqlFile($db,$migration);sqlFile($db,$migration);
+sqlFile($db,file_get_contents(__DIR__.'/../misc/partner_observation.sql'));
+sqlFile($db,file_get_contents(__DIR__.'/../misc/demo5_gateway_control.sql'));
 foreach(['partnerRestrictionDelivery','partnerIncidentEvidence','demo5Session','demo5Configuration','partnerRestrictionReceiver','partnerRouter','colorListings'] as $table)$db->query("DELETE FROM $table");
 $db->query("INSERT INTO partnerRouter(routerId,ip,nettmask,demo5Enabled) VALUES(1,INET_ATON('100.68.165.190'),4294967295,1)");
 $db->query("INSERT INTO demo5Configuration VALUES(1,INET_ATON('100.68.176.110'),22,30,120)");
@@ -50,9 +53,11 @@ file_put_contents($temp.'/dbfunc.php', <<<'PHP'
 <?php
 function getConnection(){return new mysqli(getenv('DEMO5_TEST_PORT')?'127.0.0.1':'localhost','root',getenv('DEMO5_TEST_PASSWORD')?:'','tarasec_demo5_test',(int)(getenv('DEMO5_TEST_PORT')?:0),getenv('DEMO5_TEST_PORT')?null:getenv('DEMO5_TEST_SOCKET'));}
 PHP);
-foreach(['appDemo5.php','appPartnerStatus.php','partnerRestrictions.php'] as $file)copy(__DIR__.'/../html/script/'.$file,$temp.'/script/'.$file);
+file_put_contents($temp.'/observation-config.php',"<?php return ['enabled'=>true];");
+foreach(['appDemo5.php','appPartnerStatus.php','partnerRestrictions.php','partnerObservationLib.php','partnerObservation.php','demo5GatewayControl.php'] as $file)copy(__DIR__.'/../html/script/'.$file,$temp.'/script/'.$file);
 file_put_contents($temp.'/invoke.php', <<<'PHP'
 <?php
+define('TARASEC_PARTNER_OBSERVATION_CONFIG',__DIR__.'/observation-config.php');
 $case=json_decode(base64_decode($argv[2]),true);
 $_SERVER=$case['server'];$_GET=$case['get']??[];$_POST=$case['post']??[];
 chdir(__DIR__.'/script');include $argv[1];
@@ -83,7 +88,23 @@ $r=api($temp,'appPartnerStatus.php',['server'=>$server,'get'=>['gateway_ip'=>'10
 $server['REQUEST_METHOD']='POST';$server['REMOTE_ADDR']='100.68.165.190';
 $r=api($temp,'appDemo5.php',['server'=>$server,'get'=>['action'=>'create'],'post'=>['source_ip'=>'100.68.9.9']]);
 check(!empty($r['ok']) && $r['source_ip']==='100.68.165.190' && strlen($r['token'])===64,'Create must use DB-observed source, not posted source');
+$newSession=$r['session_id'];
+check((int)$db->query("SELECT COUNT(*) n FROM partnerObservation WHERE sessionId='$newSession'")->fetch_assoc()['n']===1,'Exercise must register its observation at DB');
+$server['REQUEST_METHOD']='GET';$server['REMOTE_ADDR']='100.68.176.110';
+$server['HTTP_X_TARASEC_NODE_TOKEN']=$receiverToken;
+$r=api($temp,'partnerObservation.php',['server'=>$server]);check($r['ok'] && count($r['observations'])===0,'No collection before successful notification and grace');
+$db->query("UPDATE partnerObservation SET notifiedAt=DATE_SUB(NOW(),INTERVAL 40 SECOND) WHERE sessionId='$newSession'");
+$r=api($temp,'partnerObservation.php',['server'=>$server]);check(count($r['observations'])===1,'Independent receiver gets bounded observation request');
+$gatewayToken=str_repeat('g',64);$gatewayHash=hash('sha256',$gatewayToken);
+$q=$db->prepare("UPDATE partnerRestrictionReceiver SET tokenHash=? WHERE receiverIp=INET_ATON('100.68.165.190')");$q->bind_param('s',$gatewayHash);$q->execute();
+$server['REMOTE_ADDR']='100.68.165.190';$server['HTTP_X_TARASEC_NODE_TOKEN']=$gatewayToken;
+$r=api($temp,'partnerObservation.php',['server'=>$server]);check(count($r['observations'])===0,'Offending source cannot observe itself');
+$r=api($temp,'demo5GatewayControl.php',['server'=>$server]);check(count($r['sessions'])===1 && (int)$r['sessions'][0]['pause_until']<=time()+180,'Enabled authenticated gateway gets bounded pause command');
+$server['HTTP_X_TARASEC_NODE_TOKEN']='wrong';
+$r=api($temp,'demo5GatewayControl.php',['server'=>$server]);check(!$r['ok'],'Wrong gateway token cannot access commands');
+$server['REQUEST_METHOD']='POST';unset($server['HTTP_X_TARASEC_NODE_TOKEN']);
 $server['REMOTE_ADDR']='100.68.9.9';
 $r=api($temp,'appDemo5.php',['server'=>$server,'get'=>['action'=>'create']]);check(($r['error']??'')==='demo5_gateway_not_enabled_or_wrong_route','Unregistered path cannot create exercise');
-foreach(glob($temp.'/script/*') as $file)unlink($file);rmdir($temp.'/script');unlink($temp.'/dbfunc.php');unlink($temp.'/invoke.php');rmdir($temp);
+foreach(glob($temp.'/script/*') as $file)unlink($file);rmdir($temp.'/script');unlink($temp.'/observation-config.php');unlink($temp.'/dbfunc.php');unlink($temp.'/invoke.php');rmdir($temp);
 echo "Demo 5 API authorization, distribution and release checks passed\n";
+

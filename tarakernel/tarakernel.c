@@ -56,6 +56,33 @@ MODULE_LICENSE("Dual BSD/GPL");
 //Notes... sturcts are mostly defined in taralink.h
 static unsigned int bReceivedConfiguration = 0;
 
+/* Root-only bounded test override. Expiry is enforced on every packet even if
+ * userspace or the DB disappears; doTagging and assistance enforcement remain. */
+static unsigned long demo5_pause_until;
+static unsigned long demo5_pause_deadline;
+static int demo5_pause_set(const char *value, const struct kernel_param *kp)
+{
+    unsigned long until;
+    unsigned long now = (unsigned long)ktime_get_real_seconds();
+    int rc = kstrtoul(value, 0, &until);
+    if (rc)
+        return rc;
+    if (until && until == READ_ONCE(demo5_pause_until))
+        return 0; /* Polling/replay must not extend the monotonic deadline. */
+    if (until && (until <= now || until - now > 180))
+        return -EINVAL;
+    WRITE_ONCE(demo5_pause_deadline, until ? (unsigned long)ktime_get_boottime_seconds() + until - now : 0);
+    WRITE_ONCE(demo5_pause_until, until);
+    return 0;
+}
+static const struct kernel_param_ops demo5_pause_ops = {
+    .set = demo5_pause_set,
+    .get = param_get_ulong,
+};
+module_param_cb(demo5_pause_until, &demo5_pause_ops, &demo5_pause_until, 0600);
+MODULE_PARM_DESC(demo5_pause_until, "Demo 5 tagging pause UTC expiry; root only, maximum 180 seconds");
+
+
 void warn(char *lpMsg);
 int isprintable(char ch);
 //int packetInterpreter(void *priv, struct sk_buff *skb, const struct nf_hook_state *state);
@@ -568,4 +595,5 @@ module_init(tarakernel_init);
 module_exit(tarakernel_exit);
 
 MODULE_LICENSE("GPL");
+
 

@@ -1,7 +1,7 @@
 name: Demo 5 incident checks
 on:
   pull_request:
-    paths: ['html/script/**', 'misc/partner_*.php', 'misc/demo5*', 'tests/demo5*', '.github/workflows/demo5-checks.yml']
+    paths: ['html/script/**', 'misc/partner_*.php', 'misc/demo5*', 'misc/install_demo5*', 'misc/partner*', 'tarakernel/**', 'html/gatekeeper/func/main.php', 'html/gatekeeper/func/partnerObservation.php', 'tests/partner_observation*', 'tests/demo5*', '.github/workflows/demo5-checks.yml']
 jobs:
   php:
     runs-on: ubuntu-latest
@@ -27,9 +27,22 @@ jobs:
           php -l misc/partner_restriction_worker.php
           php -l html/gatekeeper/func/appDemo5.php
           php tests/demo5_transition_test.php
+          php tests/partner_observation_test.php
+          for file in html/script/partnerObservation*.php html/script/demo5GatewayControl.php misc/partner_observation_worker.php misc/partner_observation_rejections.php misc/demo5_gateway_worker.php html/gatekeeper/func/partnerObservation.php; do php -l "$file"; done
+          bash -n misc/install_partner_observation.sh misc/install_demo5_gateway.sh misc/install_demo5_rejection_target.sh
           perl tests/demo5_report_forwarding_test.pl
       - name: Check migration and DB incident transitions
         env:
           DEMO5_TEST_PORT: '3307'
           DEMO5_TEST_PASSWORD: demo5-test-only
         run: php tests/demo5_database_test.php
+  kernel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build kernel module with bounded tagging pause
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y linux-headers-generic build-essential
+          kernel_version=$(ls /lib/modules | sort -V | tail -n 1)
+          make -C tarakernel KVER="$kernel_version"

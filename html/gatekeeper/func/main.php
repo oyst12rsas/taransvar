@@ -21,6 +21,15 @@ function main()
 	// Show only this server's status on Home. Units owns the network-wide list.
 	if (isAdmin()) {
 		print '<h2>This computer</h2>';
+        if ($bIsDbServer) {
+            print '<p><a href="index.php?f=partnerObservation">Partner observation and alarms</a></p>';
+            try {
+                $alarmDb=getConnection();
+                $alarm=$alarmDb->query("SELECT COUNT(*) n FROM partnerObservation WHERE status='alarm' AND created>DATE_SUB(NOW(),INTERVAL 1 DAY)")->fetch_assoc();
+                if ((int)$alarm['n']>0) print '<p><a href="index.php?f=partnerObservation"><img src="img/red_dot.png" alt="Alarm"> Partner tagging alarms require review</a></p>';
+                $alarmDb->close();
+            } catch(Throwable $e) {}
+        }
 		print '<p><a href="index.php?f=aiStatus">AI status report</a> · <a href="https://tarasec.org/ops/agent/">Agent approvals</a> · <a href="index.php?f=units">All units</a></p>';
 		require_once 'ajax/units_partners.php';
 		require_once 'func/unitsMore.php';
@@ -60,3 +69,4 @@ function main()
 }
 
 ?>
+
