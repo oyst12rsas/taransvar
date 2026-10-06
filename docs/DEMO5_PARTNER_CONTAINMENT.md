@@ -1,5 +1,17 @@
 # Demo 5 — partner loses tagging
 
+The current controlled-pause and multi-receiver ratio test is documented in
+[Partner observation and Demo 5](PARTNER_OBSERVATION.md). Deploy its optional
+migrations, observation workers and opted-in gateway control before using the
+updated app. Starting the exercise now registers an observation and requests a
+kernel-expiring three-minute tagging pause; no manual unload is needed.
+The app and DB observer display pause acknowledgement separately from actual
+tag evidence, aggregate malicious/untagged ratio and restriction delivery.
+
+The legacy single-receiver behavior below remains for deployments with partner
+observation disabled. With observation enabled, the sample/ratio threshold must
+be met before an ordinary report can trigger the bounded demo restriction.
+
 The Android app runs on a connected subnode. A connection hits the configured
 SSH honeypot or a reporting firewall rule. The receiver submits its ordinary
 `hackReport` to the central DB using taralink and `report.php`. The app cannot
@@ -82,7 +94,7 @@ own request; the app cannot choose another gateway to blacklist. Check that the
 receiver sees the same source (a different VPN route will not correlate).
 
 Healthy baseline: after notification and the grace period, a second rejected
-connection should carry a tag. Failure exercise: the operator arranges absent
+connection should carry a tag. Failure exercise: the opted-in gateway temporarily pauses
 TaraSec tagging on the dedicated gateway while leaving routing and reporting
 available. The app never unloads the kernel module or disables services.
 
@@ -113,3 +125,4 @@ to both their partner and configured DB servers, preserving a tag observation
 correlated with the full tuple and original event time. Failed delivery stays
 pending. Deploy it with taralink on receiving nodes; ensure the syslog normalizer
 and existing cron are running. First evidence may wait for the minute cron pass.
+

@@ -67,6 +67,8 @@ static int demo5_pause_set(const char *value, const struct kernel_param *kp)
     int rc = kstrtoul(value, 0, &until);
     if (rc)
         return rc;
+    if (until && until == READ_ONCE(demo5_pause_until))
+        return 0; /* Polling/replay must not extend the monotonic deadline. */
     if (until && (until <= now || until - now > 180))
         return -EINVAL;
     WRITE_ONCE(demo5_pause_deadline, until ? (unsigned long)ktime_get_boottime_seconds() + until - now : 0);

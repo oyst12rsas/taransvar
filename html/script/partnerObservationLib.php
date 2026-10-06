@@ -6,11 +6,12 @@ function partnerObservationConfig(): array {
     return is_array($c)?$c:[];
 }
 function partnerObservationDecision(array $samples,array $config): array {
-    $total=0; $malicious=0; $receivers=0;
+    $total=0; $malicious=0; $receivers=0; $tagged=0; $unknown=0; $policy=0;
     foreach ($samples as $s) {
         $u=(int)$s['untagged']; $m=(int)$s['maliciousUntagged'];
         if ($u<0 || $m<0 || $m>$u) throw new InvalidArgumentException('Invalid observation counts');
         $total+=$u; $malicious+=$m;
+        $tagged+=(int)($s['tagged']??0);$unknown+=(int)($s['unknownTag']??0);$policy+=(int)($s['policyDeniedUntagged']??0);
         if ($m>0) $receivers++;
     }
     $ratio=$total>0?$malicious/$total:null;
@@ -19,7 +20,7 @@ function partnerObservationDecision(array $samples,array $config): array {
         && $receivers>=max(2,(int)($config['minimum_receivers']??2));
     return ['status'=>$enough && $ratio>=max(0.01,min(1.0,(float)($config['alarm_ratio']??0.5)))
         ?'alarm':'insufficient_evidence','untagged'=>$total,'malicious'=>$malicious,
-        'ratio'=>$ratio,'receivers'=>$receivers];
+        'ratio'=>$ratio,'receivers'=>$receivers,'tagged'=>$tagged,'unknownTag'=>$unknown,'policyDenied'=>$policy];
 }
 function partnerObservationStart(mysqli $db,int $reportId,string $source,?int $tag,?int $at,int $severity,string $category,string $why): void {
     $c=partnerObservationConfig();
