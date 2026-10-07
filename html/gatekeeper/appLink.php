@@ -2,7 +2,7 @@
 declare(strict_types=1);
 ini_set('display_errors','0');
 require_once __DIR__.'/../script/gatewayAppLinkCommon.php';
-require_once __DIR__.'/dbfunc.php';
+require_once __DIR__.'/../dbfunc.php';
 header('Cache-Control: no-store'); header('Referrer-Policy: no-referrer'); header('X-Frame-Options: DENY');
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 $error=''; $row=null; $admin=false; $decided=false; $links=[]; $id='';
