@@ -16,10 +16,10 @@ function unitLinkValidateConfig($cfg): array {
         || !preg_match('/^[a-f0-9]{64}$/D',(string)($cfg['subject_key'] ?? '')))
         throw new UnitLinkException('Unit linking is not configured on this gateway.');
     $cfg['mode']=$cfg['mode'] ?? 'google_https';
-    if (!in_array($cfg['mode'],['google_https','service_handoff'],true)) throw new UnitLinkException('Unsupported linking configuration.');
+    if (!in_array($cfg['mode'],['google_https','service_handoff','hosted_gateway'],true)) throw new UnitLinkException('Unsupported linking configuration.');
     $parts=parse_url((string)($cfg['base_url'] ?? ''));
     $vpn=$cfg['mode']==='service_handoff' && ($cfg['transport'] ?? '')==='netbird';
-    if (!$parts || (!($parts['scheme']==='https') && !($vpn && $parts['scheme']==='http' && unitNetBirdIp($parts['host'] ?? '')) ) || empty($parts['host'])
+    if (!$parts || (!($parts['scheme']==='https') && !(($cfg['mode']==='hosted_gateway' || ($vpn && unitNetBirdIp($parts['host'] ?? ''))) && $parts['scheme']==='http') ) || empty($parts['host'])
         || isset($parts['user']) || isset($parts['pass']) || isset($parts['query']) || isset($parts['fragment'])
         || !in_array($parts['path'] ?? '', ['', '/'],true))
         throw new UnitLinkException('Unit linking requires HTTPS or an explicitly configured NetBird origin.');
@@ -51,7 +51,7 @@ function unitLinkTransport(array $cfg,?string $guard=null): void {
 
 function unitSubjectHash(string $subject,array $cfg): string {
     if ($subject==='' || strlen($subject)>255) throw new UnitLinkException('Invalid account identity.');
-    $scope=($cfg['mode'] ?? '')==='service_handoff' ? taraAccountServices()['identity_api_base'].'|' : '';
+    $scope=in_array($cfg['mode'] ?? '',['service_handoff','hosted_gateway'],true) ? taraAccountServices()['identity_api_base'].'|' : '';
     return hash_hmac('sha256',$scope.'google:'.$subject,hex2bin($cfg['subject_key']));
 }
 
@@ -103,3 +103,8 @@ function unitRedeemIdentity(string $ticket,array $cfg): string {
         throw new UnitLinkException('Identity handoff expired or could not be verified. Sign in again and retry.');
     return unitSubjectHash((string)$json['subject'],$cfg);
 }
+
+function unitServiceNodeSecret(array $cfg): string {
+    return hash_hmac('sha256','hosted-app-node:'.taraAccountServices()['identity_api_base'].':'.$cfg['gateway_id'],hex2bin($cfg['subject_key']));
+}
+function unitServiceNodeId(array $cfg): string { return substr(hash('sha256',unitServiceNodeSecret($cfg)),0,32); }

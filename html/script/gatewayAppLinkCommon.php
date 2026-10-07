@@ -25,12 +25,14 @@ function gatewayAppRequest(mysqli $db,array $cfg,string $subjectHash,string $cli
     } finally { $db->query("SELECT RELEASE_LOCK('tarasec:gateway-app-create')"); }
     return ['request_id'=>$id,'confirmation_code'=>$code,'approval_url'=>$cfg['base_url'].'/gatekeeper/appLink.php?request='.$id,'expires_in'=>600];
 }
-function gatewayAppDecide(mysqli $db,array $cfg,string $id,int $admin,bool $approve): void {
+function gatewayAppDecide(mysqli $db,array $cfg,string $id,int $admin,bool $approve,?string $adminEmail=null): void {
     if (!preg_match('/^[a-f0-9]{32}$/D',$id)) throw new UnitLinkException('Invalid app-link request.');
     $db->begin_transaction();
     try {
         // Serialize against administrator demotion while making the decision.
-        $q=unitLinkQuery($db,'SELECT userId FROM user WHERE userId=? AND CAST(isAdmin AS UNSIGNED)=1 FOR UPDATE',[$admin]);
+        $sql='SELECT userId FROM user WHERE userId=? AND CAST(isAdmin AS UNSIGNED)=1'; $values=[$admin];
+        if ($adminEmail!==null) { $sql.=' AND LOWER(username)=?'; $values[]=strtolower($adminEmail); }
+        $q=unitLinkQuery($db,$sql.' FOR UPDATE',$values);
         $authorized=$q->get_result()->fetch_assoc(); $q->close();
         if (!$authorized) throw new UnitLinkException('Gateway administrator login required.');
         $q=unitLinkQuery($db,"SELECT * FROM gatewayAppRequest WHERE requestId=? AND decision='pending' AND expiresAt>NOW() FOR UPDATE",[$id]);
