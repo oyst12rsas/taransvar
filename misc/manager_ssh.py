@@ -46,14 +46,14 @@ def policy(rules, address, port, now):
         position += 1
         if '!' in rule:
             return {'state': 'unknown', 'reason': 'negated_policy_requires_review'}
-        if '-i' in rule:
-            if option(rule, '-i') == 'lo':
-                continue
-            return {'state': 'unknown', 'reason': 'interface_policy_requires_review'}
         if '-p' in rule and option(rule, '-p') != 'tcp':
             continue
         if '--dport' in rule and option(rule, '--dport') != str(port):
             continue
+        if '-i' in rule:
+            if option(rule, '-i') == 'lo':
+                continue
+            return {'state': 'unknown', 'reason': 'interface_policy_requires_review'}
         if not matches_source(rule, address):
             continue
         # Canonical iptables output includes the tcp module. Other match modules remain significant.
@@ -125,7 +125,7 @@ def execute(action, address, minutes=None):
             raise ValueError('ssh_open_not_confirmed')
         print(f'TARASEC_MANAGER_SSH source={address} minutes={minutes} expires={expiry}', file=sys.stderr)
     result = {k: v for k, v in state.items() if k != 'position'}
-    result.update(port=port, source=address, listening=listening, canOpen=supported and listening, checkedAt=now)
+    result.update(port=port, source=address, listening=listening, canOpen=supported and listening and state['state'] == 'closed', checkedAt=now)
     if not listening:
         result['state'] = 'closed'
         result['reason'] = 'administrative_ssh_not_listening'

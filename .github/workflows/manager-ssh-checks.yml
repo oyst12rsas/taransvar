@@ -12,6 +12,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: |
           python3 misc/test_manager_ssh.py
+          sudo unshare --net python3 misc/test_manager_ssh_kernel.py
           php -l html/script/managerSsh.php
           php -n misc/test_manager_ssh_api.php
           bash -n misc/install_manager_ssh.sh

@@ -28,7 +28,7 @@ STUB;
 file_put_contents($root.'/html/dbfunc.php', $stub);
 file_put_contents($root.'/helper.php', '<?php file_put_contents(__DIR__."/helper-called", implode(" ", array_slice($argv,1))); echo json_encode(["ok"=>true,"ssh"=>["state"=>"closed","canOpen"=>true]]);');
 $source = file_get_contents(__DIR__.'/../html/script/managerSsh.php');
-$source = str_replace("['/usr/bin/sudo','-n','/usr/local/lib/tarasec/manager_ssh.py',\$action,\$source]", "[PHP_BINARY, ".var_export($root.'/helper.php', true).", \$action, \$source]", $source);
+$source = str_replace("['/usr/bin/sudo','-n','/usr/local/lib/tarasec/manager_ssh.py',\$action,\$source]", "[PHP_BINARY, '-n', ".var_export($root.'/helper.php', true).", \$action, \$source]", $source);
 file_put_contents($root.'/html/script/managerSsh.php', $source);
 $wrapper = <<<'WRAPPER'
 <?php
