@@ -39,6 +39,10 @@ $token = bearerToken();
 if ($token === '') statusReply(401, ['ok'=>false,'error'=>'unit_token_required']);
 
 try {
+    if (is_readable('/etc/tarasec/unit-link.php')) {
+        require_once __DIR__.'/unitLinkCommon.php';
+        unitLinkTransport(unitLinkConfig());
+    }
     $conn = getConnection();
     $hash = hash('sha256', $token);
     $stmt = $conn->prepare("SELECT t.unitAppTokenId,t.unitId,u.ownerId,COALESCE(u.hostname,'') hostname,COALESCE(u.description,'') description FROM unitAppToken t JOIN unit u ON u.unitId=t.unitId WHERE t.tokenHash=? AND t.active=b'1' AND (t.expires IS NULL OR t.expires>NOW()) LIMIT 1");

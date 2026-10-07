@@ -1,0 +1,25 @@
+name: Hosted gateway linking checks
+on:
+  push:
+    branches: [main, wip/hosted-unit-linking]
+  pull_request:
+jobs:
+  gateway-boundaries:
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_ROOT_PASSWORD: test
+          MARIADB_DATABASE: hosted_link_test
+        ports: ['3306:3306']
+        options: --health-cmd="healthcheck.sh --connect --innodb_initialized" --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y php-cli php-mysql php-curl
+      - run: |
+          for f in html/script/unit*.php misc/unit_link_poll.php misc/test_hosted_unit_link.php; do php -l "$f"; done
+          php -n misc/test_unit_link.php
+          php -n misc/test_service_discovery.php
+          php misc/test_hosted_unit_link.php
+          bash -n misc/setup_hosted_unit_link.sh misc/unit_link_transport_guard.sh

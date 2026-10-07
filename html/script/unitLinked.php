@@ -7,8 +7,8 @@ header('Content-Type: application/json; charset=utf-8'); header('Cache-Control: 
 function linkedReply(int $code,array $data): never { http_response_code($code); echo json_encode($data,JSON_UNESCAPED_SLASHES); exit; }
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 try {
-    unitLinkHttps(); $cfg=unitLinkConfig();
-    if (($_SERVER['REQUEST_METHOD'] ?? '')==='GET') linkedReply(200,['ok'=>true,'gateway_id'=>$cfg['gateway_id'],'base_url'=>$cfg['base_url'],'link_path'=>'/script/unitLink.php','account_services'=>taraAccountServices()]);
+    $cfg=unitLinkConfig(); unitLinkTransport($cfg);
+    if (($_SERVER['REQUEST_METHOD'] ?? '')==='GET') linkedReply(200,['ok'=>true,'gateway_id'=>$cfg['gateway_id'],'base_url'=>$cfg['base_url'],'link_path'=>'/script/unitLink.php','link_mode'=>$cfg['mode'],'transport'=>$cfg['transport'] ?? 'https','account_services'=>taraAccountServices()]);
     if (($_SERVER['REQUEST_METHOD'] ?? '')!=='POST') linkedReply(405,['ok'=>false,'error'=>'post_required']);
     $hash=unitRedeemIdentity((string)($_POST['ticket'] ?? ''),$cfg);
     $action=(string)($_POST['action'] ?? 'list'); $db=getConnection();

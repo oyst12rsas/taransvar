@@ -8,22 +8,51 @@ class UnitLinkException extends RuntimeException {}
 function unitLinkConfig(): array {
     $path='/etc/tarasec/unit-link.php';
     $cfg=is_readable($path) ? require $path : null;
+    return unitLinkValidateConfig($cfg);
+}
+
+function unitLinkValidateConfig($cfg): array {
     if (!is_array($cfg) || !preg_match('/^[a-f0-9]{32}$/D',(string)($cfg['gateway_id'] ?? ''))
-        || !preg_match('/^[a-f0-9]{64}$/D',(string)($cfg['subject_key'] ?? ''))
-        || !preg_match('/^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$/D',(string)($cfg['google_client_id'] ?? '')))
+        || !preg_match('/^[a-f0-9]{64}$/D',(string)($cfg['subject_key'] ?? '')))
         throw new UnitLinkException('Unit linking is not configured on this gateway.');
+    $cfg['mode']=$cfg['mode'] ?? 'google_https';
+    if (!in_array($cfg['mode'],['google_https','service_handoff'],true)) throw new UnitLinkException('Unsupported linking configuration.');
     $parts=parse_url((string)($cfg['base_url'] ?? ''));
-    if (!$parts || ($parts['scheme'] ?? '')!=='https' || empty($parts['host'])
+    $vpn=$cfg['mode']==='service_handoff' && ($cfg['transport'] ?? '')==='netbird';
+    if (!$parts || (!($parts['scheme']==='https') && !($vpn && $parts['scheme']==='http' && unitNetBirdIp($parts['host'] ?? '')) ) || empty($parts['host'])
         || isset($parts['user']) || isset($parts['pass']) || isset($parts['query']) || isset($parts['fragment'])
         || !in_array($parts['path'] ?? '', ['', '/'],true))
-        throw new UnitLinkException('Unit linking requires a configured HTTPS origin.');
+        throw new UnitLinkException('Unit linking requires HTTPS or an explicitly configured NetBird origin.');
+    if ($cfg['mode']==='google_https' && !preg_match('/^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$/D',(string)($cfg['google_client_id'] ?? '')))
+        throw new UnitLinkException('Configure the gateway Google web client.');
+    if ($vpn && !preg_match('/^[A-Za-z0-9_.-]{1,15}$/D',(string)($cfg['netbird_interface'] ?? '')))
+        throw new UnitLinkException('Configure the encrypted NetBird interface.');
     $cfg['base_url']=rtrim($cfg['base_url'],'/');
     return $cfg;
 }
 
+function unitNetBirdIp(string $ip): bool {
+    return filter_var($ip,FILTER_VALIDATE_IP,FILTER_FLAG_IPV4)!==false && str_starts_with($ip,'100.68.');
+}
+
+function unitLinkTransport(array $cfg,?string $guard=null): void {
+    if (in_array(strtolower((string)($_SERVER['HTTPS'] ?? '')),['on','1'],true)) return;
+    $u=parse_url($cfg['base_url']);
+    if ($cfg['mode']!=='service_handoff' || ($cfg['transport'] ?? '')!=='netbird' || ($u['scheme'] ?? '')!=='http'
+        || !unitNetBirdIp(unitLocalPeer()) || ($_SERVER['SERVER_ADDR'] ?? '')!==($u['host'] ?? '')
+        || (int)($_SERVER['SERVER_PORT'] ?? 0)!==(int)($u['port'] ?? 80))
+        throw new UnitLinkException('Use HTTPS or the configured encrypted NetBird connection.');
+    $expected=$cfg['gateway_id'].'|'.$cfg['netbird_interface'].'|'.$cfg['base_url'];
+    if ($guard===null && (!is_readable('/run/tarasec-unit-link/transport') || filemtime('/run/tarasec-unit-link/transport')<time()-45))
+        throw new UnitLinkException('The NetBird transport guard needs to be running.');
+    $guard ??= is_readable('/run/tarasec-unit-link/transport') ? trim((string)file_get_contents('/run/tarasec-unit-link/transport')) : '';
+    if (!hash_equals($expected,$guard)) throw new UnitLinkException('The NetBird linking transport guard is not active.');
+}
+
 function unitSubjectHash(string $subject,array $cfg): string {
     if ($subject==='' || strlen($subject)>255) throw new UnitLinkException('Invalid account identity.');
-    return hash_hmac('sha256','google:'.$subject,hex2bin($cfg['subject_key']));
+    $scope=($cfg['mode'] ?? '')==='service_handoff' ? taraAccountServices()['identity_api_base'].'|' : '';
+    return hash_hmac('sha256',$scope.'google:'.$subject,hex2bin($cfg['subject_key']));
 }
 
 function unitGoogleClaimsSubject(array $claims,array $cfg,string $nonce): string {
