@@ -105,6 +105,6 @@ function unitRedeemIdentity(string $ticket,array $cfg): string {
 }
 
 function unitServiceNodeSecret(array $cfg): string {
-    return hash_hmac('sha256','hosted-app-node:'.$cfg['gateway_id'],hex2bin($cfg['subject_key']));
+    return hash_hmac('sha256','hosted-app-node:'.taraAccountServices()['identity_api_base'].':'.$cfg['gateway_id'],hex2bin($cfg['subject_key']));
 }
 function unitServiceNodeId(array $cfg): string { return substr(hash('sha256',unitServiceNodeSecret($cfg)),0,32); }
