@@ -14,6 +14,7 @@ fi
 mysql taransvar < "$repo_dir/misc/unit_app_token.sql"
 mysql taransvar < "$repo_dir/misc/unit_google_link.sql"
 mysql taransvar < "$repo_dir/misc/unit_link_request.sql"
+mysql taransvar < "$repo_dir/misc/gateway_app_link.sql"
 install -d -m 0750 -o root -g www-data /etc/tarasec
 config=/etc/tarasec/unit-link.php
 [[ ! -f $config ]] || cp -a "$config" "$config.before-hosted.$(date +%s)"
@@ -73,4 +74,4 @@ bash "$repo_dir/misc/deploy_web.sh"
 systemctl daemon-reload
 systemctl enable --now tarasec-unit-link-poll.timer
 systemctl start tarasec-unit-link-poll.service
-echo 'Hosted node linking installed. Open /script/unitLink.php from the node, create an approval link, then copy it to your phone.'
+echo 'Gateway app linking installed. In the phone app request a link, approve its matching code at /gatekeeper/appLink.php as a gateway administrator, then finish linking.'
