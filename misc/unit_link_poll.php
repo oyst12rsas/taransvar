@@ -12,6 +12,7 @@ try {
     try {
         $provider=taraAccountServices()['identity_api_base'];
         $db->query("DELETE FROM unitLinkRequest WHERE expiresAt<NOW()-INTERVAL 1 DAY");
+        $db->query("DELETE FROM gatewayAppRequest WHERE expiresAt<NOW()-INTERVAL 1 DAY");
         $rows=$db->query("SELECT * FROM unitLinkRequest WHERE state IN ('pending','applied') AND expiresAt>NOW() ORDER BY created LIMIT 10")->fetch_all(MYSQLI_ASSOC);
         foreach ($rows as $r) {
             if ($r['gatewayId']!==$cfg['gateway_id'] || $r['provider']!==$provider) {

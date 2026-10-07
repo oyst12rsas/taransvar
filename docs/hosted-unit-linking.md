@@ -5,13 +5,21 @@ on the selected account service. The gateway's `/etc/tarasec/services.php` selec
 an owner-hosted identity/subscriber service; when absent the default is tarasec.org.
 This mode needs no Google web client or HTTPS listener on the gateway.
 
-The node opens the gateway's `/script/unitLink.php`, creates a ten-minute request
-and copies the **approval link** to the phone. The phone opens the account service
-over HTTPS, signs in and explicitly approves the displayed node and Google account.
-The gateway collects approval through verified outbound TLS. In My units the app
-uses the same account service and Google account, then **Add linked nodes**.
-Opening the generic gateway setup page on the phone still identifies the phone;
-only the approval link created on the node approves that node.
+In **My units → Link a node**, enter the gateway IP, sign in to its selected
+account service and choose **Request app link**. The phone creates a request for
+that explicit gateway; the approving browser's source IP never selects a unit.
+Open the approval page on the phone, acer or any browser that can reach the gateway.
+Sign in using the existing gateway administrator login, return to the approval
+page and approve only if its confirmation code matches the phone. Then choose
+**Finish linking** in the app. Requests expire after ten minutes.
+
+This grants read-only gateway access to that account and app instance. Management
+uses the separate existing approval. Administrators can revoke approved apps at
+`/gatekeeper/appLink.php`; unlinking in the phone also revokes the grant and pending
+requests. Revoked or expired credentials cannot report a successful status.
+
+The older `/script/unitLink.php` workflow remains for devices behind the gateway;
+it identifies the initiating device and is not the phone-to-gateway workflow.
 
 ## Installation order
 
@@ -59,12 +67,14 @@ a routing failure.
 ## Verification and recovery
 
 Check `systemctl status tarasec-unit-link-poll.timer` and, in HTTP mode,
-`tarasec-unit-link-transport.timer`. Query `/script/unitLinked.php` through the
-configured transport: it should return `link_mode=service_handoff` and the selected
-account-service pair. Open the node page from two distinct nodes and confirm each
-approval links only its initiating node. Confirm wrong account, expired URL, changed
-owner/IP, provider change, and an unlinked grant cannot restore access on retry.
-Management requires the existing separate Request management access approval.
+`tarasec-unit-link-transport.timer`. Query `/script/unitGatewayLink.php` from a NetBird peer through the
+configured transport: it should return `link_mode=gateway_app_approval`, the gateway
+identity and selected account services. Create a request in the phone app, approve
+it from a different browser, and confirm that the gateway stays the same. Check
+ordinary users cannot approve; wrong account/app, expired request, replay, provider
+change and revoked grants cannot obtain access. Management remains separately
+approved. This correction needs only the gateway and Android updates when the
+account-service identity handoff is already installed.
 
 Rollback: stop/disable both new timers, restore the backed-up unit-link.php and
 previous web files/Android release. Restore backend identity files from the printed
