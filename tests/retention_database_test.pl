@@ -40,7 +40,7 @@ for my $i (1..8) {
 # 1: deletable; 2: pending null; 3: demo; 4/5: session evidence;
 # 6: event evidence; 7: pending zero; 8: recently observed.
 for my $i (1..8) {
-    $dbh->do('INSERT INTO syslogThreat VALUES(?,?,?,?,?,?)',undef,
+    $dbh->do('INSERT INTO syslogThreat VALUES(?,?,?,?,CAST(? AS UNSIGNED),?)',undef,
         $i,$i,$old,($i==8 ? $now : undef),($i==2 ? undef : $i==7 ? 0 : 1),($i==3 ? 7 : undef));
 }
 $dbh->do('INSERT INTO demoSshSession VALUES(1,4,5)');

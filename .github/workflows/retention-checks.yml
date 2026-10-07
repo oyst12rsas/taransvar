@@ -26,6 +26,7 @@ jobs:
           perl -I misc -c misc/lib_retention.pm
           bash -n misc/install_retention.sh
           perl tests/retention_policy_test.pl
-          sudo logrotate --debug misc/retention.logrotate
+          sudo install -m 0644 misc/retention.logrotate /tmp/tarasec-retention-check.conf
+          sudo logrotate --debug /tmp/tarasec-retention-check.conf
       - name: Real database deletion and evidence protection
         run: perl tests/retention_database_test.pl
