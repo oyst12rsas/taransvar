@@ -81,12 +81,40 @@ try {
     }
     $result->free();
 
+    // Registry evidence is scoped to the requesting gateway, including completed
+    // sessions in the telemetry window. Never disclose credentials or tokens.
+    $demoSessions = [];
+    $demoContextAvailable = false;
+    $tables = $conn->query("SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('demoSshSession','demoSshSetup','demoSshNodeB','demo5Session')");
+    $present = [];
+    while ($table = $tables->fetch_row()) $present[$table[0]] = true;
+    $tables->free();
+    if (isset($present['demoSshSession'], $present['demoSshSetup'], $present['demoSshNodeB'])) {
+        $demoContextAvailable = true;
+        $stmt = $conn->prepare("SELECT s.demoSshSessionId session_id,s.unitId unit_id,s.state,s.created,s.expires,s.completed,s.nodeAEvidenceId,s.nodeBEvidenceId,INET_NTOA(s.sourceIp) source_ip,INET_NTOA(d.nodeAIp) node_a,d.nodeAPort node_a_port,INET_NTOA(n.ip) node_b,n.port node_b_port FROM demoSshSession s JOIN demoSshSetup d ON d.demoSshSetupId=s.demoSshSetupId JOIN demoSshNodeB n ON n.demoSshNodeBId=s.demoSshNodeBId WHERE s.sourceIp=INET_ATON(?) AND s.expires>=NOW()-INTERVAL 7 DAY ORDER BY s.created DESC LIMIT 150");
+        $stmt->bind_param('s', $ip);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        while ($row = $result->fetch_assoc()) $demoSessions[] = ['demo'=>2] + $row;
+        $stmt->close();
+    }
+    if (isset($present['demo5Session'])) {
+        $stmt = $conn->prepare("SELECT sessionId session_id,state,created,expiresAt expires,INET_NTOA(sourceIp) source_ip,INET_NTOA(receiverIp) receiver_ip,receiverPort receiver_port,firstReportId,latestReportId FROM demo5Session WHERE sourceIp=INET_ATON(?) AND expiresAt>=NOW()-INTERVAL 7 DAY ORDER BY created DESC LIMIT 150");
+        $stmt->bind_param('s', $ip);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        while ($row = $result->fetch_assoc()) $demoSessions[] = ['demo'=>5] + $row;
+        $stmt->close();
+    }
+
     $conn->close();
     contextReply(200, [
         'ok'=>true,
         'generated'=>gmdate('c'),
         'window_days'=>7,
         'shared_targets'=>$sharedTargets,
+        'demo_context_available'=>$demoContextAvailable,
+        'registered_demo_sessions'=>$demoSessions,
         'known_network_nodes'=>$knownNodes,
         'note'=>'Aggregated TaraSec context only; it is supporting evidence, not infection state.'
     ]);
