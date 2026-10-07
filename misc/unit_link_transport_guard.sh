@@ -7,7 +7,7 @@ readarray -t settings < <(php -r '$c=require $argv[1]; $u=parse_url($c["base_url
 gateway_id=${settings[0]}; iface=${settings[1]}; address=${settings[2]}; port=${settings[3]}; origin=${settings[4]}
 [[ $gateway_id =~ ^[a-f0-9]{32}$ && $iface =~ ^[A-Za-z0-9_.-]{1,15}$ && $address =~ ^100\.68\.[0-9]{1,3}\.[0-9]{1,3}$ && $port =~ ^[0-9]+$ ]]
 wg show "$iface" >/dev/null
-ip -4 -o addr show dev "$iface" | awk '{print $4}' | cut -d/ -f1 | rg -Fx "$address" >/dev/null
+ip -4 -o addr show dev "$iface" | awk -v wanted="$address" '{split($4,a,"/"); if(a[1]==wanted)found=1} END {exit !found}'
 iptables -C INPUT -d "$address" -p tcp --dport "$port" ! -i "$iface" -j REJECT 2>/dev/null ||
   iptables -I INPUT 1 -d "$address" -p tcp --dport "$port" ! -i "$iface" -j REJECT
 install -d -m 0755 /run/tarasec-unit-link
