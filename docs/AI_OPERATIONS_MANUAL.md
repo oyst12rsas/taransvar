@@ -162,3 +162,21 @@ active procedure may interrupt installation, so inspect before interrupting it.
 There is no API token/node enrollment dependency on the old approval service.
 Model-provider connectivity remains a separate dependency and must recover at
 boot. No silent fallbacks or broad production auto-upgrades are enabled.
+
+## Continuous activity observer
+
+The installer now includes tarasec-operations-activity.service and activity-probe.
+Both collectors in /etc/tarasec/operations-activity.json must be reviewed, root-owned
+executables with no arguments. Each returns a JSON object with checked_at (Unix
+seconds), complete (boolean), and respectively active_demo or meaningful_traffic
+(boolean). The traffic collector must also set reporting_exclusion_verified=true
+only after testing exact reporting identification against meaningful traffic.
+Blank collectors deliberately produce unknown activity.
+
+The observer samples every ten seconds. It requires both inputs no more than
+30 seconds old, resets quiet time on missing data, traffic, demo activity, a
+sampling gap or a new boot, and resets continuity after an observer restart.
+Enable this service only after collector acceptance tests. Its read probe treats
+missing or stale observer output as unknown. Recheck activity immediately before
+a reviewed procedure or reboot. An inspection-only model run needs no collectors.
+This wiring does not provide Audi-specific demo or traffic collectors.

@@ -4,7 +4,31 @@ set -euo pipefail
 source_dir="$(cd "$(dirname "$0")" && pwd)"
 install -d -o root -g root -m 0755 /usr/local/lib/tarasec-operations
 install -d -o root -g root -m 0700 /etc/tarasec /var/lib/tarasec-operations
-install -o root -g root -m 0755 "$source_dir/operations_agent.py" /usr/local/lib/tarasec-operations/
+install -o root -g root -m 0755 "$source_dir/operations_agent.py" "$source_dir/operations_activity.py" /usr/local/lib/tarasec-operations/
+cat > /usr/local/lib/tarasec-operations/activity-probe <<'EOF'
+#!/bin/sh
+exec /usr/bin/python3 /usr/local/lib/tarasec-operations/operations_activity.py --read
+EOF
+chmod 0755 /usr/local/lib/tarasec-operations/activity-probe
+if [[ ! -e /etc/tarasec/operations-activity.json ]]; then
+    install -o root -g root -m 0600 "$source_dir/operations-activity.json.example" /etc/tarasec/operations-activity.json
+fi
+cat > /etc/systemd/system/tarasec-operations-activity.service <<'EOF'
+[Unit]
+Description=TaraSec continuous demo and traffic observer
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+UMask=0077
+RuntimeDirectory=tarasec-operations
+RuntimeDirectoryMode=0700
+ExecStart=/usr/bin/python3 /usr/local/lib/tarasec-operations/operations_activity.py
+Restart=on-failure
+RestartSec=10
+[Install]
+WantedBy=multi-user.target
+EOF
 install -o root -g root -m 0644 "$source_dir/../docs/AI_OPERATIONS_MANUAL.md" /usr/local/lib/tarasec-operations/
 if [[ ! -e /etc/tarasec/operations-agent.json ]]; then
     install -o root -g root -m 0600 "$source_dir/operations-agent.json.example" /etc/tarasec/operations-agent.json

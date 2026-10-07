@@ -47,6 +47,10 @@ def quiet(state, sample, now, period):
     if not idle:
         state.pop('quiet_since', None)
         return False
+    # A separate continuous observer avoids tying coverage to model-call timing.
+    duration = sample.get('quiet_for_seconds')
+    if isinstance(duration, (int, float)) and not isinstance(duration, bool):
+        return duration >= period
     state.setdefault('quiet_since', now)
     return now - state['quiet_since'] >= period
 
@@ -63,21 +67,37 @@ def eligible(entry, policy, system):
 
 
 def run(argv, timeout=60):
-    # A temporary output file avoids unbounded in-memory subprocess capture.
-    import tempfile
-    with tempfile.TemporaryFile() as output:
-        proc = subprocess.Popen(argv, stdout=output, stderr=subprocess.STDOUT,
-                                start_new_session=True)
+    # Drain stdout continuously while retaining a bounded prefix. No disk spool.
+    import signal
+    import threading
+    captured = bytearray()
+    proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            start_new_session=True)
+    def drain():
+        while True:
+            chunk = proc.stdout.read(4096)
+            if not chunk:
+                break
+            captured.extend(chunk[:max(0, 16000 - len(captured))])
+    reader = threading.Thread(target=drain, daemon=True)
+    reader.start()
+    try:
+        code = proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait()
+        code = 124
+    reader.join(timeout=1)
+    if reader.is_alive():
+        # A detached descendant may retain the pipe after its parent exits.
         try:
-            code = proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            import signal
             os.killpg(proc.pid, signal.SIGKILL)
-            proc.wait()
-            code = 124
-        output.seek(0)
-        text = output.read(16000).decode('utf-8', errors='replace')
-    return {'exit_code': code, 'output': text}
+        except ProcessLookupError:
+            pass
+        reader.join(timeout=1)
+    if not reader.is_alive():
+        proc.stdout.close()
+    return {'exit_code': code, 'output': bytes(captured).decode('utf-8', errors='replace')}
 
 
 def model(policy, prompt):
@@ -193,6 +213,13 @@ def main():
             executable = trusted(entry['executable'])
             if hashlib.sha256(executable.read_bytes()).hexdigest() != entry['sha256']:
                 raise ValueError('Approved procedure changed')
+            # Recheck after validation so activity that began meanwhile defers.
+            observed = run([str(observer)], timeout=20)
+            sample = json.loads(observed['output']) if observed['exit_code'] == 0 else {}
+            if not quiet(state, sample, time.time(), max(60, int(policy.get('quiet_seconds', 300)))):
+                state['status'] = 'deferred_activity_or_unknown'
+                save(path, state)
+                return
             record({'starting_procedure': decision['procedure']})
             result = run([str(executable)], min(600, int(entry.get('timeout_seconds', 120))))
             # Keep command output local; it is not submitted to the model or central DB.
@@ -206,6 +233,12 @@ def main():
             recent = [t for t in state.get('reboots', []) if 0 <= now - t < 86400]
             if len(recent) >= max(0, int(policy.get('max_reboots_per_day', 1))):
                 raise ValueError('Daily reboot limit reached')
+            observed = run([str(observer)], timeout=20)
+            sample = json.loads(observed['output']) if observed['exit_code'] == 0 else {}
+            if not quiet(state, sample, time.time(), max(60, int(policy.get('quiet_seconds', 300)))):
+                state['status'] = 'deferred_activity_or_unknown'
+                save(path, state)
+                return
             state['reboots'] = recent + [now]
             state['reboot_pending'] = True
             state['status'] = 'reboot_requested'

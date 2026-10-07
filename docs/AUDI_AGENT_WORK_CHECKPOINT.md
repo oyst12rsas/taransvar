@@ -120,3 +120,20 @@ Do not rely on scratch surviving; fetch branch files when resuming.
 Read repository AGENTS.md, AI_TRAINING.md, AI_INSTALL_GUIDE.md and manual.
 User explicitly requested documenting progress so resource/session limits do
 not lose work. Update this checkpoint as each blocker is resolved.
+
+## Resume checkpoint: continuous observer wiring
+
+Added operations_activity.py, activity-probe, preserved local collector config,
+and disabled-by-default observer service. Both reviewed collectors must report
+fresh complete evidence; reporting exclusions must be explicitly verified.
+Observer resets quiet continuity on activity, gaps, restart and boot. Worker
+rechecks activity immediately before a procedure or reboot. Replaced temporary
+command-output spooling with bounded in-memory prefix capture and process-group
+timeout termination. Four observer tests and two command-capture tests added.
+Focused validation: 14 unit tests passed (ResourceWarning treated as error),
+Python compilation and installer shell syntax passed. CI updated for new files.
+These are repository tests, not Audi deployment evidence. Central demo and
+meaningful-traffic collectors, tested remedies and Flowise credentials remain
+unconfigured; no agent deployment or reboot occurred. Overall audit-log rotation
+still needs implementation. Continue unfinished work above without treating the
+observer framework as a working Audi activity collector.

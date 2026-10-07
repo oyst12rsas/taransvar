@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
+import sys
 
 spec = importlib.util.spec_from_file_location('agent', Path(__file__).parents[1] / 'misc/operations_agent.py')
 agent = importlib.util.module_from_spec(spec)
@@ -61,6 +62,17 @@ class ReadinessTest(unittest.TestCase):
 
     def test_timeout_stops_process_group(self):
         result = agent.run(['/bin/sh', '-c', 'sleep 5'], timeout=0.05)
+        self.assertEqual(result['exit_code'], 124)
+
+
+class CommandCaptureTests(unittest.TestCase):
+    def test_verbose_command_has_bounded_output(self):
+        result = agent.run([sys.executable, '-c', 'print("x" * 1000000)'])
+        self.assertEqual(result['exit_code'], 0)
+        self.assertEqual(len(result['output']), 16000)
+
+    def test_timeout_stops_command(self):
+        result = agent.run([sys.executable, '-c', 'import time; time.sleep(10)'], timeout=0.05)
         self.assertEqual(result['exit_code'], 124)
 
 
