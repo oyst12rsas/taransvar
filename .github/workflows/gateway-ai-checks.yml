@@ -1,0 +1,26 @@
+name: Gateway AI assessment checks
+on:
+  pull_request:
+    paths:
+      - 'html/script/gatewayAiContext.php'
+      - 'html/script/managerAi.php'
+      - 'html/gatekeeper/func/db_ai.php'
+      - 'misc/gateway_ai_assess.pl'
+      - 'misc/request-AI.pl'
+      - '.github/workflows/gateway-ai-checks.yml'
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check PHP syntax
+        run: |
+          php -l html/script/gatewayAiContext.php
+          php -l html/script/managerAi.php
+          php -l html/gatekeeper/func/db_ai.php
+      - name: Check Perl syntax
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbi-perl libjson-perl libwww-perl
+          perl -I misc -c misc/gateway_ai_assess.pl
+          perl -I misc -c misc/request-AI.pl
