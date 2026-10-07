@@ -49,7 +49,10 @@ def policy(rules, address, port, now):
         if '-p' in rule and option(rule, '-p') != 'tcp':
             continue
         if '--dport' in rule and option(rule, '--dport') != str(port):
-            continue
+            destination = option(rule, '--dport')
+            if destination.isdigit():
+                continue
+            return {'state': 'unknown', 'reason': 'port_range_policy_requires_review'}
         if '-i' in rule:
             if option(rule, '-i') == 'lo':
                 continue

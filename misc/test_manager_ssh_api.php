@@ -43,13 +43,14 @@ session_id('fixture'.bin2hex(random_bytes(8)));
 session_start();
 if ($fixture['authenticated'] ?? true) $_SESSION = ['tarasec_manager_authenticated'=>true,'tarasec_manager_request_id'=>8,'tarasec_manager_email'=>'owner@example.org','manager_ssh_csrf'=>'test-csrf'];
 session_write_close();
+require_once __DIR__.'/html/dbfunc.php';
 include __DIR__.'/html/script/managerSsh.php';
 WRAPPER;
 file_put_contents($root.'/run.php', $wrapper);
 function callEndpoint(array $fixture): array {
     global $root;
     @unlink($root.'/helper-called');
-    $p = proc_open([PHP_BINARY,'-n',$root.'/run.php',json_encode($fixture)], [0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']], $pipes);
+    $p = proc_open([PHP_BINARY,'-n','-d','log_errors=1','-d','error_log=/dev/stderr',$root.'/run.php',json_encode($fixture)], [0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']], $pipes);
     fclose($pipes[0]);
     $output=stream_get_contents($pipes[1]); $error=stream_get_contents($pipes[2]);
     fclose($pipes[1]); fclose($pipes[2]); proc_close($p);

@@ -12,6 +12,8 @@ class TimedSshTest(unittest.TestCase):
         result = gate.policy(BARRIER, '100.68.1.2', 5822, 1000)
         self.assertEqual(result['state'], 'closed')
         self.assertEqual(result['position'], 2)
+        unrelated_interface = '-A INPUT -i wlan0 -p tcp -m tcp --dport 8080 -j ACCEPT\n'
+        self.assertEqual(gate.policy(unrelated_interface+BARRIER, '100.68.1.2', 5822, 1000)['state'], 'closed')
 
     def test_scoped_open_and_exact_expiry(self):
         rules = '-A INPUT -s 100.68.1.2/32 -p tcp -m tcp --dport 5822 -m time --datestop 1970-01-01T00:21:39 -m comment --comment "tarasec-manager-ssh:100.68.1.2:1300" -j ACCEPT\n' + BARRIER
@@ -20,7 +22,7 @@ class TimedSshTest(unittest.TestCase):
         self.assertEqual(gate.policy(rules, '100.68.1.3', 5822, 1000)['state'], 'closed')
 
     def test_unfamiliar_policy_cannot_be_bypassed(self):
-        for rule in ('-A INPUT -j NETBIRD-ACL-INPUT', '-A INPUT -s 100.68.1.2/32 -j DROP', '-A INPUT -i wt0 -j DROP'):
+        for rule in ('-A INPUT -j NETBIRD-ACL-INPUT', '-A INPUT -s 100.68.1.2/32 -j DROP', '-A INPUT -i wt0 -j DROP', '-A INPUT -p tcp --dport 5800:5900 -j ACCEPT', '-A INPUT ! -s 100.68.1.3 -j REJECT'):
             self.assertEqual(gate.policy(rule+'\n'+BARRIER, '100.68.1.2', 5822, 1000)['state'], 'unknown')
 
     def test_existing_source_recovery_access(self):
@@ -46,6 +48,7 @@ class TimedSshTest(unittest.TestCase):
             with mock.patch.object(gate, 'configuration', return_value=CONFIG), mock.patch.object(gate.time,'time',return_value=1000), mock.patch.object(gate,'run',side_effect=run):
                 result = gate.execute('open','100.68.1.2',minutes)
             self.assertEqual(result['expiresAt'], expiry)
+            self.assertFalse(result['canOpen'], 'Already open access cannot be reopened')
             inserted = next(c for c in calls if '-I' in c)
             self.assertIn('--datestop', inserted)
             self.assertEqual(inserted[inserted.index('-s')+1], '100.68.1.2')
