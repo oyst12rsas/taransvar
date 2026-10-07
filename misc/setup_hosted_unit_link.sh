@@ -8,7 +8,7 @@ for tool in php mysql systemctl; do command -v "$tool" >/dev/null; done
 php -r 'require $argv[3]; $c=["mode"=>"service_handoff","gateway_id"=>str_repeat("a",32),"subject_key"=>str_repeat("a",64),"base_url"=>$argv[1],"transport"=>str_starts_with($argv[1],"https://")?"https":"netbird","netbird_interface"=>$argv[2]]; unitLinkValidateConfig($c);' "$origin" "$iface" "$repo_dir/html/script/unitLinkCommon.php"
 php -r 'foreach(["curl","mysqli"] as $e) if(!extension_loaded($e)) {fwrite(STDERR,"Install PHP $e first.\n");exit(1);}'
 if [[ $origin == http://* ]]; then
-  for tool in wg ip iptables rg; do command -v "$tool" >/dev/null; done
+  for tool in wg ip iptables; do command -v "$tool" >/dev/null; done
   wg show "$iface" >/dev/null
 fi
 mysql taransvar < "$repo_dir/misc/unit_app_token.sql"
@@ -18,7 +18,7 @@ install -d -m 0750 -o root -g www-data /etc/tarasec
 config=/etc/tarasec/unit-link.php
 [[ ! -f $config ]] || cp -a "$config" "$config.before-hosted.$(date +%s)"
 umask 0027
-php -r '$p=$argv[3]; $c=is_file($p)?require $p:[]; $c["gateway_id"]??=bin2hex(random_bytes(16)); $c["subject_key"]??=bin2hex(random_bytes(32)); $c["mode"]="service_handoff"; $c["base_url"]=$argv[1]; $c["transport"]=str_starts_with($argv[1],"https://")?"https":"netbird"; $c["netbird_interface"]=$argv[2]; file_put_contents($p,"<?php\nreturn ".var_export($c,true).";\n");' "$origin" "$iface" "$config"
+php -r 'require $argv[4]; $p=$argv[3]; $c=is_file($p)?require $p:[]; $c["gateway_id"]??=bin2hex(random_bytes(16)); $c["subject_key"]??=bin2hex(random_bytes(32)); $c["mode"]="service_handoff"; $c["base_url"]=$argv[1]; $c["transport"]=str_starts_with($argv[1],"https://")?"https":"netbird"; $c["netbird_interface"]=$argv[2]; unitLinkValidateConfig($c); file_put_contents($p,"<?php\nreturn ".var_export($c,true).";\n");' "$origin" "$iface" "$config" "$repo_dir/html/script/unitLinkCommon.php"
 chown root:www-data "$config"; chmod 0640 "$config"
 install -d -m 0755 /usr/local/lib/tarasec /usr/local/share/tarasec/unit-link/html/script
 install -m 0644 "$repo_dir"/html/script/{unitLinkCommon,unitLinkRequestCommon,serviceDiscoveryCommon}.php /usr/local/share/tarasec/unit-link/html/script/
