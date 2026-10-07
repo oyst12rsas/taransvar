@@ -48,6 +48,9 @@ systemctl daemon-reload
 # Verify HTTPS registration before removing the obsolete HTTP transport restriction.
 systemctl start tarasec-gateway-app.service
 systemctl enable --now tarasec-gateway-app.timer
+if systemctl cat tarasec-unit-link-poll.timer >/dev/null 2>&1; then
+    systemctl disable --now tarasec-unit-link-poll.timer
+fi
 if systemctl cat tarasec-unit-link-transport.timer >/dev/null 2>&1; then
     systemctl disable --now tarasec-unit-link-transport.timer
     systemctl stop tarasec-unit-link-transport.service
