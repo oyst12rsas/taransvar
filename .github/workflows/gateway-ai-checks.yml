@@ -8,6 +8,7 @@ on:
       - 'misc/gateway_ai_assess.pl'
       - 'misc/request-AI.pl'
       - '.github/workflows/gateway-ai-checks.yml'
+      - 'tests/gateway_ai_helpers_test.php'
 jobs:
   syntax:
     runs-on: ubuntu-latest
@@ -18,6 +19,7 @@ jobs:
           php -l html/script/gatewayAiContext.php
           php -l html/script/managerAi.php
           php -l html/gatekeeper/func/db_ai.php
+          php tests/gateway_ai_helpers_test.php
       - name: Check Perl syntax
         run: |
           sudo apt-get update
