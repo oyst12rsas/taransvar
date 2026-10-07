@@ -1,0 +1,13 @@
+{
+  "mode": "inspect",
+  "execute": false,
+  "allow_reboot": false,
+  "max_reboots_per_day": 1,
+  "quiet_seconds": 300,
+  "quiet_probe": "/usr/local/lib/tarasec-operations/activity-probe",
+  "model_url": "",
+  "model_key_file": "/etc/tarasec/operations-model.key",
+  "procedures_file": "/etc/tarasec/operations-procedures.json",
+  "target_commit": "",
+  "task": "Inspect this node against the AI Operations Manual. Report missing or broken capabilities. Use only eligible tested procedures; never claim a successful installer proves end-to-end functionality."
+}

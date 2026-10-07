@@ -1,0 +1,19 @@
+name: Operations agent pilot checks
+on:
+  pull_request:
+    paths:
+      - 'misc/operations_agent.py'
+      - 'misc/install_operations_agent.sh'
+      - 'misc/operations-agent.json.example'
+      - 'tests/operations_agent_test.py'
+      - 'docs/AI_OPERATIONS_MANUAL.md'
+      - '.github/workflows/operations-agent-checks.yml'
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tests/operations_agent_test.py
+      - run: python3 -m py_compile misc/operations_agent.py
+      - run: python3 -m json.tool misc/operations-agent.json.example >/dev/null
+      - run: bash -n misc/install_operations_agent.sh

@@ -207,3 +207,8 @@ When a user says they want to install or test TaraSec:
 5. verify the **TaraSec custom portal**, not merely openNDS service health;
 6. distinguish hotspot/openNDS, TaraSec subscriber entitlement, TaraSec management/NetBird, and optional payment integration as separate layers;
 7. for Raspberry Pi OS and other not-yet-clean-tested platforms, state that the implementation is on `main` but clean reinstall acceptance is pending until explicitly confirmed.
+
+
+## Operations pilot and shared deployment evidence
+
+Use `docs/AI_OPERATIONS_MANUAL.md` as the capability inventory for development, deployment and maintenance. Record exact commit/platform test evidence and verified recovery procedures; source presence alone does not authorize automatic deployment. The new operations pilot starts disabled and inspection-only, separate from the bounded-check approval worker. Model connectivity, tested procedures and a trustworthy demo/traffic activity adapter must be verified before enrolling a demo node for changes or reboots.
