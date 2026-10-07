@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__.'/../loginDestination.php';
+require_once __DIR__.'/../managerGoogleEmail.php';
 function managerApprovals()
 {
     if (!loggedIn() || !isAdmin()) {
@@ -14,6 +15,7 @@ function managerApprovals()
         $conn->close();
         return;
     }
+    $googleConfirmed = managerConfirmGoogleEmail($conn, $_SESSION, $focusedId);
 
     if (empty($_SESSION['managerApprovalCsrf'])) {
         $_SESSION['managerApprovalCsrf'] = bin2hex(random_bytes(24));
@@ -67,8 +69,9 @@ function managerApprovals()
     }
 
     print '<h2>Manager access approvals</h2>';
+    if ($googleConfirmed > 0) print '<p>Your matching request email is confirmed by Google. Review the request and choose Approve to grant management access.</p>';
     if ($focusedId !== null) print '<p><b>Review management request #'.$focusedId.' from the app.</b> Confirm the email address below before approving.</p>';
-    print '<p>An app becomes an active manager only after both the email address and a gateway administrator have confirmed the request. Active managers can be revoked immediately from this page.</p>';
+    print '<p>An app becomes an active manager only after its email is verified and an administrator explicitly approves the request. A recent Google sign-in verifies requests with the same email; other email addresses require their verification link. Active managers can be revoked immediately from this page.</p>';
 
     $mailStatusFile = '/run/tarasec-mail-relay-status.json';
     $mailStatus = null;

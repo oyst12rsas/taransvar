@@ -122,7 +122,8 @@ eval { $select->execute(); 1 } or do {
 my $update = $dbh->prepare(q{
     UPDATE managerRequest
        SET credentialPlain = ?, credentialHash = ?, credentialCreatedTime = NOW(),
-           emailVerifyTokenPlain = ?, emailVerifyTokenHash = ?,
+           emailVerifyTokenPlain = IF(emailVerifiedTime IS NULL, ?, NULL),
+           emailVerifyTokenHash = IF(emailVerifiedTime IS NULL, ?, NULL),
            active = IF(emailVerifiedTime IS NOT NULL AND gatewayApprovedTime IS NOT NULL, b'1', active)
      WHERE managerRequestId = ? AND credentialHash IS NULL
 });
@@ -185,6 +186,7 @@ if ($mail_url ne '') {
         SELECT managerRequestId, email, emailVerifyTokenPlain
           FROM managerRequest
          WHERE emailSentTime IS NULL
+           AND emailVerifiedTime IS NULL
            AND emailVerifyTokenPlain IS NOT NULL
            AND rejectedTime IS NULL
            AND (expires IS NULL OR expires > NOW())

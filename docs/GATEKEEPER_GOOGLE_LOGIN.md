@@ -45,8 +45,19 @@ and keeps that ID after an approval or rejection. Login itself does not approve
 anything: the administrator must review and explicitly decide with the existing
 CSRF-protected form. Email verification remains required for approval.
 
+A successful Google callback records a server-side email proof, bound to the
+authenticated local administrator and valid for 30 minutes. Opening management
+approvals confirms unexpired, non-rejected pending requests whose email matches
+that proof, checking current local administrator permissions and suspension.
+For a focused approval link, only that request is confirmed. This does not grant
+management access: the administrator must still choose Approve. Password sign-in
+clears the Google proof; a different email still requires its verification link.
+The mail worker skips already verified emails and does not restore verification
+tokens when generating the manager credential. Mail already sent remains sent.
+
 Deploy `loginDestination.php`, `index.php`, `google_start.php`,
 `google_callback.php`, and `func/{login,submitLogin,managerApprovals}.php` together.
+Include `managerGoogleEmail.php` and update the installed `manager_requests.pl`.
 No Google credential rotation or website-server configuration change is needed.
 
 ## Self-hosted identity/approval service

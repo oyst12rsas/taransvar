@@ -106,6 +106,8 @@ function getBitField()
 
 function submitLogin()
 {
+    // Password/legacy sign-in cannot inherit proof from a prior Google account.
+    unset($_SESSION['gatekeeper_google_identity']);
 	$szUserName = $_GET["email"];
 
 	$szSenderIp = getSenderIp();

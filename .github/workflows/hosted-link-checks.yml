@@ -24,4 +24,5 @@ jobs:
           php misc/test_hosted_unit_link.php
           php misc/test_gateway_app_link.php
           php misc/test_gateway_app_hosted.php
+          php misc/test_manager_google_email_database.php
           bash -n misc/setup_hosted_unit_link.sh misc/unit_link_transport_guard.sh misc/setup_gateway_app_account.sh

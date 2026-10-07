@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/../script/serviceDiscoveryCommon.php';
 require_once __DIR__.'/loginDestination.php';
+require_once __DIR__.'/managerGoogleEmail.php';
 session_start();
 header('Cache-Control: no-store');
 function gatekeeperGoogleFail(string $message): never {
@@ -51,4 +52,5 @@ session_regenerate_id(true);
 $_SESSION['userid'] = (int)$user['userId'];
 $_SESSION['isAdmin'] = 1;
 $_SESSION['hold'] = 0;
+managerRecordGoogleIdentity($_SESSION, (int)$user['userId'], $email);
 header('Location: '.$returnTo, true, 303);
