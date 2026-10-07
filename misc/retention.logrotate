@@ -1,0 +1,19 @@
+# Explicit diagnostic outputs only: never rotate ingestion queues or captures.
+/var/log/dbserver-compact-watch.log
+/var/log/dbserver-compact-watch-launch.log
+/var/log/tarasec-watch-launch.log
+/root/setup/log/crontasks.log
+/root/setup/log/worker_conntrack.log
+/root/setup/log/worker_read_dmesg.log
+/root/setup/log/iptables_log_monitor.log
+/root/setup/log/local_iptables_monitor.log
+{
+    daily
+    maxsize 20M
+    rotate 7
+    missingok
+    notifempty
+    compress
+    copytruncate
+    su root root
+}

@@ -1,0 +1,31 @@
+name: Telemetry retention checks
+on:
+  pull_request:
+    paths: ['misc/*retention*', 'misc/RETENTION.md', 'tests/retention*', '.github/workflows/retention-checks.yml']
+  push:
+    branches: [main, maintenance/db-retention]
+    paths: ['misc/*retention*', 'misc/RETENTION.md', 'tests/retention*', '.github/workflows/retention-checks.yml']
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: retention-test-only
+        ports: ['3307:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libdbi-perl libdbd-mysql-perl logrotate
+      - name: Syntax and policy boundaries
+        run: |
+          perl -I misc -c misc/db_retention.pl
+          perl -I misc -c misc/lib_retention.pm
+          bash -n misc/install_retention.sh
+          perl tests/retention_policy_test.pl
+          sudo logrotate --debug misc/retention.logrotate
+      - name: Real database deletion and evidence protection
+        run: perl tests/retention_database_test.pl

@@ -1,0 +1,7 @@
+# Local owner policy. Existing files are preserved by the installer.
+ENABLED=1
+TELEMETRY_DAYS=30
+THREAT_DAYS=90
+BATCH_ROWS=1000
+BATCHES_PER_TABLE=20
+TIME_BUDGET_SECONDS=45
