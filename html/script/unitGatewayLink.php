@@ -7,7 +7,12 @@ header('Content-Type: application/json; charset=utf-8'); header('Cache-Control: 
 function gatewayLinkReply(int $code,array $data): never { http_response_code($code); echo json_encode($data,JSON_UNESCAPED_SLASHES); exit; }
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 try {
-    $cfg=unitLinkConfig(); unitLinkTransport($cfg);
+    $cfg=unitLinkConfig();
+    if ($cfg['mode']==='hosted_gateway') {
+        if (($_SERVER['REQUEST_METHOD'] ?? '')!=='GET') gatewayLinkReply(405,['ok'=>false,'error'=>'use_https_account_service']);
+        gatewayLinkReply(200,['ok'=>true,'gateway_id'=>$cfg['gateway_id'],'service_node_id'=>unitServiceNodeId($cfg),'name'=>gethostname() ?: 'TaraSec node','link_mode'=>'hosted_gateway','account_services'=>taraAccountServices()]);
+    }
+    unitLinkTransport($cfg);
     $db=getConnection(); $name=gethostname() ?: 'TaraSec gateway';
     $gateway=['gateway_id'=>$cfg['gateway_id'],'name'=>$name,'base_url'=>$cfg['base_url']];
     if (($_SERVER['REQUEST_METHOD'] ?? '')==='GET') {

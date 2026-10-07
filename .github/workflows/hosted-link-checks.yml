@@ -18,9 +18,11 @@ jobs:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y php-cli php-mysql php-curl
       - run: |
-          for f in html/script/unit*.php html/script/gatewayAppLinkCommon.php html/gatekeeper/appLink.php misc/unit_link_poll.php misc/test_hosted_unit_link.php misc/test_gateway_app_link.php; do php -l "$f"; done
+          for f in html/script/unit*.php html/script/gatewayAppLinkCommon.php html/gatekeeper/appLink.php misc/unit_link_poll.php misc/gateway_app_poll.php misc/test_hosted_unit_link.php misc/test_gateway_app_link.php
+          php misc/test_gateway_app_hosted.php; do php -l "$f"; done
           php -n misc/test_unit_link.php
           php -n misc/test_service_discovery.php
           php misc/test_hosted_unit_link.php
           php misc/test_gateway_app_link.php
-          bash -n misc/setup_hosted_unit_link.sh misc/unit_link_transport_guard.sh
+          php misc/test_gateway_app_hosted.php
+          bash -n misc/setup_hosted_unit_link.sh misc/unit_link_transport_guard.sh misc/setup_gateway_app_account.sh
