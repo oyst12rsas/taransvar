@@ -22,5 +22,5 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libdbi-perl libjson-perl libwww-perl
-          perl -I misc -c misc/gateway_ai_assess.pl
+          sudo perl -I "$PWD/misc" -c misc/gateway_ai_assess.pl
           perl -I misc -c misc/request-AI.pl
