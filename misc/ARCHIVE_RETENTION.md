@@ -71,8 +71,16 @@ mistaking a skipped run for verification.
 
 | Table | Retention | Eligibility | Default run limit |
 | --- | --- | --- | --- |
-| traffic | 30 days | Both created and lastSeen older than cutoff; NULL lastSeen preserved | 12 x 5,000 rows |
+| traffic | 30 days by default; configurable from 7 days | created older than cutoff; lastSeen older than cutoff or NULL | 12 x 5,000 rows |
 | partnerRouterStatusLog | 30 days | created older than cutoff | 4 x 5,000 rows |
+
+For a one-week traffic policy, set `RETENTION_DAYS=7` in
+`/etc/tarasec-traffic-archive.conf`. Keep status-log policy separate. Records
+created in the retained period and flows active in that period are preserved.
+NULL lastSeen uses created as the age criterion. Reducing retention drains the
+newly eligible backlog gradually through the existing bounded batches; it does
+not immediately delete all older data in one operation. Existing local policies
+are not reset by an upgrade.
 
 The traffic timer runs after 15 minutes; the status-log timer after five minutes.
 Subsequent runs are scheduled about 15 minutes after service completion. Both

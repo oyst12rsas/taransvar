@@ -137,7 +137,10 @@ INSERT INTO archive_fixture.traffic(trafficId,created,lastSeen) VALUES
 (1,NOW()-INTERVAL 60 DAY,NOW()-INTERVAL 60 DAY),
 (2,NOW()-INTERVAL 60 DAY,NOW()-INTERVAL 60 DAY),
 (3,NOW(),NOW()-INTERVAL 60 DAY),
-(4,NOW()-INTERVAL 60 DAY,NULL);''')
+(4,NOW()-INTERVAL 60 DAY,NULL),
+(5,NOW(),NULL),
+(6,NOW()-INTERVAL 14 DAY,NOW()-INTERVAL 14 DAY),
+(7,NOW()-INTERVAL 60 DAY,NOW()-INTERVAL 3 DAY);''')
         else:
             db('''CREATE TABLE archive_fixture.partnerRouterStatusLog (
 ip INT UNSIGNED NOT NULL,created DATETIME NOT NULL,status TEXT NULL,
@@ -152,17 +155,34 @@ INSERT INTO archive_fixture.partnerRouterStatusLog VALUES
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.log.read_text(), '')
 
-    def test_traffic_preserves_mutated_recent_and_null_rows(self):
+    def test_traffic_preserves_mutated_recent_and_recent_null_rows(self):
         self.fixture('traffic')
         result = self.run_archive()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('deleted=1 skipped=1', result.stdout)
+        self.assertIn('deleted=2 skipped=1' if REAL else 'deleted=1 skipped=1', result.stdout)
         if REAL:
-            self.assertEqual(db('SELECT GROUP_CONCAT(trafficId ORDER BY trafficId) FROM archive_fixture.traffic'), '1,3,4')
+            self.assertEqual(db('SELECT GROUP_CONCAT(trafficId ORDER BY trafficId) FROM archive_fixture.traffic'), '1,3,5,6,7')
         else:
             query = self.log.read_text().split('DELETE t', 1)[1].split('COMMIT', 1)[0]
             self.assertEqual(query.count('<=>'), 11)
             self.assertIn('t.`created` <', query)
+            self.assertIn('t.`lastSeen` IS NULL', query)
+
+    def test_seven_day_retention_and_null_fallback(self):
+        self.fixture('traffic')
+        result = self.run_archive(RETENTION_DAYS='7')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('INTERVAL 7 DAY', self.log.read_text())
+        if REAL:
+            self.assertIn('deleted=3 skipped=1', result.stdout)
+            self.assertEqual(db('SELECT GROUP_CONCAT(trafficId ORDER BY trafficId) FROM archive_fixture.traffic'), '1,3,5,7')
+        else:
+            self.assertIn('`lastSeen` IS NULL', self.log.read_text())
+
+    def test_retention_below_seven_days_is_rejected(self):
+        result = self.run_archive(RETENTION_DAYS='6')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.log.read_text(), '')
 
     def test_statuslog_preserves_case_and_space_mutation(self):
         self.fixture('statuslog')
@@ -184,7 +204,7 @@ INSERT INTO archive_fixture.partnerRouterStatusLog VALUES
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.log.read_text(), '')
         if REAL:
-            self.assertEqual(db('SELECT COUNT(*) FROM archive_fixture.traffic'), '4')
+            self.assertEqual(db('SELECT COUNT(*) FROM archive_fixture.traffic'), '7')
 
     @unittest.skipIf(REAL, 'Metadata faults use the simulated client')
     def test_schema_and_foreign_key_guards(self):

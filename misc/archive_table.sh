@@ -32,7 +32,7 @@ ARCHIVE_HOST=${ARCHIVE_HOST:-}
 for value in "$RETENTION_DAYS" "$BATCH_ROWS" "$MAX_BATCHES" "$ARCHIVE_PORT"; do
     [[ $value =~ ^[1-9][0-9]{0,4}$ ]] || { echo 'Invalid numeric configuration.' >&2; exit 1; }
 done
-(( RETENTION_DAYS >= 30 && RETENTION_DAYS <= 3650 && BATCH_ROWS <= 5000 && MAX_BATCHES <= 12 && ARCHIVE_PORT <= 65535 )) || {
+(( RETENTION_DAYS >= 7 && RETENTION_DAYS <= 3650 && BATCH_ROWS <= 5000 && MAX_BATCHES <= 12 && ARCHIVE_PORT <= 65535 )) || {
     echo 'Configuration exceeds supported limits.' >&2; exit 1;
 }
 test -r "$ARCHIVE_KEY"
@@ -54,8 +54,8 @@ REFERENCES=$(sql -e "SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE WH
 [[ $REFERENCES == 0 ]] || { echo "$TABLE has incoming foreign keys; cleanup requires review." >&2; exit 1; }
 CUTOFF=$(sql -e "SET time_zone='+00:00'; SELECT DATE_FORMAT(NOW() - INTERVAL $RETENTION_DAYS DAY,'%Y-%m-%d %H:%i:%s')")
 ELIGIBLE="\`$DATE_COLUMN\` < '$CUTOFF'"
-# Preserve newly created traffic, even if a bad clock produced an old lastSeen.
-[[ $TABLE != traffic ]] || ELIGIBLE+=" AND \`created\` < '$CUTOFF'"
+# Use creation time when lastSeen is missing; preserve newly created records.
+[[ $TABLE != traffic ]] || ELIGIBLE="\`created\` < '$CUTOFF' AND (\`lastSeen\` IS NULL OR \`lastSeen\` < '$CUTOFF')"
 SOURCE_LABEL=$(hostname | tr -c 'A-Za-z0-9_-' '_')
 SOURCE_LABEL=${SOURCE_LABEL%_}
 echo "Starting $TABLE: cutoff=$CUTOFF UTC; batch=$BATCH_ROWS; maximum_batches=$MAX_BATCHES"
@@ -113,7 +113,7 @@ SFTP
         else MATCH+="t.\`$column\` <=> s.\`$column\`"; fi
     done
     DELETE_ELIGIBLE="t.\`$DATE_COLUMN\` < '$CUTOFF'"
-    [[ $TABLE != traffic ]] || DELETE_ELIGIBLE+=" AND t.\`created\` < '$CUTOFF'"
+    [[ $TABLE != traffic ]] || DELETE_ELIGIBLE="t.\`created\` < '$CUTOFF' AND (t.\`lastSeen\` IS NULL OR t.\`lastSeen\` < '$CUTOFF')"
     echo "Verified $ROWS archived and restored rows; deleting unchanged live copies."
     DELETED=$(sql <<SQL
 SET time_zone='+00:00';
