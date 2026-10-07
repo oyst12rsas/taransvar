@@ -61,13 +61,14 @@ try {
     // aiResponse schema and does not require a DB-version bump.
     $gatewayHistory = [];
     if (tableExists($conn, 'aiResponse')) {
-        $result = $conn->query('SELECT aiResponseId,created,seconds,response FROM aiResponse ORDER BY aiResponseId DESC LIMIT 100');
+        $result = $conn->query("SELECT aiResponseId,created,TIMESTAMPDIFF(SECOND,created,NOW()) ageSeconds,seconds,response FROM aiResponse WHERE JSON_VALID(response) AND JSON_UNQUOTE(JSON_EXTRACT(IF(JSON_VALID(response),response,'{}'),'$.source'))='gateway_local' ORDER BY created DESC,aiResponseId DESC LIMIT 100");
         while ($row = $result->fetch_assoc()) {
             $decoded = decodeJsonField($row['response']);
-            if (!is_array($decoded) || ($decoded['source'] ?? '') !== 'gateway_local') continue;
+            if (!is_array($decoded) || ($decoded['source'] ?? '') !== 'gateway_local' || !is_array($decoded['assessment'] ?? null)) continue;
             $gatewayHistory[] = [
                 'aiResponseId'=>(int)$row['aiResponseId'],
                 'created'=>$row['created'],
+                'ageSeconds'=>(int)$row['ageSeconds'],
                 'seconds'=>$row['seconds']===null?null:(int)$row['seconds'],
                 'fundingMode'=>$decoded['fundingMode'] ?? null,
                 'gatewayAssessmentId'=>$decoded['gatewayAssessmentId'] ?? null,
@@ -80,6 +81,7 @@ try {
 
     $gatewayAssessment = count($gatewayHistory) ? $gatewayHistory[0]['assessment'] : null;
     $gatewayAssessmentTime = count($gatewayHistory) ? $gatewayHistory[0]['created'] : null;
+    $gatewayAssessmentAgeSeconds = count($gatewayHistory) ? max(0,$gatewayHistory[0]['ageSeconds']) : null;
     $gatewayAssessmentMeta = count($gatewayHistory) ? [
         'aiResponseId'=>$gatewayHistory[0]['aiResponseId'],
         'fundingMode'=>$gatewayHistory[0]['fundingMode'],
@@ -87,26 +89,25 @@ try {
         'quota'=>$gatewayHistory[0]['quota']
     ] : null;
 
-    // Backward-compatible fallback for gateways which have not yet run B27.
-    if ($gatewayAssessment === null) {
-        $result = $conn->query('SELECT aiAssessment,aiAssessmentTime FROM setup LIMIT 1');
-        if ($result && ($row = $result->fetch_assoc())) {
-            $legacy = decodeJsonField($row['aiAssessment']);
+    // Compare the mirror during mixed-version deployments as well.
+    $result = $conn->query('SELECT aiAssessment,aiAssessmentTime,TIMESTAMPDIFF(SECOND,aiAssessmentTime,NOW()) ageSeconds FROM setup LIMIT 1');
+    if ($result && ($row = $result->fetch_assoc()) && $row['aiAssessmentTime'] !== null &&
+        ($gatewayAssessmentTime === null || $row['aiAssessmentTime'] > $gatewayAssessmentTime)) {
+        $legacy = decodeJsonField($row['aiAssessment']);
+        $mirrorAssessment = is_array($legacy) ? ($legacy['assessment'] ?? $legacy) : null;
+        if (is_array($mirrorAssessment)) {
+            $gatewayAssessment = $mirrorAssessment;
             $gatewayAssessmentTime = $row['aiAssessmentTime'];
-            if (is_array($legacy) && isset($legacy['assessment'])) {
-                $gatewayAssessment = $legacy['assessment'];
-                $gatewayAssessmentMeta = [
-                    'fundingMode'=>$legacy['fundingMode'] ?? null,
-                    'gatewayAssessmentId'=>$legacy['gatewayAssessmentId'] ?? null,
-                    'quota'=>$legacy['quota'] ?? null,
-                    'legacySetupMirror'=>true
-                ];
-            } else {
-                $gatewayAssessment = $legacy;
-            }
+            $gatewayAssessmentAgeSeconds = $row['ageSeconds'] === null ? null : max(0,(int)$row['ageSeconds']);
+            $gatewayAssessmentMeta = [
+                'fundingMode'=>$legacy['fundingMode'] ?? null,
+                'gatewayAssessmentId'=>$legacy['gatewayAssessmentId'] ?? null,
+                'quota'=>$legacy['quota'] ?? null,
+                'legacySetupMirror'=>true
+            ];
         }
-        if ($result) $result->free();
     }
+    if ($result) $result->free();
 
     // Keep central normalized candidates available on DB-server installations.
     $units = [];
@@ -164,6 +165,7 @@ try {
         'manager'=>['email'=>(string)$manager['email'],'requestId'=>(int)$manager['managerRequestId']],
         'gatewayAssessment'=>$gatewayAssessment,
         'gatewayAssessmentTime'=>$gatewayAssessmentTime,
+        'gatewayAssessmentAgeSeconds'=>$gatewayAssessmentAgeSeconds,
         'gatewayAssessmentMeta'=>$gatewayAssessmentMeta,
         'gatewayAssessmentHistory'=>$gatewayHistory,
         'units'=>$units,
