@@ -1,5 +1,11 @@
 # Database and diagnostic-log retention
 
+For verified SFTP archival **before** deleting traffic and partner status logs,
+use [ARCHIVE_RETENTION.md](ARCHIVE_RETENTION.md) and
+`misc/install_archive_retention.sh`. New archive installations start disabled;
+existing local policy is preserved. Do not enable both cleanup timers on the
+same database if every deleted record must first be archived.
+
 Install on each TaraSec gateway/node and the DB server, where its local
 `taransvar` database resides. Do not install on a VM host merely because it
 hosts those guests. This is independent of the packet-processing cron loop.
@@ -72,3 +78,4 @@ This task deletes historical telemetry rather than archiving it. If history must
 be retained remotely (for example on barracuda), configure and verify an export
 and upload workflow before enabling deletion. No remote archive is implied by
 installing this task. Existing backups are the recovery path for deleted rows.
+

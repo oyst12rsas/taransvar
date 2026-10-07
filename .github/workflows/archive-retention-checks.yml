@@ -1,0 +1,32 @@
+name: Verified archive retention checks
+on:
+  pull_request:
+    paths: ['misc/*archive*', 'misc/ARCHIVE_RETENTION.md', 'tests/archive_retention_test.py', '.github/workflows/archive-retention-checks.yml']
+  push:
+    branches: [main]
+    paths: ['misc/*archive*', 'misc/ARCHIVE_RETENTION.md', 'tests/archive_retention_test.py', '.github/workflows/archive-retention-checks.yml']
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: archive-ci-only
+        ports: ['3307:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y mariadb-client openssh-client
+      - name: Syntax and archive failure boundaries
+        run: |
+          bash -n misc/archive_table.sh
+          bash -n misc/install_archive_retention.sh
+          python3 tests/archive_retention_test.py
+      - name: Real MariaDB snapshots, restores and concurrent-row preservation
+        env:
+          MYSQL_PWD: archive-ci-only
+          ARCHIVE_TEST_DATABASE: '1'
+        run: python3 tests/archive_retention_test.py

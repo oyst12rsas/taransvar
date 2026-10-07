@@ -207,3 +207,23 @@ When a user says they want to install or test TaraSec:
 5. verify the **TaraSec custom portal**, not merely openNDS service health;
 6. distinguish hotspot/openNDS, TaraSec subscriber entitlement, TaraSec management/NetBird, and optional payment integration as separate layers;
 7. for Raspberry Pi OS and other not-yet-clean-tested platforms, state that the implementation is on `main` but clean reinstall acceptance is pending until explicitly confirmed.
+
+## Database archival and retention
+
+Install from the checkout on the node or DB server that owns the local database:
+
+```sh
+sudo bash misc/install_archive_retention.sh
+```
+
+New archival jobs start disabled. Configure the per-table SFTP destination and
+individual upload key, verify the receiver host key and storage, then enable with
+`sudo bash misc/install_archive_retention.sh --enable`. Preserve existing local
+settings on upgrades. Use `--disable` to stop timers and active jobs without
+removing archives. Do not install on the VM host merely because it hosts nodes.
+Local VM networking can suffice; NetBird is only needed for this transfer when
+that is the configured path. See [misc/ARCHIVE_RETENTION.md](misc/ARCHIVE_RETENTION.md)
+for policy, migration, verification and failure recovery. The separate
+`misc/install_retention.sh` deletes without remote archival; select one workflow
+before enabling cleanup on a database.
+
