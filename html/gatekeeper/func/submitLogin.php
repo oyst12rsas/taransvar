@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/../loginDestination.php';
 
 function createUser($conn, $szUserName, $szPassword, $bIsAdmin)
 {
@@ -160,8 +161,16 @@ function submitLogin()
 			*/
 			}
 
-			require_once ("func/main.php");
-			main();
+            $returnTo = gatekeeperTakeLoginDestination();
+            if (str_starts_with($returnTo, 'index.php?f=managerApprovals')) {
+                parse_str((string)parse_url($returnTo, PHP_URL_QUERY), $destination);
+                $_GET['requestId'] = $destination['requestId'] ?? null;
+                require_once 'func/managerApprovals.php';
+                managerApprovals();
+            } else {
+                require_once 'func/main.php';
+                main();
+            }
 		}
 		else
 		{

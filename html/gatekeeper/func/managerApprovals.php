@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/../loginDestination.php';
 function managerApprovals()
 {
     if (!loggedIn() || !isAdmin()) {
@@ -7,6 +8,12 @@ function managerApprovals()
     }
 
     $conn = getConnection();
+    $focusedId = gatekeeperApprovalRequestId($_GET['requestId'] ?? null);
+    if (isset($_GET['requestId']) && $focusedId === null) {
+        print '<h3>Invalid management request ID.</h3>';
+        $conn->close();
+        return;
+    }
 
     if (empty($_SESSION['managerApprovalCsrf'])) {
         $_SESSION['managerApprovalCsrf'] = bin2hex(random_bytes(24));
@@ -21,7 +28,9 @@ function managerApprovals()
             $decision = (string)($_POST['decision'] ?? '');
             $userId = (int)($_SESSION['userid'] ?? 0);
 
-            if ($id > 0 && $decision === 'approve') {
+            if ($focusedId !== null && $id !== $focusedId) {
+                print '<p><font color="red">The submitted request does not match this approval page.</font></p>';
+            } elseif ($id > 0 && $decision === 'approve') {
                 $stmt = $conn->prepare("UPDATE managerRequest SET gatewayApprovedTime=COALESCE(gatewayApprovedTime,NOW()), approvedByUserId=?, rejectedTime=NULL, active=IF(credentialHash IS NOT NULL,b'1',active) WHERE managerRequestId=? AND emailVerifiedTime IS NOT NULL AND rejectedTime IS NULL");
                 $stmt->bind_param('ii', $userId, $id);
                 $stmt->execute();
@@ -58,6 +67,7 @@ function managerApprovals()
     }
 
     print '<h2>Manager access approvals</h2>';
+    if ($focusedId !== null) print '<p><b>Review management request #'.$focusedId.' from the app.</b> Confirm the email address below before approving.</p>';
     print '<p>An app becomes an active manager only after both the email address and a gateway administrator have confirmed the request. Active managers can be revoked immediately from this page.</p>';
 
     $mailStatusFile = '/run/tarasec-mail-relay-status.json';
@@ -82,8 +92,18 @@ function managerApprovals()
         print '</p>';
     }
 
-    $sql = "SELECT managerRequestId,created,email,credentialCreatedTime,emailVerifiedTime,gatewayApprovedTime,rejectedTime,CAST(active AS UNSIGNED) active,lastUsedTime,expires FROM managerRequest ORDER BY managerRequestId DESC LIMIT 20";
-    $result = $conn->query($sql);
+    $sql = "SELECT managerRequestId,created,email,credentialCreatedTime,emailVerifiedTime,gatewayApprovedTime,rejectedTime,CAST(active AS UNSIGNED) active,lastUsedTime,expires FROM managerRequest";
+    if ($focusedId !== null) {
+        $stmt = $conn->prepare($sql.' WHERE managerRequestId=?');
+        $stmt->bind_param('i', $focusedId);
+        $stmt->execute();
+        $result = $stmt->get_result();
+    } else {
+        $result = $conn->query($sql.' ORDER BY managerRequestId DESC LIMIT 20');
+    }
+    if ($result->num_rows === 0) {
+        print '<p>'.($focusedId === null ? 'No management requests have been submitted to this node.' : 'Management request #'.$focusedId.' was not found on this node. Return to the app and check its request status.').'</p>';
+    }
     print '<table border="1" cellpadding="6" cellspacing="0"><tr><th>ID</th><th>Email</th><th>Created</th><th>Email</th><th>Gateway admin</th><th>Credential</th><th>Status</th><th>Last used</th><th>Action</th></tr>';
     while ($row = $result->fetch_assoc()) {
         $id = (int)$row['managerRequestId'];
@@ -100,7 +120,7 @@ function managerApprovals()
         print '<td>'.htmlspecialchars((string)($row['lastUsedTime'] ?? '')).'</td><td>';
 
         if (!$row['rejectedTime']) {
-            print '<form method="post" style="display:inline"><input type="hidden" name="f" value="main"><input type="hidden" name="requestId" value="'.$id.'"><input type="hidden" name="csrf" value="'.htmlspecialchars($_SESSION['managerApprovalCsrf']).'">';
+            print '<form method="post" action="index.php?f=managerApprovals&amp;requestId='.$id.'" style="display:inline"><input type="hidden" name="requestId" value="'.$id.'"><input type="hidden" name="csrf" value="'.htmlspecialchars($_SESSION['managerApprovalCsrf']).'">';
             if ($active) {
                 print '<button name="decision" value="revoke" onclick="return confirm(\'Revoke this App manager immediately?\')">Revoke</button>';
             } elseif ($fullyApproved) {
