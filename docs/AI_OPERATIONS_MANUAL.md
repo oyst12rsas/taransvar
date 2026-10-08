@@ -400,3 +400,40 @@ Field publication is only local readiness. After cron runs, independently verify
 central DB receipt and app/API rendering of the operations field. The existing
 security agent still needs its own node-specific enrollment. Do not enable the
 operations timer during pilot testing merely to keep a dot fresh.
+
+### Minute heartbeat without a model search
+
+Run the operations service with `--tick` for scheduling. Each tick cheaply samples
+resources and service state and publishes report.json. It calls the model only
+for a root-local request, new service failure, newly crossed/worsening resource
+pressure, rapid disk growth, ready continuation/verification, or an optional
+periodic review. Direct invocation without --tick is an explicit owner request.
+Unchanged faults do not trigger repeated searches. Routine threat handling remains
+with kernel/firewall and existing lightweight workers; no per-threat model calls.
+
+`model_schedule` defaults: periodic_review_seconds=0 (disabled), cooldown_seconds=900,
+worsening_cooldown_seconds=300, max_calls_per_hour=8, max_calls_per_day=32,
+continuation_seconds=300, disk_growth_bytes_per_hour=268435456. Every HTTP model
+attempt including schema/progression corrections consumes a persisted budget slot.
+Manual requests respect budgets. Failed root-local queued requests respect the
+cooldown and remain pending until a valid decision is obtained. Do not discard
+cooldowns or call history to bypass owner spending limits.
+
+Request work by writing a root-owned mode-0600
+`/var/lib/tarasec-operations/assessment-request.json` with a fresh string `id`.
+Request text cannot grant execution authority; existing local policy still governs
+all actions. This request only asks for assessment of the configured task.
+
+Worker heartbeat and last completed AI assessment have distinct timestamps and
+statuses. A fresh heartbeat must not represent the cached model assessment as new.
+The minute report's existing three-minute transport freshness checks the heartbeat.
+The last AI assessment age is retained for the API/app to display separately.
+
+Optional `resource_protection.automatic_actions` is a list of at most three typed
+operation/target pairs. It is empty by default. With execute and resource protection
+enabled and measured threshold pressure, the worker validates the same disposable
+log/stoppable service/assistance rules as model-directed resource actions, executes
+only those owner-listed actions and remeasures pressure. It records attempts and
+results, with a 15-minute cooldown. No default mass deletion, database changes or
+service stops are introduced. Existing logrotate/journal bounds remain the first
+routine resource-management layer.

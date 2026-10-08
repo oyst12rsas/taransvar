@@ -16,7 +16,11 @@ def local_report(state, now=None):
     findings = state.get('deployment_findings', [])
     result = state.get('diagnostics', {}).get('deployment_status', {}).get('result', {})
     return {'checked_at': int(time.time() if now is None else now),
-        'assessment_checked_at': int(state.get('checked_at', 0)),
+        'assessment_checked_at': int(state.get('last_assessment_checked_at', state.get('checked_at', 0))),
+        'worker_heartbeat_at': int(state.get('worker_heartbeat_at', 0)),
+        'last_assessment_status': state.get('last_assessment_status'),
+        'resource_pressure': state.get('resource_pressure'),
+        'model_trigger': state.get('model_trigger'),
         'engine': 'operations_worker', 'status': state.get('status', 'unknown'),
         'error_stage': state.get('error_stage'),
         'deployment_checked_at': result.get('checked_at'),

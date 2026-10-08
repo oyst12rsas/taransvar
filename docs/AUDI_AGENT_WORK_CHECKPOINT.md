@@ -38,3 +38,11 @@ user-owned. Corrected the idempotency test to isolate ownership and added explic
 nonroot-directory rejection coverage; production ownership guard unchanged.
 93 tests pass locally. Separate unprivileged process verification unavailable in
 this runner (runuser cannot set groups); Audi must verify ordinary-user suite.
+
+22:41 Oslo: security enrollment verified connected, bounded security timer runs
+minute assessments with password-only SSH and broad VPN IPv6 findings. User wants
+minute operations wakeups without full AI every time. Added --tick triggers,
+persisted per-HTTP budgets/cooldowns, growth/pressure/new-failure and continuation
+selection, distinct heartbeat/assessment timestamps, root-local request file and
+optional empty-by-default typed emergency routines. 100 tests pass; Audi timer
+must include --tick in its existing Flowise service override before enabling.

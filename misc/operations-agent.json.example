@@ -23,6 +23,16 @@
     "stoppable_services": [],
     "protected_services": [],
     "allow_request_assistance": false,
-    "assistance_executable": ""
+    "assistance_executable": "",
+    "automatic_actions": []
+  },
+  "model_schedule": {
+    "periodic_review_seconds": 0,
+    "cooldown_seconds": 900,
+    "worsening_cooldown_seconds": 300,
+    "max_calls_per_hour": 8,
+    "max_calls_per_day": 32,
+    "continuation_seconds": 300,
+    "disk_growth_bytes_per_hour": 268435456
   }
 }

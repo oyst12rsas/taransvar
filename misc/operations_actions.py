@@ -41,7 +41,8 @@ def pressure(config):
                   for line in Path('/proc/meminfo').read_text().splitlines())
     available = 100 * memory['MemAvailable'] / max(1, memory['MemTotal'])
     load = os.getloadavg()[0] / max(1, os.cpu_count() or 1)
-    values = {'disk_used_percent': round(used, 2), 'memory_available_percent': round(available, 2),
+    values = {'disk_used_bytes': (disk.f_blocks - disk.f_bfree) * disk.f_frsize,
+              'disk_available_bytes': disk.f_bavail * disk.f_frsize, 'disk_used_percent': round(used, 2), 'memory_available_percent': round(available, 2),
               'load_per_cpu': round(load, 2)}
     values['triggered'] = (used >= float(config.get('disk_used_percent', 85))
         or available <= float(config.get('memory_available_percent', 10))

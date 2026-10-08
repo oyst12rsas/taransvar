@@ -16,9 +16,12 @@ from operations_actions import validate_command, pressure, validate_resource, pe
 from operations_prompt import build_prompt, validate_decision, progress_feedback, completed_check_feedback
 from operations_tools import gateway_tools, resolve_tool
 from operations_reporting import local_report, stage_error
+from operations_schedule import choose_trigger, reserve_call
 
 
 def save(path, value):
+    if value.get('last_assessment_checked_at') and value.get('status') not in ('monitoring', 'resource_attention', 'inspecting'):
+        value['last_assessment_status'] = value.get('status', 'unknown')
     result = value.get('last_action_result')
     if result:
         history = value.setdefault('action_history', [])
@@ -194,6 +197,7 @@ def diagnostic_feedback(name, results, round_number):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', default='/etc/tarasec/operations-agent.json')
+    parser.add_argument('--tick', action='store_true', help='Cheap scheduled check; model only on a trigger')
     args = parser.parse_args()
     if os.geteuid() != 0:
         raise SystemExit('Run as root')
@@ -215,6 +219,9 @@ def main():
         state['boot_id'] = boot
         state['resume_required'] = bool(state.get('reboot_pending'))
         state.pop('reboot_pending', None)
+    state.setdefault('last_assessment_checked_at', state.get('checked_at', 0))
+    state.setdefault('last_assessment_status', state.get('status', 'unknown'))
+    state['worker_heartbeat_at'] = now
     state['checked_at'] = now
     state['status'] = 'inspecting'
     for field in ('error_type', 'error_detail', 'error_stage', 'summary', 'diagnostics'):
@@ -248,6 +255,63 @@ def main():
                 if Path('/var/log/tarasec-crontasks.log').exists() else None,
             'resume_after_reboot': state.get('resume_required', False),
         }
+        snapshot['resource_pressure'] = pressure(policy.get('resource_protection', {}))
+        failed_services = [line.strip().lstrip('●').strip().split()[0] for line in snapshot['services']['output'].splitlines()
+                           if ' failed ' in line and line.strip().lstrip('●').strip().split()
+                           and line.strip().lstrip('●').strip().split()[0].endswith('.service')]
+        # Requests are root-local, never accepted from model or retrieved text.
+        request_path = directory / 'assessment-request.json'
+        requested = not args.tick
+        request_id = None
+        if request_path.exists():
+            request = json.loads(trusted(request_path).read_text())
+            request_id = request.get('id')
+            requested = requested or (isinstance(request_id, str) and request_id != state.get('completed_request_id'))
+        # Optional emergency actions are typed and explicitly configured by the owner.
+        resources = policy.get('resource_protection', {})
+        automatic = resources.get('automatic_actions', [])
+        if (policy.get('execute') is True and resources.get('enabled') is True
+                and snapshot['resource_pressure']['triggered'] and automatic
+                and now - state.get('last_automatic_resource_at', 0) >= 900):
+            if not isinstance(automatic, list) or len(automatic) > 3:
+                raise ValueError('Automatic resource actions must be a bounded list')
+            state['last_automatic_resource_at'] = now
+            save(path, state)
+            for configured in automatic:
+                current = pressure(resources)
+                if not current['triggered']:
+                    break
+                decision = dict(action='resource', operation=configured['operation'], target=configured['target'])
+                config = validate_resource(decision, policy, current)
+                record({'automatic_resource_start': decision['operation']})
+                result = perform_resource(decision, config, run, trusted)
+                record({'automatic_resource_result': result})
+                state['last_automatic_resource_result'] = {'operation': decision['operation'], 'exit_code': result['exit_code']}
+                save(path, state)
+            snapshot['resource_pressure'] = pressure(resources)
+        state['continuation_ready'] = False
+        if state.get('last_assessment_status') == 'deferred_activity_or_unknown':
+            observed = run([str(trusted(policy['quiet_probe']))], timeout=20)
+            sample = json.loads(observed['output']) if observed['exit_code'] == 0 else {}
+            state['activity'] = sample
+            state['continuation_ready'] = quiet(state, sample, now, max(60, int(policy.get('quiet_seconds', 300))))
+        if args.tick and requested and now - state.get('last_model_attempt_at', 0) < 900:
+            state['status'] = 'request_cooldown'
+            state['diagnostics'] = cached_diagnostics
+            state['resource_pressure'] = snapshot['resource_pressure']
+            save(path, state)
+            return
+        trigger = choose_trigger(state, policy, snapshot['resource_pressure'], failed_services, now, requested)
+        state['resource_pressure'] = snapshot['resource_pressure']
+        state['diagnostics'] = cached_diagnostics
+        state['model_trigger'] = trigger
+        if not trigger:
+            state['status'] = 'resource_attention' if snapshot['resource_pressure']['triggered'] else 'monitoring'
+            save(path, state)
+            record({'lightweight_tick': state['status']})
+            return
+        state['last_model_attempt_at'] = now
+        save(path, state)
         registry = json.loads(trusted(policy['procedures_file']).read_text())
         procedures = registry['procedures']
         system = 'ubuntu-' + dict(line.split('=', 1) for line in Path('/etc/os-release')
@@ -289,6 +353,11 @@ def main():
                 remaining_diagnostics(diagnostic_results, round_number)),
                 _eligible_procedures=list(available),
                 _available_tools=list(gateway_tools(policy, diagnostic_results, snapshot)))
+            if not reserve_call(state, policy):
+                state['status'] = 'model_budget_deferred'
+                save(path, state)
+                record({'model_budget_deferred': True})
+                return
             state['current_stage'] = 'model_request'
             state['model_provider'] = 'openai' if policy.get('model_provider') == 'openai' else 'flowise'
             save(path, state)
@@ -355,6 +424,11 @@ def main():
             save(path, state)
         if not isinstance(decision.get('task_state', {}), dict):
             raise ValueError('Task state must be an object')
+        state['last_model_pressure'] = snapshot['resource_pressure']
+        state['last_model_failed_services'] = sorted(failed_services)
+        state['last_assessment_checked_at'] = time.time()
+        if request_id:
+            state['completed_request_id'] = request_id
         action = decision.get('action')
         if action not in ('report', 'procedure', 'command', 'resource', 'reboot'):
             raise ValueError('Unknown model action')
