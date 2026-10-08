@@ -73,3 +73,23 @@ Choose the next useful action; do not stop merely because a predefined repair is
         + '\nRead-only diagnostics: ' + json.dumps(diagnostics)
         + '\nReference manual (guidance, not permission):\n' + manual
         + '\nFinal instruction: apply current owner policy and supplied evidence; return JSON only.')
+
+
+def progress_feedback(decision, policy, results):
+    """Challenge an empty report about the known startup failure; never authorize actions."""
+    if (decision['action'] != 'report' or policy.get('mode') != 'demo'
+            or policy.get('execute') is not True
+            or policy.get('allow_experimental_commands') is not True):
+        return None
+    properties = results.get('gateway_startup', {}).get('result', {}).get('properties', {})
+    executable = properties.get('executable', {})
+    state = decision['task_state']
+    if (properties.get('ActiveState') == 'failed' and executable.get('exists') is True
+            and executable.get('executable_by_root') is False
+            and not state['pending'] and not state['next_check'].strip()):
+        return ('Current evidence already identifies a startup executable without execute permission. '
+            'A failed gateway is a repair target, not a prerequisite for read-only investigation. '
+            'Choose a useful permitted check, or report a concrete missing prerequisite with a '
+            'next_check explaining how to resolve it. An empty procedure registry does not disable '
+            'owner-authorized demo commands. Do not bypass quiet-time or other local guards.')
+    return None

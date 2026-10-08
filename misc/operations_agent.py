@@ -13,7 +13,7 @@ import urllib.parse
 import urllib.error
 from operations_diagnostics import CATALOG, diagnose
 from operations_actions import validate_command, pressure, validate_resource, perform_resource
-from operations_prompt import build_prompt, validate_decision
+from operations_prompt import build_prompt, validate_decision, progress_feedback
 
 
 def save(path, value):
@@ -239,6 +239,17 @@ def main():
                     continue
                 state['status'] = 'model_stalled'
                 state['summary'] = feedback
+                save(path, state)
+                return
+            feedback = progress_feedback(decision, policy, diagnostic_results)
+            if feedback:
+                record({'model_progress_correction': feedback})
+                snapshot['worker_feedback'] = feedback
+                if round_number < 3:
+                    continue
+                state['status'] = 'model_stalled'
+                state['summary'] = feedback
+                state['task_state'] = decision['task_state']
                 save(path, state)
                 return
             if decision.get('action') != 'diagnostic':

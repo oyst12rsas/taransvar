@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1] / 'misc'))
 import unittest
-from operations_prompt import build_prompt, validate_decision
+from operations_prompt import build_prompt, validate_decision, progress_feedback
 
 class PromptTest(unittest.TestCase):
     def decision(self):
@@ -38,5 +38,27 @@ class PromptTest(unittest.TestCase):
     def test_conflicting_command_fields_rejected(self):
         value=self.decision();value['command']={'argv':['/bin/false']}
         with self.assertRaises(ValueError):validate_decision(value)
+
+class ProgressTest(unittest.TestCase):
+    def setUp(self):
+        self.policy=dict(mode='demo',execute=True,allow_experimental_commands=True)
+        self.evidence={'gateway_startup':{'result':{'properties':{
+            'ActiveState':'failed','executable':{'exists':True,'executable_by_root':False}}}}}
+        self.report=dict(action='report',reason='Gateway failure blocks progress',task_state=dict(
+            goal='Inspect',verified=[],pending=[],blockers=['Gateway failed'],next_check=''))
+    def test_empty_failure_report_is_challenged(self):
+        self.assertIsNotNone(progress_feedback(self.report,self.policy,self.evidence))
+    def test_concrete_prerequisite_with_next_check_is_accepted(self):
+        self.report['task_state']['blockers']=['Quiet-time collector not configured']
+        self.report['task_state']['next_check']='Configure and validate the activity collector before mutations'
+        self.assertIsNone(progress_feedback(self.report,self.policy,self.evidence))
+    def test_production_and_inspection_reports_are_accepted(self):
+        for field,value in [('mode','production'),('execute',False),('allow_experimental_commands',False)]:
+            policy=dict(self.policy);policy[field]=value
+            self.assertIsNone(progress_feedback(self.report,policy,self.evidence))
+    def test_no_failure_or_missing_evidence_does_not_trigger(self):
+        self.assertIsNone(progress_feedback(self.report,self.policy,{}))
+        self.evidence['gateway_startup']['result']['properties']['ActiveState']='active'
+        self.assertIsNone(progress_feedback(self.report,self.policy,self.evidence))
 
 if __name__ == '__main__':unittest.main()

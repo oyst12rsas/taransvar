@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Authenticated synthetic trace. Never dispatches any returned action."""
 import json
+import sys
 from operations_agent import model, trusted
-from operations_prompt import build_prompt, validate_decision
+from operations_prompt import build_prompt, validate_decision, progress_feedback
 
 
 def main():
     policy = json.loads(trusted('/etc/tarasec/operations-agent.json').read_text())
+    if '--progression' in sys.argv:
+        progression_probe(policy)
+        return
     policy['task'] = ('Integration trace only; nothing will execute. Request a read-only syntax check '
         'of /home/audi/taransvar/misc/firewall.sh using /usr/bin/bash -n. '
         'Include AUDI_TRACE_API_02 and mode=0o664 in reason. Do not claim it ran.')
@@ -21,6 +25,36 @@ def main():
         and 'AUDI_TRACE_API_02' in decision['reason'] and '0o664' in decision['reason'])
     print('PASS: policy, synthetic evidence and command schema preserved.' if passed
           else 'FAIL: model did not preserve expected policy/evidence/action.')
+    print('No returned action was executed.')
+    print(json.dumps(decision, indent=2))
+    if not passed:
+        raise SystemExit(1)
+
+def progression_probe(policy):
+    # Synthetic evidence only; no run/dispatch function is called.
+    policy['task'] = ('Inspect Audi, investigate its failed gateway and select the next useful '
+        'permitted check. This is a non-executing integration test, not a claim of live evidence.')
+    manual = trusted('/usr/local/lib/tarasec-operations/AI_OPERATIONS_MANUAL.md').read_text()
+    evidence = {'gateway_startup': {'result': {'properties': {
+        'ActiveState': 'failed', 'Result': 'exit-code', 'ExecMainStatus': '203',
+        'executable': {'path': '/home/audi/taransvar/misc/firewall.sh', 'exists': True,
+            'executable_by_root': False, 'mode': '0o664', 'regular_file': True}}}}}
+    previous = dict(goal='Inspect Audi', verified=[], pending=[],
+        blockers=['tarasec-gateway.service failed; further progress blocked'], next_check='')
+    snapshot = {'integration_test_only': True, 'activity': 'unknown; mutations require verified quiet time'}
+    passed = False
+    for attempt in range(4):
+        decision = validate_decision(model(policy, build_prompt(manual, policy,
+            snapshot, evidence, previous, {}, {})))
+        feedback = progress_feedback(decision, policy, evidence)
+        if not feedback:
+            # No diagnostics advertised. Accept a command or concrete prerequisite report.
+            passed = (decision['action'] == 'command' or (decision['action'] == 'report'
+                and bool(decision['task_state']['next_check'].strip())))
+            break
+        snapshot['worker_feedback'] = feedback
+    print('PASS: model advanced the synthetic task or identified a next prerequisite.' if passed
+          else 'FAIL: model did not advance the synthetic task.')
     print('No returned action was executed.')
     print(json.dumps(decision, indent=2))
     if not passed:

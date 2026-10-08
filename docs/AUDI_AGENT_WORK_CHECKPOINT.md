@@ -187,3 +187,7 @@ syntheticmarkerAUDI_TRACE_API_02 and exact harmless expectedargv. No action disp
 34 local tests, compile/shell syntax passed. Live API probe not yet run; no credentials
 accessible to this session. UploadedFlowisePDF still older; source manual reconciled.
 Missing quiet collectors, demo removal and RFA adapter still unresolved. Timerdisabled.
+
+
+## Report-loop regression (2026-10-08)
+Authenticated schema probe passes. Real worker still gives empty gateway-failure reports. Added bounded progress feedback for demo-authorized failed/non-executable gateway evidence; requests useful check or concrete prerequisite with next_check. Grants no permissions; quiet guards unchanged. Added --progression synthetic non-executing API probe. Forty local tests pass. Audi model progression remains unverified until probe is run.
