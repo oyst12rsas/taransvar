@@ -3,7 +3,7 @@
 import json
 import sys
 import time
-from operations_agent import model, trusted
+from operations_agent import model, trusted, diagnostic_feedback
 from operations_prompt import build_prompt, validate_decision, progress_feedback
 
 
@@ -62,7 +62,12 @@ def progression_probe(policy, quiet_verified=False):
             snapshot['worker_feedback'] = str(error)
             print('Schema correction requested: ' + str(error))
             continue
-        feedback = progress_feedback(decision, policy, evidence, snapshot)
+        if decision['action'] == 'diagnostic':
+            feedback = diagnostic_feedback(decision.get('diagnostic'), evidence, attempt)
+            if not feedback:
+                feedback = 'No diagnostics are advertised in this probe. Use the supplied completed results and choose a permitted action or concrete prerequisite.'
+        else:
+            feedback = progress_feedback(decision, policy, evidence, snapshot)
         if not feedback:
             # No diagnostics advertised. Accept a command or concrete prerequisite report.
             passed = (decision['action'] == 'command' or (decision['action'] == 'report'

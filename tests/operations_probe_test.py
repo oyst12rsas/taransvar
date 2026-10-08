@@ -42,4 +42,15 @@ class ProbeTest(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 progression_probe(dict(mode='demo',execute=True,allow_experimental_commands=True),quiet_verified=True)
 
+    def test_completed_diagnostic_gets_worker_feedback_then_command(self):
+        repeat=dict(action='diagnostic',diagnostic='gateway_startup',reason='Investigate',
+            task_state=dict(goal='Inspect',verified=[],pending=[],blockers=[],next_check='Revisit'))
+        with patch('operations_model_probe.trusted',return_value=Mock(read_text=lambda:'')), \
+             patch('operations_model_probe.model',side_effect=[repeat,self.valid()]) as model, \
+             redirect_stdout(io.StringIO()) as output:
+            progression_probe(dict(mode='demo',execute=True,allow_experimental_commands=True),quiet_verified=True)
+        self.assertEqual(model.call_count,2)
+        self.assertIn('Diagnostic already completed',model.call_args.args[1])
+        self.assertIn('PASS:',output.getvalue())
+
 if __name__ == '__main__':unittest.main()
