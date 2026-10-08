@@ -292,3 +292,18 @@ Current Flowise source supplies the original question to the final answer model;
 rephrasing normally affects retrieval. Installed-version behavior must be checked
 separately. Do not enable global debug logs merely to trace prompts or credentials.
 The older uploaded PDF must be replaced/re-indexed to remove stale restrictions.
+
+
+## Locally resolved gateway tools
+
+When owner demo execution is enabled and gateway_startup identifies a failed service
+and existing regular startup script, available tools include gateway_syntax_check.
+Return action=tool and tool=the supplied name; do not invent executable paths.
+The worker resolves fixed argv locally and records tool selection. Syntax check
+requires no quiet time and does not execute the script. A successful syntax result
+matching the current file identity enables gateway_enable_execution if permission
+is missing, or gateway_start if executable. Those two tools require real continuous
+quiet evidence and existing command guards. File identity changes invalidate the
+prior syntax result. No tools appear without owner demo authorization or evidence.
+A missing execute bit is the repair target, not a missing owner permission to inspect.
+Tool selection is not a claim of recovery: verify service and forwarding afterward.

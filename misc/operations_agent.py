@@ -14,6 +14,7 @@ import urllib.error
 from operations_diagnostics import CATALOG, diagnose
 from operations_actions import validate_command, pressure, validate_resource, perform_resource, read_only_command
 from operations_prompt import build_prompt, validate_decision, progress_feedback
+from operations_tools import gateway_tools, resolve_tool
 
 
 def save(path, value):
@@ -255,10 +256,15 @@ def main():
                 remaining_diagnostics(diagnostic_results, round_number))
             request_policy = dict(policy, _remaining_diagnostics=list(
                 remaining_diagnostics(diagnostic_results, round_number)),
-                _eligible_procedures=list(available))
+                _eligible_procedures=list(available),
+                _available_tools=list(gateway_tools(policy, diagnostic_results, snapshot)))
             decision = model(request_policy, prompt)
             try:
                 decision = validate_decision(decision)
+                if decision['action'] == 'tool':
+                    record({'tool_selection': decision.get('tool')})
+                    decision = resolve_tool(decision, gateway_tools(policy, diagnostic_results, snapshot))
+                    decision = validate_decision(decision)
             except ValueError as error:
                 # Schema messages are fixed strings, never response text.
                 feedback = str(error)
@@ -340,6 +346,7 @@ def main():
                 record({'read_only_command_result': result})
                 state['last_action_result'] = {'action': 'command', 'read_only': True,
                     'argv': argv, 'exit_code': result['exit_code'],
+                    'startup_file_identity': diagnostic_results.get('gateway_startup', {}).get('result', {}).get('properties', {}).get('executable', {}).get('file_identity'),
                     'expected_result': decision['expected_result']}
                 if policy.get('share_command_output') is True:
                     state['last_action_result']['output'] = result['output']

@@ -66,7 +66,9 @@ def gateway_startup(run):
                 try:
                     info = executable.stat()
                     details.update(mode=oct(stat.S_IMODE(info.st_mode)), uid=info.st_uid,
-                                   regular_file=stat.S_ISREG(info.st_mode))
+                                   regular_file=stat.S_ISREG(info.st_mode),
+                                   file_identity=dict(device=info.st_dev,inode=info.st_ino,
+                                       mtime_ns=info.st_mtime_ns,size=info.st_size))
                 except OSError:
                     pass
                 fields['executable'] = details

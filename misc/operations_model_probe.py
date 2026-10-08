@@ -5,6 +5,7 @@ import sys
 import time
 from operations_agent import model, trusted, diagnostic_feedback
 from operations_prompt import build_prompt, validate_decision, progress_feedback
+from operations_tools import gateway_tools, resolve_tool
 
 
 def main():
@@ -54,10 +55,14 @@ def progression_probe(policy, quiet_verified=False):
         if quiet_verified else dict(complete=False, reason='Activity collector not configured'))}
     passed = False
     for attempt in range(4):
-        decision = model(dict(policy, _remaining_diagnostics=[], _eligible_procedures=[]), build_prompt(manual, policy,
+        decision = model(dict(policy, _remaining_diagnostics=[], _eligible_procedures=[],
+            _available_tools=list(gateway_tools(policy,evidence,snapshot))), build_prompt(manual, policy,
             snapshot, evidence, previous, {}, {}))
         try:
             decision = validate_decision(decision)
+            if decision['action'] == 'tool':
+                decision = resolve_tool(decision, gateway_tools(policy,evidence,snapshot))
+                decision = validate_decision(decision)
         except ValueError as error:
             snapshot['worker_feedback'] = str(error)
             print('Schema correction requested: ' + str(error))

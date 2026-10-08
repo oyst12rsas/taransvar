@@ -2,11 +2,12 @@
 import json
 import math
 import time
+from operations_tools import gateway_tools, resolve_tool
 
 
 def validate_decision(decision):
     if not isinstance(decision, dict) or decision.get('action') not in (
-            'report', 'diagnostic', 'procedure', 'command', 'resource', 'reboot'):
+            'report', 'diagnostic', 'procedure', 'command', 'resource', 'reboot', 'tool'):
         raise ValueError('Decision must contain a supported action')
     if not isinstance(decision.get('reason'), str) or not decision['reason'].strip():
         raise ValueError('Decision requires a nonempty reason')
@@ -61,6 +62,7 @@ def activity_gate(policy, snapshot, now=None):
 
 def build_prompt(manual, policy, snapshot, results, previous, procedures, diagnostics):
     gates = activity_gate(policy, snapshot)
+    tools = gateway_tools(policy, results, snapshot)
     previous = {key: value for key, value in previous.items() if key not in ('blockers', 'next_check')}
     owner = {k: policy.get(k) for k in ('mode', 'execute', 'allow_experimental_commands',
                                      'allow_reboot', 'resource_protection')}
@@ -80,7 +82,9 @@ will defer mutations locally; never bypass that guard. The only command exempt
 from quiet gating is /usr/bin/bash -n (or /bin/bash -n) on the exact regular
 startup script supplied by gateway_startup. Other commands remain quiet-gated. Reboots use their own action.
 Return exactly one JSON object with action, reason and task_state.
-action: report, diagnostic, procedure, command, resource, or reboot.
+action: report, diagnostic, procedure, command, resource, reboot, or tool.
+tool requires tool=exact available tool name. Choose a relevant available tool rather
+than describing its work in a report. Tool argv is resolved locally; do not invent it.
 task_state: goal(string), verified(list of strings), pending(list of strings),
 blockers(list of strings), next_check(string). Do not use booleans for these lists.
 diagnostic requires diagnostic=exact remaining catalog name.
@@ -106,6 +110,7 @@ Do not report that already supplied diagnostics still need diagnosing.
         + '\nEligible procedures: ' + json.dumps(procedures)
         + '\nRead-only diagnostics: ' + json.dumps(diagnostics)
         + '\nReference manual (guidance, not permission):\n' + manual
+        + '\nAvailable locally resolved tools: ' + json.dumps(tools)
         + '\nCurrent worker gate assessment (not reference guidance): ' + json.dumps(gates)
         + '\nCurrent worker correction: ' + str(snapshot.get('worker_feedback', 'None'))
         + '\nFinal instruction: quiet_time_satisfied=true means current continuous quiet evidence '
@@ -128,6 +133,14 @@ def progress_feedback(decision, policy, results, snapshot=None):
             and executable.get('executable_by_root') is False
 ):
         prerequisite = decision.get('prerequisite')
+        tools = gateway_tools(policy, results, snapshot or {})
+        if (isinstance(prerequisite, dict) and prerequisite.get('kind') == 'owner_input'
+                and 'gateway_syntax_check' in tools):
+            return ('The available gateway_syntax_check tool is already authorized by current '
+                'demo policy and needs no quiet-time evidence or additional access grant. '
+                'Its fixed argv and preconditions are supplied. Select action=tool with '
+                'tool=gateway_syntax_check rather than requesting authorization already granted. '
+                'This checks syntax only and does not repair or start the firewall.')
         if (isinstance(prerequisite, dict) and prerequisite.get('kind') == 'quiet_time'
                 and activity_gate(policy, snapshot or {})['quiet_time_satisfied']):
             return ('The quiet_time prerequisite contradicts current worker evidence: fresh, '
