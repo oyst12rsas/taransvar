@@ -97,6 +97,15 @@ For report with unresolved failed gateway evidence, provide prerequisite as an o
 kind (quiet_time, owner_input, or unsupported_capability), detail (specific missing condition),
 and next_check (concrete way to obtain it). A failed service itself is not a prerequisite.
 Do not report that already supplied diagnostics still need diagnosing.
+Always assess deployment_status findings, even while another maintenance task runs.
+Distinguish the security/approval agent from the operations agent and the gateway AI.
+Missing security enrollment is a specific enrollment prerequisite; never copy another
+node token or invent one. Reporter fields detected in source do not prove DB receipt.
+The deployed source reference is not release approval or a verified latest repository.
+A disabled pilot timer may be intentional; do not enable it merely to clear a finding.
+Include deployment gaps in the report and task_state pending/blockers as appropriate.
+Never claim that installing the operations worker installs the security agent or updates
+the running minute reporter. Preserve local owner policy when planning deployments.
 '''
     schema_example = {'action': 'report', 'reason': 'Concrete finding',
         'task_state': {'goal': 'Inspect node', 'verified': [], 'pending': [],

@@ -259,6 +259,11 @@ def main():
             'state is expected, not a startup failure. Disk percentage alone does not prove '
             'insufficient headroom; consider available bytes and growth.')
         diagnostic_results = cached_diagnostics
+        # Deployment coverage is mandatory evidence, not dependent on model selection.
+        deployment = diagnose('deployment_status', run)
+        diagnostic_results['deployment_status'] = {'checked_at': time.time(), 'result': deployment}
+        state['deployment_findings'] = deployment['findings']
+        record({'diagnostic': 'deployment_status', 'result': deployment})
         state['diagnostics'] = diagnostic_results
         save(path, state)
         for round_number in range(4):

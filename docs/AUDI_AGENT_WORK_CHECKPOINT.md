@@ -14,3 +14,12 @@ session lifecycle cleanup remain outstanding. Do not claim these are completed.
 approval dependencies. Added guarded demo journal_configure_limit fixed tool and
 report correction, with policy/evidence and owner-file-preservation tests. 82 tests
 pass. Actual Audi execution and post-change logger health remain unverified.
+
+14:49 Oslo continuation: Audi root cron uses /root/taransvar/perl/crontasks.pl;
+reporter AI markers absent, approvals worker/config/snapshot and enrollment absent;
+operations timer disabled (intentional), observer enabled. Implemented mandatory
+secret-free deployment_status per worker run, deterministic deployment_findings,
+source-reference metadata and manual checklist. 87 tests pass. This change enables
+self-diagnosis; security enrollment, minute-report/DB/app operations-dot integration
+and centrally verified receipt remain pending. Journal bound succeeded live:
+980MB journal allocation, root 64% with 6.7GB free. MySQL unchanged.

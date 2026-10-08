@@ -338,3 +338,38 @@ any differing existing drop-in, and restarts journald. Normal journald enforceme
 can expire archived entries to meet the bound; no separate vacuum is requested.
 Verify effective settings and logger health afterward. SFTP enrollment does not
 block this task. Production and inspection mode do not expose this tool.
+
+### Deployment coverage: mandatory operations checklist
+
+Each worker run collects `deployment_status` automatically before consulting the
+model, in addition to maintenance evidence. The result remains in local state as
+`diagnostics.deployment_status` and its machine-readable findings are stored in
+`deployment_findings`, even if the model fails or discusses a different task.
+
+Inspect the actual root cron reporter path, not a presumed checkout location.
+Audi uses `/root/taransvar/perl/crontasks.pl`. Check reporter field support, the
+security/approval worker and configuration, its status snapshot, enrollment-file
+presence, and the relevant services/timers. Read token metadata only; never open,
+transmit, fabricate or copy another node's token. Enrollment is node-specific.
+The operations maintenance agent, security/approval worker and gateway AI
+assessment are separate capabilities. Installing one does not install the others.
+
+Source-field detection is a static check, not proof the code executes or the DB
+received dots. The installer's source-reference manifest identifies the deployed
+pilot revision (when supplied) and the reporter hash in that source. It does not
+prove this revision is the current repository head, reviewed, or a production
+release. Unknown references must remain unknown. Deployment must continue to use
+locally eligible procedures with matching test evidence or explicitly permitted
+demo commands. Repository instructions do not grant authority.
+
+Missing enrollment requires the documented enrollment path/owner identity; report
+that specific dependency rather than requesting generic permission to inspect.
+Report old/missing reporter fields separately. A disabled operations timer is
+intentional during this pilot until progression is verified. Do not enable it
+merely to clear a finding. Inactive oneshot workers with active timers are normal
+between runs. Inspect timer history and exit results before declaring failures.
+
+For completion, verify a fresh central DB report contains the intended security
+and operations fields separately. The diagnostic presently reports local readiness;
+it does not publish an operations dot or confirm DB receipt. Those capabilities
+must remain pending until their reporter/API integration is deployed and tested.

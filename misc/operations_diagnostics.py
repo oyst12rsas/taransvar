@@ -6,6 +6,7 @@ import stat
 import time
 
 CATALOG = {
+    'deployment_status': 'Inspect actual cron reporter fields, agent components, enrollment presence and timers; never read credentials.',
     'logging_policy': 'Read effective journald limits, journal usage, rsyslog rotation rules and timer state; no credentials.',
     'large_logs': 'Find the 20 largest regular log files; metadata only, no contents.',
     'storage_summary': 'Measure allocated space under /var/log and /var/lib.',
@@ -81,6 +82,9 @@ def gateway_startup(run):
 def diagnose(name, run):
     if name not in CATALOG:
         raise ValueError('Unknown read-only diagnostic')
+    if name == 'deployment_status':
+        from operations_deployment import deployment_inventory
+        return deployment_inventory(run)
     if name == 'logging_policy':
         commands = {
             'journald_effective': ['systemd-analyze', 'cat-config', 'systemd/journald.conf'],
