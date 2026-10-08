@@ -267,7 +267,7 @@ def main():
                 state['summary'] = feedback
                 save(path, state)
                 return
-            feedback = progress_feedback(decision, policy, diagnostic_results)
+            feedback = progress_feedback(decision, policy, diagnostic_results, snapshot)
             if feedback:
                 record({'model_progress_correction': feedback})
                 snapshot['worker_feedback'] = feedback

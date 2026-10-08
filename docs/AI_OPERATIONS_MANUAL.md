@@ -103,9 +103,10 @@ all DB traffic, all port-80 traffic or all NetBird traffic. Ordinary admin SSH
 must have an explicit owner policy; do not infer it is safe to disconnect.
 Fail with complete=false on stale/missing evidence, unavailable central DB or
 unsupported demo types. Maintain observation coverage across the full interval,
-not just a one-off conntrack snapshot. No generic trustworthy probe for Audi's
-demo topology has been implemented in this PR; mutation/reboot remains blocked
-until that adapter is installed and tested.
+not just a one-off conntrack snapshot. Pilot central-session and IPv4/IPv6 forwarding collectors are now implemented.
+They require installation, source-IP/token enrollment and acceptance on Audi;
+implementation alone is not live quiet-time evidence. See OPERATIONS_ACTIVITY_DEPLOYMENT.md.
+Missing or unverified live coverage keeps mutation/reboot blocked.
 
 The worker requires fresh samples, continuous quiet time and checks the probe
 again on the action run. Missing data and sampling gaps reset the quiet period.
@@ -180,7 +181,9 @@ sampling gap or a new boot, and resets continuity after an observer restart.
 Enable this service only after collector acceptance tests. Its read probe treats
 missing or stale observer output as unknown. Recheck activity immediately before
 a reviewed procedure or reboot. An inspection-only model run needs no collectors.
-This wiring does not provide Audi-specific demo or traffic collectors.
+The installed demo-collector and traffic-collector implement the pilot feed and
+forwarding-counter contracts. Configure and verify them as described in
+OPERATIONS_ACTIVITY_DEPLOYMENT.md; installer presence does not establish coverage.
 
 ## Read-only adaptive diagnostics
 
@@ -230,7 +233,13 @@ recovery access. Never put secrets into argv or model output. Command output
 is local by default; share_command_output=true opts into returning potentially
 sensitive stdout/stderr to the model. Keep it false unless node data is suitable.
 
-Commands still require continuous quiet evidence. Missing collectors defer them.
+Mutation commands require continuous quiet evidence. Missing collectors defer them.
+The exact /usr/bin/bash -n PATH or /bin/bash -n PATH command on the regular gateway
+startup script identified by gateway_startup is a fixed read-only exemption; it
+checks syntax without executing the script and requires no quiet-time evidence.
+Do not extend that exemption to arbitrary shell commands. A fresh complete observer
+sample with no active demo, no meaningful traffic and sufficient quiet_for_seconds
+already establishes current quiet evidence; dispatch still rechecks it.
 allow_reboot remains independent and production rejects experimental commands.
 The owner may enable the timer to continue one run per minute; disabling it
 stops future runs, not an already executing command.

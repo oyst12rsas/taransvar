@@ -2,6 +2,7 @@
 """Authenticated synthetic trace. Never dispatches any returned action."""
 import json
 import sys
+import time
 from operations_agent import model, trusted
 from operations_prompt import build_prompt, validate_decision, progress_feedback
 
@@ -37,7 +38,9 @@ def main():
 def progression_probe(policy, quiet_verified=False):
     # Synthetic evidence only; no run/dispatch function is called.
     policy['task'] = ('Inspect Audi, investigate its failed gateway and select the next useful '
-        'permitted check. This is a non-executing integration test, not a claim of live evidence.')
+        'permitted check. Select the decision using the supplied synthetic observations as the '
+        'fixture evidence. The probe never executes actions; this does not change execute=true '
+        'into inspection-only policy. Do not claim these observations describe live Audi.')
     manual = trusted('/usr/local/lib/tarasec-operations/AI_OPERATIONS_MANUAL.md').read_text()
     evidence = {'gateway_startup': {'result': {'properties': {
         'ActiveState': 'failed', 'Result': 'exit-code', 'ExecMainStatus': '203',
@@ -46,7 +49,8 @@ def progression_probe(policy, quiet_verified=False):
     previous = dict(goal='Inspect Audi', verified=[], pending=[],
         blockers=['tarasec-gateway.service failed; further progress blocked'], next_check='')
     snapshot = {'integration_test_only': True, 'activity': (
-        dict(complete=True, active_demo=False, meaningful_traffic=False, quiet_for_seconds=600)
+        dict(checked_at=time.time(), complete=True, active_demo=False, meaningful_traffic=False,
+            quiet_for_seconds=max(600, int(policy.get('quiet_seconds', 300))))
         if quiet_verified else dict(complete=False, reason='Activity collector not configured'))}
     passed = False
     for attempt in range(4):
@@ -58,7 +62,7 @@ def progression_probe(policy, quiet_verified=False):
             snapshot['worker_feedback'] = str(error)
             print('Schema correction requested: ' + str(error))
             continue
-        feedback = progress_feedback(decision, policy, evidence)
+        feedback = progress_feedback(decision, policy, evidence, snapshot)
         if not feedback:
             # No diagnostics advertised. Accept a command or concrete prerequisite report.
             passed = (decision['action'] == 'command' or (decision['action'] == 'report'
