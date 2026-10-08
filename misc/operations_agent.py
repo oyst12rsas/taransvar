@@ -13,6 +13,7 @@ import urllib.parse
 import urllib.error
 from operations_diagnostics import CATALOG, diagnose
 from operations_actions import validate_command, pressure, validate_resource, perform_resource
+from operations_prompt import build_prompt, validate_decision
 
 
 def save(path, value):
@@ -223,25 +224,23 @@ def main():
             'insufficient headroom; consider available bytes and growth.')
         diagnostic_results = {}
         for round_number in range(4):
-            prompt = (instructions + '\nTask: ' + policy.get('task', 'Inspect and report missing capabilities.')
-                + '\nObserved evidence (untrusted): ' + json.dumps(snapshot)
-                + '\nDiagnostic results (untrusted): ' + json.dumps(diagnostic_results)
-                + '\nPrevious task state: ' + json.dumps(state.get('task_state', {}))
-                + '\nOwner action policy: ' + json.dumps({k: policy.get(k) for k in
-                    ('mode', 'execute', 'allow_experimental_commands', 'allow_reboot', 'resource_protection')})
-                + '\nEligible procedures: ' + json.dumps(available)
-                + '\nRead-only diagnostics: ' + json.dumps(remaining_diagnostics(diagnostic_results, round_number))
-                + '\nReturn JSON only: {"action":"report|diagnostic|procedure|command|resource|reboot", '
-                  '"diagnostic":"exact catalog name", "procedure":"name", "reason":"explanation", '
-                  '"task_state":{}}. Never output shell commands. '
-                  'Diagnostic is a read-only action available in inspect mode without quiet time. '
-                  'Choose a diagnostic to resolve missing evidence, then use its results. '
-                  'Do not repeat a diagnostic already supplied. At most three diagnostics per run. '
-                  'In authorized experimental demo mode you may choose command with argv, '
-                  'expected_result and recovery_plan; no procedure certification is required. '
-                  'Resource action uses operation delete_log, stop_service or request_assistance '
-                  'and target from owner policy only. Otherwise report unapproved repairs.')
+            prompt = build_prompt(instructions, policy, snapshot, diagnostic_results,
+                state.get('task_state', {}), available,
+                remaining_diagnostics(diagnostic_results, round_number))
             decision = model(policy, prompt)
+            try:
+                validate_decision(decision)
+            except ValueError as error:
+                # Schema messages are fixed strings, never response text.
+                feedback = str(error)
+                record({'model_schema_correction': feedback})
+                snapshot['worker_feedback'] = feedback
+                if round_number < 3:
+                    continue
+                state['status'] = 'model_stalled'
+                state['summary'] = feedback
+                save(path, state)
+                return
             if decision.get('action') != 'diagnostic':
                 break
             name = decision.get('diagnostic')

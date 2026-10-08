@@ -6,6 +6,8 @@ on:
       - 'misc/operations_activity.py'
       - 'misc/operations_diagnostics.py'
       - 'misc/operations_actions.py'
+      - 'misc/operations_prompt.py'
+      - 'misc/operations_model_probe.py'
       - 'misc/operations-activity.json.example'
       - 'misc/install_operations_agent.sh'
       - 'misc/operations-agent.json.example'
@@ -13,6 +15,7 @@ on:
       - 'tests/operations_activity_test.py'
       - 'tests/operations_diagnostics_test.py'
       - 'tests/operations_actions_test.py'
+      - 'tests/operations_prompt_test.py'
       - 'docs/AI_OPERATIONS_MANUAL.md'
       - '.github/workflows/operations-agent-checks.yml'
 jobs:
@@ -21,6 +24,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python3 -m unittest discover -s tests -p 'operations*_test.py'
-      - run: python3 -m py_compile misc/operations_agent.py misc/operations_activity.py misc/operations_diagnostics.py misc/operations_actions.py
+      - run: python3 -m py_compile misc/operations_agent.py misc/operations_activity.py misc/operations_diagnostics.py misc/operations_actions.py misc/operations_prompt.py misc/operations_model_probe.py
       - run: python3 -m json.tool misc/operations-agent.json.example >/dev/null
       - run: bash -n misc/install_operations_agent.sh

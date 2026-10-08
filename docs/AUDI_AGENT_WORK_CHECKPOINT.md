@@ -171,3 +171,19 @@ does not remove demo parts yet. Added2MiB/two-backup audit rotation.
 syntax passed. New behavior not deployed on Audi. Current findings: rotated
 syslog/kernel logs total~2.2GB plus active~1.28GB; gateway firewall.sh exists664,
 not executable. Diagnostic model loop tested live by user. Cleanup/repair not run.
+
+## 2026-10-08 model request reconciliation and API trace
+
+Audi deployed7bb3a4;29 tests passed. Model still reports gateway failure rather
+than progressing. Direct Flowise chat synthetic marker test returned correct
+bash -n argv and preservedmode664; verified:false malformed task-state list.
+Current upstream Flowise source keeps original question for final model, so
+rephrase evidence-loss suspicion was unproven. Installed version not inspected.
+Reconciled contradictory manual rules. New shared operations_prompt.py makes
+explicit current owner policy authoritative, and preserves evidence/action schema.
+Added schema validation/correction within bounded four-call loop. Added nonexecuting
+operations_model_probe.py using root-local saved credentials and same prompt builder,
+syntheticmarkerAUDI_TRACE_API_02 and exact harmless expectedargv. No action dispatch.
+34 local tests, compile/shell syntax passed. Live API probe not yet run; no credentials
+accessible to this session. UploadedFlowisePDF still older; source manual reconciled.
+Missing quiet collectors, demo removal and RFA adapter still unresolved. Timerdisabled.
