@@ -33,4 +33,13 @@ class ProbeTest(unittest.TestCase):
         self.assertIn('FAIL:',output.getvalue())
         self.assertIn('"goal": false',output.getvalue())
 
+    def test_quiet_fixture_does_not_accept_prerequisite_report(self):
+        report=dict(action='report',reason='Need collector',prerequisite=dict(kind='quiet_time',
+            detail='Collector missing',next_check='Configure collector'),task_state=dict(
+            goal='Inspect',verified=[],pending=[],blockers=[],next_check='Configure collector'))
+        with patch('operations_model_probe.trusted',return_value=Mock(read_text=lambda:'')), \
+             patch('operations_model_probe.model',return_value=report), redirect_stdout(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                progression_probe(dict(mode='demo',execute=True,allow_experimental_commands=True),quiet_verified=True)
+
 if __name__ == '__main__':unittest.main()

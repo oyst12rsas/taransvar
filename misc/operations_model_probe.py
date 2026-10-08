@@ -9,7 +9,7 @@ from operations_prompt import build_prompt, validate_decision, progress_feedback
 def main():
     policy = json.loads(trusted('/etc/tarasec/operations-agent.json').read_text())
     if '--progression' in sys.argv:
-        progression_probe(policy)
+        progression_probe(policy, quiet_verified="--quiet-verified" in sys.argv)
         return
     policy['task'] = ('Integration trace only; nothing will execute. Request a read-only syntax check '
         'of /home/audi/taransvar/misc/firewall.sh using /usr/bin/bash -n. '
@@ -30,7 +30,7 @@ def main():
     if not passed:
         raise SystemExit(1)
 
-def progression_probe(policy):
+def progression_probe(policy, quiet_verified=False):
     # Synthetic evidence only; no run/dispatch function is called.
     policy['task'] = ('Inspect Audi, investigate its failed gateway and select the next useful '
         'permitted check. This is a non-executing integration test, not a claim of live evidence.')
@@ -41,7 +41,9 @@ def progression_probe(policy):
             'executable_by_root': False, 'mode': '0o664', 'regular_file': True}}}}}
     previous = dict(goal='Inspect Audi', verified=[], pending=[],
         blockers=['tarasec-gateway.service failed; further progress blocked'], next_check='')
-    snapshot = {'integration_test_only': True, 'activity': 'unknown; mutations require verified quiet time'}
+    snapshot = {'integration_test_only': True, 'activity': (
+        dict(complete=True, active_demo=False, meaningful_traffic=False, quiet_for_seconds=600)
+        if quiet_verified else dict(complete=False, reason='Activity collector not configured'))}
     passed = False
     for attempt in range(4):
         decision = model(policy, build_prompt(manual, policy,
@@ -56,7 +58,7 @@ def progression_probe(policy):
         if not feedback:
             # No diagnostics advertised. Accept a command or concrete prerequisite report.
             passed = (decision['action'] == 'command' or (decision['action'] == 'report'
-                and isinstance(decision.get('prerequisite'), dict)))
+                and not quiet_verified and isinstance(decision.get('prerequisite'), dict)))
             break
         snapshot['worker_feedback'] = feedback
     print('PASS: model advanced the synthetic task or identified a next prerequisite.' if passed

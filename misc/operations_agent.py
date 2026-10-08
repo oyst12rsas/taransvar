@@ -12,7 +12,7 @@ import urllib.request
 import urllib.parse
 import urllib.error
 from operations_diagnostics import CATALOG, diagnose
-from operations_actions import validate_command, pressure, validate_resource, perform_resource
+from operations_actions import validate_command, pressure, validate_resource, perform_resource, read_only_command
 from operations_prompt import build_prompt, validate_decision, progress_feedback
 
 
@@ -231,6 +231,8 @@ def main():
             .read_text().splitlines() if '=' in line).get('VERSION_ID', '').strip('"')
         available = {name: entry for name, entry in procedures.items() if eligible(entry, policy, system)}
         instructions = trusted('/usr/local/lib/tarasec-operations/AI_OPERATIONS_MANUAL.md').read_text()
+        observed = run([str(trusted(policy['quiet_probe']))], timeout=20)
+        snapshot['activity'] = json.loads(observed['output']) if observed['exit_code'] == 0 else {'complete': False}
         snapshot['resource_pressure'] = pressure(policy.get('resource_protection', {}))
         snapshot['last_action_result'] = state.get('last_action_result')
         snapshot['interrupted_command'] = state.get('command_pending')
@@ -323,6 +325,18 @@ def main():
             if state.get('command_pending'):
                 raise ValueError('Interrupted command requires owner reconciliation before more commands')
             argv = validate_command(decision, policy)
+            if read_only_command(argv, diagnostic_results):
+                record({'read_only_command_start': argv})
+                result = run(argv, 20)
+                record({'read_only_command_result': result})
+                state['last_action_result'] = {'action': 'command', 'read_only': True,
+                    'argv': argv, 'exit_code': result['exit_code'],
+                    'expected_result': decision['expected_result']}
+                if policy.get('share_command_output') is True:
+                    state['last_action_result']['output'] = result['output']
+                state['status'] = 'command_executed' if result['exit_code'] == 0 else 'command_failed'
+                save(path, state)
+                return
         if policy.get('mode') != 'demo' or policy.get('execute') is not True:
             raise ValueError('Local policy prohibits autonomous mutation')
         if action == 'procedure' and decision.get('procedure') not in available:

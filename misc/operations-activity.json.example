@@ -1,4 +1,6 @@
 {
-  "demo_collector": "",
-  "traffic_collector": ""
+  "demo_collector": "/usr/local/lib/tarasec-operations/demo-collector",
+  "traffic_collector": "/usr/local/lib/tarasec-operations/traffic-collector",
+  "demo_url": "",
+  "demo_key_file": "/etc/tarasec/operations-activity.key"
 }

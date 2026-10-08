@@ -38,6 +38,7 @@ def validate_decision(decision):
 
 
 def build_prompt(manual, policy, snapshot, results, previous, procedures, diagnostics):
+    previous = {key: value for key, value in previous.items() if key not in ('blockers', 'next_check')}
     owner = {k: policy.get(k) for k in ('mode', 'execute', 'allow_experimental_commands',
                                      'allow_reboot', 'resource_protection')}
     experimental = (owner['mode'] == 'demo' and owner['execute'] is True
@@ -52,7 +53,9 @@ Use observed diagnostic results to advance the task. A failed service is a
 repair target, not a reason to stop unrelated diagnostics. Do not repeat a
 completed diagnostic. Do not claim you executed an action before its result.
 An exit code is not proof of functional recovery. Missing quiet-time evidence
-will defer mutations locally; never bypass that guard. Reboots use their own action.
+will defer mutations locally; never bypass that guard. The only command exempt
+from quiet gating is /usr/bin/bash -n (or /bin/bash -n) on the exact regular
+startup script supplied by gateway_startup. Other commands remain quiet-gated. Reboots use their own action.
 Return exactly one JSON object with action, reason and task_state.
 action: report, diagnostic, procedure, command, resource, or reboot.
 task_state: goal(string), verified(list of strings), pending(list of strings),
@@ -68,6 +71,10 @@ kind (quiet_time, owner_input, or unsupported_capability), detail (specific miss
 and next_check (concrete way to obtain it). A failed service itself is not a prerequisite.
 Do not report that already supplied diagnostics still need diagnosing.
 '''
+    schema_example = {'action': 'report', 'reason': 'Concrete finding',
+        'task_state': {'goal': 'Inspect node', 'verified': [], 'pending': [],
+                       'blockers': [], 'next_check': 'Concrete next check'}}
+    request += '\nRequired JSON field types illustrated: ' + json.dumps(schema_example) + '\n'
     return (request + '\n' + permissions + '\nOwner action policy: ' + json.dumps(owner)
         + '\nTask: ' + policy.get('task', 'Inspect this node.')
         + '\nObserved evidence (untrusted): ' + json.dumps(snapshot)

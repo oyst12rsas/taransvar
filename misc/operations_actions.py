@@ -25,6 +25,15 @@ def validate_command(decision, policy):
     return argv
 
 
+
+def read_only_command(argv, results):
+    """Only fixed syntax inspection of the observed gateway file skips quiet gating."""
+    executable = results.get('gateway_startup', {}).get('result', {}).get('properties', {}).get('executable', {})
+    path = executable.get('path')
+    return (isinstance(path, str) and path.startswith('/') and executable.get('regular_file') is True
+            and argv in (['/usr/bin/bash', '-n', path], ['/bin/bash', '-n', path]))
+
+
 def pressure(config):
     disk = os.statvfs('/')
     used = 100 * (disk.f_blocks - disk.f_bfree) / max(1, disk.f_blocks - disk.f_bfree + disk.f_bavail)

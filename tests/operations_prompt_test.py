@@ -15,6 +15,11 @@ class PromptTest(unittest.TestCase):
         self.assertIn('AUDI_TRACE_API_02',text)
         self.assertIn('0o664',text)
         self.assertIn('Eligible procedures: {}',text)
+    def test_old_blocker_and_next_check_are_not_reintroduced(self):
+        previous=dict(goal='Maintain',verified=['Checked logs'],blockers=['STALE_BLOCKER'],next_check='STALE_NEXT')
+        text=build_prompt('',dict(mode='demo',execute=True,allow_experimental_commands=True),{},{},previous,{},{})
+        self.assertNotIn('STALE_BLOCKER',text);self.assertNotIn('STALE_NEXT',text)
+        self.assertIn('Checked logs',text);self.assertEqual(previous['blockers'],['STALE_BLOCKER'])
     def test_production_cannot_receive_demo_permission(self):
         text=build_prompt('',dict(mode='production',execute=True,allow_experimental_commands=True),{},{},{},{},{})
         self.assertIn('command action is DISABLED',text)
