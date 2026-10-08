@@ -1,4 +1,6 @@
 import json
+import os
+from unittest.mock import patch
 import sys
 import tempfile
 import unittest
@@ -57,8 +59,36 @@ class ProgressTests(unittest.TestCase):
     def test_journal_dropin_preserves_owner_config_and_is_idempotent(self):
         from configure_operations_journal import install_limit
         with tempfile.TemporaryDirectory() as directory:
-            self.assertTrue(install_limit(directory))
-            self.assertFalse(install_limit(directory))
-            (Path(directory) / '60-tarasec-operations.conf').write_text('owner setting')
-            with self.assertRaises(ValueError):
-                install_limit(directory)
+            # Isolate file-content/idempotency behavior from the test runner UID.
+            # The production ownership guard remains unchanged.
+            original_stat = Path.stat
+            def root_directory_stat(path, *args, **kwargs):
+                info = original_stat(path, *args, **kwargs)
+                if path == Path(directory):
+                    fields = list(info)
+                    fields[4] = 0
+                    return os.stat_result(fields)
+                return info
+            with patch.object(Path, 'stat', root_directory_stat):
+                self.assertTrue(install_limit(directory))
+                self.assertFalse(install_limit(directory))
+                (Path(directory) / '60-tarasec-operations.conf').write_text('owner setting')
+                with self.assertRaises(ValueError):
+                    install_limit(directory)
+
+    def test_journal_dropin_rejects_nonroot_directory(self):
+        from configure_operations_journal import install_limit
+        with tempfile.TemporaryDirectory() as directory:
+            original_stat = Path.stat
+            def user_directory_stat(path, *args, **kwargs):
+                info = original_stat(path, *args, **kwargs)
+                if path == Path(directory):
+                    fields = list(info)
+                    fields[4] = 1000
+                    return os.stat_result(fields)
+                return info
+            with patch.object(Path, 'stat', user_directory_stat):
+                with self.assertRaises(ValueError):
+                    install_limit(directory)
+            self.assertFalse((Path(directory) / '60-tarasec-operations.conf').exists())
+

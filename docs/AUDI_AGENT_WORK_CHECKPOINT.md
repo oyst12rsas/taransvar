@@ -32,3 +32,9 @@ backup, Perl syntax/dependencies, pre-replace change check), separate fields and
 missing/stale snapshots. 92 tests passed. Actual Audi bridge dispatch, cron
 execution, central DB receipt and app operations-dot rendering remain unverified.
 Security enrollment remains absent. Operations timer remains disabled.
+
+15:13 Oslo: deployment test failed under audi because a temporary directory was
+user-owned. Corrected the idempotency test to isolate ownership and added explicit
+nonroot-directory rejection coverage; production ownership guard unchanged.
+93 tests pass locally. Separate unprivileged process verification unavailable in
+this runner (runuser cannot set groups); Audi must verify ordinary-user suite.
