@@ -195,3 +195,7 @@ Authenticated schema probe passes. Real worker still gives empty gateway-failure
 
 ## Vague next-check regression (2026-10-08)
 Audi real worker diagnosed gateway and large_logs then returned 'After diagnosing the log sizes.' No action executed. Removed nonempty next_check/pending escape from known failed non-executable startup report feedback. Reports now require structured prerequisite kind/detail/next_check; local authority and quiet gates still govern actions. Recent diagnostics persist for five minutes on same boot in report/stall/defer states; invalidate after commands, resources, procedures or reboot. Exact vague report and cache expiry/invalidation regressions covered: 46 tests pass. Probe now accepts report only through structured prerequisite feedback, not arbitrary next_check. Model behavior still requires live verification; no Audi repair claimed.
+
+
+## Probe schema retry parity (2026-10-08)
+Audi progression probe raised ValueError for non-string goal/next_check before returning a result. Worker already retries schema failures; probe now requests schema correction within same four-call budget, prints fixed validation feedback and reports failure with returned decision if exhausted. No dispatch added. Regression tests cover invalid-then-valid and four invalid replies. 48 tests pass; live progression not yet verified.

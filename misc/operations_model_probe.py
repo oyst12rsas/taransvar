@@ -44,8 +44,14 @@ def progression_probe(policy):
     snapshot = {'integration_test_only': True, 'activity': 'unknown; mutations require verified quiet time'}
     passed = False
     for attempt in range(4):
-        decision = validate_decision(model(policy, build_prompt(manual, policy,
-            snapshot, evidence, previous, {}, {})))
+        decision = model(policy, build_prompt(manual, policy,
+            snapshot, evidence, previous, {}, {}))
+        try:
+            decision = validate_decision(decision)
+        except ValueError as error:
+            snapshot['worker_feedback'] = str(error)
+            print('Schema correction requested: ' + str(error))
+            continue
         feedback = progress_feedback(decision, policy, evidence)
         if not feedback:
             # No diagnostics advertised. Accept a command or concrete prerequisite report.
