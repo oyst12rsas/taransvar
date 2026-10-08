@@ -63,6 +63,10 @@ command requires argv(array, absolute executable), expected_result and recovery_
 No unrestricted shell-text field: represent the authorized command as argv.
 resource requires operation and target under current resource-protection policy.
 Choose the next useful action; do not stop merely because a predefined repair is absent.
+For report with unresolved failed gateway evidence, provide prerequisite as an object with
+kind (quiet_time, owner_input, or unsupported_capability), detail (specific missing condition),
+and next_check (concrete way to obtain it). A failed service itself is not a prerequisite.
+Do not report that already supplied diagnostics still need diagnosing.
 '''
     return (request + '\n' + permissions + '\nOwner action policy: ' + json.dumps(owner)
         + '\nTask: ' + policy.get('task', 'Inspect this node.')
@@ -86,10 +90,16 @@ def progress_feedback(decision, policy, results):
     state = decision['task_state']
     if (properties.get('ActiveState') == 'failed' and executable.get('exists') is True
             and executable.get('executable_by_root') is False
-            and not state['pending'] and not state['next_check'].strip()):
+):
+        prerequisite = decision.get('prerequisite')
+        if (isinstance(prerequisite, dict)
+                and prerequisite.get('kind') in ('quiet_time', 'owner_input', 'unsupported_capability')
+                and all(isinstance(prerequisite.get(field), str) and prerequisite[field].strip()
+                        for field in ('detail', 'next_check'))):
+            return None
         return ('Current evidence already identifies a startup executable without execute permission. '
             'A failed gateway is a repair target, not a prerequisite for read-only investigation. '
             'Choose a useful permitted check, or report a concrete missing prerequisite with a '
-            'next_check explaining how to resolve it. An empty procedure registry does not disable '
+            'structured prerequisite (kind, detail, next_check) explaining how to resolve it. An empty procedure registry does not disable '
             'owner-authorized demo commands. Do not bypass quiet-time or other local guards.')
     return None

@@ -50,7 +50,7 @@ def progression_probe(policy):
         if not feedback:
             # No diagnostics advertised. Accept a command or concrete prerequisite report.
             passed = (decision['action'] == 'command' or (decision['action'] == 'report'
-                and bool(decision['task_state']['next_check'].strip())))
+                and isinstance(decision.get('prerequisite'), dict)))
             break
         snapshot['worker_feedback'] = feedback
     print('PASS: model advanced the synthetic task or identified a next prerequisite.' if passed

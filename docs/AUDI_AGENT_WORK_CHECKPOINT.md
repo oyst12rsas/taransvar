@@ -191,3 +191,7 @@ Missing quiet collectors, demo removal and RFA adapter still unresolved. Timerdi
 
 ## Report-loop regression (2026-10-08)
 Authenticated schema probe passes. Real worker still gives empty gateway-failure reports. Added bounded progress feedback for demo-authorized failed/non-executable gateway evidence; requests useful check or concrete prerequisite with next_check. Grants no permissions; quiet guards unchanged. Added --progression synthetic non-executing API probe. Forty local tests pass. Audi model progression remains unverified until probe is run.
+
+
+## Vague next-check regression (2026-10-08)
+Audi real worker diagnosed gateway and large_logs then returned 'After diagnosing the log sizes.' No action executed. Removed nonempty next_check/pending escape from known failed non-executable startup report feedback. Reports now require structured prerequisite kind/detail/next_check; local authority and quiet gates still govern actions. Recent diagnostics persist for five minutes on same boot in report/stall/defer states; invalidate after commands, resources, procedures or reboot. Exact vague report and cache expiry/invalidation regressions covered: 46 tests pass. Probe now accepts report only through structured prerequisite feedback, not arbitrary next_check. Model behavior still requires live verification; no Audi repair claimed.

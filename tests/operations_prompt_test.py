@@ -51,7 +51,17 @@ class ProgressTest(unittest.TestCase):
     def test_concrete_prerequisite_with_next_check_is_accepted(self):
         self.report['task_state']['blockers']=['Quiet-time collector not configured']
         self.report['task_state']['next_check']='Configure and validate the activity collector before mutations'
+        self.report['prerequisite']=dict(kind='quiet_time',detail='Activity collector not configured',
+            next_check='Configure and validate collector before mutations')
         self.assertIsNone(progress_feedback(self.report,self.policy,self.evidence))
+    def test_audi_vague_next_check_is_rejected_even_with_pending(self):
+        self.report['task_state']['next_check']='After diagnosing the log sizes.'
+        self.report['task_state']['pending']=['Investigate gateway']
+        self.assertIsNotNone(progress_feedback(self.report,self.policy,self.evidence))
+    def test_incomplete_or_unknown_prerequisite_is_rejected(self):
+        for prerequisite in ({'kind':'quiet_time'},dict(kind='failed_gateway',detail='failed',next_check='Investigate')):
+            self.report['prerequisite']=prerequisite
+            self.assertIsNotNone(progress_feedback(self.report,self.policy,self.evidence))
     def test_production_and_inspection_reports_are_accepted(self):
         for field,value in [('mode','production'),('execute',False),('allow_experimental_commands',False)]:
             policy=dict(self.policy);policy[field]=value

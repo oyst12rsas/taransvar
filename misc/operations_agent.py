@@ -140,6 +140,21 @@ def safe_error(error):
     return "Unclassified " + type(error).__name__ + "; inspect local prerequisites"
 
 
+def recent_diagnostics(state, now, boot):
+    """Reuse bounded recent observations only until a command/action or reboot intervenes."""
+    if (state.get('boot_id') != boot or state.get('status') not in
+            ('reported', 'model_stalled', 'deferred_activity_or_unknown')):
+        return {}
+    results = state.get('diagnostics', {})
+    if not isinstance(results, dict):
+        return {}
+    return {name: result for name, result in results.items()
+            if name in CATALOG and isinstance(result, dict)
+            and isinstance(result.get('checked_at'), (int, float))
+            and not isinstance(result['checked_at'], bool)
+            and 0 <= now - result['checked_at'] <= 300}
+
+
 def remaining_diagnostics(results, round_number):
     return {name: description for name, description in CATALOG.items()
             if name not in results} if round_number < 3 else {}
@@ -173,6 +188,7 @@ def main():
     state = json.loads(path.read_text()) if path.exists() else {}
     now = time.time()
     boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+    cached_diagnostics = recent_diagnostics(state, now, boot)
     if state.get('boot_id') != boot:
         state.pop('quiet_since', None)
         state['boot_id'] = boot
@@ -222,7 +238,9 @@ def main():
             'This operations worker is running while collecting the snapshot; its activating '
             'state is expected, not a startup failure. Disk percentage alone does not prove '
             'insufficient headroom; consider available bytes and growth.')
-        diagnostic_results = {}
+        diagnostic_results = cached_diagnostics
+        state['diagnostics'] = diagnostic_results
+        save(path, state)
         for round_number in range(4):
             prompt = build_prompt(instructions, policy, snapshot, diagnostic_results,
                 state.get('task_state', {}), available,
