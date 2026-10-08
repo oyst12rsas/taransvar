@@ -139,6 +139,21 @@ def safe_error(error):
     return "Unclassified " + type(error).__name__ + "; inspect local prerequisites"
 
 
+def remaining_diagnostics(results, round_number):
+    return {name: description for name, description in CATALOG.items()
+            if name not in results} if round_number < 3 else {}
+
+
+def diagnostic_feedback(name, results, round_number):
+    if not isinstance(name, str) or name not in CATALOG:
+        return 'Unknown diagnostic name; choose an exact name from the remaining catalog.'
+    if name in results:
+        return 'Diagnostic already completed; use its supplied result. Do not request it again.'
+    if round_number >= 3:
+        return 'Diagnostic budget exhausted; assess supplied evidence and choose a permitted action or report.'
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', default='/etc/tarasec/operations-agent.json')
@@ -215,7 +230,7 @@ def main():
                 + '\nOwner action policy: ' + json.dumps({k: policy.get(k) for k in
                     ('mode', 'execute', 'allow_experimental_commands', 'allow_reboot', 'resource_protection')})
                 + '\nEligible procedures: ' + json.dumps(available)
-                + '\nRead-only diagnostics: ' + json.dumps(CATALOG if round_number < 3 else {})
+                + '\nRead-only diagnostics: ' + json.dumps(remaining_diagnostics(diagnostic_results, round_number))
                 + '\nReturn JSON only: {"action":"report|diagnostic|procedure|command|resource|reboot", '
                   '"diagnostic":"exact catalog name", "procedure":"name", "reason":"explanation", '
                   '"task_state":{}}. Never output shell commands. '
@@ -230,8 +245,16 @@ def main():
             if decision.get('action') != 'diagnostic':
                 break
             name = decision.get('diagnostic')
-            if round_number == 3 or name not in CATALOG or name in diagnostic_results:
-                raise ValueError('Invalid or repeated diagnostic request')
+            feedback = diagnostic_feedback(name, diagnostic_results, round_number)
+            if feedback:
+                record({'model_correction': feedback})
+                snapshot['worker_feedback'] = feedback
+                if round_number < 3:
+                    continue
+                state['status'] = 'model_stalled'
+                state['summary'] = feedback
+                save(path, state)
+                return
             if not isinstance(decision.get('task_state', {}), dict):
                 raise ValueError('Task state must be an object')
             state['task_state'] = decision.get('task_state', {})

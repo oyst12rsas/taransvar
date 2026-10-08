@@ -86,5 +86,17 @@ class ErrorReportTest(unittest.TestCase):
         self.assertNotIn('SECRET', agent.safe_error(ValueError('SECRET')))
         self.assertNotIn('SECRET', agent.safe_error(RuntimeError('SECRET')))
 
+class DiagnosticRetryTest(unittest.TestCase):
+    def test_completed_diagnostic_is_removed(self):
+        self.assertNotIn('gateway_startup', agent.remaining_diagnostics({'gateway_startup': {}}, 1))
+        self.assertIn('large_logs', agent.remaining_diagnostics({'gateway_startup': {}}, 1))
+    def test_repeat_uses_existing_evidence(self):
+        self.assertIn('already completed', agent.diagnostic_feedback('gateway_startup', {'gateway_startup': {}}, 1))
+        self.assertIsNone(agent.diagnostic_feedback('large_logs', {}, 0))
+    def test_invalid_and_exhausted_requests_do_not_execute(self):
+        self.assertIn('Unknown', agent.diagnostic_feedback({}, {}, 0))
+        self.assertIn('exhausted', agent.diagnostic_feedback('large_logs', {}, 3))
+        self.assertEqual(agent.remaining_diagnostics({}, 3), {})
+
 if __name__ == '__main__':
     unittest.main()
