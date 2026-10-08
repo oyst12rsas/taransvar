@@ -153,3 +153,21 @@ reads; model results kept as untrusted evidence. No full command args/log conten
 sent. 17 focused tests, Python compilation and installer syntax passed locally.
 Flowise prompt must allow diagnostic action; new revision not yet deployed.
 Repairs, activity collectors and reboot acceptance remain unfinished.
+
+## 2026-10-08 owner policy expansion
+
+Owner explicitly requested experimental automatic demo commands and conservative
+production emergency resource relief. Added action command for demo+execute+
+allow_experimental_commands, bounded argv/timeout/capture, pending checkpoint,
+reason/expected-result/recovery record, results available on next scheduled run.
+Still quiet-gated; no trustworthy Audi collectors yet, so commands defer. Root
+execution is not a sandbox and script reboots cannot be comprehensively prevented.
+Production never receives generic command execution. Typed resource actions
+require measured thresholds, enabled policy, explicit disposable logs/services;
+core services protected. delete_log truncates authorized diagnostics in place.
+RFA adapter is configurable but not supplied/verified. Deployment profile metadata
+does not remove demo parts yet. Added2MiB/two-backup audit rotation.
+24 local tests passed with ResourceWarning error, Python compilation and shell
+syntax passed. New behavior not deployed on Audi. Current findings: rotated
+syslog/kernel logs total~2.2GB plus active~1.28GB; gateway firewall.sh exists664,
+not executable. Diagnostic model loop tested live by user. Cleanup/repair not run.

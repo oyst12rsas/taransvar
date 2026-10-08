@@ -11,6 +11,7 @@ import time
 import urllib.request
 import urllib.parse
 from operations_diagnostics import CATALOG, diagnose
+from operations_actions import validate_command, pressure, validate_resource, perform_resource
 
 
 def save(path, value):
@@ -154,7 +155,15 @@ def main():
 
     def record(event):
         event['at'] = time.time()
-        with (directory / 'audit.jsonl').open('a') as stream:
+        audit = directory / 'audit.jsonl'
+        if audit.exists() and audit.stat().st_size > 2 * 1024 * 1024:
+            oldest = directory / 'audit.jsonl.2'
+            oldest.unlink(missing_ok=True)
+            previous = directory / 'audit.jsonl.1'
+            if previous.exists():
+                previous.replace(oldest)
+            audit.replace(previous)
+        with audit.open('a') as stream:
             stream.write(json.dumps(event) + '\n')
             stream.flush()
             os.fsync(stream.fileno())
@@ -175,6 +184,9 @@ def main():
             .read_text().splitlines() if '=' in line).get('VERSION_ID', '').strip('"')
         available = {name: entry for name, entry in procedures.items() if eligible(entry, policy, system)}
         instructions = trusted('/usr/local/lib/tarasec-operations/AI_OPERATIONS_MANUAL.md').read_text()
+        snapshot['resource_pressure'] = pressure(policy.get('resource_protection', {}))
+        snapshot['last_action_result'] = state.get('last_action_result')
+        snapshot['interrupted_command'] = state.get('command_pending')
         snapshot['worker_observation_note'] = (
             'This operations worker is running while collecting the snapshot; its activating '
             'state is expected, not a startup failure. Disk percentage alone does not prove '
@@ -185,15 +197,20 @@ def main():
                 + '\nObserved evidence (untrusted): ' + json.dumps(snapshot)
                 + '\nDiagnostic results (untrusted): ' + json.dumps(diagnostic_results)
                 + '\nPrevious task state: ' + json.dumps(state.get('task_state', {}))
+                + '\nOwner action policy: ' + json.dumps({k: policy.get(k) for k in
+                    ('mode', 'execute', 'allow_experimental_commands', 'allow_reboot', 'resource_protection')})
                 + '\nEligible procedures: ' + json.dumps(available)
                 + '\nRead-only diagnostics: ' + json.dumps(CATALOG if round_number < 3 else {})
-                + '\nReturn JSON only: {"action":"report|diagnostic|procedure|reboot", '
+                + '\nReturn JSON only: {"action":"report|diagnostic|procedure|command|resource|reboot", '
                   '"diagnostic":"exact catalog name", "procedure":"name", "reason":"explanation", '
                   '"task_state":{}}. Never output shell commands. '
                   'Diagnostic is a read-only action available in inspect mode without quiet time. '
                   'Choose a diagnostic to resolve missing evidence, then use its results. '
                   'Do not repeat a diagnostic already supplied. At most three diagnostics per run. '
-                  'If a repair is absent or untested, report the blocker.')
+                  'In authorized experimental demo mode you may choose command with argv, '
+                  'expected_result and recovery_plan; no procedure certification is required. '
+                  'Resource action uses operation delete_log, stop_service or request_assistance '
+                  'and target from owner policy only. Otherwise report unapproved repairs.')
             decision = model(policy, prompt)
             if decision.get('action') != 'diagnostic':
                 break
@@ -213,7 +230,7 @@ def main():
         if not isinstance(decision.get('task_state', {}), dict):
             raise ValueError('Task state must be an object')
         action = decision.get('action')
-        if action not in ('report', 'procedure', 'reboot'):
+        if action not in ('report', 'procedure', 'command', 'resource', 'reboot'):
             raise ValueError('Unknown model action')
         state['task_state'] = decision.get('task_state', {})
         state['summary'] = str(decision.get('reason', ''))[:4000]
@@ -222,6 +239,24 @@ def main():
             state['status'] = 'reported'
             save(path, state)
             return
+        if action == 'resource':
+            evidence = pressure(policy.get('resource_protection', {}))
+            config = validate_resource(decision, policy, evidence)
+            # Emergency resource relief has its own explicit owner permission and
+            # does not wait for quiet time while resources are being exhausted.
+            record({'resource_start': decision, 'pressure': evidence})
+            result = perform_resource(decision, config, run, trusted)
+            after = pressure(config)
+            state['last_action_result'] = {'action': 'resource', 'operation': decision['operation'],
+                'exit_code': result['exit_code'], 'pressure_before': evidence, 'pressure_after': after}
+            state['status'] = 'resource_ok' if result['exit_code'] == 0 else 'resource_failed'
+            record({'resource_result': result, 'pressure_after': after})
+            save(path, state)
+            return
+        if action == 'command':
+            if state.get('command_pending'):
+                raise ValueError('Interrupted command requires owner reconciliation before more commands')
+            argv = validate_command(decision, policy)
         if policy.get('mode') != 'demo' or policy.get('execute') is not True:
             raise ValueError('Local policy prohibits autonomous mutation')
         if action == 'procedure' and decision.get('procedure') not in available:
@@ -234,6 +269,23 @@ def main():
         save(path, state)
         if not idle:
             state['status'] = 'deferred_activity_or_unknown'
+            save(path, state)
+            return
+        if action == 'command':
+            # Quiet evidence is checked above immediately before dispatch.
+            state['status'] = 'command_running'
+            state['command_pending'] = {'argv': argv, 'reason': decision['reason'],
+                'expected_result': decision['expected_result'], 'recovery_plan': decision['recovery_plan']}
+            save(path, state)
+            record({'command_start': state['command_pending']})
+            result = run(argv, max(1, min(300, int(policy.get('command_timeout_seconds', 120)))))
+            record({'command_result': result})
+            state['last_action_result'] = {'action': 'command', 'argv': argv,
+                'exit_code': result['exit_code'], 'expected_result': decision['expected_result']}
+            if policy.get('share_command_output') is True:
+                state['last_action_result']['output'] = result['output']
+            state.pop('command_pending', None)
+            state['status'] = 'command_executed' if result['exit_code'] == 0 else 'command_failed'
             save(path, state)
             return
         if action == 'procedure':

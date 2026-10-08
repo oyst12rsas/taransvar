@@ -207,3 +207,62 @@ The other actions retain their owner policy and eligibility restrictions.
 
 An operations worker observing itself as activating is normal. Disk percentage
 alone does not prove insufficient headroom: inspect available bytes and growth.
+
+## Owner-authorized experimental commands and resource protection
+
+This section supersedes the earlier procedure-only limitation. Demo nodes may
+set mode=demo, execute=true and allow_experimental_commands=true. The model
+may return action=command, argv (an array starting with an absolute executable),
+reason, expected_result, recovery_plan and task_state. Commands have bounded
+output and timeout (default120s, maximum300s), recorded starts/results and a
+durable pending record. Each run executes at most one mutation. The next timer
+run receives the exit result and fresh observations to verify or adapt.
+Exit zero is not functional verification. Failed commands must be diagnosed
+before repetition; incomplete pending commands require inspection after restart.
+
+This grants experimental root authority to trusted model-selected commands.
+There is no operating-system sandbox: a script/interpreter can bypass textual
+guards or alter protected files. Do not pretend argv checks guarantee containment.
+The separate reboot action is required by policy; direct common reboot commands
+are rejected, but root scripts can still reboot. Preserve owner settings and
+recovery access. Never put secrets into argv or model output. Command output
+is local by default; share_command_output=true opts into returning potentially
+sensitive stdout/stderr to the model. Keep it false unless node data is suitable.
+
+Commands still require continuous quiet evidence. Missing collectors defer them.
+allow_reboot remains independent and production rejects experimental commands.
+The owner may enable the timer to continue one run per minute; disabling it
+stops future runs, not an already executing command.
+
+Resource protection is independent of experimental commands. In demo or
+production, execute=true plus resource_protection.enabled=true enables typed
+action=resource, operation and target. Local measurements must cross configured
+disk_used_percent (default85), memory_available_percent (default10 or below),
+or load_per_cpu (default2). Owner chooses exact disposable_logs paths under
+/var/log and stoppable_services; protected core services cannot be stopped by
+this action. delete_log truncates the explicitly disposable regular file in
+place to preserve writer descriptors, records before/after bytes, and never
+automatically treats syslog/security logs as disposable. No glob expansion.
+stop_service verifies inactive/failed after stopping a listed nonessential
+service; automatic restart/recovery policy is not yet implemented.
+
+request_assistance requires allow_request_assistance=true plus a root-owned
+assistance_executable adapter. This adapter must perform actual authenticated
+TaraSec submission and return nonzero on failure. No default adapter is installed;
+config alone does not implement RFA. Determine whether attack evidence justifies
+RFA or ordinary capacity pressure calls for operator attention. Resource actions
+are explicit emergency permissions and do not wait for quiet time. Results and
+pressure before/after are recorded; action success does not imply all pressure
+is relieved. Audit rotates at2MiB with two older local segments.
+
+deployment_profile is descriptive enrollment metadata in this revision, not
+a demo-component removal mechanism. Production demo cleanup remains unfinished.
+Unit tests are not live deployment evidence for root commands or emergency relief.
+
+Flowise Response Prompt additions:
+Allow command only when local policy explicitly enables experimental demo
+commands. Supply argv, reason, expected_result and recovery_plan.
+Allow resource only for the enabled owner policy, measured pressure and listed
+targets. Inspect results on the next run and independently verify the outcome.
+Do not let old procedure-only instructions prevent these explicitly permitted
+actions. Never alter authorization, credentials or the worker to expand authority.

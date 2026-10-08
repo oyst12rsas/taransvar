@@ -4,7 +4,7 @@ set -euo pipefail
 source_dir="$(cd "$(dirname "$0")" && pwd)"
 install -d -o root -g root -m 0755 /usr/local/lib/tarasec-operations
 install -d -o root -g root -m 0700 /etc/tarasec /var/lib/tarasec-operations
-install -o root -g root -m 0755 "$source_dir/operations_agent.py" "$source_dir/operations_activity.py" "$source_dir/operations_diagnostics.py" /usr/local/lib/tarasec-operations/
+install -o root -g root -m 0755 "$source_dir/operations_agent.py" "$source_dir/operations_activity.py" "$source_dir/operations_diagnostics.py" "$source_dir/operations_actions.py" /usr/local/lib/tarasec-operations/
 cat > /usr/local/lib/tarasec-operations/activity-probe <<'EOF'
 #!/bin/sh
 exec /usr/bin/python3 /usr/local/lib/tarasec-operations/operations_activity.py --read
