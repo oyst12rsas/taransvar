@@ -229,7 +229,7 @@ def main():
                 remaining_diagnostics(diagnostic_results, round_number))
             decision = model(policy, prompt)
             try:
-                validate_decision(decision)
+                decision = validate_decision(decision)
             except ValueError as error:
                 # Schema messages are fixed strings, never response text.
                 feedback = str(error)

@@ -27,4 +27,16 @@ class PromptTest(unittest.TestCase):
         value=self.decision();value.pop('recovery_plan')
         with self.assertRaises(ValueError):validate_decision(value)
 
+    def test_nested_command_is_normalized_without_mutating_input(self):
+        value=self.decision()
+        nested={field:value.pop(field) for field in ('argv','expected_result','recovery_plan')}
+        value['command']=nested
+        result=validate_decision(value)
+        self.assertEqual(result['argv'],nested['argv'])
+        self.assertNotIn('command',result)
+        self.assertIn('command',value)
+    def test_conflicting_command_fields_rejected(self):
+        value=self.decision();value['command']={'argv':['/bin/false']}
+        with self.assertRaises(ValueError):validate_decision(value)
+
 if __name__ == '__main__':unittest.main()

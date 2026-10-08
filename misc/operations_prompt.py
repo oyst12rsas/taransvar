@@ -18,6 +18,17 @@ def validate_decision(decision):
         if not isinstance(state.get(field), str):
             raise ValueError('task_state goal and next_check must be strings')
     if decision['action'] == 'command':
+        nested = decision.get('command')
+        if nested is not None:
+            if not isinstance(nested, dict):
+                raise ValueError('Nested command must be an object')
+            decision = dict(decision)
+            for field in ('argv', 'expected_result', 'recovery_plan'):
+                if field in nested:
+                    if field in decision and decision[field] != nested[field]:
+                        raise ValueError('Conflicting command layouts')
+                    decision[field] = nested[field]
+            decision.pop('command', None)
         if not isinstance(decision.get('argv'), list) or not decision['argv']:
             raise ValueError('Command requires argv array')
         for field in ('expected_result', 'recovery_plan'):
