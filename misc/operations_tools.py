@@ -40,6 +40,18 @@ def resolve_tool(decision, catalog):
 
 def gateway_tools(policy, results, snapshot):
     tools = _gateway_tools(policy, results, snapshot)
+    if (policy.get('mode') == 'demo' and policy.get('execute') is True
+            and policy.get('allow_experimental_commands') is True):
+        reporters = results.get('deployment_status', {}).get('result', {}).get('reporters', [])
+        if len(reporters) == 1:
+            reporter = reporters[0]
+            if (reporter.get('regular_file') is True and reporter.get('operations_status_field') is False
+                    and reporter.get('sha256') and reporter.get('path')):
+                tools['minute_reporter_bridge'] = dict(
+                    argv=['/usr/bin/python3', '/usr/local/lib/tarasec-operations/install_operations_reporter_bridge.py',
+                          reporter['path'], reporter['sha256']], requires_quiet=True,
+                    expected_result='Back up and patch the exact unchanged root-owned reporter to include separate operations/security snapshots. Verify fresh central receipt after cron; no security enrollment performed.',
+                    recovery_plan='Restore the printed root-only backup if reporter execution fails; preserve cron schedule and owner configuration.')
     if (policy.get('mode') != 'demo' or policy.get('execute') is not True
             or policy.get('allow_experimental_commands') is not True
             or 'retention' not in str(policy.get('task', '')).lower()):

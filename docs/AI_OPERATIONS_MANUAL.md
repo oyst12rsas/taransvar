@@ -373,3 +373,30 @@ For completion, verify a fresh central DB report contains the intended security
 and operations fields separately. The diagnostic presently reports local readiness;
 it does not publish an operations dot or confirm DB receipt. Those capabilities
 must remain pending until their reporter/API integration is deployed and tested.
+
+### Model failures and the minute reporter bridge
+
+The worker writes `/var/lib/tarasec-operations/report.json` on every state save.
+This compact report uses deterministic deployment findings, not model prose, raw
+logs or credentials. It records the assessment timestamp separately from the
+publication timestamp; it must not be treated as proof of healthy execution.
+Model transport failures record `error_stage` and an explicit provider timeout.
+The local report survives a timeout. Model request audit events contain provider,
+round, prompt byte count and duration only, never keys or request contents.
+
+In explicitly executing experimental demo mode, a single discovered reporter
+missing the operations field exposes `minute_reporter_bridge`. The action verifies
+root ownership, non-writable parents, exact inspected SHA256, supported layout,
+Perl syntax/dependencies and an unchanged file immediately before replacement. It
+preserves the cron schedule and a root-only backup. It adds `operationsAgent` from
+the compact local report; for an older reporter missing `aiAgent`, it adds security
+snapshot reporting too. Missing security snapshots report unavailable. Both use
+bounded JSON and freshness checks; stale snapshots must not be shown as green.
+Restore the printed backup if the changed reporter fails to run. Unsupported or
+unsafe installations require a different reviewed deployment path, never a forced
+patch. This bridge is not exposed in production or inspection mode.
+
+Field publication is only local readiness. After cron runs, independently verify
+central DB receipt and app/API rendering of the operations field. The existing
+security agent still needs its own node-specific enrollment. Do not enable the
+operations timer during pilot testing merely to keep a dot fresh.

@@ -15,6 +15,7 @@ from operations_diagnostics import CATALOG, diagnose
 from operations_actions import validate_command, pressure, validate_resource, perform_resource, read_only_command
 from operations_prompt import build_prompt, validate_decision, progress_feedback, completed_check_feedback
 from operations_tools import gateway_tools, resolve_tool
+from operations_reporting import local_report, stage_error
 
 
 def save(path, value):
@@ -37,6 +38,8 @@ def save(path, value):
         os.fsync(stream.fileno())
     os.chmod(temporary, 0o600)
     temporary.replace(path)
+    if path.name == 'state.json':
+        save(path.with_name('report.json'), local_report(value))
 
 
 def trusted(path):
@@ -214,7 +217,7 @@ def main():
         state.pop('reboot_pending', None)
     state['checked_at'] = now
     state['status'] = 'inspecting'
-    for field in ('error_type', 'error_detail', 'summary', 'diagnostics'):
+    for field in ('error_type', 'error_detail', 'error_stage', 'summary', 'diagnostics'):
         state.pop(field, None)
     save(path, state)
 
@@ -234,6 +237,8 @@ def main():
             os.fsync(stream.fileno())
 
     try:
+        state['current_stage'] = 'snapshot'
+        save(path, state)
         # Bounded, explicit inspection outputs only; never send arbitrary logs/configs.
         snapshot = {
             'disk': run(['df', '-B1', '/']),
@@ -260,6 +265,8 @@ def main():
             'insufficient headroom; consider available bytes and growth.')
         diagnostic_results = cached_diagnostics
         # Deployment coverage is mandatory evidence, not dependent on model selection.
+        state['current_stage'] = 'deployment_status'
+        save(path, state)
         deployment = diagnose('deployment_status', run)
         diagnostic_results['deployment_status'] = {'checked_at': time.time(), 'result': deployment}
         state['deployment_findings'] = deployment['findings']
@@ -282,7 +289,17 @@ def main():
                 remaining_diagnostics(diagnostic_results, round_number)),
                 _eligible_procedures=list(available),
                 _available_tools=list(gateway_tools(policy, diagnostic_results, snapshot)))
+            state['current_stage'] = 'model_request'
+            state['model_provider'] = 'openai' if policy.get('model_provider') == 'openai' else 'flowise'
+            save(path, state)
+            request_started = time.monotonic()
+            record({'model_request_start': state['model_provider'], 'round': round_number,
+                    'prompt_bytes': len(prompt.encode())})
             decision = model(request_policy, prompt)
+            record({'model_request_complete': state['model_provider'],
+                    'duration_seconds': round(time.monotonic() - request_started, 3)})
+            state['current_stage'] = 'decision_validation'
+
             try:
                 decision = validate_decision(decision)
                 if decision['action'] == 'tool':
@@ -328,6 +345,8 @@ def main():
                 raise ValueError('Task state must be an object')
             state['task_state'] = decision.get('task_state', {})
             state['status'] = 'diagnosing'
+            save(path, state)
+            state['current_stage'] = 'diagnostic:' + name
             save(path, state)
             result = diagnose(name, run)
             diagnostic_results[name] = {'checked_at': time.time(), 'result': result}
@@ -454,9 +473,10 @@ def main():
         # Do not log HTTP payloads, auth headers or configuration secrets.
         state['status'] = 'blocked'
         state['error_type'] = type(error).__name__
-        state['error_detail'] = safe_error(error)
+        state['error_stage'] = state.get('current_stage', 'initialization')
+        state['error_detail'] = stage_error(error, state['error_stage'], state.get('model_provider')) or safe_error(error)
         state['summary'] = 'Blocked: ' + state['error_detail']
-        record({'blocked': type(error).__name__, 'detail': state['error_detail']})
+        record({'blocked': type(error).__name__, 'detail': state['error_detail'], 'stage': state['error_stage']})
         save(path, state)
         raise SystemExit('Operations agent blocked: ' + state['error_detail'])
 

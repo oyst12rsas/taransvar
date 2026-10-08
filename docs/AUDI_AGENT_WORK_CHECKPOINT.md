@@ -23,3 +23,12 @@ source-reference metadata and manual checklist. 87 tests pass. This change enabl
 self-diagnosis; security enrollment, minute-report/DB/app operations-dot integration
 and centrally verified receipt remain pending. Journal bound succeeded live:
 980MB journal allocation, root 64% with 6.7GB free. MySQL unchanged.
+
+15:07 Oslo continuation: model timeout after deployment diagnostic confirmed;
+no new command dispatched. Added model request audit stages and provider-specific
+timeout detail; compact deterministic report.json survives failure. Added guarded
+demo minute reporter bridge (exact source hash, safe root ownership, layout,
+backup, Perl syntax/dependencies, pre-replace change check), separate fields and
+missing/stale snapshots. 92 tests passed. Actual Audi bridge dispatch, cron
+execution, central DB receipt and app operations-dot rendering remain unverified.
+Security enrollment remains absent. Operations timer remains disabled.

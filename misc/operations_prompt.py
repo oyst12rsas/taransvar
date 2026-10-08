@@ -135,6 +135,13 @@ def progress_feedback(decision, policy, results, snapshot=None):
             or policy.get('execute') is not True
             or policy.get('allow_experimental_commands') is not True):
         return None
+    if 'minute_reporter_bridge' in gateway_tools(policy, results, snapshot or {}):
+        return ('The deployment inventory supplies an exact minute_reporter_bridge tool. '
+                'Updating reporter fields is separate from missing node-specific security enrollment. '
+                'Select the available guarded tool to advance reporting readiness; dispatch checks '
+                'quiet time and the installer preserves a backup and rejects changed/unsafe files. '
+                'Do not claim central receipt until separately verified. The security snapshot may '
+                'remain unavailable until enrollment, and the pilot timer must remain disabled.')
     if 'journal_configure_limit' in gateway_tools(policy, results, snapshot or {}):
         return ('Current demo policy already permits the available journal_configure_limit tool. '
                 'SFTP enrollment is a separate prerequisite for traffic archival, not journal retention. '

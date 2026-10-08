@@ -4,7 +4,7 @@ set -euo pipefail
 source_dir="$(cd "$(dirname "$0")" && pwd)"
 install -d -o root -g root -m 0755 /usr/local/lib/tarasec-operations
 install -d -o root -g root -m 0700 /etc/tarasec /var/lib/tarasec-operations
-install -o root -g root -m 0755 "$source_dir/operations_agent.py" "$source_dir/operations_activity.py" "$source_dir/operations_diagnostics.py" "$source_dir/operations_actions.py" "$source_dir/operations_prompt.py" "$source_dir/operations_model_probe.py" "$source_dir/operations_collectors.py" "$source_dir/operations_model.py" "$source_dir/operations_deployment.py" "$source_dir/operations_tools.py" "$source_dir/configure_operations_journal.py" "$source_dir/configure_operations_direct_probe.py" /usr/local/lib/tarasec-operations/
+install -o root -g root -m 0755 "$source_dir/operations_agent.py" "$source_dir/operations_activity.py" "$source_dir/operations_diagnostics.py" "$source_dir/operations_actions.py" "$source_dir/operations_prompt.py" "$source_dir/operations_model_probe.py" "$source_dir/operations_collectors.py" "$source_dir/operations_model.py" "$source_dir/install_operations_reporter_bridge.py" "$source_dir/operations_reporting.py" "$source_dir/operations_deployment.py" "$source_dir/operations_tools.py" "$source_dir/configure_operations_journal.py" "$source_dir/configure_operations_direct_probe.py" /usr/local/lib/tarasec-operations/
 cat > /usr/local/lib/tarasec-operations/activity-probe <<'EOF'
 #!/bin/sh
 exec /usr/bin/python3 /usr/local/lib/tarasec-operations/operations_activity.py --read
