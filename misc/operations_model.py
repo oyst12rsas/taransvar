@@ -3,7 +3,7 @@ import json
 import urllib.request
 
 
-def decision_schema():
+def decision_schema(diagnostics=None, procedures=None):
     def obj(properties):
         return dict(type='object',properties=properties,required=list(properties),additionalProperties=False)
     string={'type':'string'}
@@ -12,11 +12,19 @@ def decision_schema():
     prerequisite=obj(dict(kind={'type':'string','enum':['quiet_time','owner_input','unsupported_capability']},
         detail=string,next_check=string))
     nullable=lambda schema: {'anyOf':[schema,{'type':'null'}]}
-    return obj(dict(action={'type':'string','enum':['report','diagnostic','procedure','command','resource','reboot']},
+    schema = obj(dict(action={'type':'string','enum':['report','diagnostic','procedure','command','resource','reboot']},
         reason=string,task_state=state,argv=nullable({'type':'array','items':string}),
         expected_result=nullable(string),recovery_plan=nullable(string),diagnostic=nullable(string),
         procedure=nullable(string),operation=nullable(string),target=nullable(string),
         prerequisite=nullable(prerequisite)))
+    for action, choices in (('diagnostic', diagnostics), ('procedure', procedures)):
+        if choices is not None:
+            if choices:
+                schema['properties'][action] = nullable({'type':'string','enum':list(choices)})
+            else:
+                schema['properties']['action']['enum'].remove(action)
+                schema['properties'][action] = {'type':'null'}
+    return schema
 
 
 def direct_payload(policy,prompt):
@@ -25,7 +33,7 @@ def direct_payload(policy,prompt):
         raise ValueError('Configure the direct OpenAI model name')
     return {'model':name,'messages':[{'role':'user','content':prompt}],
         'response_format':{'type':'json_schema','json_schema':{
-            'name':'tarasec_operations_decision','strict':True,'schema':decision_schema()}}}
+            'name':'tarasec_operations_decision','strict':True,'schema':decision_schema(policy.get('_remaining_diagnostics'), policy.get('_eligible_procedures'))}}}
 
 
 def parse_direct_response(body):

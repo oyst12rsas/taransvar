@@ -54,7 +54,7 @@ def progression_probe(policy, quiet_verified=False):
         if quiet_verified else dict(complete=False, reason='Activity collector not configured'))}
     passed = False
     for attempt in range(4):
-        decision = model(policy, build_prompt(manual, policy,
+        decision = model(dict(policy, _remaining_diagnostics=[], _eligible_procedures=[]), build_prompt(manual, policy,
             snapshot, evidence, previous, {}, {}))
         try:
             decision = validate_decision(decision)

@@ -253,7 +253,10 @@ def main():
             prompt = build_prompt(instructions, policy, snapshot, diagnostic_results,
                 state.get('task_state', {}), available,
                 remaining_diagnostics(diagnostic_results, round_number))
-            decision = model(policy, prompt)
+            request_policy = dict(policy, _remaining_diagnostics=list(
+                remaining_diagnostics(diagnostic_results, round_number)),
+                _eligible_procedures=list(available))
+            decision = model(request_policy, prompt)
             try:
                 decision = validate_decision(decision)
             except ValueError as error:

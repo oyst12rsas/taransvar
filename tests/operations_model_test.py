@@ -31,4 +31,14 @@ class DirectTest(unittest.TestCase):
             self.assertEqual(direct.call_args.args[:2],({'model_provider':'openai'},'prompt'))
         with self.assertRaises(ValueError):model({'model_provider':'unknown'},'prompt')
 
+    def test_empty_catalog_cannot_generate_diagnostic_or_procedure_action(self):
+        schema=decision_schema([],[])
+        self.assertNotIn('diagnostic',schema['properties']['action']['enum'])
+        self.assertNotIn('procedure',schema['properties']['action']['enum'])
+        self.assertEqual(schema['properties']['diagnostic'],{'type':'null'})
+    def test_only_remaining_diagnostic_names_are_allowed(self):
+        schema=decision_schema(['large_logs'],[])
+        self.assertEqual(schema['properties']['diagnostic']['anyOf'][0]['enum'],['large_logs'])
+        self.assertNotIn('gateway_startup',json.dumps(schema))
+
 if __name__=='__main__':unittest.main()
