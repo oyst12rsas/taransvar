@@ -137,3 +137,19 @@ meaningful-traffic collectors, tested remedies and Flowise credentials remain
 unconfigured; no agent deployment or reboot occurred. Overall audit-log rotation
 still needs implementation. Continue unfinished work above without treating the
 observer framework as a working Audi activity collector.
+
+## 2026-10-08: Audi model accepted; adaptive diagnostics added
+
+User deployed dd1a131 on Audi, 14 tests passed, HTTPS authenticated Flowise call
+and live worker inspection returned status reported. Key remains root-local.
+Endpoint https://ai.taransvar.no/api/v1/prediction/9ee5a2fa-6be4-4fd8-94fb-4961e3c91532.
+Unauthenticated request rejected Unauthorized internally (Flowise exposes HTTP500).
+Fixed user Response Prompt literal braces with doubling for LangChain template.
+Audi disk81%,3.7G free, logs5.5G,journal1.9G,MySQL6G. Gateway failed203/EXEC.
+No crontasks log at expected path. Root cause unverified.
+User requested agent gather diagnostics itself. Added fixed metadata diagnostics,
+three-check/four-model-call reassessment loop, no mutation or quiet gate for
+reads; model results kept as untrusted evidence. No full command args/log contents
+sent. 17 focused tests, Python compilation and installer syntax passed locally.
+Flowise prompt must allow diagnostic action; new revision not yet deployed.
+Repairs, activity collectors and reboot acceptance remain unfinished.

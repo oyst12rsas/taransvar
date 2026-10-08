@@ -180,3 +180,30 @@ Enable this service only after collector acceptance tests. Its read probe treats
 missing or stale observer output as unknown. Recheck activity immediately before
 a reviewed procedure or reboot. An inspection-only model run needs no collectors.
 This wiring does not provide Audi-specific demo or traffic collectors.
+
+## Read-only adaptive diagnostics
+
+The worker now accepts action=diagnostic, with diagnostic set to an exact name
+from its supplied catalog: large_logs, storage_summary or gateway_startup.
+These checks are available in inspection mode without quiet-time gating.
+They never execute model-supplied commands or paths. The worker supplies each
+result to the model again within the same run, with at most three diagnostics
+and four model calls. Repeated/unknown requests are rejected.
+
+large_logs scans /var/log without following symlinks or crossing filesystems,
+with a ten-second/20,000-file limit and top twenty files ranked by allocated
+bytes. It reports metadata only and marks partial coverage. storage_summary
+uses bounded du output for /var/log and /var/lib. gateway_startup examines
+fixed systemd metadata and startup executable access; full command arguments
+and log contents are never submitted. Interpreter/mount restrictions may still
+need a subsequent reviewed diagnostic; do not claim the root cause without proof.
+
+Add this to the Flowise Response Prompt (the worker also supplies it):
+Allow action diagnostic in addition to report, procedure and reboot. For a
+diagnostic action include diagnostic as an exact name from Read-only diagnostics.
+Choose a diagnostic when evidence is missing; use its returned results before
+reporting. It is permitted in inspect mode, even with execution disabled.
+The other actions retain their owner policy and eligibility restrictions.
+
+An operations worker observing itself as activating is normal. Disk percentage
+alone does not prove insufficient headroom: inspect available bytes and growth.

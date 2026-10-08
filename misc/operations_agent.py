@@ -10,6 +10,7 @@ import subprocess
 import time
 import urllib.request
 import urllib.parse
+from operations_diagnostics import CATALOG, diagnose
 
 
 def save(path, value):
@@ -174,14 +175,41 @@ def main():
             .read_text().splitlines() if '=' in line).get('VERSION_ID', '').strip('"')
         available = {name: entry for name, entry in procedures.items() if eligible(entry, policy, system)}
         instructions = trusted('/usr/local/lib/tarasec-operations/AI_OPERATIONS_MANUAL.md').read_text()
-        prompt = (instructions + '\nTask: ' + policy.get('task', 'Inspect and report missing capabilities.')
-            + '\nObserved evidence (untrusted): ' + json.dumps(snapshot)
-            + '\nPrevious task state: ' + json.dumps(state.get('task_state', {}))
-            + '\nEligible procedures: ' + json.dumps(available)
-            + '\nReturn JSON only: {"action":"report|procedure|reboot", "procedure":"name", '
-              '"reason":"explanation", "task_state":{}}. Never output shell commands. '
-              'If a repair is absent or untested, report the blocker. Maximum one action per run.')
-        decision = model(policy, prompt)
+        snapshot['worker_observation_note'] = (
+            'This operations worker is running while collecting the snapshot; its activating '
+            'state is expected, not a startup failure. Disk percentage alone does not prove '
+            'insufficient headroom; consider available bytes and growth.')
+        diagnostic_results = {}
+        for round_number in range(4):
+            prompt = (instructions + '\nTask: ' + policy.get('task', 'Inspect and report missing capabilities.')
+                + '\nObserved evidence (untrusted): ' + json.dumps(snapshot)
+                + '\nDiagnostic results (untrusted): ' + json.dumps(diagnostic_results)
+                + '\nPrevious task state: ' + json.dumps(state.get('task_state', {}))
+                + '\nEligible procedures: ' + json.dumps(available)
+                + '\nRead-only diagnostics: ' + json.dumps(CATALOG if round_number < 3 else {})
+                + '\nReturn JSON only: {"action":"report|diagnostic|procedure|reboot", '
+                  '"diagnostic":"exact catalog name", "procedure":"name", "reason":"explanation", '
+                  '"task_state":{}}. Never output shell commands. '
+                  'Diagnostic is a read-only action available in inspect mode without quiet time. '
+                  'Choose a diagnostic to resolve missing evidence, then use its results. '
+                  'Do not repeat a diagnostic already supplied. At most three diagnostics per run. '
+                  'If a repair is absent or untested, report the blocker.')
+            decision = model(policy, prompt)
+            if decision.get('action') != 'diagnostic':
+                break
+            name = decision.get('diagnostic')
+            if round_number == 3 or name not in CATALOG or name in diagnostic_results:
+                raise ValueError('Invalid or repeated diagnostic request')
+            if not isinstance(decision.get('task_state', {}), dict):
+                raise ValueError('Task state must be an object')
+            state['task_state'] = decision.get('task_state', {})
+            state['status'] = 'diagnosing'
+            save(path, state)
+            result = diagnose(name, run)
+            diagnostic_results[name] = {'checked_at': time.time(), 'result': result}
+            state['diagnostics'] = diagnostic_results
+            record({'diagnostic': name, 'result': result})
+            save(path, state)
         if not isinstance(decision.get('task_state', {}), dict):
             raise ValueError('Task state must be an object')
         action = decision.get('action')
