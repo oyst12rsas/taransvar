@@ -158,3 +158,23 @@ def progress_feedback(decision, policy, results, snapshot=None):
             'structured prerequisite (kind, detail, next_check) explaining how to resolve it. An empty procedure registry does not disable '
             'owner-authorized demo commands. Do not bypass quiet-time or other local guards.')
     return None
+
+
+def completed_check_feedback(decision, results, snapshot):
+    """Avoid repeating a syntax check for an unchanged, healthy startup file."""
+    properties = results.get('gateway_startup', {}).get('result', {}).get('properties', {})
+    executable = properties.get('executable', {})
+    argv = decision.get('argv')
+    if (decision.get('action') != 'command' or properties.get('ActiveState') != 'active'
+            or not executable.get('file_identity') or not isinstance(argv, list)
+            or len(argv) != 3 or argv[1] != '-n' or argv[2] != executable.get('path')):
+        return None
+    for entry in snapshot.get('action_history', []):
+        if (entry.get('read_only') is True and entry.get('exit_code') == 0
+                and entry.get('argv') == argv and entry.get('boot_id') == snapshot.get('boot_id')
+                and entry.get('startup_file_identity') == executable['file_identity']):
+            return ('The unchanged startup file already passed this syntax check on this boot, '
+                    'and the gateway is now active. Advance the current maintenance task; '
+                    'use logging_policy for effective retention and timer evidence. '
+                    'Service activity alone does not prove forwarding functionality.')
+    return None

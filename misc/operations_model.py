@@ -31,10 +31,16 @@ def direct_payload(policy,prompt):
     name=policy.get('openai_model')
     if not isinstance(name,str) or not name.strip():
         raise ValueError('Configure the direct OpenAI model name')
-    return {'model':name,'messages':[{'role':'user','content':prompt}],
+    payload = {'model':name,'messages':[{'role':'user','content':prompt}],
         'response_format':{'type':'json_schema','json_schema':{
             'name':'tarasec_operations_decision','strict':True,'schema':decision_schema(policy.get('_remaining_diagnostics'), policy.get('_eligible_procedures'), policy.get('_available_tools'))}}}
 
+    effort = policy.get('reasoning_effort', 'low' if name == 'gpt-5-mini' else None)
+    if effort is not None:
+        if effort not in ('low', 'medium', 'high'):
+            raise ValueError('Invalid reasoning effort')
+        payload['reasoning_effort'] = effort
+    return payload
 
 def parse_direct_response(body):
     content=json.loads(body)
@@ -54,7 +60,7 @@ def direct_model(policy,prompt,trusted):
         data=json.dumps(payload).encode(),headers={'Content-Type':'application/json','Authorization':'Bearer '+key})
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self,*args,**kwargs):return None
-    with urllib.request.build_opener(NoRedirect).open(request,timeout=90) as response:
+    with urllib.request.build_opener(NoRedirect).open(request,timeout=max(30, min(180, int(policy.get("model_timeout_seconds", 180))))) as response:
         body=response.read(256001)
     if len(body)>256000:raise ValueError('Model response too large')
     return parse_direct_response(body)

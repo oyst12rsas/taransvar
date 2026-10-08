@@ -6,6 +6,7 @@ import stat
 import time
 
 CATALOG = {
+    'logging_policy': 'Read effective journald limits, journal usage, rsyslog rotation rules and timer state; no credentials.',
     'large_logs': 'Find the 20 largest regular log files; metadata only, no contents.',
     'storage_summary': 'Measure allocated space under /var/log and /var/lib.',
     'gateway_startup': 'Inspect gateway service execution metadata and executable accessibility.',
@@ -80,6 +81,16 @@ def gateway_startup(run):
 def diagnose(name, run):
     if name not in CATALOG:
         raise ValueError('Unknown read-only diagnostic')
+    if name == 'logging_policy':
+        commands = {
+            'journald_effective': ['systemd-analyze', 'cat-config', 'systemd/journald.conf'],
+            'journal_usage': ['journalctl', '--disk-usage'],
+            'rotation_rules': ['cat', '/etc/logrotate.d/rsyslog'],
+            'timers': ['systemctl', 'show', 'logrotate.timer', 'tarasec-gateway-ai.timer',
+                       'tarasec-manager-requests.timer', '--no-pager',
+                       '--property=Id,ActiveState,SubState,NextElapseUSecRealtime,LastTriggerUSec'],
+        }
+        return {key: run(argv, 10) for key, argv in commands.items()}
     if name == 'large_logs':
         return large_logs()
     if name == 'gateway_startup':

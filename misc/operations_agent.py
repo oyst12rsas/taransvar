@@ -13,11 +13,22 @@ import urllib.parse
 import urllib.error
 from operations_diagnostics import CATALOG, diagnose
 from operations_actions import validate_command, pressure, validate_resource, perform_resource, read_only_command
-from operations_prompt import build_prompt, validate_decision, progress_feedback
+from operations_prompt import build_prompt, validate_decision, progress_feedback, completed_check_feedback
 from operations_tools import gateway_tools, resolve_tool
 
 
 def save(path, value):
+    result = value.get('last_action_result')
+    if result:
+        history = value.setdefault('action_history', [])
+        fingerprint = hashlib.sha256(json.dumps(result, sort_keys=True).encode()).hexdigest()
+        if value.get('last_result_fingerprint') != fingerprint:
+            entry = dict(result, recorded_at=time.time(), boot_id=value.get('boot_id'))
+            if 'output' in entry:
+                entry['output'] = entry['output'][:2000]
+            history.append(entry)
+            del history[:-12]
+            value['last_result_fingerprint'] = fingerprint
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     temporary = path.with_suffix('.tmp')
     with temporary.open('w') as stream:
@@ -123,7 +134,7 @@ def model(policy, prompt):
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, *args, **kwargs):
             return None
-    with urllib.request.build_opener(NoRedirect).open(request, timeout=90) as response:
+    with urllib.request.build_opener(NoRedirect).open(request, timeout=max(30, min(180, int(policy.get("model_timeout_seconds", 180))))) as response:
         body = response.read(256001)
     if len(body) > 256000:
         raise ValueError('Model response too large')
@@ -251,6 +262,14 @@ def main():
         state['diagnostics'] = diagnostic_results
         save(path, state)
         for round_number in range(4):
+            # Diagnostics/model calls can outlive freshness; obtain a new sample
+            # for each decision and still recheck independently at dispatch.
+            observed = run([str(trusted(policy['quiet_probe']))], timeout=20)
+            snapshot['activity'] = json.loads(observed['output']) if observed['exit_code'] == 0 else {'complete': False}
+            state['activity'] = snapshot['activity']
+            snapshot['action_history'] = state.get('action_history', [])
+            snapshot['boot_id'] = state.get('boot_id')
+            save(path, state)
             prompt = build_prompt(instructions, policy, snapshot, diagnostic_results,
                 state.get('task_state', {}), available,
                 remaining_diagnostics(diagnostic_results, round_number))
@@ -276,7 +295,7 @@ def main():
                 state['summary'] = feedback
                 save(path, state)
                 return
-            feedback = progress_feedback(decision, policy, diagnostic_results, snapshot)
+            feedback = completed_check_feedback(decision, diagnostic_results, snapshot) or progress_feedback(decision, policy, diagnostic_results, snapshot)
             if feedback:
                 record({'model_progress_correction': feedback})
                 snapshot['worker_feedback'] = feedback

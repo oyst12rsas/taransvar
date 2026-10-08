@@ -307,3 +307,26 @@ quiet evidence and existing command guards. File identity changes invalidate the
 prior syntax result. No tools appear without owner demo authorization or evidence.
 A missing execute bit is the repair target, not a missing owner permission to inspect.
 Tool selection is not a claim of recovery: verify service and forwarding afterward.
+
+### Audi pilot lessons: progress and logging
+
+Use recorded action history and fresh observations to advance a task. An unchanged
+startup script that passed a syntax check on the current boot does not need another
+syntax check merely because the task continues. Refresh activity evidence between
+model rounds; the worker must independently refresh it immediately before mutation.
+History is evidence, never authorization. A service being active does not prove
+end-to-end forwarding works. Inactive oneshot services with active timers are normal;
+check results and timer history before declaring a failure.
+
+Use `logging_policy` to inspect effective journald drop-ins, journal allocation,
+rsyslog rotation rules and timers without reading credential files. Preserve MySQL
+and traffic records. Archive traffic to the configured SFTP destination, download
+and verify integrity and restored rows before deleting unchanged live rows. Audi
+has not yet been enrolled in that archival process. MySQL rebuild is postponed.
+
+Compress closed rotated logs only, never active writer files. `lsof` exit 1 with
+empty stdout and stderr indicates no matching open files; it is not a command
+failure in that specific check. Other errors require investigation. Use gzip
+without `--keep` to reclaim space, verify with `gzip -t`, and measure `df -B1 /`
+before and after. Retaining the original consumes space. Do not repeatedly force
+rotation. Set lasting, owner-permitted retention through validated configuration.

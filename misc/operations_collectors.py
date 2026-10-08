@@ -93,6 +93,6 @@ def main():
     parser=argparse.ArgumentParser();parser.add_argument('kind',choices=['demo','traffic']);args=parser.parse_args()
     try:sample=demo() if args.kind=='demo' else traffic()
     except (OSError,ValueError,KeyError):sample={'checked_at':time.time(),'complete':False}
-    print(json.dumps(sample))
+    print(json.dumps({key: value for key, value in sample.items() if key != 'rules'}))
 
 if __name__=='__main__':main()
