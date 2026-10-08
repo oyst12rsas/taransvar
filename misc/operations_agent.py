@@ -105,6 +105,12 @@ def run(argv, timeout=60):
 
 
 def model(policy, prompt):
+    provider = policy.get('model_provider', 'flowise')
+    if provider == 'openai':
+        from operations_model import direct_model
+        return direct_model(policy, prompt, trusted)
+    if provider != 'flowise':
+        raise ValueError('Unknown model provider')
     url = policy.get('model_url', '')
     parsed = urllib.parse.urlsplit(url)
     if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password:
@@ -128,7 +134,7 @@ def model(policy, prompt):
     return decision
 
 
-SAFE_ERRORS = frozenset({'Interrupted command requires owner reconciliation before more commands', 'Symlink log paths are prohibited', 'Assistance adapter not configured', 'Disposable log must be a regular file', 'Configure an HTTPS Flowise agent prediction URL without embedded credentials', 'Policy/procedure path must be root owned and not group/world writable', 'Experimental commands require explicit demo authorization', 'Invalid service name', 'Use the separately governed reboot action', 'Invalid or repeated diagnostic request', 'Resource action requires enabled owner policy and measured pressure', 'Service is not designated nonessential', 'Approved procedure changed', 'Disposable logs must be explicit paths under /var/log', 'Command must be a bounded argv array with an absolute executable', 'Log is not explicitly disposable', 'Log changed type', 'Task state must be an object', 'Model must return one JSON decision', 'Procedure lacks matching deployment-test evidence', 'Daily reboot limit reached', 'Unknown model action', 'Command requires reason, expected result and recovery plan', 'Local policy prohibits autonomous mutation', 'Unknown resource operation', 'Reboot disabled by local owner policy', 'Model response too large'})
+SAFE_ERRORS = frozenset({'Unknown model provider', 'Configure the direct OpenAI model name', 'Direct model response refused or incomplete', 'Direct OpenAI key is empty', 'Interrupted command requires owner reconciliation before more commands', 'Symlink log paths are prohibited', 'Assistance adapter not configured', 'Disposable log must be a regular file', 'Configure an HTTPS Flowise agent prediction URL without embedded credentials', 'Policy/procedure path must be root owned and not group/world writable', 'Experimental commands require explicit demo authorization', 'Invalid service name', 'Use the separately governed reboot action', 'Invalid or repeated diagnostic request', 'Resource action requires enabled owner policy and measured pressure', 'Service is not designated nonessential', 'Approved procedure changed', 'Disposable logs must be explicit paths under /var/log', 'Command must be a bounded argv array with an absolute executable', 'Log is not explicitly disposable', 'Log changed type', 'Task state must be an object', 'Model must return one JSON decision', 'Procedure lacks matching deployment-test evidence', 'Daily reboot limit reached', 'Unknown model action', 'Command requires reason, expected result and recovery plan', 'Local policy prohibits autonomous mutation', 'Unknown resource operation', 'Reboot disabled by local owner policy', 'Model response too large'})
 
 def safe_error(error):
     if type(error) is ValueError and str(error) in SAFE_ERRORS:

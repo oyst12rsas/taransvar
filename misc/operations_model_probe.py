@@ -8,6 +8,10 @@ from operations_prompt import build_prompt, validate_decision, progress_feedback
 
 def main():
     policy = json.loads(trusted('/etc/tarasec/operations-agent.json').read_text())
+    if '--direct' in sys.argv:
+        policy = json.loads(trusted('/etc/tarasec/operations-direct.json').read_text())
+        if policy.get('model_provider') != 'openai':
+            raise SystemExit('Direct probe requires explicitly configured OpenAI provider')
     if '--progression' in sys.argv:
         progression_probe(policy, quiet_verified="--quiet-verified" in sys.argv)
         return
