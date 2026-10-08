@@ -63,3 +63,17 @@ The first accepts a useful command or structured prerequisite; the second requir
 a command. PHP lint occurs before feed installation. Live DB queries, HTTPS routing,
 source-IP enrollment, active firewall counters and real model responses require
 verification on deployment; unit tests cannot establish those facts.
+
+
+## Existing NetBird-only HTTP deployment
+
+For dbserver1's existing port-80 deployment, configure the node with
+http://100.68.126.0/script/operationsActivity.php and --netbird-http. This is
+an explicit owner-local option, not an HTTPS downgrade or fallback. Each collection
+requires a literal IPv4 address in the overlay range and verifies `ip -j route get`
+selects wt0 before reading/sending the token. HTTP proxy environment is ignored and
+redirects are disabled. A missing or different route fails closed. HTTPS remains the
+default for other deployments. Source-IP token binding on the feed remains unchanged.
+Transfer the root-only generated key using the configured admin SSH port; do not use
+a honeypot port or copy secrets into chat. Remove any temporary user-readable transfer
+copy after successful installation on Audi.

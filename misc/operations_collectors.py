@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Root-local activity collectors. Missing telemetry is never quiet evidence."""
 import argparse
+import ipaddress
+import urllib.parse
 import json
 from pathlib import Path
 import re
@@ -51,16 +53,32 @@ def traffic():
     return sample
 
 
+
+def validate_feed_url(cfg, runner):
+    url=urllib.parse.urlsplit(cfg['demo_url'])
+    if not url.hostname or url.username or url.password or url.fragment:
+        raise ValueError('Invalid demo feed URL')
+    if url.scheme=='https':return
+    if url.scheme!='http' or cfg.get('allow_netbird_http') is not True:
+        raise ValueError('HTTPS or explicit NetBird HTTP required')
+    address=ipaddress.ip_address(url.hostname)
+    if address not in ipaddress.ip_network('100.64.0.0/10'):
+        raise ValueError('NetBird feed requires literal overlay IPv4 address')
+    result=runner(['/usr/sbin/ip','-j','route','get',str(address)],3)
+    routes=json.loads(result['output']) if result['exit_code']==0 else []
+    if len(routes)!=1 or routes[0].get('dev')!='wt0':
+        raise ValueError('NetBird feed route not verified')
+
+
 def demo():
     cfg=json.loads(trusted('/etc/tarasec/operations-activity.json').read_text())
     url=cfg['demo_url']
-    if not url.startswith('https://'):
-        raise ValueError('HTTPS demo feed required')
+    validate_feed_url(cfg,run)
     token=trusted(cfg['demo_key_file']).read_text().strip()
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self,*args,**kwargs):return None
     req=urllib.request.Request(url,headers={'X-TaraSec-Operations-Token':token})
-    with urllib.request.build_opener(NoRedirect).open(req,timeout=4) as response:
+    with urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect).open(req,timeout=4) as response:
         raw=response.read(8193)
     if len(raw)>8192:raise ValueError('Oversized demo feed')
     sample=json.loads(raw)

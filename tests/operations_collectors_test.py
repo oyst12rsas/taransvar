@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).parents[1]/'misc'))
 import unittest
-from operations_collectors import forward_total,traffic_sample
+from operations_collectors import forward_total,traffic_sample,validate_feed_url
 from operations_actions import read_only_command
 
 class CollectorTest(unittest.TestCase):
@@ -28,5 +28,14 @@ class CollectorTest(unittest.TestCase):
         for argv in (['/usr/bin/bash','/example'],['/bin/chmod','u+x','/example'],['/usr/bin/bash','-n','/different'],['/usr/bin/bash','-c','anything']):
             self.assertFalse(read_only_command(argv,results))
         self.assertFalse(read_only_command(['/usr/bin/bash','-n','/example'],{}))
+
+    def test_netbird_http_requires_explicit_flag_and_overlay_route(self):
+        import json
+        cfg=dict(demo_url='http://100.68.126.0/script/operationsActivity.php',allow_netbird_http=True)
+        runner=lambda argv,timeout:dict(exit_code=0,output=json.dumps([dict(dev='wt0')]))
+        validate_feed_url(cfg,runner)
+        for change in (dict(allow_netbird_http=False),dict(demo_url='http://example.org/feed'),dict(demo_url='http://192.168.122.7/feed')):
+            with self.assertRaises(ValueError):validate_feed_url(dict(cfg,**change),runner)
+        with self.assertRaises(ValueError):validate_feed_url(cfg,lambda argv,t:dict(exit_code=0,output='[{"dev":"enp1s0"}]'))
 
 if __name__=='__main__':unittest.main()
