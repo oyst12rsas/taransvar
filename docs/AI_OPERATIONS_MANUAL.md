@@ -330,3 +330,11 @@ failure in that specific check. Other errors require investigation. Use gzip
 without `--keep` to reclaim space, verify with `gzip -t`, and measure `df -B1 /`
 before and after. Retaining the original consumes space. Do not repeatedly force
 rotation. Set lasting, owner-permitted retention through validated configuration.
+
+The demo-only journal_configure_limit tool is offered for a retention task when
+successful effective-config evidence shows no explicit SystemMaxUse. It installs
+1G SystemMaxUse, 2G SystemKeepFree and compression in a dedicated drop-in, preserves
+any differing existing drop-in, and restarts journald. Normal journald enforcement
+can expire archived entries to meet the bound; no separate vacuum is requested.
+Verify effective settings and logger health afterward. SFTP enrollment does not
+block this task. Production and inspection mode do not expose this tool.

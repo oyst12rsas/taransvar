@@ -40,3 +40,25 @@ class ProgressTests(unittest.TestCase):
         diagnose('logging_policy', lambda argv, timeout: calls.append(argv) or {'exit_code': 0, 'output': ''})
         self.assertEqual(len(calls), 4)
         self.assertFalse(any('/etc/tarasec' in argument for argv in calls for argument in argv))
+
+    def test_journal_tool_requires_demo_policy_task_and_missing_limit(self):
+        from operations_tools import gateway_tools
+        from operations_prompt import progress_feedback
+        policy = dict(mode='demo', execute=True, allow_experimental_commands=True, task='Inspect log retention')
+        result = {'logging_policy': {'result': {'journald_effective': {'exit_code': 0, 'output': '#SystemMaxUse=\n'}}}}
+        self.assertIn('journal_configure_limit', gateway_tools(policy, result, {}))
+        self.assertTrue(progress_feedback({'action': 'report', 'task_state': {}}, policy, result, {}))
+        policy['mode'] = 'production'
+        self.assertNotIn('journal_configure_limit', gateway_tools(policy, result, {}))
+        policy['mode'] = 'demo'
+        result['logging_policy']['result']['journald_effective']['output'] = 'SystemMaxUse=2G'
+        self.assertNotIn('journal_configure_limit', gateway_tools(policy, result, {}))
+
+    def test_journal_dropin_preserves_owner_config_and_is_idempotent(self):
+        from configure_operations_journal import install_limit
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertTrue(install_limit(directory))
+            self.assertFalse(install_limit(directory))
+            (Path(directory) / '60-tarasec-operations.conf').write_text('owner setting')
+            with self.assertRaises(ValueError):
+                install_limit(directory)

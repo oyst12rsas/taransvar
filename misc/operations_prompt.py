@@ -126,6 +126,13 @@ def progress_feedback(decision, policy, results, snapshot=None):
             or policy.get('execute') is not True
             or policy.get('allow_experimental_commands') is not True):
         return None
+    if 'journal_configure_limit' in gateway_tools(policy, results, snapshot or {}):
+        return ('Current demo policy already permits the available journal_configure_limit tool. '
+                'SFTP enrollment is a separate prerequisite for traffic archival, not journal retention. '
+                'Choose this fixed tool to advance the requested retention task, or identify a '
+                'specific contradictory observation. Dispatch independently checks quiet time. '
+                'Inactive oneshot services with active timers do not require enabling or restarting '
+                'merely because they are between runs. No explicit vacuum or MySQL change is included.')
     properties = results.get('gateway_startup', {}).get('result', {}).get('properties', {})
     executable = properties.get('executable', {})
     state = decision['task_state']

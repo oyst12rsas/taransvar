@@ -9,3 +9,8 @@ Operations timer remains disabled pending reliable progression. Flowise live
 short-query branch patch still needs a managed image/deployment implementation;
 container recreation can lose it. Private DB TLS renewal automation and demo
 session lifecycle cleanup remain outstanding. Do not claim these are completed.
+
+13:09 Oslo: cached diagnostics advanced but model reported invented SFTP/oneshot
+approval dependencies. Added guarded demo journal_configure_limit fixed tool and
+report correction, with policy/evidence and owner-file-preservation tests. 82 tests
+pass. Actual Audi execution and post-change logger health remain unverified.

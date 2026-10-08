@@ -1,7 +1,7 @@
 """Evidence-backed gateway tools. Fixed commands, existing owner/quiet guards."""
 
 
-def gateway_tools(policy, results, snapshot):
+def _gateway_tools(policy, results, snapshot):
     if (policy.get('mode')!='demo' or policy.get('execute') is not True
         or policy.get('allow_experimental_commands') is not True):
         return {}
@@ -36,3 +36,21 @@ def resolve_tool(decision, catalog):
     tool=catalog[name]
     return dict(action='command',reason=decision['reason'],task_state=decision['task_state'],
         argv=tool['argv'],expected_result=tool['expected_result'],recovery_plan=tool['recovery_plan'])
+
+
+def gateway_tools(policy, results, snapshot):
+    tools = _gateway_tools(policy, results, snapshot)
+    if (policy.get('mode') != 'demo' or policy.get('execute') is not True
+            or policy.get('allow_experimental_commands') is not True
+            or 'retention' not in str(policy.get('task', '')).lower()):
+        return tools
+    evidence = results.get('logging_policy', {}).get('result', {}).get('journald_effective', {})
+    text = evidence.get('output', '')
+    explicit_limit = any(line.strip().startswith('SystemMaxUse=') for line in text.splitlines())
+    if evidence.get('exit_code') == 0 and not explicit_limit:
+        tools['journal_configure_limit'] = dict(
+            argv=['/usr/bin/python3', '/usr/local/lib/tarasec-operations/configure_operations_journal.py'],
+            requires_quiet=True,
+            expected_result='Install 1G journal bound with 2G keep-free, restart journald, display effective config. Verify logging health next run; no explicit vacuum or DB changes.',
+            recovery_plan='Remove only the newly created 60-tarasec-operations.conf drop-in and restart journald if needed. Existing differing owner configuration is preserved.')
+    return tools
