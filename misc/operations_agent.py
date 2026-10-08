@@ -10,6 +10,7 @@ import subprocess
 import time
 import urllib.request
 import urllib.parse
+import urllib.error
 from operations_diagnostics import CATALOG, diagnose
 from operations_actions import validate_command, pressure, validate_resource, perform_resource
 
@@ -126,6 +127,18 @@ def model(policy, prompt):
     return decision
 
 
+SAFE_ERRORS = frozenset({'Interrupted command requires owner reconciliation before more commands', 'Symlink log paths are prohibited', 'Assistance adapter not configured', 'Disposable log must be a regular file', 'Configure an HTTPS Flowise agent prediction URL without embedded credentials', 'Policy/procedure path must be root owned and not group/world writable', 'Experimental commands require explicit demo authorization', 'Invalid service name', 'Use the separately governed reboot action', 'Invalid or repeated diagnostic request', 'Resource action requires enabled owner policy and measured pressure', 'Service is not designated nonessential', 'Approved procedure changed', 'Disposable logs must be explicit paths under /var/log', 'Command must be a bounded argv array with an absolute executable', 'Log is not explicitly disposable', 'Log changed type', 'Task state must be an object', 'Model must return one JSON decision', 'Procedure lacks matching deployment-test evidence', 'Daily reboot limit reached', 'Unknown model action', 'Command requires reason, expected result and recovery plan', 'Local policy prohibits autonomous mutation', 'Unknown resource operation', 'Reboot disabled by local owner policy', 'Model response too large'})
+
+def safe_error(error):
+    if type(error) is ValueError and str(error) in SAFE_ERRORS:
+        return str(error)
+    if isinstance(error, json.JSONDecodeError):
+        return "Model or local JSON could not be parsed; inspect format without sharing credentials"
+    if isinstance(error, urllib.error.HTTPError):
+        return "Model endpoint returned HTTP " + str(error.code)
+    return "Unclassified " + type(error).__name__ + "; inspect local prerequisites"
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', default='/etc/tarasec/operations-agent.json')
@@ -151,6 +164,8 @@ def main():
         state.pop('reboot_pending', None)
     state['checked_at'] = now
     state['status'] = 'inspecting'
+    for field in ('error_type', 'error_detail', 'summary', 'diagnostics'):
+        state.pop(field, None)
     save(path, state)
 
     def record(event):
@@ -334,9 +349,11 @@ def main():
         # Do not log HTTP payloads, auth headers or configuration secrets.
         state['status'] = 'blocked'
         state['error_type'] = type(error).__name__
-        record({'blocked': type(error).__name__})
+        state['error_detail'] = safe_error(error)
+        state['summary'] = 'Blocked: ' + state['error_detail']
+        record({'blocked': type(error).__name__, 'detail': state['error_detail']})
         save(path, state)
-        raise SystemExit('Operations agent blocked; inspect local state and prerequisites')
+        raise SystemExit('Operations agent blocked: ' + state['error_detail'])
 
 
 if __name__ == '__main__':

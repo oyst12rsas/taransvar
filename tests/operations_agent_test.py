@@ -79,5 +79,12 @@ class CommandCaptureTests(unittest.TestCase):
         self.assertEqual(result['exit_code'], 124)
 
 
+class ErrorReportTest(unittest.TestCase):
+    def test_static_policy_error_is_visible(self):
+        self.assertEqual(agent.safe_error(ValueError('Unknown model action')), 'Unknown model action')
+    def test_arbitrary_exception_text_is_private(self):
+        self.assertNotIn('SECRET', agent.safe_error(ValueError('SECRET')))
+        self.assertNotIn('SECRET', agent.safe_error(RuntimeError('SECRET')))
+
 if __name__ == '__main__':
     unittest.main()
