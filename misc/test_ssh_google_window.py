@@ -4,6 +4,19 @@ from unittest.mock import patch
 import ssh_google_window as w
 
 class Windows(unittest.TestCase):
+    def test_tcp_reset_requires_explicit_tcp_in_each_chain(self):
+        calls = []
+        def command(*args, **kwargs):
+            calls.append(args)
+            if "--reject-with" in args and "tcp-reset" in args:
+                if "-p" not in args or args[args.index("-p") + 1] != "tcp":
+                    raise RuntimeError("TCP reset requires TCP protocol")
+            return "-C" not in args
+        with patch.object(w, "command", side_effect=command):
+            w.apply_rules(5822, [], 0)
+        rejects = [a for a in calls if "-A" in a and w.CHAIN in a and "REJECT" in a]
+        self.assertEqual({a[0] for a in rejects}, {"iptables", "ip6tables"})
+
     def test_expired_and_long_windows_refused_without_firewall_mutation(self):
         with patch.object(w, "configuration", return_value=(5822, [])), patch.object(w.time, "time", return_value=1000), patch.object(w, "apply_rules") as apply:
             for until in (999, 1000, 1901):
@@ -76,3 +89,4 @@ class Windows(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

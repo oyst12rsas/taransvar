@@ -43,7 +43,7 @@ def configuration(require_enabled=True):
 def command(*args, check=True):
     result = subprocess.run(args, capture_output=True, text=True, timeout=15)
     if check and result.returncode:
-        raise RuntimeError("SSH firewall operation failed: " + args[0])
+        raise RuntimeError("SSH firewall operation failed: " + args[0] + ": " + result.stderr.strip()[:500])
     return result.returncode == 0
 
 def read_state():
@@ -84,7 +84,7 @@ def apply_rules(port, sources, until):
             for source in sources:
                 if source.version == version:
                     command(tool, "-w", "5", "-A", CHAIN, "-s", str(source), "-j", "RETURN")
-        command(tool, "-w", "5", "-A", CHAIN, "-j", "REJECT", "--reject-with", "tcp-reset")
+        command(tool, "-w", "5", "-A", CHAIN, "-p", "tcp", "-j", "REJECT", "--reject-with", "tcp-reset")
         jump = ["-p", "tcp", "--dport", str(port), "-m", "conntrack",
                 "--ctstate", "NEW", "-j", CHAIN]
         # Remove the old hook and reinsert ahead of broad VPN ACCEPT rules.
@@ -156,3 +156,4 @@ def main():
             raise ValueError("Expected reconcile, open ID DEADLINE, or close ID")
 if __name__ == "__main__":
     main()
+
