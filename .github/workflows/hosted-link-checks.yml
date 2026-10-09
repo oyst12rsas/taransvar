@@ -30,8 +30,9 @@ jobs:
           php -l misc/manager_ssh_worker.php
           php -n misc/test_manager_ssh.php
           php misc/test_manager_ssh.php --database
-          bash -n misc/setup_manager_ssh.sh misc/test_manager_ssh_kernel.sh
+          bash -n misc/setup_manager_ssh.sh misc/manager_ssh_rollback.sh misc/test_manager_ssh_kernel.sh misc/test_manager_ssh_gate_kernel.sh
           sudo unshare --net bash misc/test_manager_ssh_kernel.sh
+          sudo unshare --net bash misc/test_manager_ssh_gate_kernel.sh
           php misc/test_hosted_unit_link.php
           php misc/test_gateway_app_link.php
           php misc/test_gateway_app_hosted.php

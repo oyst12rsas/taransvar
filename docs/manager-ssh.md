@@ -44,6 +44,41 @@ opening state. State older than 30 seconds is unavailable. The worker's database
 configuration is root-only. No changes to the old `sshControl.php` endpoint are
 made; that endpoint is a separate owner-configured legacy interface.
 
+## Enforcing the timed gate (existing installations)
+
+The original installation added a temporary allowance while leaving the permanent
+SSH ACCEPT path intact. This was not a closed-by-default gate: a permitted source
+could still reach the baseline ACCEPT rule with no active app window.
+
+The correction is an explicit `setup_manager_ssh.sh --enforce-gate` upgrade. Before
+running it, use the app to request a five-minute opening and wait for confirmation.
+The installer checks both the active kernel lease (at least 60 seconds remain)
+and its latest applied, still-authorized manager request before changing access.
+It retains the current SSH authentication settings and backs up the old worker.
+
+The gate is reached for every connection to the configured IPv4 SSH port, before
+`TARASEC_SSH_SOURCE` or the permanent ACCEPT rule. Its order is loopback,
+established/related sessions, explicitly configured recovery sources, configured
+allowed sources with an active kernel lease, then a final REJECT. Ordinary allowed
+sources cannot fall through to permanent ACCEPT after expiry. Earlier global
+security drops remain ahead of the gate. The existing source list is not rewritten.
+The gate is rebuilt by the worker after a normal firewall refresh. IPv6 new remote
+SSH is rejected because this version supports only IPv4 configured sources;
+IPv6 loopback and established sessions remain available.
+
+A ten-minute rollback timer is installed before enabling the gate. If acceptance
+is not confirmed, it stops the worker, removes only the owned IPv4/IPv6 gate
+rules and restores the pre-existing SSH path. It also runs after reboot unless
+confirmed. Keep the original terminal, test a new login during an opening, end the
+opening, verify a new connection is refused, then reopen from the app and verify
+a new login. After those checks run `setup_manager_ssh.sh --confirm-gate` to stop
+and disable the rollback timer. This is an operator verification step, not an
+additional authorization request.
+
+Manual rollback is available at
+`sudo bash /usr/local/share/tarasec/manager-ssh/misc/manager_ssh_rollback.sh`.
+Public status includes `gateEnforced`; no app rebuild is required for the upgrade.
+
 ## Status and limitations
 
 The SSH tab offers 5, 10 and 15 minute controls, a countdown, queued/rejected
@@ -53,10 +88,10 @@ use in an external SSH client. SSH login credentials are still required.
 
 Expiry does not depend on the app or worker staying alive. A worker failure can
 delay processing or revocation but cannot extend an already accepted kernel
-lease. Existing baseline/recovery rules may independently permit SSH after a
-temporary lease expires. Expiry removes the allowance; existing connections
-remain subject to the owner's conntrack and firewall rules. This feature does
-not change those rules, restart sshd, widen configured sources, or close recovery.
+lease. With the gate enforced, ordinary allowed sources require an active window
+for a new connection. Explicit recovery sources and established sessions remain
+available after expiry. Without gate enforcement the legacy baseline may still
+permit SSH. The worker does not restart sshd or alter SSH login credentials.
 If changing the configured SSH port, end all temporary windows and flush the
 temporary set before changing the node's authoritative configuration.
 
@@ -70,18 +105,17 @@ denied under the baseline policy. End the temporary opening and inspect the set.
 Repeat a five-minute opening, stop the worker, and verify the set entry expires
 without it. Verify actual new SSH connections after expiry, not only the label.
 Live acceptance on wt-qw1 is pending; CI checks authorization, SQL queue behavior
-and kernel port timeout and configured-source isolation in a disposable network namespace.
+and production gate enforcement in a disposable network namespace, including the
+actual permanent ACCEPT bypass, established sessions, explicit recovery, expiry,
+reopening, IPv6 isolation and rollback.
 
 To disable the optional feature without changing baseline or recovery policy:
 
 ```sh
-sudo rm -f /etc/tarasec/manager-ssh.enabled
-sudo systemctl disable --now tarasec-manager-ssh.timer
-sudo systemctl stop tarasec-manager-ssh.service
-sudo ipset flush tarasec_app_ssh
+sudo bash /usr/local/share/tarasec/manager-ssh/misc/manager_ssh_rollback.sh
 ```
 
-An empty set grants no access. Restore backed-up web endpoints/service files if
+The rollback removes only the owned gate rules. Restore backed-up web endpoints/service files if
 needed. Do not flush INPUT or replace the owner's firewall to undo this feature.
 Baseline review: https://tarasec.org/safety/#deployment and
 https://tarasec.org/safety/#hardening-priorities.

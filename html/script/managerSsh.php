@@ -44,5 +44,5 @@ try {
     $remaining=max(0,(int)($state['remainingSeconds'] ?? 0)-max(0,time()-(int)($state['updated'] ?? 0)));
     $db->close();
     sshReply(200,['ok'=>true,'enabled'=>$enabled,'error'=>$enabled ? null : ($state['error'] ?? 'ssh_disabled_by_owner'),
-        'port'=>$state['port'] ?? null,'sourceIp'=>$source,'remainingSeconds'=>$remaining,'listener'=>$state['listener'] ?? false,'latestRequest'=>$latest,'csrf'=>$_SESSION['manager_ssh_csrf']]);
+        'port'=>$state['port'] ?? null,'sourceIp'=>$source,'remainingSeconds'=>$remaining,'listener'=>$state['listener'] ?? false,'gateEnforced'=>$state['gateEnforced'] ?? false,'latestRequest'=>$latest,'csrf'=>$_SESSION['manager_ssh_csrf']]);
 } catch (Throwable $e) { error_log('Manager SSH API unavailable'); sshReply(503,['ok'=>false,'error'=>'manager_ssh_unavailable']); }
