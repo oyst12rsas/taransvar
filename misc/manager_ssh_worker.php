@@ -9,7 +9,7 @@ function sshRun(array $args, bool $allowFailure=false): string {
     if (!is_resource($p)) throw new RuntimeException('Cannot execute firewall command');
     fclose($pipes[0]); $out=stream_get_contents($pipes[1]); fclose($pipes[1]);
     $err=stream_get_contents($pipes[2]); fclose($pipes[2]); $code=proc_close($p);
-    if ($code!==0 && !$allowFailure) throw new RuntimeException('Firewall command failed: '.$args[0]);
+    if ($code!==0 && !$allowFailure) throw new RuntimeException('Firewall command failed: '.$args[0].': '.trim(substr($err,0,400)));
     return $code===0 ? $out : '';
 }
 function sshReadConfig(string $path): array {
@@ -48,7 +48,7 @@ function sshGateRules(array $cfg, bool $enforced): array {
         if ($enforced) $args=array_merge($args,['-m','set','--match-set',TARA_SSH_SET,'dst']);
         $rules[]=array_merge($args,['-j','ACCEPT']);
     }
-    if ($enforced) $rules[]=['-j','REJECT','--reject-with','tcp-reset'];
+    if ($enforced) $rules[]=['-p','tcp','-j','REJECT','--reject-with','tcp-reset'];
     return $rules;
 }
 function sshRemoveOwnedJumps(string $rules, string $binary='/usr/sbin/iptables'): void {
@@ -69,11 +69,13 @@ function sshInstallGate(array $cfg, int $port, bool $enforced): void {
         // temporary chain keeps new connections denied throughout reconstruction.
         $guard='TARASEC_APP_SSH_GUARD';
         sshRun(['/usr/sbin/iptables','-w','5','-N',$guard],true);
-        $guardExpected='-N '.$guard."\n-A ".$guard.' -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT'."\n-A ".$guard.' -j REJECT --reject-with tcp-reset';
+        $guardRules=array_values(array_filter($sourceRules,fn($args)=>!in_array('--match-set',$args,true)));
+        if (!$enforced) $guardRules=[['-m','conntrack','--ctstate','RELATED,ESTABLISHED','-j','ACCEPT'],['-p','tcp','-j','REJECT','--reject-with','tcp-reset']];
+        $guardExpected='-N '.$guard;
+        foreach ($guardRules as $args) $guardExpected.="\n-A ".$guard.' '.implode(' ',$args);
         if (trim(sshRun(['/usr/sbin/iptables','-w','5','-S',$guard]))!==$guardExpected) {
             sshRun(['/usr/sbin/iptables','-w','5','-F',$guard]);
-            sshRun(['/usr/sbin/iptables','-w','5','-A',$guard,'-m','conntrack','--ctstate','RELATED,ESTABLISHED','-j','ACCEPT']);
-            sshRun(['/usr/sbin/iptables','-w','5','-A',$guard,'-j','REJECT','--reject-with','tcp-reset']);
+            foreach ($guardRules as $args) sshRun(array_merge(['/usr/sbin/iptables','-w','5','-A',$guard],$args));
         }
         $before=sshRun(['/usr/sbin/iptables','-w','5','-S',$chain]);
         if ($enforced && !str_contains($before,'-A '.$chain.' -j '.$guard)) sshRun(['/usr/sbin/iptables','-w','5','-I',$chain,'1','-j',$guard]);
@@ -84,7 +86,7 @@ function sshInstallGate(array $cfg, int $port, bool $enforced): void {
             $args=str_getcsv($line,' ','"','\\'); $args[0]='-D'; sshRun(array_merge(['/usr/sbin/iptables','-w','5'],$args));
         }
         foreach ($sourceRules as $args) sshRun(array_merge(['/usr/sbin/iptables','-w','5','-A',$chain],$args));
-        if ($enforced) sshRun(['/usr/sbin/iptables','-w','5','-D',$chain,'-j',$guard]);
+        if ($enforced || str_contains($before,'-A '.$chain.' -j '.$guard)) sshRun(['/usr/sbin/iptables','-w','5','-D',$chain,'-j',$guard]);
     }
     $rule=['-p','tcp','-m','tcp','--dport',(string)$port];
     if (!$enforced) $rule=array_merge($rule,['-m','set','--match-set',TARA_SSH_SET,'dst']);

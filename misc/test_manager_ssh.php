@@ -12,7 +12,7 @@ foreach ([['active'=>0],['rejectedTime'=>gmdate('c')],['expires'=>gmdate('c',tim
 sshExpect(sshRequestValid(array_replace($row,['action'=>'close','seconds'=>0])),'Authorized close');
 sshExpect(sshAllowedSources(['SSH_ALLOWED_SOURCES'=>'10.100.0.150, 100.68.2.6/16'])===['10.100.0.150/32','100.68.0.0/16'],'Preserve and normalize configured source restrictions');
 sshExpect(sshAllowedSources([])===[],'Empty source policy retains existing unrestricted semantics');
-sshExpect(in_array(['-j','REJECT','--reject-with','tcp-reset'],sshGateRules(['SSH_ALLOWED_SOURCES'=>'100.68.10.7'],true),true),'Enforced gate has a final reject instead of falling through to permanent ACCEPT');
+sshExpect(in_array(['-p','tcp','-j','REJECT','--reject-with','tcp-reset'],sshGateRules(['SSH_ALLOWED_SOURCES'=>'100.68.10.7'],true),true),'Enforced gate has a final reject instead of falling through to permanent ACCEPT');
 sshExpect(in_array(['-s','100.68.10.7/32','-m','set','--match-set',TARA_SSH_SET,'dst','-j','ACCEPT'],sshGateRules(['SSH_ALLOWED_SOURCES'=>'100.68.10.7'],true),true),'Configured sources still require an active timed lease');
 try { sshAllowedSources(['SSH_ALLOWED_SOURCES'=>'bad-value']); throw new RuntimeException('Invalid source ignored'); } catch (RuntimeException $e) { sshExpect($e->getMessage()==='Unsupported SSH_ALLOWED_SOURCES entry','Reject invalid source policy'); }
 $rules="-P INPUT DROP\n-A INPUT -s 203.0.113.5 -j DROP\n-A INPUT -s 10.100.0.2 -p tcp -m tcp --dport 5822 -j DROP\n-A INPUT -p tcp -m tcp --dport 5822 -m limit --limit 5/min -j LOG --log-prefix TARASEC_SSH_DISABLED_node\n-A INPUT -p tcp -m tcp --dport 5822 -j REJECT --reject-with tcp-reset\n";
