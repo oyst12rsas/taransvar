@@ -133,6 +133,43 @@ def assessment(evidence, concerns, terminal, attack, actions):
     }
 
 
+
+def timed_ssh_access_status():
+    """Report observed enforcement without publishing ports or source addresses."""
+    if not enabled("SSH_GOOGLE_REOPEN_ENABLED"):
+        return {"enabled": False, "state": "disabled"}
+    result = {"enabled": True, "state": "unverified", "ipv4": "unverified", "ipv6": "unverified"}
+    try:
+        import ssh_google_window as window
+        port, sources = window.configuration()
+        state = window.read_state()
+        until = int(state.get("until", 0))
+        for tool, version, label in (("iptables", 4, "ipv4"), ("ip6tables", 6, "ipv6")):
+            inputs = run(tool, "-w", "5", "-S", "INPUT")
+            chain = run(tool, "-w", "5", "-S", window.CHAIN)
+            if inputs.returncode or chain.returncode:
+                continue
+            hooks = [line for line in inputs.stdout.splitlines() if line.startswith("-A INPUT ")]
+            if not hooks or ("--dport " + str(port) + " ") not in hooks[0] or not hooks[0].endswith("-j " + window.CHAIN):
+                continue
+            rules = [line for line in chain.stdout.splitlines() if line.startswith("-A ")]
+            reject = "-A " + window.CHAIN + " -p tcp -j REJECT --reject-with tcp-reset"
+            allowed = ["-A " + window.CHAIN + " -s " + str(source) + " -j RETURN"
+                       for source in sources if source.version == version]
+            if rules == [reject]:
+                result[label] = "closed"
+            elif until > time.time() and allowed and rules == allowed + [reject]:
+                result[label] = "open"
+        if result["ipv4"] == result["ipv6"] == "closed":
+            result["state"] = "closed"
+        elif "unverified" not in (result["ipv4"], result["ipv6"]) and "open" in (result["ipv4"], result["ipv6"]):
+            result["state"] = "open"
+            result["expires_at"] = until
+        return result
+    except (OSError, ValueError, RuntimeError, ImportError, subprocess.SubprocessError):
+        return result
+
+
 def status_snapshot(evidence, concerns, terminal, attack, actions, pending, remote):
     """Bounded local status for the node's normal minute report, with no secrets."""
     fields = evidence["tarasecfw_selected_fields"]
@@ -166,6 +203,7 @@ def status_snapshot(evidence, concerns, terminal, attack, actions, pending, remo
                     "Operator review needed" if messages else "No findings in bounded checks"),
         "pending_operator_messages": messages,
         "ssh_protection": ssh,
+        "ssh_access": timed_ssh_access_status(),
         "ssh_attack_ongoing": bool(attack["ongoing"]),
         "recovery_console_verified": bool(terminal["verified"]),
         "forwarding": forwarding_health(evidence),
