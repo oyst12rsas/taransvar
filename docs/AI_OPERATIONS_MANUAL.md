@@ -437,3 +437,12 @@ only those owner-listed actions and remeasures pressure. It records attempts and
 results, with a 15-minute cooldown. No default mass deletion, database changes or
 service stops are introduced. Existing logrotate/journal bounds remain the first
 routine resource-management layer.
+
+### One systemd coordinator
+
+For owner-authorized consolidation of minute cron and agent timers, use
+[NODE_COORDINATOR.md](NODE_COORDINATOR.md). The coordinator schedules bounded
+helpers independently, polls approved SSH openings every five seconds, and
+retains separate automatic expiry and activity observation. Migration preserves
+the existing reporter and records recovery scheduling. Verify fresh central
+receipt and helper health before claiming completion.

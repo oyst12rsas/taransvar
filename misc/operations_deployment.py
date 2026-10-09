@@ -10,7 +10,8 @@ import time
 UNITS = ('tarasec-agent-approvals.service', 'tarasec-agent-approvals.timer',
          'tarasec-operations-agent.service', 'tarasec-operations-agent.timer',
          'tarasec-operations-activity.service', 'tarasec-gateway-ai.timer',
-         'tarasec-manager-requests.timer')
+         'tarasec-manager-requests.timer', 'tarasec-node-coordinator.service',
+         'tarasec-minute-reporter.service')
 
 def file_metadata(path):
     try:
@@ -39,6 +40,18 @@ def deployment_inventory(run, root=Path('/'), now=None):
                 if '..' not in Path(path).parts and path not in reporters:
                     reporters.append(path)
     cron_complete = cron['exit_code'] == 0
+    coordinator_configured = False
+    config = local('/etc/tarasec/node-coordinator.json')
+    meta = file_metadata(config)
+    if meta.get('regular_file') and meta['bytes'] <= 4096:
+        try:
+            path = json.loads(config.read_text()).get('reporter', '')
+            if isinstance(path, str) and re.fullmatch(r'/(?:root|home)/[A-Za-z0-9_./-]+/crontasks\.pl', path) and '..' not in Path(path).parts:
+                coordinator_configured = True
+                if path not in reporters:
+                    reporters.append(path)
+        except (ValueError, OSError, AttributeError):
+            pass
     reporters = reporters[:8]
     manifest = {}
     manifest_path = local('/usr/local/lib/tarasec-operations/deployment-reference.json')
@@ -100,7 +113,10 @@ def deployment_inventory(run, root=Path('/'), now=None):
             findings.append(name + '_missing')
     if not files['security_enrollment']['nonempty_regular_file']:
         findings.append('security_enrollment_missing_or_unverified')
-    for name in ('tarasec-agent-approvals.timer', 'tarasec-operations-agent.timer'):
+    coordinator_active = units['tarasec-node-coordinator.service'].get('ActiveState') == 'active'
+    if coordinator_configured and not coordinator_active:
+        findings.append('tarasec-node-coordinator.service_not_active')
+    for name in (() if coordinator_active else ('tarasec-agent-approvals.timer', 'tarasec-operations-agent.timer')):
         if units[name].get('query_exit_code') != 0:
             findings.append(name + '_state_unknown')
         elif units[name].get('LoadState') == 'not-found':

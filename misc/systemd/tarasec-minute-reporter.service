@@ -1,0 +1,9 @@
+[Unit]
+Description=TaraSec existing minute reporter
+After=network-online.target
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/bin/python3 /usr/local/lib/tarasec/coordinator_reporter.py
+TimeoutStartSec=110
+KillMode=control-group
