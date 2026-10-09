@@ -21,7 +21,7 @@ The PHP web server does not read `/etc/tarasec` or execute privileged commands.
 `managerSsh.php` requires an active manager session, rechecks the approval row
 and expiry, requires a session CSRF token for POST, and queues only open/close
 requests. It records the requester from REMOTE_ADDR for audit, never a supplied address
-or forwarded header. This requester is not used as a new SSH source restriction: 
+or forwarded header. This requester is not used as a new SSH source restriction:
 the app replaces the web opening action, and SSH can then be used from a computer
 permitted by the existing conf policy. The temporary firewall rule is IPv4.
 
@@ -56,7 +56,7 @@ delay processing or revocation but cannot extend an already accepted kernel
 lease. Existing baseline/recovery rules may independently permit SSH after a
 temporary lease expires. Expiry removes the allowance; existing connections
 remain subject to the owner's conntrack and firewall rules. This feature does
-not change those rules, restart sshd, open Internet-wide SSH, or close recovery.
+not change those rules, restart sshd, widen configured sources, or close recovery.
 If changing the configured SSH port, end all temporary windows and flush the
 temporary set before changing the node's authoritative configuration.
 

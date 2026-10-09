@@ -129,6 +129,11 @@ if (realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? ''))===__FILE__) {
         $db->close();
     } catch (Throwable $e) {
         error_log('Manager SSH worker: '.$e->getMessage());
+        // An invalid owner policy or failed application cancels temporary access.
+        // Never leave an older source list granting access after a failed refresh.
+        if (!in_array('--check',$argv,true)) {
+            try { sshRun(['/usr/sbin/ipset','flush',TARA_SSH_SET]); } catch (Throwable $ignored) {}
+        }
         if (!in_array('--check',$argv,true) && is_dir(dirname(TARA_SSH_STATUS))) sshPublish(['enabled'=>false,'error'=>'ssh_worker_unavailable','remainingSeconds'=>0]);
         exit(1);
     }
