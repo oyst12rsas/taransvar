@@ -100,6 +100,8 @@ try {
         'local' => $local,
         'sites' => $sites,
         'activeUnits' => $units,
+        // Observed TCP peer, never a caller-supplied forwarded/client address.
+        'requestSourceIp' => (string)($_SERVER['REMOTE_ADDR'] ?? ''),
         'sshLogins' => $sshLogins,
         'server_time' => gmdate('c')
     ]);
