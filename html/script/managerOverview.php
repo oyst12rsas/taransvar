@@ -76,18 +76,7 @@ try {
     $result->free();
 
     $sites = [];
-    $sql = "SELECT R.routerId, P.name, INET_NTOA(R.ip) AS ip, R.status, TIMESTAMPDIFF(SECOND, R.partnerStatusReceived, NOW()) AS secondsSince FROM partnerRouter R JOIN partner P ON P.partnerId=R.partnerId WHERE R.showToAdminsOnly=b'0' ORDER BY P.name";
-    $result = $conn->query($sql);
-    while ($row = $result->fetch_assoc()) {
-        $sites[] = [
-            'routerId' => (int)$row['routerId'],
-            'name' => (string)$row['name'],
-            'ip' => (string)$row['ip'],
-            'secondsSince' => isset($row['secondsSince']) ? (int)$row['secondsSince'] : null,
-            'status' => decodeStatus($row['status'] ?? null)
-        ];
-    }
-    $result->free();
+    // This is the selected installation's pane, not a partner-server directory.
 
     require_once __DIR__.'/managerActiveUnits.php';
     $units = managerActiveUnits($conn);
