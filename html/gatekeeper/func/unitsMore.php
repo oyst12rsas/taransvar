@@ -34,7 +34,7 @@ function collectUnitIssues($status, $secondsSince)
 
     if (array_key_exists('aiAgent', $status)) {
         $agentView = agentStatusView($status['aiAgent']);
-        if ($agentView['issue'])
+        if ($agentView['issue'] && !(operationsSecurityFindings($status['operationsAgent'] ?? null) && is_array($status['aiAgent']) && ($status['aiAgent']['status'] ?? '') === 'unavailable'))
             addUnitIssue($issues, $agentView['color'], 'Server manager', $agentView['reason']);
     }
 
@@ -122,7 +122,7 @@ function printUnitIssues($status, $secondsSince)
     print '<table>';
     foreach ($issues as $issue) {
         $color = $issue["severity"] === "red" ? "red" : "#9a6b00";
-        print '<tr><td><span style="color:'.$color.'">&#9679;</span> '.htmlspecialchars($issue["label"]).'</td><td>'.htmlspecialchars($issue["message"]).'</td></tr>';
+        print '<tr><td><span style="color:'.$color.'">&#9679;</span> '.htmlspecialchars($issue["label"]).'</td><td>'.($issue['label'] === 'Operations agent' ? operationsIssueHtml($issue['message'], $status['operationsAgent'] ?? null) : htmlspecialchars($issue['message'])).'</td></tr>';
     }
     print '</table>';
 }
@@ -316,3 +316,4 @@ function unitsMore()
 	}
 }
 ?>
+
