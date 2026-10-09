@@ -1,0 +1,12 @@
+[Unit]
+Description=TaraSec Google-controlled SSH access
+After=netfilter-persistent.service
+Before=ssh.service sshd.service ssh.socket
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 /usr/local/lib/tarasec/ssh_google_window.py reconcile
+
+[Install]
+WantedBy=multi-user.target

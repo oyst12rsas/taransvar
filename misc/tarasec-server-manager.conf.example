@@ -67,3 +67,7 @@ AUTH_SMS_VERIFICATION_ENABLED=no
 AUTH_OIDC_ENABLED=yes
 AUTH_RECOVERY_CODES_ENABLED=yes
 AUTH_DANGEROUS_ACTION_MINIMUM=phishing_resistant_mfa
+
+# Require Google + authenticator approval for bounded admin SSH windows.
+# Explicit SSH_ALLOWED_SOURCES and a recovery console are required before enabling.
+SSH_GOOGLE_REOPEN_ENABLED=no

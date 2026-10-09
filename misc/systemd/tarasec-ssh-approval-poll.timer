@@ -1,0 +1,8 @@
+[Unit]
+Description=Check TaraSec SSH approvals every five seconds
+[Timer]
+OnBootSec=10s
+OnUnitInactiveSec=5s
+AccuracySec=1s
+[Install]
+WantedBy=timers.target

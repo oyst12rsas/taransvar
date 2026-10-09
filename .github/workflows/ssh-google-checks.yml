@@ -1,0 +1,16 @@
+name: Google-controlled SSH checks
+on:
+  pull_request:
+    paths: ['misc/**', '.github/workflows/ssh-google-checks.yml']
+  push:
+    paths: ['misc/**', '.github/workflows/ssh-google-checks.yml']
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python and shell checks
+        run: |
+          python3 -m py_compile misc/ssh_google_window.py misc/agent_approval_worker.py
+          bash -n misc/install_agent_approvals.sh
+          PYTHONPATH=misc python3 -m unittest discover -s misc -p test_ssh_google_window.py -v
