@@ -39,6 +39,7 @@ install -m 0644 "$repo_dir/html/script/managerSshCommon.php" /usr/local/share/ta
 install -m 0600 -o root -g root /var/www/html/dbfunc.php /usr/local/share/tarasec/manager-ssh/html/dbfunc.php
 install -m 0644 "$repo_dir/misc/manager_ssh_worker.php" /usr/local/share/tarasec/manager-ssh/misc/
 install -m 0755 "$repo_dir/misc/manager_ssh_rollback.sh" /usr/local/share/tarasec/manager-ssh/misc/
+install -m 0755 "$repo_dir/misc/setup_manager_ssh.sh" /usr/local/share/tarasec/manager-ssh/misc/
 install -m 0600 /dev/null /etc/tarasec/manager-ssh.enabled
 cat > /etc/systemd/system/tarasec-manager-ssh.service <<'UNIT'
 [Unit]
