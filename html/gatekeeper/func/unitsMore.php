@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__.'/agentStatusView.php';
+require_once __DIR__.'/operationsStatusView.php';
 //unitsMore.php
 
 
@@ -35,6 +36,11 @@ function collectUnitIssues($status, $secondsSince)
         $agentView = agentStatusView($status['aiAgent']);
         if ($agentView['issue'])
             addUnitIssue($issues, $agentView['color'], 'Server manager', $agentView['reason']);
+    }
+
+    if (array_key_exists('operationsAgent', $status)) {
+        foreach (operationsStatusIssues($status['operationsAgent']) as $message)
+            addUnitIssue($issues, 'yellow', 'Operations agent', $message);
     }
 
     if ($secondsSince > 200)
@@ -177,6 +183,11 @@ function unitsMore()
 		if (array_key_exists('aiAgent', $status)) {
 			print '<tr><td>Server manager</td><td>'.agentStatusDetails($status['aiAgent']).'</td></tr>';
 			unset($status['aiAgent']);
+		}
+
+		if (array_key_exists('operationsAgent', $status)) {
+			print '<tr><td>Operations agent</td><td>'.operationsStatusDetails($status['operationsAgent']).'</td></tr>';
+			unset($status['operationsAgent']);
 		}
 
 		$nSecondsSince = $row["seconds_since"]+0;
