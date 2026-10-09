@@ -2,6 +2,7 @@
 declare(strict_types=1);
 if (PHP_SAPI!=='cli') { http_response_code(404); exit; }
 require_once __DIR__.'/../html/script/gatewayAppLinkCommon.php';
+require_once __DIR__.'/../html/script/nodePublicMetadata.php';
 require_once __DIR__.'/../html/dbfunc.php';
 function gatewayAccountCall(array $cfg,array $extra=[]): array {
     $provider=taraAccountServices()['identity_api_base'];
@@ -40,6 +41,8 @@ if (realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? ''))===__FILE__) {
     mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
     try {
         $cfg=unitLinkConfig(); if ($cfg['mode']!=='hosted_gateway') exit;
+        // Older worker installations have no publication directory yet.
+        if (is_dir(dirname(TARA_NODE_METADATA))) nodePublicWrite($cfg);
         $db=getConnection(); if (!(int)$db->query("SELECT GET_LOCK('tarasec:gateway-app-worker',0)")->fetch_row()[0]) exit;
         try {
             $reply=gatewayAccountCall($cfg);

@@ -2,11 +2,17 @@
 declare(strict_types=1);
 ini_set('display_errors','0');
 require_once __DIR__.'/gatewayAppLinkCommon.php';
+require_once __DIR__.'/nodePublicMetadata.php';
 require_once __DIR__.'/../dbfunc.php';
 header('Content-Type: application/json; charset=utf-8'); header('Cache-Control: no-store');
 function gatewayLinkReply(int $code,array $data): never { http_response_code($code); echo json_encode($data,JSON_UNESCAPED_SLASHES); exit; }
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 try {
+    $public=nodePublicRead();
+    if ($public!==null) {
+        if (($_SERVER['REQUEST_METHOD'] ?? '')!=='GET') gatewayLinkReply(405,['ok'=>false,'error'=>'use_https_account_service']);
+        gatewayLinkReply(200,['ok'=>true]+$public);
+    }
     $cfg=unitLinkConfig();
     if ($cfg['mode']==='hosted_gateway') {
         if (($_SERVER['REQUEST_METHOD'] ?? '')!=='GET') gatewayLinkReply(405,['ok'=>false,'error'=>'use_https_account_service']);

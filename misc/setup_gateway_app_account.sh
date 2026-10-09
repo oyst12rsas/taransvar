@@ -4,7 +4,7 @@ set -euo pipefail
 [[ $# -eq 1 ]] || { echo 'Usage: sudo bash misc/setup_gateway_app_account.sh NODE_ORIGIN' >&2; exit 2; }
 repo_dir="$(cd "$(dirname "$0")/.." && pwd)"
 for tool in php mysql systemctl; do command -v "$tool" >/dev/null; done
-for file in html/script/unitLinkCommon.php html/script/gatewayAppLinkCommon.php html/script/unitGatewayLink.php misc/gateway_app_poll.php; do php -l "$repo_dir/$file"; done
+for file in html/script/unitLinkCommon.php html/script/nodePublicMetadata.php html/script/gatewayAppLinkCommon.php html/script/unitGatewayLink.php misc/gateway_app_poll.php; do php -l "$repo_dir/$file"; done
 config=/etc/tarasec/unit-link.php
 [[ -f $config && -f /var/www/html/dbfunc.php ]] || { echo 'Install the existing hosted account/linking configuration first.' >&2; exit 1; }
 php -r 'require $argv[2]; $c=require $argv[3]; $c["mode"]="hosted_gateway"; $c["transport"]="account_service"; $c["base_url"]=rtrim($argv[1],"/"); unitLinkValidateConfig($c);' "$1" "$repo_dir/html/script/unitLinkCommon.php" "$config"
@@ -14,7 +14,7 @@ cp -a /var/www/html/script "$backup/script"
 [[ ! -f /usr/local/lib/tarasec/unit_link_transport_guard.sh ]] || cp -a /usr/local/lib/tarasec/unit_link_transport_guard.sh "$backup/"
 mysql taransvar < "$repo_dir/misc/gateway_app_link.sql"
 install -d -m 0755 /usr/local/share/tarasec/gateway-app/html/script /usr/local/share/tarasec/gateway-app/misc
-for name in unitLinkCommon unitLinkRequestCommon gatewayAppLinkCommon serviceDiscoveryCommon; do
+for name in unitLinkCommon unitLinkRequestCommon gatewayAppLinkCommon serviceDiscoveryCommon nodePublicMetadata; do
     install -m 0644 "$repo_dir/html/script/$name.php" /var/www/html/script/
     install -m 0644 "$repo_dir/html/script/$name.php" /usr/local/share/tarasec/gateway-app/html/script/
 done
@@ -23,6 +23,8 @@ install -m 0640 -o root -g root /var/www/html/dbfunc.php /usr/local/share/tarase
 install -m 0644 "$repo_dir/misc/gateway_app_poll.php" /usr/local/share/tarasec/gateway-app/misc/
 php -r 'require $argv[3]; $c=require $argv[2]; $c["mode"]="hosted_gateway"; $c["transport"]="account_service"; $c["base_url"]=rtrim($argv[1],"/"); unitLinkValidateConfig($c); file_put_contents($argv[2],"<?php\nreturn ".var_export($c,true).";\n");' "$1" "$config" "$repo_dir/html/script/unitLinkCommon.php"
 chown root:www-data "$config"; chmod 0640 "$config"
+install -d -m 0755 -o root -g root /var/lib/tarasec-node
+php -r 'require $argv[1]; nodePublicWrite(unitLinkConfig());' "$repo_dir/html/script/nodePublicMetadata.php"
 cat > /etc/systemd/system/tarasec-gateway-app.service <<'UNIT'
 [Unit]
 Description=Collect account-service app approvals with local administrator authorization
@@ -32,6 +34,7 @@ Type=oneshot
 ExecStart=/usr/bin/php /usr/local/share/tarasec/gateway-app/misc/gateway_app_poll.php
 NoNewPrivileges=true
 ProtectSystem=strict
+ReadWritePaths=/var/lib/tarasec-node
 ProtectHome=true
 PrivateTmp=true
 UNIT
