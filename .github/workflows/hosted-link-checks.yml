@@ -16,7 +16,7 @@ jobs:
         options: --health-cmd="healthcheck.sh --connect --innodb_initialized" --health-interval=5s --health-timeout=5s --health-retries=20
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y php-cli php-mysql php-curl
+      - run: sudo apt-get update && sudo apt-get install -y php-cli php-mysql php-curl ipset iptables iproute2
       - run: |
           for f in html/script/unit*.php html/script/gatewayAppLinkCommon.php html/gatekeeper/appLink.php misc/unit_link_poll.php misc/gateway_app_poll.php misc/test_hosted_unit_link.php misc/test_gateway_app_link.php misc/test_gateway_app_hosted.php; do php -l "$f"; done
           php -n misc/test_unit_link.php
@@ -26,6 +26,12 @@ jobs:
           php -l html/script/managerActiveUnits.php
           php -n misc/test_manager_active_units.php
           php misc/test_manager_active_units.php --database
+          php -l html/script/managerSsh.php
+          php -l misc/manager_ssh_worker.php
+          php -n misc/test_manager_ssh.php
+          php misc/test_manager_ssh.php --database
+          bash -n misc/setup_manager_ssh.sh misc/test_manager_ssh_kernel.sh
+          sudo unshare --net bash misc/test_manager_ssh_kernel.sh
           php misc/test_hosted_unit_link.php
           php misc/test_gateway_app_link.php
           php misc/test_gateway_app_hosted.php
