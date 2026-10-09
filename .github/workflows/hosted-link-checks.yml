@@ -1,7 +1,7 @@
 name: Hosted gateway linking checks
 on:
   push:
-    branches: [main, wip/hosted-unit-linking, wip/gateway-app-approval]
+    branches: [main, wip/hosted-unit-linking, wip/gateway-app-approval, wip/manager-active-unit-list]
   pull_request:
 jobs:
   gateway-boundaries:
@@ -22,6 +22,10 @@ jobs:
           php -n misc/test_unit_link.php
           php -n misc/test_service_discovery.php
           php -n misc/test_node_public_metadata.php
+          php -l html/script/managerOverview.php
+          php -l html/script/managerActiveUnits.php
+          php -n misc/test_manager_active_units.php
+          php misc/test_manager_active_units.php --database
           php misc/test_hosted_unit_link.php
           php misc/test_gateway_app_link.php
           php misc/test_gateway_app_hosted.php

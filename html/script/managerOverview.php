@@ -89,20 +89,8 @@ try {
     }
     $result->free();
 
-    $units = [];
-    // dhcpClientState is present on current schemas and gives the useful active-unit
-    // columns without requiring the App to scrape the Gatekeeper HTML table.
-    $result = $conn->query("SELECT clientMac, INET_NTOA(currentIp) AS currentIp, COALESCE(hostname,'') AS hostname, COALESCE(vendorClass,'') AS vendorClass, lastSeen FROM dhcpClientState WHERE lastSeen >= DATE_SUB(NOW(), INTERVAL 15 MINUTE) ORDER BY lastSeen DESC LIMIT 100");
-    while ($row = $result->fetch_assoc()) {
-        $units[] = [
-            'hostname' => (string)$row['hostname'],
-            'vendor' => (string)$row['vendorClass'],
-            'mac' => (string)$row['clientMac'],
-            'lastSeen' => (string)$row['lastSeen'],
-            'lastIp' => (string)($row['currentIp'] ?? '')
-        ];
-    }
-    $result->free();
+    require_once __DIR__.'/managerActiveUnits.php';
+    $units = managerActiveUnits($conn);
 
     require_once __DIR__ . '/sshLoginReportLib.php';
     $sshLogins = managerSshLoginReport();
