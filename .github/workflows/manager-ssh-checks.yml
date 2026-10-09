@@ -1,0 +1,18 @@
+name: Timed manager SSH checks
+on:
+  pull_request:
+    paths:
+      - 'html/script/managerSsh.php'
+      - 'misc/*manager_ssh*'
+      - '.github/workflows/manager-ssh-checks.yml'
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python3 misc/test_manager_ssh.py
+          sudo unshare --net python3 misc/test_manager_ssh_kernel.py
+          php -l html/script/managerSsh.php
+          php -n misc/test_manager_ssh_api.php
+          bash -n misc/install_manager_ssh.sh
