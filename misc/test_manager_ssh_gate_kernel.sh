@@ -55,7 +55,8 @@ assert not reachable('100.68.10.7'), 'Inactive timer fell through to permanent S
 assert reachable('100.68.10.8'), 'Explicit recovery source must remain available'
 assert not reachable('100.68.10.9'), 'Unapproved source bypassed the source conf'
 assert connection('2001:db8::7',socket.AF_INET6) is None, 'IPv6 bypassed the IPv4-only allowed-source conf'
-for conn in [held,held6]: conn.sendall(b'kept'); assert conn.recv(64)==b'kept', 'Existing session was disconnected'
+for conn in [held,held6]:
+    conn.sendall(b'kept'); assert conn.recv(64)==b'kept', f'Existing session was disconnected (family {conn.family})'
 subprocess.run(['ipset','add','tarasec_app_ssh','5822','timeout','2'],check=True)
 assert reachable('100.68.10.7'), 'Active window failed to open the configured source'
 assert not reachable('100.68.10.9'), 'Active window bypassed the source conf'

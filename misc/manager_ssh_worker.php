@@ -102,7 +102,8 @@ function sshInstallGate(array $cfg, int $port, bool $enforced): void {
 function sshIpv6Gate(int $port): void {
     // The supported conf source list is IPv4 only. Do not leave an IPv6 bypass
     // to the same sshd listener; retain loopback and already established sessions.
-    $rule=['!','-s','::1/128','-p','tcp','-m','tcp','--dport',(string)$port,'-m','conntrack','--ctstate','NEW','-m','comment','--comment','tarasec-app-ssh-ipv6','-j','REJECT','--reject-with','tcp-reset'];
+    // SYN-only also preserves sessions created before IPv6 conntrack was active.
+    $rule=['!','-s','::1/128','-p','tcp','-m','tcp','--dport',(string)$port,'--tcp-flags','FIN,SYN,RST,ACK','SYN','-m','comment','--comment','tarasec-app-ssh-ipv6','-j','REJECT','--reject-with','tcp-reset'];
     $rules=sshRun(['/usr/sbin/ip6tables','-w','5','-S','INPUT']);
     $tagged=array_values(array_filter(explode("\n",trim($rules)),fn($line)=>str_starts_with($line,'-A INPUT ') && str_contains($line,'tarasec-app-ssh-ipv6')));
     if ($tagged!==['-A INPUT '.implode(' ',$rule)]) {
