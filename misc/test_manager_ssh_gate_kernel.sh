@@ -69,6 +69,15 @@ php(install,json.dumps(cfg))
 assert reachable('100.68.10.7'), 'Repeated worker application broke the active window'
 subprocess.run(['ipset','del','tarasec_app_ssh','5822'],check=True)
 assert not reachable('100.68.10.7'), 'Early closure failed'
+# Reproduce the source-specific ACCEPT emitted by the maintained firewall script.
+subprocess.run(['iptables','-F','INPUT'],check=True)
+subprocess.run(['iptables','-A','INPUT','-s','100.68.10.7/32','-p','tcp','--dport','5822','-j','ACCEPT'],check=True)
+subprocess.run(['iptables','-A','INPUT','-p','tcp','--dport','5822','-j','REJECT','--reject-with','tcp-reset'],check=True)
+subprocess.run(['iptables','-A','INPUT','-i','lo','-j','ACCEPT'],check=True)
+php(install,json.dumps(cfg))
+assert not reachable('100.68.10.7'), 'Firewall refresh reopened SSH through a source-specific ACCEPT'
+assert reachable('100.68.10.8'), 'Firewall refresh broke explicit recovery'
+held.sendall(b'refresh'); assert held.recv(64)==b'refresh', 'Firewall refresh disconnected an established session'
 php('sshRemoveOwnedJumps(sshRun(["/usr/sbin/iptables","-S","INPUT"])); sshRemoveOwnedJumps(sshRun(["/usr/sbin/ip6tables","-S","INPUT"]),"/usr/sbin/ip6tables");')
 assert reachable('100.68.10.7'), 'Rollback failed to restore the previous SSH path'
 held.close(); held6.close()

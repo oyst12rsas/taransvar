@@ -27,6 +27,11 @@ function managerSshRulePosition(string $rules, int $port): int {
     foreach (explode("\n", $rules) as $line) {
         if (!str_starts_with($line, '-A INPUT ')) continue;
         $index++;
+        // A normal firewall rebuild emits source-specific SSH ACCEPT rules.
+        // Those must also be behind the timed gate; recovery is handled explicitly
+        // inside the gate. Earlier source DROP rules remain authoritative.
+        if (str_contains($line,'-p tcp ') && str_ends_with($line,' -j ACCEPT')
+            && preg_match('/ --dport '.preg_quote((string)$port, '/').'(?: |$)/', $line)) return $index;
         if (str_contains($line, 'TARASEC_SSH_') && preg_match('/ --dport '.preg_quote((string)$port, '/').'(?: |$)/', $line)) return $index;
         if (preg_match('/^-A INPUT -p tcp(?: -m tcp)? --dport '.preg_quote((string)$port, '/').' -j (?:ACCEPT|REJECT --reject-with tcp-reset)$/D', $line)) return $index;
     }

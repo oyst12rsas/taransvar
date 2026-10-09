@@ -17,6 +17,7 @@ sshExpect(in_array(['-s','100.68.10.7/32','-m','set','--match-set',TARA_SSH_SET,
 try { sshAllowedSources(['SSH_ALLOWED_SOURCES'=>'bad-value']); throw new RuntimeException('Invalid source ignored'); } catch (RuntimeException $e) { sshExpect($e->getMessage()==='Unsupported SSH_ALLOWED_SOURCES entry','Reject invalid source policy'); }
 $rules="-P INPUT DROP\n-A INPUT -s 203.0.113.5 -j DROP\n-A INPUT -s 10.100.0.2 -p tcp -m tcp --dport 5822 -j DROP\n-A INPUT -p tcp -m tcp --dport 5822 -m limit --limit 5/min -j LOG --log-prefix TARASEC_SSH_DISABLED_node\n-A INPUT -p tcp -m tcp --dport 5822 -j REJECT --reject-with tcp-reset\n";
 sshExpect(managerSshRulePosition($rules,5822)===3,'Keep global and source-specific owner drops before temporary rule');
+sshExpect(managerSshRulePosition("-A INPUT -s 100.68.10.7/32 -p tcp -m tcp --dport 5822 -j ACCEPT\n-A INPUT -p tcp -m tcp --dport 5822 -j REJECT --reject-with tcp-reset",5822)===1,'Place gate before source-specific SSH accepts after a firewall rebuild');
 try { managerSshRulePosition($rules,22); throw new RuntimeException('Unrecognised port accepted'); } catch (RuntimeException $e) { sshExpect($e->getMessage()==='Configured SSH firewall policy not found','Reject unrecognised firewall'); }
 sshExpect(managerSshRemaining("add tarasec_app_ssh 5822 timeout 297\nadd tarasec_app_ssh 22 timeout 900",5822)===297,'Report configured port timeout');
 $tmp=tempnam(sys_get_temp_dir(),'ssh-state');
