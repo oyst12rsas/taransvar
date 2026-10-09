@@ -118,7 +118,8 @@ def open_window(job_id, until):
     # Schedule closure BEFORE opening. The unique unit prevents retry collisions.
     command("systemd-run", "--quiet", "--collect",
             "--unit=tarasec-ssh-window-" + job_id,
-            "--on-active=%ds" % max(1, until-int(time.time())),
+            "--on-calendar=@%d" % until, "--timer-property=AccuracySec=1s",
+            "--timer-property=RandomizedDelaySec=0",
             "/usr/bin/python3", "/usr/local/lib/tarasec/ssh_google_window.py", "close", job_id)
     write_state({"id": job_id, "until": until, "port": port})
     try:

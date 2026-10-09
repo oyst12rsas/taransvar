@@ -22,7 +22,7 @@ install -o root -g root -m 0644 "$root/systemd/tarasec-agent-approvals.service" 
 install -o root -g root -m 0644 "$root/systemd/tarasec-agent-approvals.timer" /etc/systemd/system/
 systemctl daemon-reload
 if /usr/bin/python3 -c 'import sys; sys.path.insert(0, "/usr/local/lib/tarasec"); import ssh_google_window as w; sys.exit(0 if w.settings(w.POLICY).get("SSH_GOOGLE_REOPEN_ENABLED", "no").lower() in ("yes", "true", "on", "1") else 1)'; then
-    for unit in ssh.service sshd.service ssh.socket; do
+    for unit in ssh.service sshd.service; do
         install -d -m 0755 "/etc/systemd/system/$unit.d"
         cat > "/etc/systemd/system/$unit.d/tarasec-google-ssh.conf" <<'UNIT'
 [Unit]
@@ -32,6 +32,11 @@ UNIT
     done
     systemctl daemon-reload
     systemctl enable --now tarasec-ssh-google.service
+    # ssh.socket is ordered before sockets.target; a normal guard service
+    # waits for basic.target. Requiring it from the socket creates a boot cycle.
+    systemctl disable --now ssh.socket
+    systemctl enable ssh.service
+    systemctl start ssh.service
 fi
 install -o root -g root -m 0755 "$root/ssh_approval_poll.py" /usr/local/lib/tarasec/
 install -o root -g root -m 0644 "$root/systemd/tarasec-ssh-approval-poll.service" "$root/systemd/tarasec-ssh-approval-poll.timer" /etc/systemd/system/
@@ -39,3 +44,4 @@ systemctl daemon-reload
 systemctl enable --now tarasec-ssh-approval-poll.timer
 systemctl enable --now tarasec-agent-approvals.timer
 echo "Agent timer installed; check journalctl -u tarasec-agent-approvals.service"
+

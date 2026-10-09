@@ -4,6 +4,14 @@ from unittest.mock import patch
 import ssh_google_window as w
 
 class Windows(unittest.TestCase):
+    def test_expiry_timer_uses_exact_approved_deadline(self):
+        with patch.object(w, "configuration", return_value=(5822, [])), patch.object(w.time, "time", return_value=1000), patch.object(w, "read_state", return_value={}), patch.object(w, "apply_rules"), patch.object(w, "command") as command, patch.object(w, "write_state"):
+            w.open_window("a"*32, 1300)
+            args = command.call_args.args
+            self.assertIn("--on-calendar=@1300", args)
+            self.assertIn("--timer-property=AccuracySec=1s", args)
+            self.assertIn("--timer-property=RandomizedDelaySec=0", args)
+            self.assertFalse(any(arg.startswith("--on-active") for arg in args))
     def test_tcp_reset_requires_explicit_tcp_in_each_chain(self):
         calls = []
         def command(*args, **kwargs):

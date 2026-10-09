@@ -195,6 +195,7 @@ def status_snapshot(evidence, concerns, terminal, attack, actions, pending, remo
     return {
         "checked_at": int(time.time()),
         "engine": "bounded_checks",
+        "nickname": setting("AGENT_PUBLIC_NICKNAME"),
         "mode": manager_setting("AI_AGENT_MODE", "conservative").lower(),
         "status": ("checking" if remote == "checking" else
                    "attention" if concerns or attack["ongoing"] or actions or pending or
@@ -449,11 +450,10 @@ def main():
         api("heartbeat", {"nickname": nickname,
                           "level": "attention" if needs_attention else "ok",
                           "findings": concerns,
+                          "ssh_access": timed_ssh_access_status(),
                           "assessment": current_assessment}, token)
         remote = "connected"
         print("Agent status: " + ("needs review (" + str(len(concerns)) + " checks)" if concerns else "operating"))
-        if google_ssh:
-            api("propose", {"operation": "open_ssh_temporarily"}, token)
         if obsolete_unit_candidate(evidence):
             proposal = api("propose", {"operation": "disable_obsolete_gateway_unit"}, token)
             if proposal["state"] == "pending":
@@ -501,3 +501,4 @@ if __name__ == "__main__":
     except (OSError, ValueError, RuntimeError, urllib.error.URLError) as exc:
         print("Agent unavailable: " + str(exc), file=sys.stderr)
         sys.exit(1)
+
