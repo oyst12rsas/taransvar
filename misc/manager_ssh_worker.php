@@ -36,7 +36,7 @@ function sshAllowedSources(array $cfg): array {
 function sshGateRules(array $cfg, bool $enforced): array {
     $rules=[];
     if ($enforced) {
-        $rules[]=['-i','lo','-s','127.0.0.0/8','-j','ACCEPT'];
+        $rules[]=['-s','127.0.0.0/8','-i','lo','-j','ACCEPT'];
         $rules[]=['-m','conntrack','--ctstate','RELATED,ESTABLISHED','-j','ACCEPT'];
         if (in_array(strtolower($cfg['SSH_RECOVERY_PROTECT'] ?? 'on'),['on','1','yes','true'],true)) {
             $recovery=sshAllowedSources(['SSH_ALLOWED_SOURCES'=>$cfg['SSH_RECOVERY_SOURCES'] ?? '']);
