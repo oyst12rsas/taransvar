@@ -33,5 +33,9 @@ UNIT
     systemctl daemon-reload
     systemctl enable --now tarasec-ssh-google.service
 fi
+install -o root -g root -m 0755 "$root/ssh_approval_poll.py" /usr/local/lib/tarasec/
+install -o root -g root -m 0644 "$root/systemd/tarasec-ssh-approval-poll.service" "$root/systemd/tarasec-ssh-approval-poll.timer" /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now tarasec-ssh-approval-poll.timer
 systemctl enable --now tarasec-agent-approvals.timer
 echo "Agent timer installed; check journalctl -u tarasec-agent-approvals.service"
