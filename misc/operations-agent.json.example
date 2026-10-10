@@ -1,0 +1,38 @@
+{
+  "mode": "inspect",
+  "execute": false,
+  "allow_reboot": false,
+  "max_reboots_per_day": 1,
+  "quiet_seconds": 300,
+  "quiet_probe": "/usr/local/lib/tarasec-operations/activity-probe",
+  "model_url": "",
+  "model_key_file": "/etc/tarasec/operations-model.key",
+  "procedures_file": "/etc/tarasec/operations-procedures.json",
+  "target_commit": "",
+  "task": "Inspect this node against the AI Operations Manual. Report missing or broken capabilities. Use only eligible tested procedures; never claim a successful installer proves end-to-end functionality.",
+  "allow_experimental_commands": false,
+  "command_timeout_seconds": 120,
+  "share_command_output": false,
+  "deployment_profile": "demo",
+  "resource_protection": {
+    "enabled": false,
+    "disk_used_percent": 85,
+    "memory_available_percent": 10,
+    "load_per_cpu": 2,
+    "disposable_logs": [],
+    "stoppable_services": [],
+    "protected_services": [],
+    "allow_request_assistance": false,
+    "assistance_executable": "",
+    "automatic_actions": []
+  },
+  "model_schedule": {
+    "periodic_review_seconds": 0,
+    "cooldown_seconds": 900,
+    "worsening_cooldown_seconds": 300,
+    "max_calls_per_hour": 8,
+    "max_calls_per_day": 32,
+    "continuation_seconds": 300,
+    "disk_growth_bytes_per_hour": 268435456
+  }
+}
