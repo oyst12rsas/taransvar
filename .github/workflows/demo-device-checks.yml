@@ -1,0 +1,16 @@
+name: Shared demo device checks
+on:
+  pull_request:
+    paths:
+      - 'html/script/appDemoDeviceSession.php'
+      - 'html/script/appDemoAssistance.php'
+      - 'html/gatekeeper/func/appDemo3.php'
+      - 'tests/demo_device_browser_test.cjs'
+      - '.github/workflows/demo-device-checks.yml'
+jobs:
+  device-session:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: php -l html/script/appDemoDeviceSession.php && php -l html/script/appDemoAssistance.php && php -l html/gatekeeper/func/appDemo3.php && php -l html/gatekeeper/func/appDemos.php
+      - run: node tests/demo_device_browser_test.cjs && node --check html/demo/live/live.js

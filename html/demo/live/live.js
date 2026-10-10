@@ -48,3 +48,14 @@ el('mark').onclick=()=>control(true);el('clear').onclick=()=>control(false);
 el('stop').onclick=()=>{running=false;clearTimeout(timer);buttons();event('Observation stopped. Demo state remains until you clear it.');el('message').textContent='Stopped observing. Start again and clear demo state if you previously marked this client suspicious.';};
 el('fullscreen').onclick=async()=>{document.body.classList.toggle('present');try{if(!document.fullscreenElement)await document.documentElement.requestFullscreen();else await document.exitFullscreen();}catch{};};
 setInterval(()=>{if(lastComplete){const seconds=Math.floor((Date.now()-lastComplete)/1000);el('freshness').textContent='Cycle '+cycle+' · '+seconds+'s ago'+(!running?' · stopped':seconds>10?' · stale':'');}},1000);
+
+// Discover a session before starting another test. The gateway sees the caller,
+// never an arbitrary IP supplied by this page.
+(async()=>{
+ try {
+  const d=await request('http://'+el('gateway').value,'appDemoDeviceSession.php');
+  if(!d.demo)return;
+  el('shared-session').textContent='This device is already in Demo 3 #'+d.demo.session_id+'. ';
+  const a=document.createElement('a');a.href='http://'+el('gateway').value+'/gatekeeper/index.php?f=appDemo3';a.textContent='Show its existing session';el('shared-session').append(a);
+ }catch { el('shared-session').textContent='Shared demo discovery unavailable until the gateway is updated and reachable.'; }
+})();

@@ -190,3 +190,25 @@ These questions are research opportunities, not evidence that the concept has al
 ---
 
 This file is project context, not a substitute for source inspection. When evaluating a specific implementation claim, inspect the relevant current source and tests as well.
+
+## Shared demo device state and cross-platform discovery
+
+Demo 1 and Demo 3 show gateway-confirmed caller state independently of the
+platform's requested/session classification. Demo 3 registers public participation
+on the caller's gateway using `appDemoDeviceSession.php`. The DB checks the
+participant token and observed gateway route; only session/participant IDs and a
+sanitized session snapshot are stored. Tokens never appear in discovery replies.
+A browser or app with the same gateway-local client IP discovers the existing
+participant as an observer, without joining or sending participant heartbeats.
+The gateway fetches read-only DB status independently of contained client traffic;
+this does not create evidence of restored participant connectivity. Cached session
+snapshots are labeled when DB status is unavailable. Registrations expire after
+15 minutes and left/closed sessions are hidden. Group-private sessions do not use
+cross-platform discovery. Different VPN routes/client IPs remain different identities.
+
+Deploy web changes on the gateway and DB server; update the Android app for app
+registration/discovery. Existing sessions started with older clients must be
+rejoined from the updated client to register. The SQL migration is
+`misc/demo_device_session.sql`; the endpoint also bootstraps this table for
+web-only upgrades. Keep session choice, gateway severity and actual failed/successful
+participant requests separate in diagnostics.
