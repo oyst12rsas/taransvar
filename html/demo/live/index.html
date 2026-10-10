@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TaraSec · Live network demo</title><link rel="stylesheet" href="style.css"></head>
+<body><main>
+<header><a href="/demo/">TARASEC / LIVE TESTBED</a><button id="fullscreen">Presentation mode</button></header>
+<h1>See cooperative security<br>in action.</h1><p class="intro">Demo 1 · Follow this computer’s traffic from its gateway to two receiving nodes.</p>
+<section class="setup"><label>Gateway IPv4 <input id="gateway" value="100.68.165.190" inputmode="decimal"></label><label>Receiver A IPv4 <input id="receiverA" value="100.68.176.110" inputmode="decimal"></label><label>Receiver B IPv4 <input id="receiverB" value="100.68.149.164" inputmode="decimal"></label><button id="start">Start demonstration</button></section>
+<p id="message" role="status" aria-live="polite">Connect this computer through the TaraSec hotspot or WireGuard demo route. The browser itself generates the test traffic; this page does not observe a separate phone.</p>
+<section class="network" aria-label="Live network observations">
+<article id="client"><small>01 / TEST CLIENT</small><h2>This computer</h2><p class="state">Waiting to start</p><p class="detail">Browser-generated HTTP traffic</p></article>
+<div class="link"><span>→</span><small>Local attribution</small></div>
+<article id="gw"><small>02 / SENDING NETWORK</small><h2>Gateway</h2><p class="state">Waiting for evidence</p><p class="detail">—</p></article>
+<div class="link"><span>→</span><small>Traffic assessment</small></div>
+<div class="receivers"><article id="a"><small>03 / RECEIVER A</small><h2>Roquefort</h2><p class="state">Waiting for evidence</p><p class="detail">—</p></article><article id="b"><small>04 / RECEIVER B</small><h2>Camembert</h2><p class="state">Waiting for evidence</p><p class="detail">—</p></article></div>
+</section>
+<section class="controls"><button id="mark" disabled>Mark this client suspicious</button><button id="clear" disabled>Clear demo state</button><button id="stop" disabled>Stop observing</button><span id="freshness">No observations yet</span></section>
+<div class="bottom"><section><h2>What you are seeing</h2><p id="explanation">Start with a baseline. Then mark this client suspicious on its gateway and watch what the receivers observe on subsequent requests.</p><p class="muted">A gateway acknowledgement confirms the requested demo change. Receiver evidence confirms the traffic assessment. A failed HTTP request alone does not prove rejection or infection.</p><p class="muted">The DB correlates and distributes reports in the underlying system. This view does not independently verify DB decisions.</p></section><section><h2>Live events</h2><ol id="events" aria-live="polite"><li>No events yet.</li></ol></section></div>
+<details><summary>Technical evidence</summary><p>One cycle checks gateway state, then both receivers, and publishes the results together. Missing or old traffic evidence stays unknown.</p><pre id="evidence">No evidence yet.</pre></details>
+<footer><a href="/gatekeeper/index.php?f=appDemos">Existing Demos 1–5</a><a href="https://tarasec.org/ai/demo-guide/">How the demos work</a><span>Research prototype · real observations</span></footer>
+</main><script src="live.js"></script></body></html>
