@@ -111,14 +111,9 @@ chown -R root:root /var/www/html/hotspot
 find /var/www/html/hotspot -type d -exec chmod 0755 {} +
 find /var/www/html/hotspot -type f -exec chmod 0644 {} +
 
-mkdir -p /etc/tarasec
-cat > /etc/tarasec/access-mysql.cnf <<'EOF'
-[client]
-user=scriptUsrAces3f3
-password="rErte8Oi98e-2_#"
-host=localhost
-EOF
-chmod 0600 /etc/tarasec/access-mysql.cnf
+# Bootstrap/reuse the generated local database credentials; never embed a password.
+bash "$REPO_ROOT/misc/install_database_credentials.sh"
+install -m 0644 "$REPO_ROOT/html/db_credentials.php" /var/www/html/db_credentials.php
 
 if ! command -v sudo >/dev/null 2>&1; then
     apt-get update

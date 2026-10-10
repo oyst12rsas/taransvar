@@ -1,7 +1,9 @@
 #!/usr/bin/perl  
 #print "Content-type: text/html\n\n";
 use strict;
-use warnings; 
+use warnings;
+use lib '/usr/local/lib/tarasec';
+use TaraSecDB qw(db_password);
 #use autodie; - commented.. disables error handling on file open...
 use DBI;
 
@@ -14,7 +16,7 @@ my $database = "taransvar";
 my $hostname = "localhost";
 my $port = "3306";
 my $user = "scriptUsrAces3f3";
-my $password = "rErte8Oi98e-2_#"; #"rErte8Oi98!%&e";
+my $password = db_password('app');
 
 use CGI ':standard';
 
@@ -421,7 +423,7 @@ else
 		my $hostname = "localhost";
 		my $port = "3306";
 		my $user = "scriptUsrAces3f3";
-		my $password = "rErte8Oi98e-2_#"; #"rErte8Oi98!%&e";
+		my $password = db_password('app');
 
 		my $dsn = "DBI:mysql:database=$database;host=$hostname;port=$port";
 		my $dbh = DBI->connect($dsn, $user, $password);

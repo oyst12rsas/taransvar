@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/db_credentials.php';
 
 $host = 'localhost';
 $dbname = 'wifi_hotspot1';
@@ -8,7 +9,7 @@ $password = '';
 		$szDBHost = "localhost";
 		$dbname = "taransvar";
 		$username = "scriptUsrAces3f3";
-		$password = "rErte8Oi98e-2_#";//"rErte8Oi98!%&e";
+		$password = tarasecDbPassword();
 
 
 

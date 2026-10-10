@@ -60,6 +60,12 @@ The remaining clean-install acceptance sequence is:
 
 Until that sequence passes from a fresh reset, say **implemented on main, pending clean reinstall acceptance test**.
 
+## Local database credentials
+
+New installations generate private local database passwords; reinstalls preserve
+them. See `misc/LOCAL_DATABASE_CREDENTIALS.md` for upgrading all readers together,
+permissions, backups and the distinction from central API enrollment.
+
 ## Main hotspot install
 
 From a fresh repository checkout:

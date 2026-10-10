@@ -16,7 +16,7 @@ run_mysql() {
     local output
 
     if [ -r "$MYSQL_CNF" ]; then
-        if output=$(mysql --defaults-extra-file="$MYSQL_CNF" --batch --skip-column-names --raw taransvar -e "$sql" 2>/dev/null); then
+        if output=$(mysql --defaults-file="$MYSQL_CNF" --batch --skip-column-names --raw taransvar -e "$sql" 2>/dev/null); then
             printf '%s' "$output"
             return 0
         fi

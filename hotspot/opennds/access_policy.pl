@@ -1,6 +1,8 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
+use lib '/usr/local/lib/tarasec';
+use TaraSecDB qw(db_password);
 use DBI;
 
 my $ip = shift // '';
@@ -11,7 +13,7 @@ if ($ip !~ /\A(?:\d{1,3}\.){3}\d{1,3}\z/) {
 
 my $dsn = $ENV{TARASEC_DSN} // 'DBI:mysql:database=taransvar;host=localhost';
 my $user = $ENV{TARASEC_DB_USER} // 'scriptUsrAces3f3';
-my $pass = $ENV{TARASEC_DB_PASS} // 'rErte8Oi98e-2_#';
+my $pass = $ENV{TARASEC_DB_PASS} // db_password('app');
 my $dbh = eval { DBI->connect($dsn, $user, $pass, { RaiseError => 1, PrintError => 0, AutoCommit => 1 }) };
 if (!$dbh) {
     print "0\t0\t0\t0\t0\t0\n";

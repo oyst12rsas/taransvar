@@ -30,7 +30,7 @@ apt-get install -y apache2 perl libdbd-mysql-perl libmariadb-dev libmnl-dev
 apt-get install -y php libapache2-mod-php php-mysql php-curl php-mbstring
 apt-get install -y gcc make pkg-config curl libcurl4-openssl-dev libcjson-dev dhcpdump net-tools conntrack
 apt-get install -y libdbi-perl libdbd-mysql-perl libjson-perl conntrack dhcpdump isc-dhcp-server
-apt-get install -y whois iptables ipset
+apt-get install -y whois iptables ipset python3 openssl
 
 echo "wireshark-common wireshark-common/install-setuid boolean false" | debconf-set-selections
 DEBIAN_FRONTEND=noninteractive apt-get install -y tshark
@@ -51,16 +51,9 @@ printf "Installing the database\n"
 printf "The install routine may now generate some error message while trying to create DB user.\n"
 mysql -e "create database taransvar;"
 
-(
-    cd misc
-    perl createUsers.pl
-)
-
-if [ $? -eq 0 ]; then
-    printf "Able to create users...\n"
-else
-    read -n 1 -s -p "Unable to create users... "
-    printf "\n"
+if ! bash "$SCRIPT_DIR/misc/install_database_credentials.sh"; then
+    echo "Local database credential provisioning failed; installation stopped." >&2
+    exit 1
 fi
 
 printf "Now checking if user successfully created.. This sould not generate error..\n"
