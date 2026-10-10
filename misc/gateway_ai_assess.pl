@@ -113,11 +113,17 @@ my $question = "TARASEC GATEWAY-LOCAL SECURITY ASSESSMENT\n".
                "- A customer/LAN unit exists only when owner_id + unit_id are both known.\n".
                "- Every row under 'local stable unit summaries' and 'local unit destination fingerprints' describes activity ORIGINATING FROM a unit managed by THIS installation.\n".
                "- Therefore repeated scanning, probing, brute force, exploit attempts or unusual fan-out in those local-unit sections means one of THIS OWNER'S managed units is generating the suspicious traffic; it is not merely an arbitrary external source.\n".
-               "- When that happens, the summary MUST say this explicitly, for example: 'ALERT: a managed local unit on this installation is originating repeated SSH probes and may be compromised.' Do not reduce this to vague wording such as 'the same source'.\n".
+               "- When unexplained suspicious activity remains after checking registered demo evidence, the summary MUST say this explicitly, for example: 'ALERT: a managed local unit on this installation is originating repeated SSH probes and may be compromised.' Do not reduce this to vague wording such as 'the same source'.\n".
                "- Treat suspicious outbound behaviour from a stable local unit as materially more important to this gateway owner than the same pattern from an unidentified external IP. Reflect that distinction in event_severity, summary, reasoning and recommended_action.\n".
                "- Never put an IP address in unit_id.\n".
                "- IP-only observations are observations, not units.\n".
                "- Central context is supporting evidence and may describe activity outside this gateway.\n\n";
+
+$question .= "DEMO CORRELATION RULES:\n".
+    "- Registered demo sessions are supplied in global context. Match source identity, destination IP/port and observation time within created..expires (or earlier completion/cancellation). A shared gateway IP alone is insufficient to identify a unit.\n".
+    "- Matched demo SSH probes are expected test activity. Explain which demo/session produced them; do not infer compromise or recommend blocking solely from these probes.\n".
+    "- Assess unmatched events separately. A demo does not excuse unrelated activity, activity outside its scope/window, or state real_infection_detected.\n".
+    "- Aggregated totals may mix demo and real traffic. Do not assume all totals are explained by a session. If exact correlation is unavailable, state uncertainty and request correlation rather than declaring infection.\n";
 
 my %evidence = (gateway=>($setup->{nickname}//''), window_days=>7);
 $evidence{unit_summary_rows} = append_query($dbh, \$question, 'local stable unit summaries', q{
@@ -164,10 +170,18 @@ $evidence{confirmed_report_rows} = append_query($dbh, \$question, 'owner-confirm
      GROUP BY ipOwnerId,remoteUnitId ORDER BY reports DESC LIMIT 100
 });
 
+$evidence{timed_observation_rows} = append_query($dbh, \$question, 'local observations for exact demo correlation (bounded sample, not complete totals)', q{
+    SELECT syslogThreatId,owner_id,COALESCE(confirmed_unit_id,unit_id) unit_id,
+           INET_NTOA(src_ip) source_ip,INET_NTOA(dst_ip) dst_ip,dst_port,
+           created first_seen,COALESCE(lastSeen,created) last_seen,`count` occurrences
+      FROM syslogThreat WHERE COALESCE(lastSeen,created)>=NOW()-INTERVAL 7 DAY
+     ORDER BY COALESCE(lastSeen,created) DESC LIMIT 150
+});
+
 $question .= "\nGLOBAL TARASEC CONTEXT (aggregated; do not reinterpret as local identity):\n".
              encode_json($globalContext)."\n";
 $question .= "\nREQUIRED OUTPUT CONTRACT:\n".
-             "Return JSON only. Include event_severity, category, confidence, summary, signals, reasoning, recommended_action.\n".
+             "Return JSON only. Include event_severity, category, confidence (numeric fraction 0..1), summary, signals, reasoning, recommended_action.\n".
              "Always include arrays unit_assessments, node_assessments, ip_observations, botnet_clusters even when empty.\n".
              "unit_assessments items require owner_id and unit_id and may include confidence,severity,category,summary,evidence.\n".
              "For suspicious local-unit-originated activity, explicitly identify owner_id:unit_id in the relevant unit_assessment and make clear it is a managed unit on THIS installation.\n".
