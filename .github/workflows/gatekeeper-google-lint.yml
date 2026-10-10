@@ -3,7 +3,14 @@ on:
   pull_request:
     paths:
       - 'html/gatekeeper/google_*.php'
+      - 'html/gatekeeper/index.php'
+      - 'html/gatekeeper/loginDestination.php'
+      - 'html/gatekeeper/managerGoogleEmail.php'
       - 'html/gatekeeper/func/login.php'
+      - 'html/gatekeeper/func/submitLogin.php'
+      - 'html/gatekeeper/func/managerApprovals.php'
+      - 'misc/test_gatekeeper_login_destination.php'
+      - 'misc/test_manager_google_email*.php'
       - 'html/gatekeeper/func/main.php'
       - 'html/gatekeeper/func/unitsMore.php'
       - '.github/workflows/gatekeeper-google-lint.yml'
@@ -16,6 +23,14 @@ jobs:
           php -l html/gatekeeper/google_config.example.php
           php -l html/gatekeeper/google_start.php
           php -l html/gatekeeper/google_callback.php
+          php -l html/gatekeeper/index.php
+          php -l html/gatekeeper/loginDestination.php
+          php -l html/gatekeeper/managerGoogleEmail.php
           php -l html/gatekeeper/func/login.php
+          php -l html/gatekeeper/func/submitLogin.php
+          php -l html/gatekeeper/func/managerApprovals.php
           php -l html/gatekeeper/func/main.php
           php -l html/gatekeeper/func/unitsMore.php
+          php -n misc/test_gatekeeper_login_destination.php
+          php -n misc/test_manager_google_email.php
+          php -l misc/test_manager_google_email_database.php

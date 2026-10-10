@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__.'/../script/serviceDiscoveryCommon.php';
+require_once __DIR__.'/loginDestination.php';
 session_start();
 header('Cache-Control: no-store');
 $cfgPath = '/etc/tarasec/gatekeeper-google.php';
@@ -15,6 +16,7 @@ if (($cfg['agent_api'] ?? '') !== $provider['agent_api']) { http_response_code(5
 $_SESSION['google_admin_service'] = $provider;
 $_SESSION['google_admin_state'] = bin2hex(random_bytes(24));
 $_SESSION['google_admin_until'] = time() + 300;
+$_SESSION['google_admin_return'] = gatekeeperTakeLoginDestination();
 header('Location: '.$provider['sign_in_url'].'?'.http_build_query([
     'id'=>$cfg['client_id'], 'state'=>$_SESSION['google_admin_state']
 ]), true, 303);

@@ -1,6 +1,8 @@
 <?php
 session_start();
 $nRequiredDbVersion=83;	//NOTE! Make sure this line is always number 3 in the file because that's claimed below.
+require_once __DIR__.'/loginDestination.php';
+if (!isset($_SESSION['userid'])) gatekeeperRememberApprovalDestination();
 
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);

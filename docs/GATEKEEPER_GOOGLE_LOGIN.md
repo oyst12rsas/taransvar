@@ -23,7 +23,8 @@ email is already an administrator's `user.username` in its local database.
    and API. Confirm that the local Gatekeeper admin username equals the
    authorized Google email; existing password login remains available.
 4. Test from a browser already connected to NetBird: choose **Continue with
-   Google (administrator)** on Gatekeeper. Successful sign-in returns to Home.
+   Google (administrator)** on Gatekeeper. Successful sign-in returns to the
+   requested management approval page, or to Home for an ordinary login.
    A non-admin Google account must be rejected.
 
 The ticket lasts 90 seconds and can be redeemed once. Only the configured
@@ -31,6 +32,33 @@ Gatekeeper client can redeem it. Gatekeeper binds it to its initiating session
 and regenerates the session ID after login. Keep NetBird transport and access
 control on the callback HTTP endpoint; a publicly exposed Gatekeeper should
 use HTTPS instead.
+
+## Return to a management request after login
+
+The app's approval link is `index.php?f=managerApprovals&requestId=ID`.
+Before displaying login, Gatekeeper remembers this limited destination for ten
+minutes. Starting Google sign-in binds it to the sign-in session; a verified
+callback returns to that exact request. Password sign-in also resumes the page.
+Only this local approval route is accepted, never a caller-provided return URL.
+The page filters by the requested ID, including requests outside the recent 20,
+and keeps that ID after an approval or rejection. Login itself does not approve
+anything: the administrator must review and explicitly decide with the existing
+CSRF-protected form. Email verification remains required for approval.
+
+A successful Google callback records a server-side email proof, bound to the
+authenticated local administrator and valid for 30 minutes. Opening management
+approvals confirms unexpired, non-rejected pending requests whose email matches
+that proof, checking current local administrator permissions and suspension.
+For a focused approval link, only that request is confirmed. This does not grant
+management access: the administrator must still choose Approve. Password sign-in
+clears the Google proof; a different email still requires its verification link.
+The mail worker skips already verified emails and does not restore verification
+tokens when generating the manager credential. Mail already sent remains sent.
+
+Deploy `loginDestination.php`, `index.php`, `google_start.php`,
+`google_callback.php`, and `func/{login,submitLogin,managerApprovals}.php` together.
+Include `managerGoogleEmail.php` and update the installed `manager_requests.pl`.
+No Google credential rotation or website-server configuration change is needed.
 
 ## Self-hosted identity/approval service
 
