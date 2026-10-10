@@ -1,4 +1,5 @@
 <?php
+require_once dirname(__DIR__).'/db_credentials.php';
 //open_access.php
 $szVar = "thisistoopen";
 $szValue = "45$57!4ghREW";
@@ -25,7 +26,7 @@ function getConnection()
 {
 	$servername = "localhost";
 	$username = "scriptUsrAces3f3";
-	$password = "rErte8Oi98e-2_#"; //"rErte8Oi98!%&e";
+	$password = tarasecDbPassword();
 	$dbname = "taransvar";
 
 	// Create connection

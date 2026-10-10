@@ -1,6 +1,8 @@
 #!/usr/bin/perl
 use strict;
 use warnings;
+use lib '/usr/local/lib/tarasec';
+use TaraSecDB qw(db_password);
 use autodie;
 use DBI;
 use Data::Dumper qw(Dumper);
@@ -22,7 +24,7 @@ my $database = "taransvar";
 my $hostname = "localhost";
 my $port = "3306";
 my $user = "scriptUsrAces3f3";
-my $password = "rErte8Oi98e-2_#";
+my $password = db_password('app');
 
 my $dsn = "DBI:mysql:database=$database;host=$hostname;port=$port";
 my $dbh = DBI->connect($dsn, $user, $password);# or die "Unable to connect: $dbh->errstr()";

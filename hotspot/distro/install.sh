@@ -216,7 +216,7 @@ fi
     perl createUsers.pl
 )
 
-if ! mysql -uscriptUsrAces3f3 -prErte8Oi98e-2_# -N -s taransvar -e "SELECT 1;" >/dev/null 2>&1; then
+if ! mysql --defaults-file=/etc/tarasec/db-app.cnf -N -s taransvar -e "SELECT 1;" >/dev/null 2>&1; then
     echo "ERROR: TaraSec application database account could not connect after bootstrap." >&2
     exit 1
 fi

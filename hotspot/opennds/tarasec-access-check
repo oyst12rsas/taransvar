@@ -20,7 +20,7 @@ run_query() {
   local -a cmd=(mysql)
   if [ "$1" = "cnf" ]; then
     [ -r "$MYSQL_CNF" ] || return 1
-    cmd+=(--defaults-extra-file="$MYSQL_CNF")
+    cmd+=(--defaults-file="$MYSQL_CNF")
   fi
   cmd+=(--batch --skip-column-names --raw "$DB_NAME" -e "$QUERY")
   "${cmd[@]}" 2>/dev/null

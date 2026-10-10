@@ -1,4 +1,5 @@
-<?php 
+<?php
+require_once dirname(__DIR__, 2).'/db_credentials.php';
 $global_PBO_connection = false;
 
 //Should implement: http://stackoverflow.com/questions/23064698/simple-search-feature-mysql-prepared-statement-issue
@@ -60,7 +61,7 @@ class CDb extends CBasic
 		$szDBHost = "localhost";
 		$szDBDBName = "taransvar";
 		$szDBUserName = "scriptUsrAces3f3";
-		$szDBPass = "rErte8Oi98e-2_#";//"rErte8Oi98!%&e";
+		$szDBPass = tarasecDbPassword();
 		}
 		
             try {

@@ -1,6 +1,8 @@
 #!/usr/bin/perl
 use strict;
 use warnings;
+use lib '/usr/local/lib/tarasec';
+use TaraSecDB qw(db_password);
 use autodie;
 use DBI;
 
@@ -11,7 +13,7 @@ my $database = "taransvar";
 my $hostname = "localhost";
 my $port = "3306";
 my $user = "perl";
-my $password = "RevSjoko731";
+my $password = db_password('perl');
 
 
 my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);

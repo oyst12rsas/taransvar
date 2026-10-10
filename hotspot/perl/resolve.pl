@@ -4,6 +4,8 @@
 
 use strict;
 use warnings;
+use lib '/usr/local/lib/tarasec';
+use TaraSecDB qw(db_password);
 use autodie;
 use DBI;
 
@@ -15,7 +17,7 @@ my $database = "taransvar";
 my $hostname = "localhost";
 my $port = "3306";
 my $user = "perl";
-my $password = "RevSjoko731";
+my $password = db_password('perl');
 
 my @cArinTags = ("NetName","NetHandle","Parent","NetType","OriginAS","Organization","RegDate","Updated","Comment","OrgName","OrgId","Address","City","StateProv","PostalCode","Country","OrgAbuseHandle", "OrgAbuseName", "OrgAbusePhone", "OrgAbuseEmail", "OrgAbuseRef","OrgTechHandle","OrgTechName","OrgTechEmail","OrgTechReg", "inetnum");
 

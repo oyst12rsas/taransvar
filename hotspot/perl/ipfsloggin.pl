@@ -4,6 +4,8 @@
 
 use strict;
 use warnings;
+use lib '/usr/local/lib/tarasec';
+use TaraSecDB qw(db_password);
 use autodie;
 use DBI;
 my $szSysRoot = "/root/wifi/";
@@ -12,7 +14,7 @@ my $database = "taransvar";
 my $hostname = "localhost";
 my $port = "3306";
 my $user = "perl";
-my $password = "RevSjoko731";
+my $password = db_password('perl');
 
 my $dsn = "DBI:mysql:database=$database;host=$hostname;port=$port";
 my $dbh = DBI->connect($dsn, $user, $password);

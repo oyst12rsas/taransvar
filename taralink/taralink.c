@@ -28,6 +28,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
+#include "db_credentials.h"
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/select.h>
@@ -188,18 +189,23 @@ MYSQL *getConnection()
     //server ="10.10.10.10";
 	//char *user = "'scriptUsrAces3f3'@'10.10.10.20'";
     char *user = "scriptUsrAces3f3";
-	char *password = "rErte8Oi98e-2_#";
+	char password[65];
+
 	char *database = "taransvar";
     conn = mysql_init(NULL);
 
     if (configFileExists())
         return 0;
 
+    if (!tarasec_db_password(password)) {
+        fprintf(stderr, "Local database credential unavailable; run the updated installer\n");
+        exit(1);
+    }
+
 	/* Connect to database */
 	if (!mysql_real_connect(conn, server, user, password, database, 0, NULL, 0)) {
 		fprintf(stderr, "%s\n", mysql_error(conn));
 
-        //CREATE USER 'scriptUsrAces3f3'@'10.10.10.%' IDENTIFIED BY 'rErte8Oi98e-2_#';
         //GRANT ALL PRIVILEGES ON taransvar.* TO 'scriptUsrAces3f3'@'10.10.10.%';
 
         printf("Unable to connect to DB. Aborting... \n");
