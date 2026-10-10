@@ -168,7 +168,7 @@ Before declaring the connected installation complete:
 4. Verify the normal client Internet route remains on the WAN/uplink.
 5. If enrollment, policy approval or service access fails, report **local setup working; TaraSec network integration incomplete**, explain the failed check and continue troubleshooting. Do not silently skip NetBird or describe it as only an optional Demo 4 component.
 
-Restricted bootstrap enrollment does not automatically grant full operational access. The operator must approve the appropriate peer policies after registration. Use configured endpoint addresses rather than assuming the test deployment's private IPs apply to every installer.
+The testbed models public Internet access: a public NetBird joining key or VPN membership grants no TaraSec trust. Approve node identity and API permissions independently of network reachability. Legacy bootstrap policies may still exist; do not interpret those policies as node certification. Use configured endpoint addresses rather than assuming the test deployment's private IPs apply to every installer.
 
 ## NetBird enrollment details
 
@@ -207,3 +207,18 @@ When a user says they want to install or test TaraSec:
 5. verify the **TaraSec custom portal**, not merely openNDS service health;
 6. distinguish hotspot/openNDS, TaraSec subscriber entitlement, TaraSec management/NetBird, and optional payment integration as separate layers;
 7. for Raspberry Pi OS and other not-yet-clean-tested platforms, state that the implementation is on `main` but clean reinstall acceptance is pending until explicitly confirmed.
+
+## Automatic node credentials and central AI
+
+Normal installers enable `tarasec-agent-approvals.timer`. New nodes generate
+a private identity key locally and submit a pending registration. The central
+operator checks its fingerprint and approves its role using Google login and
+TOTP. No provider AI key or Google client secret is installed on a node.
+Set `NODE_API_URL` to the DB server's HTTPS agent endpoint; do not send node
+credentials to HTTP addresses. Deploy the companion central backend and its
+private configuration before accepting registrations. See
+`ops/agent/ENROLLMENT.md` in `oyst12rsas/tarasec.org`.
+
+Pending approval, failed AI requests and exhausted budgets leave bounded local
+monitoring active. Verify receipt, role limits, revocation and automatic renewal
+on a disposable node before calling the deployment complete.

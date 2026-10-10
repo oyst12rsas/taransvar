@@ -6,7 +6,8 @@
 # Full setting reference: misc/AGENT_APPROVALS.md in the taransvar repository.
 #
 # Current implementation: deterministic checks, a structured assessment, and
-# two optional SSH actions. No LLM or unrestricted sudo command executor is
+# two optional SSH actions, plus advisory assessments through the central
+# AI service. Provider keys stay central; no unrestricted command executor is
 # connected. Values described as "declared" below do not enforce website login.
 #
 # Booleans accepted by the worker: yes/no (also 1/0, true/false, on/off).
@@ -67,3 +68,9 @@ AUTH_SMS_VERIFICATION_ENABLED=no
 AUTH_OIDC_ENABLED=yes
 AUTH_RECOVERY_CODES_ENABLED=yes
 AUTH_DANGEROUS_ACTION_MINIMUM=phishing_resistant_mfa
+
+# Authenticated TaraSec endpoint; provider API keys stay on the central server.
+# Set this to the DB server HTTPS endpoint when hosting the central backend there.
+NODE_API_URL=https://tarasec.org/ops/agent/api.php
+NODE_AUTO_ENROLLMENT=yes
+CENTRAL_AI_ENABLED=yes

@@ -7,26 +7,32 @@ only short health labels and the pseudonym each node supplies from
 `AGENT_PUBLIC_NICKNAME` in `/etc/tarasecfw.conf`. Avoid hostnames, IP
 addresses, personal names, and location clues in that nickname.
 
-The node's worker makes outbound HTTPS requests to TaraSec; no inbound SSH
-or agent port is opened. A distinct random 32-byte token identifies each
-node. TaraSec registers only its SHA-256 hash. The node installer does not
-create an operator account or enroll a node in the live service; arrange
-registration with a TaraSec operator before expecting the worker to report.
+The worker makes outbound HTTPS requests; no agent listening port is opened.
+New installations generate a root-only RSA identity key and register a pending
+request automatically. Public VPN membership and observed IP addresses grant
+no permissions. Check the fingerprint shown in the node journal against the
+operator registration page, then approve its reporting or operations role with
+Google login and an authenticator code. Partner certification is separate.
 
-For each node:
+After approval, the server returns a per-node credential encrypted to the
+node's public key. Credentials expire after 24 hours and renew automatically.
+The server stores only a token hash and encrypted credential. Revocation
+immediately rejects subsequent API requests. Existing manually registered
+credentials remain compatible and must be retired explicitly after migration.
 
-1. Put a non-identifying nickname in `/etc/tarasecfw.conf` as
-   `AGENT_PUBLIC_NICKNAME="Blue Lantern"`.
-2. Generate `openssl rand -hex 32` into
-   `/etc/tarasec/agent-node.token`; owner root, mode 0600.
-3. Give the SHA-256 hash of the node token and its intended public nickname
-   to a TaraSec operator for registration. Keep the raw token on the node;
-   never send or publish it. A node that is not registered receives
-   `node_not_registered` from the live service.
-4. Install with `sudo bash misc/install_agent_approvals.sh` from a current
-   taransvar checkout. The installer copies scripts to a root-owned path
-   and enables a one-minute systemd timer. Inspect its journal before
-   allowing any operations.
+The normal installers install this worker. For an existing node, run
+`sudo bash misc/install_agent_approvals.sh`. Set `NODE_API_URL` in
+`/etc/tarasec-server-manager.conf` to the configured DB-server HTTPS endpoint.
+The compatibility default is the current website endpoint; new enrollment
+requires deployment of its companion backend from `tarasec.org` first.
+See `ops/agent/ENROLLMENT.md` in that repository for central deployment.
+The timer retries pending enrollment without blocking local checks.
+
+Central AI requests use only allowlisted health observations, never logs,
+passwords, tokens or provider API keys. Assessments are advisory; the bounded
+worker still executes only locally supported, individually approved operations.
+The minute report includes both `bounded_checks` and `central_ai`, with its
+original assessment timestamp and budget/unavailable state.
 
 The first operator-approved executable proposal is
 `disable_obsolete_gateway_unit`. The
@@ -44,8 +50,8 @@ are checked server-side. Each approval applies to one typed operation and
 expires in one hour. The worker rejects unknown operations and logs the
 result to its systemd journal.
 
-The worker uses deterministic checks to generate proposals. An AI model is
-not connected by the node installer. Additional typed operations would need
+The worker uses deterministic checks to generate executable proposals.
+Central AI assessments remain separate advisory evidence. Additional typed operations would need
 explicit local checks and recovery behavior.
 
 ## Server-manager policy, prompt, and knowledge
@@ -96,9 +102,9 @@ status. After updating the checkout on an installed node, rerun
 `sudo bash misc/install_agent_approvals.sh` to install the updated worker and
 sync `misc/crontasks.pl` to the installed `/root/taransvar/perl/crontasks.pl`.
 
-The worker currently uses deterministic checks and sends a structured
-assessment. The prompt and knowledge documents are installed for a future
-model integration, but no model runs because of this configuration alone.
+The worker uses deterministic checks locally and can request an advisory
+assessment from the central AI service. The provider key and model are
+configured only on that service.
 TaraSec manages the live approval page, operator accounts, node enrollment,
 and authenticator setup separately. Node configuration changes do not change
 website login or approval requirements.
