@@ -13,6 +13,7 @@ import urllib.error
 import urllib.request
 
 import ssh_security_evidence
+import node_enrollment
 
 CONF = "/etc/tarasecfw.conf"
 MANAGER_CONF = "/etc/tarasec-server-manager.conf"
@@ -60,16 +61,7 @@ def audit(event):
 
 
 def api(action, body, token):
-    data = json.dumps(body, separators=(",", ":")).encode("utf-8")
-    request = urllib.request.Request(
-        URL + "?action=" + action, data=data,
-        headers={"Content-Type": "application/json", "Authorization": "Bearer " + token},
-        method="POST")
-    with urllib.request.urlopen(request, timeout=12) as response:
-        answer = json.load(response)
-    if not isinstance(answer, dict) or answer.get("ok") is not True:
-        raise RuntimeError("Approval API rejected " + action)
-    return answer
+    return node_enrollment.request(manager_setting("NODE_API_URL", URL), action, body, token)
 
 
 def run(*argv):
@@ -133,7 +125,7 @@ def assessment(evidence, concerns, terminal, attack, actions):
     }
 
 
-def status_snapshot(evidence, concerns, terminal, attack, actions, pending, remote):
+def status_snapshot(evidence, concerns, terminal, attack, actions, pending, remote, central_ai=None):
     """Bounded local status for the node's normal minute report, with no secrets."""
     fields = evidence["tarasecfw_selected_fields"]
     auth = evidence["sshd_effective_selected_fields"].get("stdout", "").lower()
@@ -172,6 +164,7 @@ def status_snapshot(evidence, concerns, terminal, attack, actions, pending, remo
         "actions": [dict(action=a.get("action", "unknown"), result=a.get("result", "unknown"))
                     for a in actions[:8]],
         "approval_service": remote,
+        "central_ai": central_ai or {"state": "not_requested"},
     }
 
 
@@ -380,9 +373,6 @@ def main():
         raise RuntimeError("Run as root")
     if len(sys.argv) == 2 and sys.argv[1] == "--rollback-ssh-containment":
         return 0 if rollback_containment() else 1
-    token = open(TOKEN_PATH, encoding="ascii").read().strip()
-    if not re.fullmatch(r"[a-f0-9]{64}", token):
-        raise RuntimeError("Invalid node token")
     nickname = setting("AGENT_PUBLIC_NICKNAME")
     if not re.fullmatch(r"[A-Za-z][A-Za-z0-9 _-]{2,31}", nickname):
         raise RuntimeError("Set AGENT_PUBLIC_NICKNAME in /etc/tarasecfw.conf")
@@ -401,14 +391,46 @@ def main():
     needs_attention = bool(concerns or attack["ongoing"] or actions)
     pending = []
     remote = "checking"
+    central_ai = {"state": "not_requested"}
     write_status_snapshot(status_snapshot(evidence, concerns, terminal, attack, actions, pending, remote))
     try:
+        enrolled_role = "operations"
+        if enabled("NODE_AUTO_ENROLLMENT", "yes") and (
+                not os.path.exists(TOKEN_PATH) or os.path.exists(str(node_enrollment.STATE / "node-identity.pem"))):
+            import fcntl
+            node_enrollment.STATE.mkdir(mode=0o700, parents=True, exist_ok=True)
+            with (node_enrollment.STATE / "node-enrollment.lock").open("a") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                registration = node_enrollment.enroll(manager_setting("NODE_API_URL", URL), "operations")
+            print("Node enrollment: " + registration["state"] + "; fingerprint " + registration["id"])
+            if registration["state"] != "approved":
+                remote = "enrollment_" + registration["state"]
+                pending.append("Node registration " + registration["state"] + "; operator approval required")
+                return
+            enrolled_role = registration["role"]
+        token = open(TOKEN_PATH, encoding="ascii").read().strip()
+        if not re.fullmatch(r"[a-f0-9]{64}", token):
+            raise RuntimeError("Invalid node token")
         api("heartbeat", {"nickname": nickname,
                           "level": "attention" if needs_attention else "ok",
                           "findings": concerns,
                           "assessment": current_assessment}, token)
         remote = "connected"
         print("Agent status: " + ("needs review (" + str(len(concerns)) + " checks)" if concerns else "operating"))
+        if enabled("CENTRAL_AI_ENABLED", "yes"):
+            try:
+                forwarding = forwarding_health(evidence)
+                central_ai = api("assess", {"evidence": {
+                    "role": "gateway" if forwarding["is_gateway"] else "node",
+                    "reboot_required": os.path.exists("/var/run/reboot-required"),
+                    "ssh_attack_ongoing": bool(attack["ongoing"]),
+                    **({"forwarding_enabled": forwarding["ip_forward"]}
+                       if forwarding["ip_forward"] is not None else {}),
+                }}, token)
+            except (OSError, ValueError, RuntimeError, urllib.error.URLError):
+                central_ai = {"state": "unavailable", "summary": "Central AI unavailable. Local monitoring continues."}
+        if enrolled_role != "operations":
+            return
         if obsolete_unit_candidate(evidence):
             proposal = api("propose", {"operation": "disable_obsolete_gateway_unit"}, token)
             if proposal["state"] == "pending":
@@ -433,7 +455,7 @@ def main():
         pending.append("Approval service unavailable; check agent journal")
         raise
     finally:
-        write_status_snapshot(status_snapshot(evidence, concerns, terminal, attack, actions, pending, remote))
+        write_status_snapshot(status_snapshot(evidence, concerns, terminal, attack, actions, pending, remote, central_ai))
 
 
 if __name__ == "__main__":

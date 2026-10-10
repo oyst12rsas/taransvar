@@ -426,6 +426,8 @@ if lsmod | awk '{print $1}' | grep -qx tarakernel && \
     fi
 fi
 
+bash "$REPO_ROOT/misc/install_agent_approvals.sh"
+
 echo "Next: review and verify your node security at https://tarasec.org/safety/#deployment"
 echo "Hardening priorities: https://tarasec.org/safety/#hardening-priorities"
 echo "Ask your AI assistant to check the next missing control, test it and fix in-scope routine failures."
