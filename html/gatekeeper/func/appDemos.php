@@ -28,6 +28,7 @@ function appDemos()
 <div class="http-demo-hub">
 <h1>HTTP demos</h1>
 <p class="http-demo-intro">Choose one demonstration. Each opens on its own page with its explanation, controls, live status, and “Copy debug info for AI” button.</p>
+<p><a href="/demo/live/">Open the desktop live presentation · Demo 1</a></p>
 <div class="http-demo-grid">
  <div class="http-demo-card">
   <h2>Demo 1</h2>

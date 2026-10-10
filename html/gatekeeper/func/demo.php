@@ -39,6 +39,7 @@ function demo()
 <p class="demo-hub-intro">TaraSec has both browser-based demonstrations and newer coordinated app demos. The browser demo remains useful because it needs no app installation and exposes the tagging and threat-assessment flow directly.</p>
 
 <div class="demo-hub-grid">
+    <div class="demo-hub-card"><h2>Live presentation</h2><p>Show this computer, its gateway and two receivers together, with synchronized observations and guided Demo 1 controls.</p><a class="demo-button" href="/demo/live/">Open live presentation</a></div>
     <div class="demo-hub-card">
         <h2>Browser demo</h2>
         <p>Run the original functional Gatekeeper demo. It shows addressing/NAT attribution, infection state, suspicious-activity reports, traffic tagging and TaraSec's resulting threat assessment.</p>

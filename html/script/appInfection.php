@@ -8,6 +8,8 @@ include '../taraLib.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
+// Public, caller-scoped evidence for the browser presentation demo.
+header('Access-Control-Allow-Origin: *');
 
 function appInfectionFail(int $status, string $message): never
 {
