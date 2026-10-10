@@ -179,6 +179,14 @@ try {
         $s=$c->prepare("UPDATE demoAssistanceParticipant SET recoveredAt=CASE WHEN decision='silent' THEN UTC_TIMESTAMP() ELSE recoveredAt END,decision=CASE WHEN decision='silent' THEN 'recovered' ELSE 'connected' END,lastSeenAt=UTC_TIMESTAMP() WHERE sessionId=? AND participantToken=? AND decision<>'left'");
         $s->bind_param('is',$sid,$pt); $s->execute(); $n=$s->affected_rows; $s->close(); if($n<1) reply3(404,['ok'=>false,'error'=>'participant_not_found']); reply3(200,['ok'=>true,'session'=>session3($c,$sid)]);
     }
+    if($a==='inspect_participant') {
+        $pt=(string)($b['participant_token']??'');
+        if(!preg_match('/^[a-f0-9]{64}$/D',$pt)) reply3(400,['ok'=>false,'error'=>'invalid_participant']);
+        $s=$c->prepare("SELECT p.participantId,p.observedIp FROM demoAssistanceParticipant p JOIN demoAssistanceSession d ON d.sessionId=p.sessionId WHERE p.sessionId=? AND p.participantToken=? AND p.decision<>'left' AND d.visibility='public'");
+        $s->bind_param('is',$sid,$pt);$s->execute();$p=$s->get_result()->fetch_assoc();$s->close();
+        if(!$p || $p['observedIp']!==(string)($_SERVER['REMOTE_ADDR']??'')) reply3(403,['ok'=>false,'error'=>'participant_route_mismatch_or_private_session']);
+        reply3(200,['ok'=>true,'participant_id'=>(int)$p['participantId'],'session'=>session3($c,$sid)]);
+    }
     if($a==='status') { if(!groupAccess3($c,$sid,(string)($_REQUEST['join_code']??''))) reply3(403,['ok'=>false,'error'=>'invalid_group_code']); reply3(200,['ok'=>true,'session'=>session3($c,$sid)]); }
     reply3(400,['ok'=>false,'error'=>'invalid_action']);
 } catch(Throwable $e){ error_log('appDemoAssistance.php: '.$e->getMessage()); reply3(503,['ok'=>false,'error'=>'demo_assistance_unavailable']); }

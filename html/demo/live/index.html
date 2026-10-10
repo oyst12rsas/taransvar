@@ -3,6 +3,7 @@
 <body><main>
 <header><a href="/demo/">TARASEC / LIVE TESTBED</a><button id="fullscreen">Presentation mode</button></header>
 <h1>See cooperative security<br>in action.</h1><p class="intro">Demo 1 · Follow this computer’s traffic from its gateway to two receiving nodes.</p>
+<p id="shared-session" role="status"></p>
 <section class="setup"><label>Gateway IPv4 <input id="gateway" value="100.68.165.190" inputmode="decimal"></label><label>Receiver A IPv4 <input id="receiverA" value="100.68.176.110" inputmode="decimal"></label><label>Receiver B IPv4 <input id="receiverB" value="100.68.149.164" inputmode="decimal"></label><button id="start">Start demonstration</button></section>
 <p id="message" role="status" aria-live="polite">Connect this computer through the TaraSec hotspot or WireGuard demo route. The browser itself generates the test traffic; this page does not observe a separate phone.</p>
 <section class="network" aria-label="Live network observations">

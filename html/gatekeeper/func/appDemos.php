@@ -27,6 +27,20 @@ function appDemos()
 </style>
 <div class="http-demo-hub">
 <h1>HTTP demos</h1>
+<p id="shared-demo-session" role="status">Checking whether this device is already in a demo…</p>
+<script>
+(async function(){
+ const out=document.getElementById('shared-demo-session');
+ async function read(base,file){const r=await fetch(base+'/script/'+file,{cache:'no-store',signal:AbortSignal.timeout(6000)});const d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||'unavailable');return d;}
+ try {
+   let gatewayBase=location.origin;let d=await read(location.origin,'appDemoDeviceSession.php');
+   if(!d.demo){const observed=await read(location.origin,'appDemoGateway.php');if(observed.gateway.recognized){gatewayBase='http://'+observed.gateway.address;d=await read(gatewayBase,'appDemoDeviceSession.php');}}
+   if(!d.demo){out.textContent='No active demo registered for this device on the observed route.';return;}
+   out.textContent='This device is already in Demo 3 #'+d.demo.session_id+' as participant #'+d.demo.participant_id+'. ';
+   const a=document.createElement('a');a.href=gatewayBase+'/gatekeeper/index.php?f=appDemo3';a.textContent='Show the existing exercise';out.append(a);
+ }catch(e){out.textContent='Shared session discovery unavailable: '+e.message;}
+})();
+</script>
 <p class="http-demo-intro">Choose one demonstration. Each opens on its own page with its explanation, controls, live status, and “Copy debug info for AI” button.</p>
 <p><a href="/demo/live/">Open the desktop live presentation · Demo 1</a></p>
 <div class="http-demo-grid">
