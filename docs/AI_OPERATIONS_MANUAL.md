@@ -446,3 +446,54 @@ helpers independently, polls approved SSH openings every five seconds, and
 retains separate automatic expiry and activity observation. Migration preserves
 the existing reporter and records recovery scheduling. Verify fresh central
 receipt and helper health before claiming completion.
+
+
+## Required reboot maintenance
+
+The minute worker now inspects `/var/run/reboot-required` before model scheduling.
+Owner policy `mode=demo`, `execute=true`, `allow_reboot=true` enables the dedicated
+required-reboot path. It does not consume model calls, and an old model task such
+as “Do not reboot” cannot override these explicit policy flags. Inspection-only,
+production and `allow_reboot=false` continue to block reboots. Updating installed
+code preserves the flags; it never silently enables reboot on another owner's node.
+
+Before dispatch the worker verifies the selected newest installed kernel has an
+initramfs, headers, matching TaraKernel vermagic, installed DKMS registration and
+resolvable module dependencies. The first GRUB Linux entry must match that kernel,
+with explicit default entry zero and no saved/one-shot override. Custom bootloaders
+and enabled/unverified Secure Boot remain blocked for owner-specific verification.
+It checks the continuous activity observer and `loginctl` twice; active interactive
+sessions or missing session evidence defer reboot. Failed or interrupted operations
+remain visible; a reboot attempt consumes the configured daily allowance even if
+systemctl fails. Readiness and quiet time are rechecked immediately before dispatch.
+
+The root-local checkpoint retains the target kernel, old boot ID, reason, packages,
+service requirements, forwarding settings and current task before dispatch. After
+boot, every tick verifies kernel identity, marker clearance, loaded TaraKernel,
+required services and restored forwarding. It then invokes the installed
+`reboot-verification-probe`, which reuses the enrolled operations activity feed.
+The central feed must confirm a fresh post-boot report with this boot ID and kernel
+and TaraLink running. Missing DB receipt keeps verification pending and prevents
+another reboot; it never becomes a successful reboot merely because systemctl
+returned zero. A custom root-owned executable may replace this functional probe.
+
+Upgrade **both** the node worker and central feed. Install the minute reporter
+bridge so reports include `operationsAgent.boot_id`. Existing pilot configuration,
+node-specific activity enrollment and observer acceptance remain required:
+
+```
+sudo bash misc/install_operations_agent.sh
+sudo sha256sum /ACTUAL/RUNTIME/crontasks.pl
+sudo python3 misc/install_operations_reporter_bridge.py /ACTUAL/RUNTIME/crontasks.pl ACTUAL_SHA256
+```
+
+Use the actual reporter path and its measured digest for the bridge;
+do not patch only an unused checkout. The default required services are taralink,
+netbird and rsyslog. Configure `reboot_required_services` to the actual managed units
+if this node uses different names. Test before enabling the existing owner-authorized
+operations timer and observer. The compact report and Gatekeeper show reboot
+status, target kernel and each blocker, independently of model availability.
+
+Repository regression tests do not establish live reboot acceptance on Audi,
+Camembert, Roquefort or the Standard gateway. Record a real quiet-time reboot and
+fresh central receipt for each enrolled node before claiming it is deployed.

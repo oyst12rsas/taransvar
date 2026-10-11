@@ -34,5 +34,11 @@
     "max_calls_per_day": 32,
     "continuation_seconds": 300,
     "disk_growth_bytes_per_hour": 268435456
-  }
+  },
+  "reboot_verification_probe": "/usr/local/lib/tarasec-operations/reboot-verification-probe",
+  "reboot_required_services": [
+    "taralink.service",
+    "netbird.service",
+    "rsyslog.service"
+  ]
 }

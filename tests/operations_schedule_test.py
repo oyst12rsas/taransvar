@@ -31,6 +31,11 @@ class ScheduleTests(unittest.TestCase):
         self.assertTrue(reserve_call(state, policy, 10001))
         self.assertFalse(reserve_call(state, policy, 10002))
         self.assertTrue(reserve_call(state, policy, 14000))
+    def test_reboot_requirement_triggers_once_even_without_resource_pressure(self):
+        evidence = dict(self.evidence(), reboot_required=True)
+        self.assertEqual(choose_trigger({}, {}, evidence, [], 10000), 'reboot_required')
+        self.assertIsNone(choose_trigger(dict(last_model_pressure=evidence), {}, evidence, [], 10000))
+
     def test_zero_budget_disables_model(self):
         self.assertFalse(reserve_call({}, {'model_schedule': {'max_calls_per_day': 0}}, 10000))
 

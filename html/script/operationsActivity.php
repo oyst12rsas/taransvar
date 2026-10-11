@@ -31,7 +31,16 @@ try {
     foreach ($queries as $sql) {
         $row=$db->query($sql)->fetch_assoc();$active=$active || (bool)$row['active'];
     }
-    operationsActivityReply(200,['checked_at'=>time(),'complete'=>true,'active_demo'=>$active,
+    $receipt=$db->prepare('SELECT UNIX_TIMESTAMP(partnerStatusReceived) received, status FROM partnerRouter WHERE ip=INET_ATON(?) ORDER BY partnerStatusReceived DESC LIMIT 1');
+    $receipt->bind_param('s',$ip);
+    $receipt->execute();
+    $node=$receipt->get_result()->fetch_assoc();
+    $status=$node ? json_decode((string)$node['status'],true) : null;
+    operationsActivityReply(200,['central_received_at'=>$node ? (int)$node['received'] : null,
+        'operations_boot_id'=>is_array($status) ? ($status['operationsAgent']['boot_id']??null) : null,
+        'kernel_running'=>is_array($status) && (string)($status['knl']??'')==='1',
+        'link_running'=>is_array($status) && (string)($status['lnk']??'')==='1',
+        'checked_at'=>time(),'complete'=>true,'active_demo'=>$active,
         'scope'=>'all central demo sessions and active DEMO infections']);
 } catch(Throwable $e) {
     error_log('Operations activity feed unavailable: '.get_class($e));

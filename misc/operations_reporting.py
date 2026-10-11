@@ -21,6 +21,8 @@ def local_report(state, now=None):
         'last_assessment_status': state.get('last_assessment_status'),
         'resource_pressure': state.get('resource_pressure'),
         'model_trigger': state.get('model_trigger'),
+        'reboot': state.get('reboot'),
+        'boot_id': state.get('boot_id'),
         'engine': 'operations_worker', 'status': state.get('status', 'unknown'),
         'error_stage': state.get('error_stage'),
         'deployment_checked_at': result.get('checked_at'),

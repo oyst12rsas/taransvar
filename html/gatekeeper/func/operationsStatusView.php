@@ -46,6 +46,14 @@ function operationsStatusIssues($agent)
     );
     if (isset($messages[$assessment])) $issues[] = $messages[$assessment];
     elseif (isset($messages[$status])) $issues[] = $messages[$status];
+    if (is_array($agent['reboot'] ?? null)) {
+        $reboot = $agent['reboot'];
+        if (!empty($reboot['required']) || in_array($reboot['status'] ?? '', array('verification_pending','failed','awaiting_boot'), true)) {
+            $issues[] = 'Reboot maintenance: '.str_replace('_', ' ', (string)($reboot['status'] ?? 'unknown')).'.';
+            foreach (($reboot['blockers'] ?? array()) as $blocker)
+                if (is_string($blocker)) $issues[] = 'Reboot: '.str_replace('_', ' ', $blocker).'.';
+        }
+    }
     $security = operationsSecurityFindings($agent);
     if ($security) $issues[] = 'Security agent deployment is incomplete.';
     foreach (($agent['deployment_summary'] ?? array()) as $message)
@@ -71,6 +79,10 @@ function operationsStatusDetails($agent)
         $rows[$label] = is_numeric($timestamp) && $timestamp > 0
             ? gmdate('Y-m-d H:i:s', (int)$timestamp).' UTC'
             : 'Not reported; findings may reflect an earlier assessment';
+    }
+    if (is_array($agent['reboot'] ?? null)) {
+        $rows['Reboot maintenance'] = str_replace('_', ' ', (string)($agent['reboot']['status'] ?? 'unknown'));
+        if (!empty($agent['reboot']['target_kernel'])) $rows['Reboot target kernel'] = $agent['reboot']['target_kernel'];
     }
     $html = '<table>';
     foreach ($rows as $label => $value)

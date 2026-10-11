@@ -33,6 +33,8 @@ def choose_trigger(state, policy, evidence, failed_services, now, requested=Fals
         reason = 'owner_request'
     elif evidence.get('triggered') and (not old.get('triggered') or worsening):
         reason = 'resource_pressure_worsened' if worsening else 'resource_threshold_crossed'
+    elif evidence.get('reboot_required') and not old.get('reboot_required'):
+        reason = 'reboot_required'
     elif growth:
         reason = 'rapid_disk_growth'
     elif new_failure:

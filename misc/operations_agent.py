@@ -17,6 +17,7 @@ from operations_prompt import build_prompt, validate_decision, progress_feedback
 from operations_tools import gateway_tools, resolve_tool
 from operations_reporting import local_report, stage_error
 from operations_schedule import choose_trigger, reserve_call
+from operations_reboot import inspect as inspect_reboot, maintain as maintain_reboot
 
 
 def save(path, value):
@@ -289,6 +290,13 @@ def main():
                 state['last_automatic_resource_result'] = {'operation': decision['operation'], 'exit_code': result['exit_code']}
                 save(path, state)
             snapshot['resource_pressure'] = pressure(resources)
+        state['current_stage'] = 'required_reboot'
+        reboot = inspect_reboot(run)
+        if maintain_reboot(state, policy, reboot, boot, now, run, trusted, quiet,
+                           lambda: save(path, state), record):
+            return
+        snapshot['reboot'] = state['reboot']
+        snapshot['resource_pressure']['reboot_required'] = reboot['required']
         state['continuation_ready'] = False
         if state.get('last_assessment_status') == 'deferred_activity_or_unknown':
             observed = run([str(trusted(policy['quiet_probe']))], timeout=20)
@@ -424,6 +432,7 @@ def main():
             save(path, state)
         if not isinstance(decision.get('task_state', {}), dict):
             raise ValueError('Task state must be an object')
+        snapshot['resource_pressure']['reboot_required'] = state.get('reboot', {}).get('required', False)
         state['last_model_pressure'] = snapshot['resource_pressure']
         state['last_model_failed_services'] = sorted(failed_services)
         state['last_assessment_checked_at'] = time.time()
@@ -521,27 +530,13 @@ def main():
             state['task_state']['last_procedure'] = decision['procedure']
             state['task_state']['last_exit_code'] = result['exit_code']
         else:
-            if policy.get('allow_reboot') is not True:
-                raise ValueError('Reboot disabled by local owner policy')
-            recent = [t for t in state.get('reboots', []) if 0 <= now - t < 86400]
-            if len(recent) >= max(0, int(policy.get('max_reboots_per_day', 1))):
-                raise ValueError('Daily reboot limit reached')
-            observed = run([str(observer)], timeout=20)
-            sample = json.loads(observed['output']) if observed['exit_code'] == 0 else {}
-            if not quiet(state, sample, time.time(), max(60, int(policy.get('quiet_seconds', 300)))):
-                state['status'] = 'deferred_activity_or_unknown'
-                save(path, state)
-                return
-            state['reboots'] = recent + [now]
-            state['reboot_pending'] = True
-            state['status'] = 'reboot_requested'
-            save(path, state)
-            record({'reboot': True, 'reason': state['summary'], 'task_state': state['task_state']})
-            result = run(['systemctl', 'reboot'], timeout=30)
-            if result['exit_code'] != 0:
-                state.pop('reboot_pending', None)
-                state['status'] = 'reboot_failed'
-                record({'reboot_result': result})
+            evidence = inspect_reboot(run)
+            handled = maintain_reboot(state, policy, evidence, boot, time.time(), run,
+                                      trusted, quiet, lambda: save(path, state), record)
+            if not handled:
+                state['status'] = 'reboot_deferred'
+                if not evidence['required']:
+                    state['reboot'].update(status='not_required', blockers=['no_os_reboot_requirement'])
         save(path, state)
     except Exception as error:
         # Do not log HTTP payloads, auth headers or configuration secrets.
