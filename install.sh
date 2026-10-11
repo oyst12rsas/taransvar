@@ -30,7 +30,8 @@ apt-get install -y apache2 perl libdbd-mysql-perl libmariadb-dev libmnl-dev
 apt-get install -y php libapache2-mod-php php-mysql php-curl php-mbstring
 apt-get install -y gcc make pkg-config curl libcurl4-openssl-dev libcjson-dev dhcpdump net-tools conntrack
 apt-get install -y libdbi-perl libdbd-mysql-perl libjson-perl conntrack dhcpdump isc-dhcp-server
-apt-get install -y whois iptables ipset
+apt-get install -y whois iptables ipset python3 logrotate
+python3 "$SCRIPT_DIR/misc/configure_log_retention.py"
 
 echo "wireshark-common wireshark-common/install-setuid boolean false" | debconf-set-selections
 DEBIAN_FRONTEND=noninteractive apt-get install -y tshark
