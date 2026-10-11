@@ -64,8 +64,8 @@ class RebootTests(unittest.TestCase):
         self.assertFalse(self.tick())
         self.assertEqual(self.calls, [])
 
-    def test_disabled_owner_permission_and_daily_budget_block(self):
-        for changes in (dict(allow_reboot=False), dict(execute=False), dict(mode='production')):
+    def test_read_only_modes_and_daily_budget_block(self):
+        for changes in (dict(mode='inspect'), dict(mode='unknown')):
             self.policy.update(changes)
             self.assertFalse(self.tick())
             self.assertNotIn(['systemctl', 'reboot'], self.calls)
@@ -74,6 +74,13 @@ class RebootTests(unittest.TestCase):
         self.state['reboots'] = [999]
         self.assertFalse(self.tick())
         self.assertIn('daily_reboot_limit_reached', self.state['reboot']['blockers'])
+
+    def test_demo_and_production_mode_override_legacy_false_flags(self):
+        for mode in ('demo', 'production'):
+            self.assertIsNone(permission(dict(mode=mode,execute=False,allow_reboot=False), {}, 1000))
+        self.policy.update(mode='production',execute=False,allow_reboot=False)
+        self.assertTrue(self.tick())
+        self.assertEqual(self.calls[-1], ['systemctl', 'reboot'])
 
     def test_missing_module_headers_initramfs_and_custom_boot_block(self):
         for name in ('boot/initrd.img-' + self.kernel, 'etc/default/grub'):

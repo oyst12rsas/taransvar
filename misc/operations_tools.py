@@ -1,9 +1,9 @@
 """Evidence-backed gateway tools. Fixed commands, existing owner/quiet guards."""
+from operations_policy import experimental_enabled
 
 
 def _gateway_tools(policy, results, snapshot):
-    if (policy.get('mode')!='demo' or policy.get('execute') is not True
-        or policy.get('allow_experimental_commands') is not True):
+    if not experimental_enabled(policy):
         return {}
     properties=results.get('gateway_startup',{}).get('result',{}).get('properties',{})
     executable=properties.get('executable',{})
@@ -40,8 +40,7 @@ def resolve_tool(decision, catalog):
 
 def gateway_tools(policy, results, snapshot):
     tools = _gateway_tools(policy, results, snapshot)
-    if (policy.get('mode') == 'demo' and policy.get('execute') is True
-            and policy.get('allow_experimental_commands') is True):
+    if experimental_enabled(policy):
         reporters = results.get('deployment_status', {}).get('result', {}).get('reporters', [])
         if len(reporters) == 1:
             reporter = reporters[0]
@@ -52,9 +51,7 @@ def gateway_tools(policy, results, snapshot):
                           reporter['path'], reporter['sha256']], requires_quiet=True,
                     expected_result='Back up and patch the exact unchanged root-owned reporter to include separate operations/security snapshots. Verify fresh central receipt after cron; no security enrollment performed.',
                     recovery_plan='Restore the printed root-only backup if reporter execution fails; preserve cron schedule and owner configuration.')
-    if (policy.get('mode') != 'demo' or policy.get('execute') is not True
-            or policy.get('allow_experimental_commands') is not True
-            or 'retention' not in str(policy.get('task', '')).lower()):
+    if not experimental_enabled(policy) or 'retention' not in str(policy.get('task', '')).lower():
         return tools
     evidence = results.get('logging_policy', {}).get('result', {}).get('journald_effective', {})
     text = evidence.get('output', '')

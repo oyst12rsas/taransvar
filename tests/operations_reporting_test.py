@@ -54,8 +54,7 @@ class ReportingTests(unittest.TestCase):
             'sha256': 'a' * 64}]}}}
         policy = dict(mode='demo', execute=True, allow_experimental_commands=True)
         self.assertIn('minute_reporter_bridge', gateway_tools(policy, results, {}))
-        policy['execute'] = False
+        policy['mode'] = 'inspect'
         self.assertNotIn('minute_reporter_bridge', gateway_tools(policy, results, {}))
-        policy['execute'] = True
         policy['mode'] = 'production'
         self.assertNotIn('minute_reporter_bridge', gateway_tools(policy, results, {}))

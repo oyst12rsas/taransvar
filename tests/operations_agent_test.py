@@ -58,10 +58,13 @@ class ReadinessTest(unittest.TestCase):
             entry = {'validation': dict(self.entry['validation'], **{field: value})}
             self.assertFalse(agent.eligible(entry, self.policy, 'ubuntu-24.04'))
 
-    def test_production_and_inspection_cannot_mutate(self):
-        for policy in [dict(self.policy, mode='production'), dict(self.policy, mode='inspect'),
-                       dict(self.policy, execute=False), dict(self.policy, execute='true')]:
+    def test_inspection_and_unknown_modes_cannot_mutate(self):
+        for policy in [dict(self.policy, mode='unknown'), dict(self.policy, mode='inspect')]:
             self.assertFalse(agent.eligible(self.entry, policy, 'ubuntu-24.04'))
+
+    def test_demo_and_production_allow_reviewed_procedures_without_execute_flag(self):
+        for mode in ('demo', 'production'):
+            self.assertTrue(agent.eligible(self.entry, dict(self.policy, mode=mode, execute=False), 'ubuntu-24.04'))
 
     def test_timeout_stops_process_group(self):
         result = agent.run(['/bin/sh', '-c', 'sleep 5'], timeout=0.05)

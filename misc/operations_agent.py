@@ -18,6 +18,7 @@ from operations_tools import gateway_tools, resolve_tool
 from operations_reporting import local_report, stage_error
 from operations_schedule import choose_trigger, reserve_call
 from operations_reboot import inspect as inspect_reboot, maintain as maintain_reboot
+from operations_policy import maintenance_enabled, effective_policy
 
 
 def save(path, value):
@@ -80,7 +81,7 @@ def quiet(state, sample, now, period):
 
 def eligible(entry, policy, system):
     evidence = entry.get('validation', {})
-    return (policy.get('mode') == 'demo' and policy.get('execute') is True
+    return (maintenance_enabled(policy)
             and evidence.get('readiness') == 'deployment_tested'
             and evidence.get('platform') == system
             and evidence.get('commit') == policy.get('target_commit')
@@ -153,7 +154,7 @@ def model(policy, prompt):
     return decision
 
 
-SAFE_ERRORS = frozenset({'Unknown model provider', 'Configure the direct OpenAI model name', 'Direct model response refused or incomplete', 'Direct OpenAI key is empty', 'Interrupted command requires owner reconciliation before more commands', 'Symlink log paths are prohibited', 'Assistance adapter not configured', 'Disposable log must be a regular file', 'Configure an HTTPS Flowise agent prediction URL without embedded credentials', 'Policy/procedure path must be root owned and not group/world writable', 'Experimental commands require explicit demo authorization', 'Invalid service name', 'Use the separately governed reboot action', 'Invalid or repeated diagnostic request', 'Resource action requires enabled owner policy and measured pressure', 'Service is not designated nonessential', 'Approved procedure changed', 'Disposable logs must be explicit paths under /var/log', 'Command must be a bounded argv array with an absolute executable', 'Log is not explicitly disposable', 'Log changed type', 'Task state must be an object', 'Model must return one JSON decision', 'Procedure lacks matching deployment-test evidence', 'Daily reboot limit reached', 'Unknown model action', 'Command requires reason, expected result and recovery plan', 'Local policy prohibits autonomous mutation', 'Unknown resource operation', 'Reboot disabled by local owner policy', 'Model response too large'})
+SAFE_ERRORS = frozenset({'Unknown model provider', 'Configure the direct OpenAI model name', 'Direct model response refused or incomplete', 'Direct OpenAI key is empty', 'Interrupted command requires owner reconciliation before more commands', 'Symlink log paths are prohibited', 'Assistance adapter not configured', 'Disposable log must be a regular file', 'Configure an HTTPS Flowise agent prediction URL without embedded credentials', 'Policy/procedure path must be root owned and not group/world writable', 'Experimental commands require explicit demo authorization', 'Invalid service name', 'Use the separately governed reboot action', 'Invalid or repeated diagnostic request', 'Resource action requires Demo or Production mode and measured pressure', 'Service is not designated nonessential', 'Approved procedure changed', 'Disposable logs must be explicit paths under /var/log', 'Command must be a bounded argv array with an absolute executable', 'Log is not explicitly disposable', 'Log changed type', 'Task state must be an object', 'Model must return one JSON decision', 'Procedure lacks matching deployment-test evidence', 'Daily reboot limit reached', 'Unknown model action', 'Command requires reason, expected result and recovery plan', 'Local policy prohibits autonomous mutation', 'Unknown resource operation', 'Reboot disabled by local owner policy', 'Model response too large'})
 
 def safe_error(error):
     if type(error) is ValueError and str(error) in SAFE_ERRORS:
@@ -202,7 +203,7 @@ def main():
     args = parser.parse_args()
     if os.geteuid() != 0:
         raise SystemExit('Run as root')
-    policy = json.loads(trusted(args.config).read_text())
+    policy = effective_policy(json.loads(trusted(args.config).read_text()))
     directory = Path('/var/lib/tarasec-operations')
     directory.mkdir(mode=0o700, exist_ok=True)
     lock = (directory / 'lock').open('w')
@@ -222,6 +223,7 @@ def main():
         state.pop('reboot_pending', None)
     state.setdefault('last_assessment_checked_at', state.get('checked_at', 0))
     state.setdefault('last_assessment_status', state.get('status', 'unknown'))
+    state['mode'] = policy.get('mode', 'inspect')
     state['worker_heartbeat_at'] = now
     state['checked_at'] = now
     state['status'] = 'inspecting'
@@ -271,7 +273,7 @@ def main():
         # Optional emergency actions are typed and explicitly configured by the owner.
         resources = policy.get('resource_protection', {})
         automatic = resources.get('automatic_actions', [])
-        if (policy.get('execute') is True and resources.get('enabled') is True
+        if (maintenance_enabled(policy)
                 and snapshot['resource_pressure']['triggered'] and automatic
                 and now - state.get('last_automatic_resource_at', 0) >= 900):
             if not isinstance(automatic, list) or len(automatic) > 3:
@@ -479,7 +481,7 @@ def main():
                 state['status'] = 'command_executed' if result['exit_code'] == 0 else 'command_failed'
                 save(path, state)
                 return
-        if policy.get('mode') != 'demo' or policy.get('execute') is not True:
+        if not maintenance_enabled(policy):
             raise ValueError('Local policy prohibits autonomous mutation')
         if action == 'procedure' and decision.get('procedure') not in available:
             raise ValueError('Procedure lacks matching deployment-test evidence')

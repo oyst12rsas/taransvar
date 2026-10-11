@@ -68,7 +68,7 @@ class ProgressTest(unittest.TestCase):
             self.report['prerequisite']=prerequisite
             self.assertIsNotNone(progress_feedback(self.report,self.policy,self.evidence))
     def test_production_and_inspection_reports_are_accepted(self):
-        for field,value in [('mode','production'),('execute',False),('allow_experimental_commands',False)]:
+        for field,value in [('mode','production'),('mode','inspect'),('mode','unknown')]:
             policy=dict(self.policy);policy[field]=value
             self.assertIsNone(progress_feedback(self.report,policy,self.evidence))
     def test_no_failure_or_missing_evidence_does_not_trigger(self):

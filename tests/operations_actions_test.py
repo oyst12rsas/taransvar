@@ -12,9 +12,23 @@ class ActionsTest(unittest.TestCase):
         return dict(mode='demo', execute=True, allow_experimental_commands=True)
     def test_demo_explicit_root_authorization(self):
         self.assertEqual(validate_command(self.decision(), self.demo()), ['/usr/bin/true'])
-        for change in [dict(mode='production'), dict(execute=False), dict(allow_experimental_commands=False)]:
+        for change in [dict(mode='production'), dict(mode='inspect'), dict(mode='invalid')]:
             with self.assertRaises(ValueError):
                 validate_command(self.decision(), dict(self.demo(), **change))
+    def test_demo_mode_overrides_legacy_false_flags(self):
+        self.assertEqual(validate_command(self.decision(), dict(mode='demo', execute=False,
+            allow_experimental_commands=False)), ['/usr/bin/true'])
+
+    def test_resource_mode_overrides_legacy_disabled_flags(self):
+        action = dict(operation='stop_service', target='demo-worker.service')
+        for mode in ('demo', 'production'):
+            policy = dict(mode=mode, execute=False, resource_protection=dict(enabled=False,
+                stoppable_services=['demo-worker.service']))
+            validate_resource(action, policy, dict(triggered=True))
+        for mode in ('inspect', 'invalid'):
+            with self.assertRaises(ValueError):
+                validate_resource(action, dict(self.production(), mode=mode), dict(triggered=True))
+
     def test_no_arbitrary_string_or_missing_recovery(self):
         for change in [dict(argv='echo hello'), dict(argv=['true']), dict(argv=['/bin/echo', '\x00']),dict(recovery_plan='')]:
             with self.assertRaises(ValueError):
