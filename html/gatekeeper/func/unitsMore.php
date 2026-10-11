@@ -129,7 +129,6 @@ function printUnitIssues($status, $secondsSince)
 
 function unitsMore()
 {
-	print "More info about node in network.";
 	/*if (!isAdmin())
 	{
 		print "You have to login as admin to view this info.";
@@ -156,8 +155,13 @@ function unitsMore()
 			$row = 0;
 	}
 
-	if ($row) 
+	if ($row)
 	{
+        $serverName = trim((string)($row['name'] ?? ''));
+        if ($serverName === '') $serverName = 'Unnamed server';
+        print '<h1>'.htmlspecialchars($serverName, ENT_QUOTES, 'UTF-8').'</h1>';
+        if (!empty($row['ip']))
+            print '<p>'.htmlspecialchars((string)$row['ip'], ENT_QUOTES, 'UTF-8').'</p>';
 		$status = $row["status"];
 		//$status = '{"ld":"0.00 0.00 0.00","knl":"1","df":"19G 9.8G 8.6G","updates":"3;0","boot":1000000,"cron":1,"mem":"552Mi/1.9Gi","sqlThrds":"3","nett":0,"dmesg":1,"msg":null,"lnk":1,"usr":0,"rsyslog":"log:1,byte:360,log:10,burst:20,prefix:TARASEC_tomato,rsyslog:active,setup:@100.68.181.35","trfc":58,"bootReq":0,"ip":0,"lstUp":885}';
 
@@ -184,7 +188,7 @@ function unitsMore()
 		print "<h2>All status details</h2>";
 		print "<table>";
 
-		print '<tr><td>Name</td><td>'.$row["name"].'</td></tr>';
+		print '<tr><td>Name</td><td>'.htmlspecialchars($serverName, ENT_QUOTES, 'UTF-8').'</td></tr>';
 		if (array_key_exists('aiAgent', $status)) {
 			print '<tr><td>Server manager</td><td>'.agentStatusDetails($status['aiAgent']).'</td></tr>';
 			unset($status['aiAgent']);
