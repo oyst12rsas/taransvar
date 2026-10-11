@@ -571,3 +571,16 @@ Pressure can remain when logs are not due for rotation or other files occupy dis
 remaining pressure continues through the existing scoped maintenance path.
 Inspection mode does not rotate logs. Deploy with `misc/install_operations_agent.sh`;
 the existing coordinator runs the updated worker on its next tick.
+
+### Standard system log retention
+
+The general installer and operations-agent installer (including updates) configure
+system log defaults through `misc/configure_log_retention.py`: a 256M journal cap
+when no explicit SystemMaxUse is configured, and maxsize 100M in rsyslog rotation
+blocks without an explicit size/maxsize/minsize rule. Existing rotation counts,
+compression and postrotate hooks are preserved. The original rsyslog configuration
+is backed up outside logrotate.d in /var/lib/tarasec-retention. The logrotate timer
+is enabled. No forced rotation, explicit vacuum or database cleanup occurs during
+installation. Existing explicit owner limits, including earlier TaraSec drop-ins,
+are preserved. Re-run the operations installer on each node to apply these defaults;
+a Git pull alone does not change installed configuration.
