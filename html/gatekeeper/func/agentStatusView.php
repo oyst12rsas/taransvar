@@ -34,6 +34,18 @@ function agentStatusDetails($agent)
     if (!is_array($agent)) return '<table>'.agentStatusRows($rows).'</table>';
     $ssh = is_array($agent['ssh_protection'] ?? null) ? $agent['ssh_protection'] : array();
     $forwarding = is_array($agent['forwarding'] ?? null) ? $agent['forwarding'] : array();
+    $access = is_array($agent['ssh_access'] ?? null) ? $agent['ssh_access'] : array();
+    $accessLabels = array('closed'=>'Closed to new connections; approval required',
+        'open'=>'Temporarily open to configured sources',
+        'disabled'=>'Timed access control disabled',
+        'unverified'=>'Firewall enforcement could not be verified');
+    $rows[] = array('Administrative SSH access', agentStatusEscape(
+        $accessLabels[$access['state'] ?? ''] ?? 'Not reported by this worker version'));
+    if (isset($access['expires_at']) && is_numeric($access['expires_at']))
+        $rows[] = array('SSH opening expires', agentStatusEscape(gmdate('Y-m-d H:i:s', (int)$access['expires_at']).' UTC'));
+    if (isset($access['ipv4'], $access['ipv6']))
+        $rows[] = array('SSH access enforcement', agentStatusEscape(
+            'IPv4: '.$access['ipv4'].'; IPv6: '.$access['ipv6']));
     $rows[] = array('Mode', agentStatusEscape($agent['mode'] ?? 'unknown'));
     $rows[] = array('Overall status', agentStatusEscape($agent['status'] ?? 'unknown'));
     $rows[] = array('SSH protection', agentStatusEscape($ssh['status'] ?? 'unknown'));

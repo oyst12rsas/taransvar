@@ -1,0 +1,9 @@
+[Unit]
+Description=TaraSec lightweight approved-job poll
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/bin/python3 /usr/local/lib/tarasec/ssh_approval_poll.py
+

@@ -17,3 +17,8 @@ When a user asks to install, repair or harden a TaraSec node, carry the work thr
 7. Report what changed, what was verified, what remains untested and the next useful hardening step. Remove credentials and personal data from shared evidence.
 
 This workflow guides capable interactive AI sessions and future model integrations. It does not connect an AI model, grant new privileges, bypass typed-operation guards or widen the installed worker's executable operations.
+
+
+## Operations pilot and shared deployment evidence
+
+Use `docs/AI_OPERATIONS_MANUAL.md` as the capability inventory for development, deployment and maintenance. Record exact commit/platform test evidence and verified recovery procedures; source presence alone does not authorize automatic deployment. The new operations pilot starts disabled and inspection-only, separate from the bounded-check approval worker. Model connectivity, tested procedures and a trustworthy demo/traffic activity adapter must be verified before enrolling a demo node for changes or reboots.
