@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__.'/../func/agentStatusView.php';
+require_once __DIR__.'/../func/diskStatusView.php';
 error_reporting( E_ALL );
 ini_set('display_errors', '1');
 ini_set('display_startup_errors', 1); 
@@ -73,26 +74,6 @@ function getGatewayIP()
 {
 	//Don't know if we should make this more advanced.. It's printed when this machine has not received status from a partner.
 	return "100.68.165.190";//10.100.0.1
-}
-
-function sizeToKB(string $str): int
-{
-    if (!preg_match('/^\s*([\d.]+)\s*([KMGT]?I?)?\s*$/i', $str, $m)) {
-        return 0;
-    }
-
-    $value = (float)$m[1];
-    $unit  = strtoupper($m[2] ?? '');
-
-    $multiplier = match ($unit) {
-        'K', 'KI' => 1,
-        'M', 'MI' => 1000,
-        'G', 'GI' => 1000000,
-        'T', 'TI' => 1000000000,
-        default   => 1,
-    };
-
-    return (int) round($value * $multiplier);
 }
 
 function getServerStatus($seconds_since, $status, $nId)
@@ -251,18 +232,12 @@ function getServerStatus($seconds_since, $status, $nId)
 	if (isset($json["df"]))
 	{
 
-		$cRes = explode(" ", $json["df"]);
-		$nUsed = sizeToKB($cRes[1]);
-		$nTotal = sizeToKB($cRes[0]);
-		if ($nTotal)
-			$nPercentUsed = round(($nUsed / $nTotal) * 100);
-		else
-			$nPercentUsed = 100;
+		$nPercentUsed = diskStatusPercent($json['df']);
 		$cMax = array();
 		$cMax["max"] = $nPercentUsed;
-		$szServerStatus .= getDotByInterval($cMax, "max", 70, 90, 
+		$szServerStatus .= getDotByInterval($cMax, "max", min(90, diskStatusThreshold($json)) - 0.001, 90,
 					$nPercentUsed."% of disk used. This is normal",
-					$nPercentUsed."% of disk used. This should be monitored",
+					$nPercentUsed."% of disk used. Automatic disk maintenance threshold reached",
 					$nPercentUsed."% of disk used. Consider freeing space or upgrading.");
 		//$szServerStatus .= "<br>Disk: $nUsed of $nTotal ($cRes[1]/$cRes[0])<br>";
 	}

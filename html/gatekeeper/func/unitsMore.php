@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__.'/agentStatusView.php';
 require_once __DIR__.'/operationsStatusView.php';
+require_once __DIR__.'/diskStatusView.php';
 //unitsMore.php
 
 
@@ -31,6 +32,10 @@ function addUnitIssue(&$issues, $severity, $label, $message)
 function collectUnitIssues($status, $secondsSince)
 {
     $issues = array();
+    if (isset($status['df'])) {
+        $diskIssue = diskStatusIssue($status['df'], diskStatusThreshold($status));
+        if ($diskIssue !== null) $issues[] = $diskIssue;
+    }
 
     if (array_key_exists('aiAgent', $status)) {
         $agentView = agentStatusView($status['aiAgent']);
