@@ -44,6 +44,7 @@ def pressure(config):
     values = {'disk_used_bytes': (disk.f_blocks - disk.f_bfree) * disk.f_frsize,
               'disk_available_bytes': disk.f_bavail * disk.f_frsize, 'disk_used_percent': round(used, 2), 'memory_available_percent': round(available, 2),
               'load_per_cpu': round(load, 2)}
+    values['disk_threshold_percent'] = float(config.get('disk_used_percent', 85))
     values['triggered'] = (used >= float(config.get('disk_used_percent', 85))
         or available <= float(config.get('memory_available_percent', 10))
         or load >= float(config.get('load_per_cpu', 2)))

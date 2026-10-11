@@ -584,3 +584,8 @@ is enabled. No forced rotation, explicit vacuum or database cleanup occurs durin
 installation. Existing explicit owner limits, including earlier TaraSec drop-ins,
 are preserved. Re-run the operations installer on each node to apply these defaults;
 a Git pull alone does not change installed configuration.
+
+The overview disk dot and issues page use the automatic disk maintenance threshold
+(default 85%, reported as resource_pressure.disk_threshold_percent). Yellow begins
+at that threshold; red begins at 90%. Older reports use the 85% default until the
+worker is updated. Below that threshold disk usage is green.
