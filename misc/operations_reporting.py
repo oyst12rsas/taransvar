@@ -26,6 +26,8 @@ def local_report(state, now=None):
         'boot_id': state.get('boot_id'),
         'engine': 'operations_worker', 'status': state.get('status', 'unknown'),
         'error_stage': state.get('error_stage'),
+        'error_detail': state.get('error_detail'),
+        'last_failure': state.get('last_failure'),
         'deployment_checked_at': result.get('checked_at'),
         'deployment_findings': [item for item in findings if isinstance(item, str)][:24],
         'deployment_summary': [LABELS.get(item, 'Deployment check: ' + item)

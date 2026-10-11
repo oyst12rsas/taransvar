@@ -29,6 +29,7 @@
     "max_calls_per_hour": 8,
     "max_calls_per_day": 32,
     "continuation_seconds": 300,
+    "resource_retry_seconds": 900,
     "disk_growth_bytes_per_hour": 268435456
   },
   "reboot_verification_probe": "/usr/local/lib/tarasec-operations/reboot-verification-probe",

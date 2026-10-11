@@ -12,10 +12,12 @@ class ScheduleTests(unittest.TestCase):
     def test_request_and_optional_periodic_review(self):
         self.assertEqual(choose_trigger({}, {}, self.evidence(), [], 10000, True), 'owner_request')
         self.assertEqual(choose_trigger({}, {'model_schedule': {'periodic_review_seconds': 3600}}, self.evidence(), [], 10000), 'periodic_review_due')
-    def test_unchanged_pressure_does_not_repeat(self):
+    def test_unchanged_pressure_retries_after_interval(self):
         evidence = self.evidence(disk=90, triggered=True)
         state = dict(last_model_pressure=evidence, last_model_attempt_at=1000)
-        self.assertIsNone(choose_trigger(state, {}, evidence, [], 10000))
+        self.assertIsNone(choose_trigger(state, {}, evidence, [], 1899))
+        self.assertEqual(choose_trigger(state, {}, evidence, [], 1900), 'persistent_resource_pressure')
+        self.assertEqual(choose_trigger(state, {}, evidence, [], 10000), 'persistent_resource_pressure')
         self.assertEqual(choose_trigger(state, {}, self.evidence(disk=93, triggered=True), [], 10000), 'resource_pressure_worsened')
     def test_new_failure_and_cooldown(self):
         self.assertEqual(choose_trigger({}, {}, self.evidence(), ['taralink.service'], 10000), 'new_service_failure')
@@ -45,3 +47,20 @@ class ScheduleTests(unittest.TestCase):
         state['continuation_ready'] = True
         self.assertEqual(choose_trigger(state, {}, self.evidence(), [], 3000), 'verify_completed_action')
         self.assertIsNone(choose_trigger(state, {}, self.evidence(), [], 1050))
+
+
+class PersistentPressureTest(unittest.TestCase):
+    def test_prior_failure_and_completed_reboot_do_not_suppress_pressure(self):
+        evidence = dict(triggered=True, disk_used_percent=88, memory_available_percent=50)
+        state = dict(last_model_attempt_at=1000, last_model_pressure=evidence,
+                     last_assessment_status='blocked', reboot=dict(required=False))
+        self.assertEqual(choose_trigger(state, {}, evidence, [], 2000), 'persistent_resource_pressure')
+        self.assertIsNone(choose_trigger(state, {}, dict(evidence, triggered=False), [], 2000))
+
+    def test_retry_remains_subject_to_cooldown_and_budget(self):
+        evidence = dict(triggered=True, disk_used_percent=88)
+        state = dict(last_model_attempt_at=1000, last_model_pressure=evidence)
+        policy = dict(model_schedule=dict(resource_retry_seconds=60, cooldown_seconds=900, max_calls_per_day=0))
+        self.assertIsNone(choose_trigger(state, policy, evidence, [], 1060))
+        self.assertEqual(choose_trigger(state, policy, evidence, [], 1900), 'persistent_resource_pressure')
+        self.assertFalse(reserve_call(state, policy, 1900))

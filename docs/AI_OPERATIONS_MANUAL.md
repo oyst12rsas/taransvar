@@ -408,14 +408,16 @@ operations timer during pilot testing merely to keep a dot fresh.
 Run the operations service with `--tick` for scheduling. Each tick cheaply samples
 resources and service state and publishes report.json. It calls the model only
 for a root-local request, new service failure, newly crossed/worsening resource
-pressure, rapid disk growth, ready continuation/verification, or an optional
-periodic review. Direct invocation without --tick is an explicit owner request.
-Unchanged faults do not trigger repeated searches. Routine threat handling remains
+pressure, persistent unresolved pressure after its retry interval, rapid disk growth,
+ready continuation/verification, or an optional periodic review. Direct invocation without --tick is an explicit owner request.
+Persistent resource pressure retries every 15 minutes by default; ordinary idle
+ticks and unchanged service failures do not trigger repeated searches. Routine threat handling remains
 with kernel/firewall and existing lightweight workers; no per-threat model calls.
 
 `model_schedule` defaults: periodic_review_seconds=0 (disabled), cooldown_seconds=900,
 worsening_cooldown_seconds=300, max_calls_per_hour=8, max_calls_per_day=32,
-continuation_seconds=300, disk_growth_bytes_per_hour=268435456. Every HTTP model
+continuation_seconds=300, resource_retry_seconds=900,
+disk_growth_bytes_per_hour=268435456. Every HTTP model
 attempt including schema/progression corrections consumes a persisted budget slot.
 Manual requests respect budgets. Failed root-local queued requests respect the
 cooldown and remain pending until a valid decision is obtained. Do not discard
@@ -523,3 +525,21 @@ identity/readiness, quiet evidence, reboot budgets and post-boot receipt still
 constrain actions. An empty automatic_actions list means no predefined automatic
 resource action exists; it does not mean Production mode is disabled. The model
 can still diagnose pressure and select a scoped typed resource action.
+
+
+## Current blockers versus recorded failures
+
+The issues list derives blocker warnings from the current worker status, not the
+cached last_assessment_status. A worker at resource_attention can therefore report
+outstanding disk pressure without falsely claiming an earlier failed reboot still
+blocks it. Current blockers include the worker's sanitized stage and reason.
+The worker preserves last_failure with checked_at, stage and detail independently
+of the current tick's error fields. Full status shows this evidence as historical
+when the worker has resumed. Older snapshots without failure details do not invent
+an explanation. Model summaries, command transcripts and secrets are not forwarded.
+
+Persistent resource-pressure retries respect both ordinary cooldown and existing
+per-hour/per-day model budgets. A reboot that is complete or deferred does not
+resolve pressure; the model receives current reboot evidence and must diagnose a
+permitted resource remedy. Configured cleanup targets and action guards remain
+required; retries do not authorize arbitrary file/database deletion.
