@@ -107,3 +107,27 @@ def perform_resource(decision, config, run, trusted):
             result['exit_code'] = 1
         return result
     return run([str(trusted(config['assistance_executable']))], 30)
+
+
+def automatic_log_rotation(policy, evidence, state, now, run, save, record):
+    """Apply installed retention rules before any model scheduling or budget check."""
+    config = policy.get('resource_protection', {})
+    if (not maintenance_enabled(policy)
+            or evidence.get('disk_used_percent', 0) < float(config.get('disk_used_percent', 85))
+            or now - state.get('last_log_rotation_at', -900) < 900):
+        return False
+    # Persist before starting so failures/timeouts cannot cause a retry every tick.
+    state['last_log_rotation_at'] = now
+    save()
+    record({'automatic_log_rotation_start': True})
+    result = run(['/usr/sbin/logrotate', '/etc/logrotate.conf'], 120)
+    after = pressure(config)
+    state['last_log_rotation'] = {
+        'checked_at': now, 'exit_code': result['exit_code'],
+        'disk_used_percent_before': evidence['disk_used_percent'],
+        'disk_used_percent_after': after['disk_used_percent'],
+    }
+    state['resource_pressure'] = after
+    save()
+    record({'automatic_log_rotation_result': state['last_log_rotation']})
+    return True

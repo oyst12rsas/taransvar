@@ -1,3 +1,4 @@
+from unittest.mock import patch
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1] / 'misc'))
@@ -64,6 +65,28 @@ class ActionsTest(unittest.TestCase):
                 self.assertEqual(result['after_bytes'],0)
                 writer.write(b'new diagnostics')
             self.assertEqual(log.read_bytes(),b'new diagnostics')
+
+    def test_log_rotation_is_mode_authorized_and_independent_of_model_budget(self):
+        from operations_actions import automatic_log_rotation
+        for mode in ('demo', 'production'):
+            state = {}
+            calls = []
+            policy = dict(mode=mode, execute=False, model_schedule=dict(max_calls_per_day=0))
+            runner = lambda argv, timeout: calls.append((argv, timeout)) or dict(exit_code=1)
+            with patch('operations_actions.pressure', return_value=dict(disk_used_percent=89, triggered=True)):
+                self.assertTrue(automatic_log_rotation(policy, dict(disk_used_percent=89), state,
+                                1000, runner, lambda: None, lambda event: None))
+                self.assertFalse(automatic_log_rotation(policy, dict(disk_used_percent=89), state,
+                                1060, runner, lambda: None, lambda event: None))
+            self.assertEqual(calls, [(['/usr/sbin/logrotate', '/etc/logrotate.conf'], 120)])
+            self.assertEqual(state['last_log_rotation']['exit_code'], 1)
+            self.assertEqual(state['last_log_rotation']['disk_used_percent_after'], 89)
+
+    def test_log_rotation_only_runs_for_disk_pressure_in_maintenance_mode(self):
+        from operations_actions import automatic_log_rotation
+        for mode, disk in [('inspect', 95), ('unknown', 95), ('demo', 84), ('production', 50)]:
+            self.assertFalse(automatic_log_rotation(dict(mode=mode), dict(disk_used_percent=disk),
+                             {}, 1000, None, lambda: None, lambda event: None))
 
     def test_measured_pressure(self):
         result=pressure(dict(disk_used_percent=0))
