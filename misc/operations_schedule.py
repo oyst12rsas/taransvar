@@ -3,7 +3,7 @@ import time
 
 DEFAULTS = dict(periodic_review_seconds=0, cooldown_seconds=900,
                 worsening_cooldown_seconds=300, max_calls_per_hour=8,
-                max_calls_per_day=32, continuation_seconds=300,
+                max_calls_per_day=32, continuation_seconds=300, resource_retry_seconds=900,
                 disk_growth_bytes_per_hour=268435456)
 
 def limits(policy):
@@ -43,6 +43,8 @@ def choose_trigger(state, policy, evidence, failed_services, now, requested=Fals
                 or state.get('continuation_ready') is True)
           and elapsed >= max(60, cfg['continuation_seconds'])):
         reason = 'verify_completed_action'
+    elif evidence.get('triggered') and elapsed >= max(60, cfg['resource_retry_seconds']):
+        reason = 'persistent_resource_pressure'
     elif cfg['periodic_review_seconds'] and elapsed >= cfg['periodic_review_seconds']:
         reason = 'periodic_review_due'
     else:

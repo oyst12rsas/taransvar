@@ -546,6 +546,8 @@ def main():
         state['error_type'] = type(error).__name__
         state['error_stage'] = state.get('current_stage', 'initialization')
         state['error_detail'] = stage_error(error, state['error_stage'], state.get('model_provider')) or safe_error(error)
+        state['last_failure'] = {'checked_at': time.time(), 'stage': state['error_stage'],
+                                 'detail': state['error_detail']}
         state['summary'] = 'Blocked: ' + state['error_detail']
         record({'blocked': type(error).__name__, 'detail': state['error_detail'], 'stage': state['error_stage']})
         save(path, state)

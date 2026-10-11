@@ -102,6 +102,11 @@ kind (quiet_time, owner_input, or unsupported_capability), detail (specific miss
 and next_check (concrete way to obtain it). A failed service itself is not a prerequisite.
 Do not report that already supplied diagnostics still need diagnosing.
 Always assess deployment_status findings, even while another maintenance task runs.
+When resource_pressure.triggered is true, investigate the cause and advance a
+permitted remedy. A completed or deferred reboot does not resolve disk pressure.
+Use current reboot evidence: do not select reboot when reboot.required is false.
+If no permitted cleanup target exists, report that concrete prerequisite rather
+than inventing permission to delete logs or database files.
 Distinguish the security/approval agent from the operations agent and the gateway AI.
 Missing security enrollment is a specific enrollment prerequisite; never copy another
 node token or invent one. Reporter fields detected in source do not prove DB receipt.

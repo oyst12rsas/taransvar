@@ -22,6 +22,17 @@ class ReportingTests(unittest.TestCase):
         self.assertIn('flowise', stage_error(TimeoutError('SECRET'), 'model_request', 'flowise'))
         self.assertNotIn('SECRET', stage_error(TimeoutError('SECRET'), 'model_request', 'flowise'))
 
+    def test_current_blocker_and_historical_failure_have_separate_evidence(self):
+        failure = dict(checked_at=100, stage='decision_validation', detail='Daily reboot limit reached')
+        state = dict(status='blocked', checked_at=100, error_stage=failure['stage'],
+                     error_detail=failure['detail'], last_failure=failure)
+        report = local_report(state, 100)
+        self.assertEqual(report['error_detail'], failure['detail'])
+        state.update(status='resource_attention', checked_at=200, error_stage=None, error_detail=None)
+        report = local_report(state, 200)
+        self.assertIsNone(report['error_detail'])
+        self.assertEqual(report['last_failure'], failure)
+
     def test_state_save_always_publishes_compact_report(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'state.json'
