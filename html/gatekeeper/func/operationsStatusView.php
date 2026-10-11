@@ -44,6 +44,8 @@ function operationsStatusIssues($agent)
         'model_stalled' => 'Last AI assessment did not advance the task.'
     );
     if (isset($messages[$status])) $issues[] = $messages[$status];
+    if ($status === 'model_stalled' && is_string($agent['decision_feedback'] ?? null))
+        $issues[] = 'Decision needs correction: '.$agent['decision_feedback'];
     if ($status === 'blocked') {
         $stage = $agent['error_stage'] ?? null;
         $detail = $agent['error_detail'] ?? null;
@@ -78,6 +80,8 @@ function operationsStatusDetails($agent)
         'Worker status' => $agent['status'] ?? 'unknown',
         'Last assessment result' => $agent['last_assessment_status'] ?? 'unknown'
     );
+    if (is_string($agent['decision_feedback'] ?? null) && $agent['decision_feedback'] !== '')
+        $rows['Last decision correction'] = $agent['decision_feedback'];
     if (isset($agent['age_seconds'])) $rows['Report age'] = (int)$agent['age_seconds'].' seconds';
     foreach (array('worker_heartbeat_at' => 'Worker heartbeat', 'assessment_checked_at' => 'Last AI assessment',
                    'deployment_checked_at' => 'Deployment findings checked') as $field => $label) {

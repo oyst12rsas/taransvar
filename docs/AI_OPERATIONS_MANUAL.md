@@ -543,3 +543,17 @@ per-hour/per-day model budgets. A reboot that is complete or deferred does not
 resolve pressure; the model receives current reboot evidence and must diagnose a
 permitted resource remedy. Configured cleanup targets and action guards remain
 required; retries do not authorize arbitrary file/database deletion.
+
+
+## Reject obsolete reboot decisions within an assessment
+
+After a model selects reboot, the worker rechecks current OS evidence. When no
+reboot is required, a reboot is already pending verification, or the dedicated
+permission/budget guard prohibits dispatch, it sends a fixed progress correction
+back to the model in the same bounded assessment loop. Outstanding resource pressure
+must advance to available storage/logging diagnostics and a permitted remedy or
+an explicit missing prerequisite, rather than completing as reboot_deferred.
+Every corrective model call consumes the existing budget. Repeated ineffective
+choices exhaust the bounded loop and report model_stalled with decision_feedback
+in status details; no arbitrary cleanup or action-guard bypass is authorized.
+Actual reboot dispatch still rechecks readiness, activity and the attempt budget.

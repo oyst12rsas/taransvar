@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'misc'))
 from operations_agent import save
-from operations_prompt import completed_check_feedback
+from operations_prompt import completed_check_feedback, reboot_decision_feedback
 from operations_diagnostics import diagnose
 
 class ProgressTests(unittest.TestCase):
@@ -92,3 +92,33 @@ class ProgressTests(unittest.TestCase):
                     install_limit(directory)
             self.assertFalse((Path(directory) / '60-tarasec-operations.conf').exists())
 
+
+
+class RebootProgressTests(unittest.TestCase):
+    def test_camembert_unnecessary_reboot_advances_resource_diagnosis(self):
+        snapshot = dict(reboot=dict(required=False), resource_pressure=dict(triggered=True))
+        feedback = reboot_decision_feedback(dict(action='reboot'), dict(mode='demo'), snapshot, {}, 1000)
+        self.assertIn('no reboot is required', feedback)
+        self.assertIn('Continue this assessment', feedback)
+        self.assertIn('large_logs', feedback)
+        self.assertIn('Do not invent disposable files', feedback)
+        self.assertIsNone(reboot_decision_feedback(dict(action='diagnostic', diagnostic='large_logs'),
+            dict(mode='demo'), snapshot, {}, 1000))
+
+    def test_required_eligible_reboot_is_preserved_in_both_modes(self):
+        for mode in ('demo', 'production'):
+            self.assertIsNone(reboot_decision_feedback(dict(action='reboot'), dict(mode=mode),
+                dict(reboot=dict(required=True)), {}, 1000))
+
+    def test_daily_limit_and_pending_verification_are_corrected_not_dispatched(self):
+        snapshot = dict(reboot=dict(required=True), resource_pressure=dict(triggered=True))
+        for state, expected in ((dict(reboots=[999]), 'daily_reboot_limit_reached'),
+                                (dict(reboot_checkpoint={'boot_id':'old'}), 'already awaiting')):
+            feedback = reboot_decision_feedback(dict(action='reboot'), dict(mode='demo'), snapshot, state, 1000)
+            self.assertIn(expected, feedback)
+            self.assertIn('resource remedy', feedback)
+
+    def test_missing_evidence_and_inspection_do_not_authorize_reboot(self):
+        self.assertIsNotNone(reboot_decision_feedback(dict(action='reboot'), dict(mode='demo'), {}, {}, 1000))
+        self.assertIn('local_mode_prohibits_reboot', reboot_decision_feedback(dict(action='reboot'),
+            dict(mode='inspect'), dict(reboot=dict(required=True)), {}, 1000))
