@@ -20,6 +20,7 @@ def local_report(state, now=None):
         'worker_heartbeat_at': int(state.get('worker_heartbeat_at', 0)),
         'last_assessment_status': state.get('last_assessment_status'),
         'resource_pressure': state.get('resource_pressure'),
+        'last_log_rotation': state.get('last_log_rotation'),
         'model_trigger': state.get('model_trigger'),
         'decision_feedback': state.get('decision_feedback'),
         'mode': state.get('mode'),

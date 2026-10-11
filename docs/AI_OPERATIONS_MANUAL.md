@@ -557,3 +557,17 @@ Every corrective model call consumes the existing budget. Repeated ineffective
 choices exhaust the bounded loop and report model_stalled with decision_feedback
 in status details; no arbitrary cleanup or action-guard bypass is authorized.
 Actual reboot dispatch still rechecks readiness, activity and the attempt budget.
+
+### Automatic log rotation under disk pressure
+
+Demo and Production workers run `/usr/sbin/logrotate /etc/logrotate.conf` when
+root disk usage reaches the configured `resource_protection.disk_used_percent`
+(default 85%). This happens before model scheduling and does not consume or
+require an AI call. Attempts are limited to once per 15 minutes, including failures.
+The worker uses installed owner retention rules without forcing rotation, inventing
+retention limits, or truncating logs. It measures disk usage afterwards and records
+`last_log_rotation` with exit code and before/after usage in the report and audit.
+Pressure can remain when logs are not due for rotation or other files occupy disk;
+remaining pressure continues through the existing scoped maintenance path.
+Inspection mode does not rotate logs. Deploy with `misc/install_operations_agent.sh`;
+the existing coordinator runs the updated worker on its next tick.

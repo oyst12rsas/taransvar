@@ -12,7 +12,7 @@ import urllib.request
 import urllib.parse
 import urllib.error
 from operations_diagnostics import CATALOG, diagnose
-from operations_actions import validate_command, pressure, validate_resource, perform_resource, read_only_command
+from operations_actions import validate_command, pressure, validate_resource, perform_resource, read_only_command, automatic_log_rotation
 from operations_prompt import build_prompt, validate_decision, progress_feedback, completed_check_feedback, reboot_decision_feedback
 from operations_tools import gateway_tools, resolve_tool
 from operations_reporting import local_report, stage_error
@@ -270,6 +270,9 @@ def main():
             request = json.loads(trusted(request_path).read_text())
             request_id = request.get('id')
             requested = requested or (isinstance(request_id, str) and request_id != state.get('completed_request_id'))
+        if automatic_log_rotation(policy, snapshot['resource_pressure'], state, now, run,
+                                  lambda: save(path, state), record):
+            snapshot['resource_pressure'] = state['resource_pressure']
         # Optional emergency actions are typed and explicitly configured by the owner.
         resources = policy.get('resource_protection', {})
         automatic = resources.get('automatic_actions', [])
