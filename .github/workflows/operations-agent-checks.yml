@@ -4,6 +4,9 @@ on:
     paths:
       - 'html/script/operationsActivity.php'
       - 'html/gatekeeper/func/operationsStatusView.php'
+      - 'misc/operations_policy.py'
+      - 'tests/operations_policy_test.py'
+      - 'misc/operations_tools.py'
       - 'misc/operations_reboot.py'
       - 'tests/operations_reboot_test.py'
       - 'misc/operations_schedule.py'
@@ -30,7 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python3 -m unittest discover -s tests -p 'operations*_test.py'
-      - run: python3 -m py_compile misc/operations_reboot.py misc/operations_agent.py misc/operations_activity.py misc/operations_diagnostics.py misc/operations_actions.py misc/operations_prompt.py misc/operations_model_probe.py
+      - run: python3 -m py_compile misc/operations_policy.py misc/operations_reboot.py misc/operations_agent.py misc/operations_activity.py misc/operations_diagnostics.py misc/operations_actions.py misc/operations_prompt.py misc/operations_model_probe.py
       - run: python3 -m json.tool misc/operations-agent.json.example >/dev/null
       - run: bash -n misc/install_operations_agent.sh
       - run: php -l html/script/operationsActivity.php && php -l html/gatekeeper/func/operationsStatusView.php

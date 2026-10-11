@@ -40,7 +40,7 @@ def progression_probe(policy, quiet_verified=False):
     # Synthetic evidence only; no run/dispatch function is called.
     policy['task'] = ('Inspect Audi, investigate its failed gateway and select the next useful '
         'permitted check. Select the decision using the supplied synthetic observations as the '
-        'fixture evidence. The probe never executes actions; this does not change execute=true '
+        'fixture evidence. The probe never executes actions; this does not change Demo mode '
         'into inspection-only policy. Do not claim these observations describe live Audi.')
     manual = trusted('/usr/local/lib/tarasec-operations/AI_OPERATIONS_MANUAL.md').read_text()
     evidence = {'gateway_startup': {'result': {'properties': {

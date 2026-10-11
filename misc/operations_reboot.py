@@ -3,6 +3,7 @@ import os
 import re
 from pathlib import Path
 import time
+from operations_policy import maintenance_enabled
 
 DEFAULT_PROBE = "/usr/local/lib/tarasec-operations/reboot-verification-probe"
 
@@ -72,10 +73,8 @@ def inspect(run, root=Path('/')):
 
 
 def permission(policy, state, now):
-    if policy.get('mode') != 'demo' or policy.get('execute') is not True:
-        return 'local_policy_prohibits_reboot'
-    if policy.get('allow_reboot') is not True:
-        return 'reboot_disabled_by_owner'
+    if not maintenance_enabled(policy):
+        return 'local_mode_prohibits_reboot'
     if state.get('command_pending'):
         return 'interrupted_command_requires_reconciliation'
     recent = [stamp for stamp in state.get('reboots', []) if 0 <= now - stamp < 86400]

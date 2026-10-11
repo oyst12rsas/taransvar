@@ -69,6 +69,7 @@ function operationsStatusDetails($agent)
 {
     if (!is_array($agent)) return 'Operations report is unavailable or invalid.';
     $rows = array(
+        'Maintenance mode' => $agent['mode'] ?? 'Not reported',
         'Worker status' => $agent['status'] ?? 'unknown',
         'Last assessment result' => $agent['last_assessment_status'] ?? 'unknown'
     );

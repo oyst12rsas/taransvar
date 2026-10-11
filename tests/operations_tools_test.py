@@ -28,7 +28,8 @@ class ToolTest(unittest.TestCase):
     def test_production_disabled_or_missing_evidence_has_no_tools(self):
         self.assertEqual(gateway_tools(self.policy,{},{}),{})
         self.assertEqual(gateway_tools(dict(self.policy,mode='production'),self.results,{}),{})
-        self.assertEqual(gateway_tools(dict(self.policy,execute=False),self.results,{}),{})
+        self.assertEqual(gateway_tools(dict(self.policy,mode='inspect'),self.results,{}),{})
+        self.assertIn('gateway_syntax_check', gateway_tools(dict(self.policy,execute=False,allow_experimental_commands=False),self.results,{}))
     def test_resolver_ignores_model_argv_and_rejects_unknown_name(self):
         tools=gateway_tools(self.policy,self.results,{})
         value=dict(tool='gateway_syntax_check',reason='Inspect',task_state={},argv=['/sbin/reboot'])

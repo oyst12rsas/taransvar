@@ -3,11 +3,11 @@ import os
 from pathlib import Path
 import re
 import stat
+from operations_policy import maintenance_enabled, experimental_enabled
 
 
 def validate_command(decision, policy):
-    if (policy.get('mode') != 'demo' or policy.get('execute') is not True
-            or policy.get('allow_experimental_commands') is not True):
+    if not experimental_enabled(policy):
         raise ValueError('Experimental commands require explicit demo authorization')
     argv = decision.get('argv')
     if (not isinstance(argv, list) or not 1 <= len(argv) <= 64
@@ -52,9 +52,8 @@ def pressure(config):
 
 def validate_resource(decision, policy, evidence):
     config = policy.get('resource_protection', {})
-    if (policy.get('mode') not in ('demo', 'production') or policy.get('execute') is not True
-            or config.get('enabled') is not True or evidence.get('triggered') is not True):
-        raise ValueError('Resource action requires enabled owner policy and measured pressure')
+    if not maintenance_enabled(policy) or evidence.get('triggered') is not True:
+        raise ValueError('Resource action requires Demo or Production mode and measured pressure')
     operation = decision.get('operation')
     target = decision.get('target')
     if operation == 'delete_log':
