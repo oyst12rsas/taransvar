@@ -13,7 +13,7 @@ import urllib.parse
 import urllib.error
 from operations_diagnostics import CATALOG, diagnose
 from operations_actions import validate_command, pressure, validate_resource, perform_resource, read_only_command
-from operations_prompt import build_prompt, validate_decision, progress_feedback, completed_check_feedback
+from operations_prompt import build_prompt, validate_decision, progress_feedback, completed_check_feedback, reboot_decision_feedback
 from operations_tools import gateway_tools, resolve_tool
 from operations_reporting import local_report, stage_error
 from operations_schedule import choose_trigger, reserve_call
@@ -396,8 +396,15 @@ def main():
                 state['summary'] = feedback
                 save(path, state)
                 return
-            feedback = completed_check_feedback(decision, diagnostic_results, snapshot) or progress_feedback(decision, policy, diagnostic_results, snapshot)
+            if decision.get('action') == 'reboot':
+                # Re-read OS evidence after the model call; a cached goal can be
+                # obsolete even within this assessment. Never dispatch a no-op.
+                snapshot['reboot'] = inspect_reboot(run)
+            feedback = (reboot_decision_feedback(decision, policy, snapshot, state)
+                or completed_check_feedback(decision, diagnostic_results, snapshot)
+                or progress_feedback(decision, policy, diagnostic_results, snapshot))
             if feedback:
+                state['decision_feedback'] = feedback
                 record({'model_progress_correction': feedback})
                 snapshot['worker_feedback'] = feedback
                 if round_number < 3:
@@ -407,6 +414,7 @@ def main():
                 state['task_state'] = decision['task_state']
                 save(path, state)
                 return
+            state.pop('decision_feedback', None)
             if decision.get('action') != 'diagnostic':
                 break
             name = decision.get('diagnostic')

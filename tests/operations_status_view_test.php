@@ -25,4 +25,10 @@ checkOperationsView(strpos($html, 'Model &lt;unavailable&gt;') !== false, 'Block
 unset($agent['error_detail']);
 checkOperationsView(strpos(implode(' ', operationsStatusIssues($agent)), 'not included') !== false,
     'Older snapshot must say its reason is unavailable');
+$agent['status'] = 'model_stalled';
+$agent['decision_feedback'] = 'No reboot needed; inspect <logs>';
+checkOperationsView(strpos(implode(' ', operationsStatusIssues($agent)), 'Decision needs correction:') !== false,
+    'Exhausted correction must give an actionable reason');
+checkOperationsView(strpos(operationsStatusDetails($agent), 'inspect &lt;logs&gt;') !== false,
+    'Decision feedback must be escaped');
 echo "Operations status view checks passed.\n";

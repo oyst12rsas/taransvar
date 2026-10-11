@@ -4,6 +4,7 @@ import math
 import time
 from operations_tools import gateway_tools, resolve_tool
 from operations_policy import experimental_enabled, effective_policy
+from operations_reboot import permission as reboot_permission
 
 
 def validate_decision(decision):
@@ -208,3 +209,28 @@ def completed_check_feedback(decision, results, snapshot):
                     'use logging_policy for effective retention and timer evidence. '
                     'Service activity alone does not prove forwarding functionality.')
     return None
+
+
+
+def reboot_decision_feedback(decision, policy, snapshot, state, now=None):
+    """Reject an ineffective reboot before dispatch and advance this assessment."""
+    if decision.get('action') != 'reboot':
+        return None
+    reboot = snapshot.get('reboot', {})
+    if reboot.get('required') is not True:
+        reason = 'The current OS evidence says no reboot is required.'
+    elif state.get('reboot_checkpoint'):
+        reason = 'A reboot is already awaiting boot or post-boot verification.'
+    else:
+        blocker = reboot_permission(policy, state, time.time() if now is None else now)
+        if not blocker:
+            return None
+        reason = 'The dedicated reboot guard currently prohibits dispatch: ' + blocker + '.'
+    if snapshot.get('resource_pressure', {}).get('triggered') is True:
+        return (reason + ' Reboot is not an eligible remedy for the outstanding resource pressure. '
+                'Continue this assessment with an available large_logs, storage_summary or '
+                'logging_policy diagnostic, then select a permitted resource remedy. '
+                'If cleanup scope or evidence is missing, report the specific prerequisite. '
+                'Do not invent disposable files, remove database data or bypass action guards.')
+    return (reason + ' Choose another useful permitted diagnostic/action or report the current '
+            'evidence. Do not repeat the unavailable reboot or claim it executed.')
