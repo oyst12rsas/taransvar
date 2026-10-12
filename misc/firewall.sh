@@ -5,7 +5,13 @@
 
 set -e
 
-CONF="${1:-/etc/tarasecfw.conf}"
+IPV6_ONLY=0
+if [[ "${1:-}" == "--ipv6-only" ]]; then
+    IPV6_ONLY=1
+    CONF="${2:-/etc/tarasecfw.conf}"
+else
+    CONF="${1:-/etc/tarasecfw.conf}"
+fi
 
 if [ ! -f "$CONF" ]; then
     echo "Missing config: $CONF"
@@ -136,6 +142,13 @@ fi
 source "$(dirname -- "${BASH_SOURCE[0]}")/firewall_ipv6.sh"
 tarasec_ipv6_prepare
 trap 'rm -f "${TARASEC_IPV6_RULE_FILE:-}"' EXIT
+
+if [[ "$IPV6_ONLY" == 1 ]]; then
+    tarasec_ipv6_apply
+    echo 'IPv6-only update complete. IPv4 and saved rules were not changed.'
+    echo 'Verify connectivity before persisting the IPv6 rules.'
+    exit 0
+fi
 
 iptables -F
 iptables -X

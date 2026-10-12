@@ -146,6 +146,11 @@ tarasec_ipv6_apply
         self.assertLess(script.index('tarasec_ipv6_prepare'),script.index('iptables -F'))
         self.assertLess(script.index('tarasec_ipv6_apply'),script.index('netfilter-persistent save'))
         self.assertLess(script.index('Node firewall logging installed'),script.index('source "$(dirname'))
+        self.assertLess(script.index('if [[ "$IPV6_ONLY" == 1 ]]'),script.index('iptables -F'))
+        isolated=script.split('if [[ "$IPV6_ONLY" == 1 ]]',1)[1].split('fi',1)[0]
+        self.assertIn('tarasec_ipv6_apply',isolated)
+        self.assertIn('exit 0',isolated)
+        self.assertNotIn('netfilter-persistent',isolated)
 
 
 if __name__ == '__main__': unittest.main()

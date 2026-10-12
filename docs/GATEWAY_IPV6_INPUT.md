@@ -29,7 +29,12 @@ transport listen ports; persistence contains the ports observed at setup time.
 
 Deploy both adjacent shell files when updating installed copies. A repository
 update alone does not alter a host. This source change has not been applied to
-the user's live gateway. Before applying the full firewall routine, verify access
+the user's live gateway. To apply just the IPv6 correction, use
+`sudo bash misc/firewall.sh --ipv6-only` (an alternate config path may follow the
+flag). This mode validates and applies the IPv6 transaction, then exits before
+IPv4 changes or persistence. Back up the current IPv6 rules and schedule rollback
+before applying; verify connectivity, then persist only IPv6 with `ip6tables-save`
+to `/etc/iptables/rules.v6` and cancel rollback. Before applying the full firewall routine, verify access
 and recovery: its pre-existing IPv4 path still rebuilds IPv4 filter chains, and
 an active source/timed gate must be retained/reapplied by the installed workflow.
 Do not treat IPv6 fixture checks as approval to bypass that login requirement.
