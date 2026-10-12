@@ -63,14 +63,9 @@ try {
        release.  An inactive event must create a tombstone when its start has
        not arrived yet. */
     $conn->begin_transaction();
-    if ($isDemo && $active === 1) {
-        // A newly issued Demo 3 request owns the demo lane on this gateway.
-        // Remove stale demo copies only; production assistance is untouched.
-        $stmt = $conn->prepare("DELETE FROM assistanceRequest WHERE isDemo=b'1' AND category<>?");
-        $stmt->bind_param("s", $category);
-        $stmt->execute();
-        $stmt->close();
-    }
+    // Other sender/category/target requests belong to their own exercises.
+    // Keep their state and release tombstones; cleanup must never be triggered
+    // merely by a new start (including a duplicate or stale delivery).
     $stmt = $conn->prepare("SELECT requestId,COALESCE(regardingRequestId,0) sourceRequestId,CAST(active AS UNSIGNED) active,COALESCE(requestQuality,0) requestQuality,CAST(COALESCE(wantSpoofed,b'0') AS UNSIGNED) wantSpoofed FROM assistanceRequest WHERE purpose='fromPartner' AND ip=inet_aton(?) AND port=? AND category=? AND senderIp=inet_aton(?) ORDER BY requestId DESC LIMIT 1 FOR UPDATE");
     $stmt->bind_param("siss", $requestedIp, $port, $category, $senderIp);
     $stmt->execute();

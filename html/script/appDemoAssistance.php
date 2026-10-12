@@ -108,20 +108,43 @@ try {
         $groupLabel=trim((string)($b['group_label']??'')); $joinCode=trim((string)($b['join_code']??'')); $joinCodeHash=codeHash3($joinCode); $visibility=$joinCodeHash===null?'public':'group';
         if($name===''||mb_strlen($name)>120||mb_strlen($groupLabel)>120||($joinCode!==''&&(mb_strlen($joinCode)<4||mb_strlen($joinCode)>64))||$threshold<0||$threshold>10||$delay<15||$delay>300||$containment<15||$containment>600||!filter_var($targetIp,FILTER_VALIDATE_IP,FILTER_FLAG_IPV4)) reply3(400,['ok'=>false,'error'=>'invalid_demo_settings']);
         $controller=token3();
+        // Containment is enforced per target, not per group/participant. Serialize
+        // creators for this target without taking ownership of another exercise.
+        $createLock='tarasec:demo3:'.hash('sha256',$targetIp);
+        $createLock=substr($createLock,0,64);
+        $s=$c->prepare('SELECT GET_LOCK(?,5) acquired');
+        $s->bind_param('s',$createLock); $s->execute(); $acquired=(int)$s->get_result()->fetch_assoc()['acquired']; $s->close();
+        if($acquired!==1) reply3(409,['ok'=>false,'error'=>'exercise_creation_busy','message'=>'Another exercise is starting. Refresh the exercise list and retry.']);
         $c->begin_transaction();
         try {
-            // A new exercise owns the Demo 3 lane. Remove only explicitly
-            // demo-owned requests and close older demo sessions; production
-            // assistance requests are never eligible for this cleanup.
-            $c->query("UPDATE demoAssistanceSession SET state='closed',closedAt=UTC_TIMESTAMP() WHERE state<>'closed'");
-            $c->query("DELETE FROM assistanceRequest WHERE isDemo=b'1'");
+            while(true) {
+                $s=$c->prepare("SELECT sessionId FROM demoAssistanceSession WHERE targetIp=? AND state IN ('setup','active','contained','releasing') ORDER BY sessionId DESC LIMIT 1 FOR UPDATE");
+                $s->bind_param('s',$targetIp); $s->execute(); $existing=$s->get_result()->fetch_assoc(); $s->close();
+                if(!$existing) break;
+                $c->rollback();
+                // Advance only this target's exercise: due releases and normal
+                // observation expiry remain authoritative, not a blanket reset.
+                $cur=session3($c,(int)$existing['sessionId']);
+                if($cur && $cur['state']!=='closed') {
+                    $accessible=groupAccess3($c,(int)$existing['sessionId'],$joinCode);
+                    $joinable=$accessible && $cur['state']==='active' && $cur['seconds_remaining']>15;
+                    $s=$c->prepare('SELECT RELEASE_LOCK(?)'); $s->bind_param('s',$createLock); $s->execute(); $s->close();
+                    $conflict=['ok'=>false,'error'=>'target_exercise_already_active','joinable'=>$joinable,
+                        'message'=>$joinable ? 'An exercise already uses this target. Join the existing exercise from the list.' : 'An exercise already uses this target. Wait until it finishes; the existing exercise has been preserved.'];
+                    if($accessible) $conflict['active_session_id']=(int)$existing['sessionId'];
+                    reply3(409,$conflict);
+                }
+                $c->begin_transaction();
+            }
             $s=$c->prepare("INSERT INTO demoAssistanceSession(name,threshold,state,controllerToken,targetIp,visibility,groupLabel,joinCodeHash,containmentSeconds,startsAt,blockAt) VALUES(?,?,'active',?,?,?,?,?, ?,UTC_TIMESTAMP(),DATE_ADD(UTC_TIMESTAMP(),INTERVAL ? SECOND))");
             $s->bind_param('sisssssii',$name,$threshold,$controller,$targetIp,$visibility,$groupLabel,$joinCodeHash,$containment,$delay); $s->execute(); $sid=(int)$s->insert_id; $s->close();
             $c->commit();
         } catch(Throwable $e) {
             $c->rollback();
+            $s=$c->prepare('SELECT RELEASE_LOCK(?)'); $s->bind_param('s',$createLock); $s->execute(); $s->close();
             throw $e;
         }
+        $s=$c->prepare('SELECT RELEASE_LOCK(?)'); $s->bind_param('s',$createLock); $s->execute(); $s->close();
         reply3(201,['ok'=>true,'controller_token'=>$controller,'session'=>session3($c,$sid)]);
     }
     if($a==='list'){
@@ -148,13 +171,15 @@ try {
     if($a==='release'){
         $controller=trim((string)($b['controller_token']??''));
         if(!preg_match('/^[a-f0-9]{64}$/',$controller)) reply3(400,['ok'=>false,'error'=>'invalid_controller']);
-        $s=$c->prepare("SELECT state,targetIp,threshold,controllerToken,releaseRequestId FROM demoAssistanceSession WHERE sessionId=?");
+        $c->begin_transaction();
+        $s=$c->prepare("SELECT state,targetIp,threshold,controllerToken,releaseRequestId FROM demoAssistanceSession WHERE sessionId=? FOR UPDATE");
         $s->bind_param('i',$sid); $s->execute(); $row=$s->get_result()->fetch_assoc(); $s->close();
-        if(!$row||!hash_equals((string)$row['controllerToken'],$controller)) reply3(403,['ok'=>false,'error'=>'controller_required']);
-        if($row['state']!=='contained'||!empty($row['releaseRequestId'])) reply3(409,['ok'=>false,'error'=>'release_not_available']);
+        if(!$row||!hash_equals((string)$row['controllerToken'],$controller)) { $c->rollback(); reply3(403,['ok'=>false,'error'=>'controller_required']); }
+        if($row['state']!=='contained'||!empty($row['releaseRequestId'])) { $c->rollback(); reply3(409,['ok'=>false,'error'=>'release_not_available']); }
         $rid=queueAssistance3($c,$sid,(string)$row['targetIp'],(int)$row['threshold'],false);
         $s=$c->prepare("UPDATE demoAssistanceSession SET state='releasing',releaseRequestId=?,releaseAt=UTC_TIMESTAMP() WHERE sessionId=? AND state='contained'");
         $s->bind_param('ii',$rid,$sid); $s->execute(); $s->close();
+        $c->commit();
         reply3(200,['ok'=>true,'session'=>session3($c,$sid)]);
     }
     if($a==='join'){
