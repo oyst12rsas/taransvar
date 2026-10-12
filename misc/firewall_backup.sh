@@ -26,6 +26,8 @@
 # When deploying to production, consider moving SSH from the default port (22).
 #SSH_PORT="22"
 #SSH_ALLOWED_SOURCES="100.68.10.7"
+#SSH_ALLOWED_IPV6_SOURCES="" # explicit IPv6 hosts/CIDRs; empty denies new IPv6 SSH
+#IPV6_TRANSPORT_UDP_PORTS="" # extra userspace VPN UDP ports; kernel WireGuard ports are discovered
 #SSH_HONEYPOT="on"
 #SSH_HONEYPOT_PORTS="22"
 #SSH_HONEYPOT_AUTH_MODE="accept-all" # accept-all, reject-all, password

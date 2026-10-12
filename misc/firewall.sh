@@ -131,6 +131,12 @@ if [[ "$IS_GATEWAY" != "1" ]]; then
     exit 1
 fi
 
+# Validate/build IPv6 before the existing IPv4 setup changes any live rules.
+# Keep the companion file beside this script when deploying misc/.
+source "$(dirname -- "${BASH_SOURCE[0]}")/firewall_ipv6.sh"
+tarasec_ipv6_prepare
+trap 'rm -f "${TARASEC_IPV6_RULE_FILE:-}"' EXIT
+
 iptables -F
 iptables -X
 iptables -P INPUT DROP
@@ -285,7 +291,6 @@ for PORT in "${PORTS[@]}"; do [ -n "$PORT" ] && iptables -A INPUT -p udp --dport
 
 if [ "${ALLOW_PING:-1}" = "1" ]; then
     iptables -A INPUT -p icmp --icmp-type echo-request -j ACCEPT
-    ip6tables -A INPUT -p ipv6-icmp --icmpv6-type echo-request -j ACCEPT
 fi
 
 iptables -A INPUT \
@@ -293,6 +298,8 @@ iptables -A INPUT \
     --limit-burst "$MAX_BURSTS" \
     -j LOG --log-prefix "TARASEC_${NODE}: " --log-level 5
 iptables -A INPUT -j DROP
+
+tarasec_ipv6_apply
 
 if ! dpkg-query -W -f='${Status}' netfilter-persistent 2>/dev/null | grep -q "install ok installed"; then
     apt-get update
