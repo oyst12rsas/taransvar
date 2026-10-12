@@ -5,6 +5,7 @@ mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 include '../dbfunc.php';
 include '../taraLib.php';
+require_once __DIR__ . '/demoSshIdentityLib.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -43,6 +44,7 @@ function demoPublicSession(array $row): array
         'session_id' => (int)$row['demoSshSessionId'],
         'state' => (string)$row['state'],
         'source_ip' => isset($row['sourceIpText']) ? (string)$row['sourceIpText'] : '',
+        'unit_id' => !empty($row['gatewayVerified']) ? (int)$row['unitId'] : null,
         'node_a' => (string)$row['node_a'],
         'node_a_port' => (int)$row['nodeAPort'],
         'node_b' => (string)$row['node_b'],
@@ -87,7 +89,9 @@ function demoOperationalWarning(mysqli $conn, array $ips): string
 $method = (string)($_SERVER['REQUEST_METHOD'] ?? 'GET');
 $input = $method === 'POST' ? demoPost() : $_GET;
 $action = strtolower(trim((string)($input['action'] ?? ($method === 'GET' ? 'status' : 'create'))));
-$sender = getSenderIp();
+// Identity and sensor authorization must use the actual VPN peer, never Client-IP.
+$sender = (string)($_SERVER['REMOTE_ADDR'] ?? '');
+if (str_starts_with($sender, '::ffff:')) $sender = substr($sender, 7);
 if (filter_var($sender, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
     demoReply(400, ['ok' => false, 'error' => 'Unable to identify calling IPv4 client']);
 }
@@ -128,6 +132,25 @@ try {
         $setupId = filter_var($input['setup_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
         if ($setupId === false) demoReply(400, ['ok' => false, 'error' => 'Valid setup_id required']);
 
+        // Obtain identity directly from the observed gateway. A bare unit_id
+        // supplied by the app is never an authentication credential.
+        $verified = false;
+        $unitId = null;
+        $identity = null;
+        if (array_key_exists('identity_proof', $input)) {
+            try {
+                $identity = demoSshVerifiedIdentity($conn, $sender, (string)$input['identity_proof']);
+            } catch (InvalidArgumentException $e) {
+                demoReply(403, ['ok'=>false, 'error'=>$e->getMessage()]);
+            } catch (RuntimeException $e) {
+                demoReply(503, ['ok'=>false, 'error'=>'Gateway identity could not be verified. Update the gateway Demo 2 API and database, then retry.']);
+            }
+            $unitId = (int)$identity['unit_id'];
+            $verified = true;
+        } elseif (isset($input['unit_id'])) {
+            demoReply(403, ['ok'=>false, 'error'=>'A gateway-verified identity proof is required; a unit ID alone is not accepted']);
+        }
+
         $conn->begin_transaction();
         $stmt = $conn->prepare("SELECT d.demoSshSetupId,d.demoSshNodeBId,INET_NTOA(d.nodeAIp) node_a,d.nodeAPort,d.challengeTtlSeconds FROM demoSshSetup d JOIN demoSshNodeB n ON n.demoSshNodeBId=d.demoSshNodeBId WHERE d.demoSshSetupId=? AND d.active=b'1' AND n.active=b'1' FOR UPDATE");
         $stmt->bind_param('i', $setupId);
@@ -136,11 +159,16 @@ try {
         $stmt->close();
         if (!$setup) { $conn->rollback(); demoReply(404, ['ok' => false, 'error' => 'Demo setup unavailable']); }
 
-        $stmt = $conn->prepare("SELECT why FROM internalInfections WHERE ip=INET_ATON(?) AND active=b'1' AND severity>1 ORDER BY infectionId DESC LIMIT 1");
-        $stmt->bind_param('s', $sender);
-        $stmt->execute();
-        $infection = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
+        if ($verified) {
+            // Local gateway policy applies to this unit, not the shared NAT IP.
+            $infection = $identity['eligible'] ? null : ['why'=>$identity['demo_reset_available'] ? 'DEMO:' : 'security'];
+        } else {
+            $stmt = $conn->prepare("SELECT why FROM internalInfections WHERE ip=INET_ATON(?) AND active=b'1' AND severity>1 ORDER BY infectionId DESC LIMIT 1");
+            $stmt->bind_param('s', $sender);
+            $stmt->execute();
+            $infection = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+        }
         if ($infection) {
             $conn->rollback();
             demoReply(409, [
@@ -151,11 +179,16 @@ try {
             ]);
         }
 
-        // Starting over is only valid after the authenticated client has
-        // explicitly cancelled its previous session. This prevents abandoned
-        // active rows from making a later Node B callback ambiguous.
-        $stmt = $conn->prepare("SELECT demoSshSessionId FROM demoSshSession WHERE demoSshSetupId=? AND sourceIp=INET_ATON(?) AND state IN ('awaiting_node_a','demo_infected','awaiting_node_b') AND expires>NOW() ORDER BY created DESC LIMIT 1 FOR UPDATE");
-        $stmt->bind_param('is', $setupId, $sender);
+        // One live session per verified unit on this gateway. Legacy clients
+        // remain limited to one unverified session per shared source address.
+        $activeSql = "SELECT demoSshSessionId FROM demoSshSession WHERE demoSshSetupId=? AND sourceIp=INET_ATON(?) AND state IN ('awaiting_node_a','demo_infected','awaiting_node_b') AND expires>NOW()";
+        if ($verified) {
+            $stmt = $conn->prepare($activeSql . " AND gatewayVerified=b'1' AND unitId=? ORDER BY created DESC LIMIT 1 FOR UPDATE");
+            $stmt->bind_param('isi', $setupId, $sender, $unitId);
+        } else {
+            $stmt = $conn->prepare($activeSql . " AND gatewayVerified=b'0' ORDER BY created DESC LIMIT 1 FOR UPDATE");
+            $stmt->bind_param('is', $setupId, $sender);
+        }
         $stmt->execute();
         $activeSession = $stmt->get_result()->fetch_assoc();
         $stmt->close();
@@ -192,18 +225,14 @@ try {
         $stmt->close();
         $accessToken = bin2hex(random_bytes(24));
         $accessHash = hash('sha256', $accessToken);
-        // Classroom demonstrations need enough time for instruction and many\n        // concurrent students to complete both SSH steps.\n        $ttl = max(60, min(1800, (int)$setup['challengeTtlSeconds']));
-        $unitId = null;
-        $stmt = $conn->prepare("SELECT unitId FROM unit WHERE ipAddress=INET_ATON(?) ORDER BY lastSeen DESC,unitId DESC LIMIT 1");
-        $stmt->bind_param('s', $sender);
-        $stmt->execute();
-        $unitRow = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-        if ($unitRow) $unitId = (int)$unitRow['unitId'];
+        // Fixed classroom window, matching the SQL expiry below.
+        $ttl = 1800;
+        // Unverified legacy sessions stay unbound until gateway confession.
+        $verifiedBit = $verified ? 1 : 0;
         // Demo 2 has a fixed classroom window. Keep the interval literal:
         // this MariaDB deployment evaluated bound interval values as zero.
-        $stmt = $conn->prepare("INSERT INTO demoSshSession(demoSshSetupId,demoSshNodeBId,sourceIp,unitId,credentialGeneration,accessTokenHash,expires) VALUES(?,?,INET_ATON(?),?,?,?,DATE_ADD(NOW(),INTERVAL 30 MINUTE))");
-        $stmt->bind_param('iisiis', $setupId, $node['demoSshNodeBId'], $sender, $unitId, $node['credentialGeneration'], $accessHash);
+        $stmt = $conn->prepare("INSERT INTO demoSshSession(demoSshSetupId,demoSshNodeBId,sourceIp,unitId,gatewayVerified,credentialGeneration,accessTokenHash,expires) VALUES(?,?,INET_ATON(?),?,?,?,?,DATE_ADD(NOW(),INTERVAL 30 MINUTE))");
+        $stmt->bind_param('iisiiis', $setupId, $node['demoSshNodeBId'], $sender, $unitId, $verifiedBit, $node['credentialGeneration'], $accessHash);
         $stmt->execute();
         $sessionId = (int)$conn->insert_id;
         $stmt->close();
@@ -213,7 +242,7 @@ try {
         $stmt->close();
         $conn->commit();
         $operationalWarning = demoOperationalWarning($conn, ['gateway' => $sender, 'Node A' => $setup['node_a'], 'Node B' => $node['node_b']]);
-        demoReply(201, ['ok' => true, 'session_id' => $sessionId, 'session_token' => $accessToken, 'state' => 'awaiting_node_a', 'source_ip' => $sender, 'node_a' => $setup['node_a'], 'node_a_port' => (int)$setup['nodeAPort'], 'node_b' => $node['node_b'], 'node_b_port' => (int)$node['nodeBPort'], 'username' => $node['username'], 'password' => $node['passwordPlain'], 'credential_generation' => (int)$node['credentialGeneration'], 'expires_in' => $ttl, 'operational_warning' => $operationalWarning, 'operationally_ready' => $operationalWarning === '']);
+        demoReply(201, ['ok' => true, 'session_id' => $sessionId, 'session_token' => $accessToken, 'state' => 'awaiting_node_a', 'source_ip' => $sender, 'unit_id' => $verified ? $unitId : null, 'node_a' => $setup['node_a'], 'node_a_port' => (int)$setup['nodeAPort'], 'node_b' => $node['node_b'], 'node_b_port' => (int)$node['nodeBPort'], 'username' => $node['username'], 'password' => $node['passwordPlain'], 'credential_generation' => (int)$node['credentialGeneration'], 'expires_in' => $ttl, 'operational_warning' => $operationalWarning, 'operationally_ready' => $operationalWarning === '']);
     }
 
     if ($action === 'cancel') {
@@ -225,8 +254,8 @@ try {
         $accessHash = hash('sha256', $sessionToken);
 
         $conn->begin_transaction();
-        $stmt = $conn->prepare("SELECT state FROM demoSshSession WHERE demoSshSessionId=? AND accessTokenHash=? AND sourceIp=INET_ATON(?) LIMIT 1 FOR UPDATE");
-        $stmt->bind_param('iss', $sessionId, $accessHash, $sender);
+        $stmt = $conn->prepare("SELECT state FROM demoSshSession WHERE demoSshSessionId=? AND accessTokenHash=? LIMIT 1 FOR UPDATE");
+        $stmt->bind_param('is', $sessionId, $accessHash);
         $stmt->execute();
         $sessionRow = $stmt->get_result()->fetch_assoc();
         $stmt->close();
@@ -278,7 +307,7 @@ try {
         // needlessly reduced to the ambiguous source-IP fallback below.
         $nodeBEvidence = null;
         for ($wait = 0; $wait < 8; $wait++) {
-            $stmt = $conn->prepare("SELECT t.syslogThreatId,COALESCE(t.confirmed_unit_id,t.unit_id,(SELECT hr.remoteUnitId FROM hackReport hr WHERE hr.ip=t.src_ip AND hr.port=t.src_port AND hr.ownerConfirmedTime IS NOT NULL AND hr.remoteUnitId IS NOT NULL AND COALESCE(hr.lastSeen,hr.created)>=NOW()-INTERVAL 2 MINUTE ORDER BY hr.reportId DESC LIMIT 1)) resolvedUnitId FROM syslogThreat t WHERE t.src_ip=INET_ATON(?) AND t.src_port=? AND t.dst_ip=INET_ATON(?) AND t.dst_port=? AND t.created>=NOW()-INTERVAL 2 MINUTE ORDER BY t.syslogThreatId DESC LIMIT 1");
+            $stmt = $conn->prepare("SELECT t.syslogThreatId,(SELECT hr.remoteUnitId FROM hackReport hr WHERE hr.ip=t.src_ip AND hr.port=t.src_port AND hr.sentByIp=t.dst_ip AND hr.ownerConfirmedTime IS NOT NULL AND hr.remoteUnitId IS NOT NULL AND COALESCE(hr.lastSeen,hr.created)>=NOW()-INTERVAL 2 MINUTE ORDER BY hr.reportId DESC LIMIT 1) resolvedUnitId FROM syslogThreat t WHERE t.src_ip=INET_ATON(?) AND t.src_port=? AND t.dst_ip=INET_ATON(?) AND t.dst_port=? AND t.created>=NOW()-INTERVAL 2 MINUTE ORDER BY t.syslogThreatId DESC LIMIT 1");
             $stmt->bind_param('sisi', $sourceIp, $sourcePort, $node['node_b'], $destinationPort);
             $stmt->execute();
             $candidate = $stmt->get_result()->fetch_assoc();
@@ -289,13 +318,13 @@ try {
         }
 
         $resolvedUnitId = $nodeBEvidence && $nodeBEvidence['resolvedUnitId'] !== null ? (int)$nodeBEvidence['resolvedUnitId'] : null;
-        $sql = "SELECT s.*,INET_NTOA(d.nodeAIp) node_a,d.nodeAPort FROM demoSshSession s JOIN demoSshSetup d ON d.demoSshSetupId=s.demoSshSetupId WHERE s.demoSshNodeBId=? AND s.credentialGeneration=? AND s.state IN ('awaiting_node_a','demo_infected','awaiting_node_b') AND s.expires>NOW()";
+        $sql = "SELECT s.*,CAST(s.gatewayVerified AS UNSIGNED) gatewayVerified,INET_NTOA(d.nodeAIp) node_a,d.nodeAPort FROM demoSshSession s JOIN demoSshSetup d ON d.demoSshSetupId=s.demoSshSetupId WHERE s.demoSshNodeBId=? AND s.credentialGeneration=? AND s.state IN ('awaiting_node_a','demo_infected','awaiting_node_b') AND s.expires>NOW()";
         if ($resolvedUnitId !== null) {
-            $sql .= " AND s.unitId=? ORDER BY s.created DESC LIMIT 2 FOR UPDATE";
-            $stmt = $conn->prepare($sql); $stmt->bind_param('iii', $node['demoSshNodeBId'], $node['credentialGeneration'], $resolvedUnitId);
+            $sql .= " AND s.sourceIp=INET_ATON(?) AND s.unitId=? ORDER BY s.created DESC LIMIT 2 FOR UPDATE";
+            $stmt = $conn->prepare($sql); $stmt->bind_param('iisi', $node['demoSshNodeBId'], $node['credentialGeneration'], $sourceIp, $resolvedUnitId);
             $correlation = 'unit';
         } else {
-            $sql .= " AND s.sourceIp=INET_ATON(?) ORDER BY s.created DESC LIMIT 2 FOR UPDATE";
+            $sql .= " AND s.gatewayVerified=b'0' AND s.sourceIp=INET_ATON(?) ORDER BY s.created DESC LIMIT 2 FOR UPDATE";
             $stmt = $conn->prepare($sql); $stmt->bind_param('iis', $node['demoSshNodeBId'], $node['credentialGeneration'], $sourceIp);
             $correlation = 'single_source';
         }
@@ -303,23 +332,8 @@ try {
         $matches = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         $stmt->close();
         $row = count($matches) === 1 ? $matches[0] : null;
-        if (!$row && count($matches) > 1) {
-            // Closing the screen in an older client could leave an
-            // awaiting_node_a row behind. Prefer the one uniquely progressed
-            // session instead of making the later Node B callback ambiguous.
-            $progressed = array_values(array_filter($matches, static function (array $match): bool {
-                return !empty($match['nodeAEvidenceId'])
-                    || in_array((string)$match['state'], ['demo_infected', 'awaiting_node_b'], true);
-            }));
-            if (count($progressed) >= 1) {
-                // Results are newest-first. When gateway/NAT attribution is not
-                // available, bind the callback to the newest session that has
-                // already reached Node A. An abandoned older progressed session
-                // must not leave every later Node B callback pending forever.
-                $row = $progressed[0];
-                if (count($progressed) > 1) $correlation = 'latest_progressed_source';
-            }
-        }
+        // Ambiguous source evidence must never select another participant's
+        // newest/progressed session. Wait for exact gateway unit attribution.
         if (!$row) $correlation = count($matches) > 1 ? 'pending' : 'none';
         $sessionId = $row ? (int)$row['demoSshSessionId'] : null;
         $stmt = $conn->prepare("INSERT INTO demoSshAttempt(demoSshNodeBId,demoSshSessionId,sourceIp,sourcePort,destinationPort,unitId,credentialGeneration,credentialValid,correlation) VALUES(?,?,INET_ATON(?),?,?,?,?,?,?)");
@@ -351,15 +365,15 @@ try {
         $state = $row ? (string)$row['state'] : 'awaiting_attribution';
         if ($row) {
             $attempts = (int)$row['attempts'] + 1;
-            $stmt = $conn->prepare("SELECT syslogThreatId,src_port FROM syslogThreat WHERE src_ip=? AND dst_ip=INET_ATON(?) AND dst_port=? AND is_attack<>0 AND created>=? ORDER BY syslogThreatId DESC LIMIT 1");
-            $stmt->bind_param('isis', $row['sourceIp'], $row['node_a'], $row['nodeAPort'], $row['created']);
+            $stmt = $conn->prepare("SELECT t.syslogThreatId,t.src_port FROM syslogThreat t WHERE t.src_ip=? AND t.dst_ip=INET_ATON(?) AND t.dst_port=? AND t.is_attack<>0 AND t.created>=? AND (?=0 OR (SELECT hr.remoteUnitId FROM hackReport hr WHERE hr.ip=t.src_ip AND hr.port=t.src_port AND hr.sentByIp=t.dst_ip AND hr.ownerConfirmedTime IS NOT NULL AND hr.remoteUnitId IS NOT NULL AND COALESCE(hr.lastSeen,hr.created)>=? ORDER BY hr.reportId DESC LIMIT 1)=?) ORDER BY t.syslogThreatId DESC LIMIT 1");
+            $stmt->bind_param('isisisi', $row['sourceIp'], $row['node_a'], $row['nodeAPort'], $row['created'], $row['gatewayVerified'], $row['created'], $row['unitId']);
             $stmt->execute(); $nodeA = $stmt->get_result()->fetch_assoc(); $stmt->close();
             // internalInfections belongs to the source gateway, not the global
             // DB. The authoritative global proof that the gateway accepted the
             // Node A report is its owner-confirmed hackReport confession.
-            $stmt = $conn->prepare("SELECT hr.reportId,hr.remoteUnitId FROM hackReport hr WHERE hr.ip=? AND hr.port IN (?,?) AND hr.sentByIp IN (INET_ATON(?),INET_ATON(?)) AND hr.ownerConfirmedTime IS NOT NULL AND COALESCE(hr.lastSeen,hr.created)>=? ORDER BY COALESCE(hr.lastSeen,hr.created) DESC,hr.reportId DESC LIMIT 1");
+            $stmt = $conn->prepare("SELECT hr.reportId,hr.remoteUnitId FROM hackReport hr WHERE hr.ip=? AND hr.port IN (?,?) AND hr.sentByIp IN (INET_ATON(?),INET_ATON(?)) AND hr.ownerConfirmedTime IS NOT NULL AND COALESCE(hr.lastSeen,hr.created)>=? AND (?=0 OR hr.remoteUnitId=?) ORDER BY COALESCE(hr.lastSeen,hr.created) DESC,hr.reportId DESC LIMIT 1");
             $nodeASourcePort = $nodeA ? (int)$nodeA['src_port'] : 0;
-            $stmt->bind_param('iiisss', $row['sourceIp'], $nodeASourcePort, $sourcePort, $row['node_a'], $node['node_b'], $row['created']);
+            $stmt->bind_param('iiisssii', $row['sourceIp'], $nodeASourcePort, $sourcePort, $row['node_a'], $node['node_b'], $row['created'], $row['gatewayVerified'], $row['unitId']);
             $stmt->execute(); $gatewayConfirmation = $stmt->get_result()->fetch_assoc(); $stmt->close();
             $qualifies = $passwordOk && $attempts === 1 && $nodeA && $gatewayConfirmation;
             $awaitingGateway = $passwordOk && $attempts === 1 && $nodeA && !$gatewayConfirmation;
@@ -389,12 +403,13 @@ try {
         if ($sessionId === false) demoReply(400, ['ok' => false, 'error' => 'Valid session_id required']);
         if (strlen($sessionToken) < 32) demoReply(403, ['ok' => false, 'error' => 'Session token required']);
         $accessHash = hash('sha256', $sessionToken);
-        $stmt = $conn->prepare("SELECT s.*,INET_NTOA(s.sourceIp) sourceIpText,GREATEST(0,TIMESTAMPDIFF(SECOND,NOW(),s.expires)) secondsRemaining,INET_NTOA(d.nodeAIp) node_a,d.nodeAPort,INET_NTOA(n.ip) node_b,n.port nodeBPort,n.username,(SELECT CAST(a.credentialValid AS UNSIGNED) FROM demoSshAttempt a WHERE a.demoSshSessionId=s.demoSshSessionId ORDER BY a.demoSshAttemptId DESC LIMIT 1) nodeBLoginAccepted FROM demoSshSession s JOIN demoSshSetup d ON d.demoSshSetupId=s.demoSshSetupId JOIN demoSshNodeB n ON n.demoSshNodeBId=s.demoSshNodeBId WHERE s.demoSshSessionId=? AND s.accessTokenHash=? LIMIT 1");
+        $stmt = $conn->prepare("SELECT s.*,CAST(s.gatewayVerified AS UNSIGNED) gatewayVerified,INET_NTOA(s.sourceIp) sourceIpText,GREATEST(0,TIMESTAMPDIFF(SECOND,NOW(),s.expires)) secondsRemaining,INET_NTOA(d.nodeAIp) node_a,d.nodeAPort,INET_NTOA(n.ip) node_b,n.port nodeBPort,n.username,(SELECT CAST(a.credentialValid AS UNSIGNED) FROM demoSshAttempt a WHERE a.demoSshSessionId=s.demoSshSessionId ORDER BY a.demoSshAttemptId DESC LIMIT 1) nodeBLoginAccepted FROM demoSshSession s JOIN demoSshSetup d ON d.demoSshSetupId=s.demoSshSetupId JOIN demoSshNodeB n ON n.demoSshNodeBId=s.demoSshNodeBId WHERE s.demoSshSessionId=? AND s.accessTokenHash=? LIMIT 1");
         $stmt->bind_param('is', $sessionId, $accessHash);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$row) demoReply(404, ['ok' => false, 'error' => 'Demo session not found']);
+        $row = demoSshReconcilePending($conn, $row);
 
         // The authenticated callback normally arrives a few milliseconds before
         // rsyslog has normalized ssh_login_success. Replace the earlier connect
@@ -428,7 +443,7 @@ try {
             && (int)$row['nodeBLoginAccepted'] === 1
             && (int)$row['attempts'] === 1;
         if (in_array($row['state'], ['awaiting_node_a','demo_infected','awaiting_node_b'], true) || $recoverPrematureFinalization) {
-            $stmt = $conn->prepare("SELECT t.syslogThreatId,COALESCE(t.confirmed_unit_id,t.unit_id,(SELECT hr.remoteUnitId FROM hackReport hr WHERE hr.ip=t.src_ip AND hr.port=t.src_port AND hr.ownerConfirmedTime IS NOT NULL AND hr.remoteUnitId IS NOT NULL AND COALESCE(hr.lastSeen,hr.created)>=s.created ORDER BY hr.reportId DESC LIMIT 1)) resolvedUnitId FROM syslogThreat t JOIN demoSshSession s ON s.demoSshSessionId=? WHERE t.dst_ip=INET_ATON(?) AND t.dst_port=? AND t.is_attack<>0 AND t.created>=s.created AND (t.src_ip=s.sourceIp OR (s.unitId IS NOT NULL AND COALESCE(t.confirmed_unit_id,t.unit_id,(SELECT hr2.remoteUnitId FROM hackReport hr2 WHERE hr2.ip=t.src_ip AND hr2.port=t.src_port AND hr2.ownerConfirmedTime IS NOT NULL AND hr2.remoteUnitId IS NOT NULL AND COALESCE(hr2.lastSeen,hr2.created)>=s.created ORDER BY hr2.reportId DESC LIMIT 1))=s.unitId)) ORDER BY t.syslogThreatId DESC LIMIT 1");
+            $stmt = $conn->prepare("SELECT t.syslogThreatId,(SELECT hr.remoteUnitId FROM hackReport hr WHERE hr.ip=t.src_ip AND hr.port=t.src_port AND hr.sentByIp=t.dst_ip AND hr.ownerConfirmedTime IS NOT NULL AND hr.remoteUnitId IS NOT NULL AND COALESCE(hr.lastSeen,hr.created)>=s.created ORDER BY hr.reportId DESC LIMIT 1) resolvedUnitId FROM syslogThreat t JOIN demoSshSession s ON s.demoSshSessionId=? WHERE t.dst_ip=INET_ATON(?) AND t.dst_port=? AND t.is_attack<>0 AND t.created>=s.created AND ((s.gatewayVerified=b'0' AND t.src_ip=s.sourceIp) OR (t.src_ip=s.sourceIp AND s.unitId IS NOT NULL AND (SELECT hr2.remoteUnitId FROM hackReport hr2 WHERE hr2.ip=t.src_ip AND hr2.port=t.src_port AND hr2.sentByIp=t.dst_ip AND hr2.ownerConfirmedTime IS NOT NULL AND hr2.remoteUnitId IS NOT NULL AND COALESCE(hr2.lastSeen,hr2.created)>=s.created ORDER BY hr2.reportId DESC LIMIT 1)=s.unitId)) ORDER BY t.syslogThreatId DESC LIMIT 1");
             $stmt->bind_param('isi', $sessionId, $row['node_a'], $row['nodeAPort']);
             $stmt->execute();
             $nodeAEvidence = $stmt->get_result()->fetch_assoc();
@@ -448,7 +463,7 @@ try {
                 $row['unitId'] = $resolvedNodeAUnitId;
             }
 
-            $stmt = $conn->prepare("SELECT hr.reportId,hr.remoteUnitId FROM hackReport hr JOIN demoSshSession s ON s.demoSshSessionId=? JOIN demoSshSetup d ON d.demoSshSetupId=s.demoSshSetupId JOIN demoSshNodeB n ON n.demoSshNodeBId=s.demoSshNodeBId WHERE hr.ip=s.sourceIp AND hr.port IN ((SELECT src_port FROM syslogThreat WHERE syslogThreatId=s.nodeAEvidenceId),s.nodeBSourcePort) AND hr.sentByIp IN (d.nodeAIp,n.ip) AND hr.ownerConfirmedTime IS NOT NULL AND COALESCE(hr.lastSeen,hr.created)>=s.created ORDER BY COALESCE(hr.lastSeen,hr.created) DESC,hr.reportId DESC LIMIT 1");
+            $stmt = $conn->prepare("SELECT hr.reportId,hr.remoteUnitId FROM hackReport hr JOIN demoSshSession s ON s.demoSshSessionId=? JOIN demoSshSetup d ON d.demoSshSetupId=s.demoSshSetupId JOIN demoSshNodeB n ON n.demoSshNodeBId=s.demoSshNodeBId WHERE hr.ip=s.sourceIp AND hr.port IN ((SELECT src_port FROM syslogThreat WHERE syslogThreatId=s.nodeAEvidenceId),s.nodeBSourcePort) AND hr.sentByIp IN (d.nodeAIp,n.ip) AND hr.ownerConfirmedTime IS NOT NULL AND COALESCE(hr.lastSeen,hr.created)>=s.created AND (s.gatewayVerified=b'0' OR hr.remoteUnitId=s.unitId) ORDER BY COALESCE(hr.lastSeen,hr.created) DESC,hr.reportId DESC LIMIT 1");
             $stmt->bind_param('i', $sessionId);
             $stmt->execute();
             $gatewayConfirmation = $stmt->get_result()->fetch_assoc();

@@ -634,8 +634,20 @@ CREATE TABLE IF NOT EXISTS demo4Session (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 update setup set dbVersion = 98;
 
+#version 99 (261012)
+#Demo 2: gateway-verified unit identity for simultaneous NAT participants.
+ALTER TABLE demoSshSession ADD COLUMN IF NOT EXISTS gatewayVerified BIT(1) NOT NULL DEFAULT b'0';
+CREATE TABLE IF NOT EXISTS demoSshIdentityProof (
+    tokenHash CHAR(64) NOT NULL PRIMARY KEY,
+    unitId INT UNSIGNED NOT NULL,
+    clientIp INT UNSIGNED NOT NULL,
+    expires DATETIME NOT NULL,
+    KEY idx_demoSshIdentityProof_expiry (expires)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+UPDATE setup SET dbVersion = 99;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 99;
+#update setup set dbVersion = 100;
 
 #NOTE! The versions (#version nn ...) are imported by the installed
 #diagnostics script. Deploy misc to /root/taransvar/perl, then run:
