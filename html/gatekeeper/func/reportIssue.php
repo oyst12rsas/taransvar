@@ -35,7 +35,20 @@ function renderLocalIssues(bool $newReport = false)
         }
         $issues = operationsStoredIssues($conn, $server['ip'], $showAll, $page * 64);
         $more = count($issues) > 64;
-        print operationsMaintenanceDetails(['issues'=>array_slice($issues, 0, 64)]);
+        $snapshot = $conn->query('SELECT networkStatus FROM setup LIMIT 1')->fetch_assoc();
+        $status = json_decode((string)($snapshot['networkStatus'] ?? ''), true);
+        $agent = is_array($status['operationsAgent'] ?? null) ? $status['operationsAgent'] : [];
+        if (!$agent) print '<p>Worker status is unavailable in this server’s latest status report.</p>';
+        $liveIssues = [];
+        foreach (($agent['issues'] ?? []) as $item)
+            if (is_array($item) && isset($item['key'])) $liveIssues[$item['key']] = $item;
+        $agent['issues'] = array_slice($issues, 0, 64);
+        foreach ($agent['issues'] as &$item)
+            foreach (['status_explanation', 'verification_needed', 'last_attempt'] as $field)
+                if (isset($liveIssues[$item['key']][$field]) && (float)($liveIssues[$item['key']]['checked_at'] ?? 0) >= (float)$item['checked_at'])
+                    $item[$field] = $liveIssues[$item['key']][$field];
+        unset($item);
+        print operationsMaintenanceDetails($agent);
         foreach (array_slice($issues, 0, 64) as $issue) {
             if ($issue['verification'] !== 'manual' || $issue['status'] === 'solved') continue;
             print '<details><summary>Verify resolution: '.agentStatusEscape($issue['description']).'</summary><form method="post" action="'.$listUrl.'">';

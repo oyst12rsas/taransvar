@@ -37,7 +37,7 @@ if (operationsStoredIssues($conn,'100.68.165.190',false) !== []) throw new Excep
 if (count(operationsStoredIssues($conn,'100.68.165.190',true)) !== 1) throw new Exception('Full list must include solved');
 if (operationsStoredIssues($conn,'100.68.165.190',true,64) !== []) throw new Exception('Issue pagination offset ignored');
 
-$conn->query('ALTER TABLE setup ADD adminIP INT UNSIGNED, ADD nickname VARCHAR(64)');
+$conn->query('ALTER TABLE setup ADD adminIP INT UNSIGNED, ADD nickname VARCHAR(64), ADD networkStatus TEXT');
 $conn->query('UPDATE setup SET adminIP=INET_ATON("100.68.165.190"),nickname="Standard"');
 $session=['manualIssueCsrf'=>str_repeat('c',64),'userid'=>9];
 $post=['csrf'=>$session['manualIssueCsrf'],'description'=>'New SSH login succeeds while the gate is closed','nodeIp'=>'1.2.3.4'];
@@ -88,3 +88,12 @@ $_GET=[];
 ob_start(); reportIssue(); $html=ob_get_clean();
 if (strpos($html,'value="report"') === false || strpos($html,'Unresolved manual issue for navigation test') !== false) throw new Exception('New report form not separate from list');
 echo "Issues navigation and admin rendering checks passed\n";
+
+$workerStatus=json_encode(['operationsAgent'=>['status'=>'monitoring','last_assessment_status'=>'reported']]);
+$stmt=$conn->prepare('UPDATE setup SET networkStatus=?'); $stmt->bind_param('s',$workerStatus); $stmt->execute();
+$_GET=[]; ob_start(); issues(); $html=ob_get_clean();
+if (strpos($html,'Worker: monitoring. Last assessment: reported.') === false || strpos($html,'Evidence: Unresolved manual issue for navigation test') === false) throw new Exception('Issue page lost worker metadata or discovery evidence');
+$conn->query('UPDATE setup SET networkStatus=NULL');
+ob_start(); issues(); $html=ob_get_clean();
+if (strpos($html,'Worker: unknown') !== false || strpos($html,'Worker status is unavailable') === false) throw new Exception('Missing snapshot fabricated unknown worker state');
+echo "Worker metadata and manual discovery evidence checks passed\n";
