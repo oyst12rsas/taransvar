@@ -66,3 +66,25 @@ $stale=['key'=>$manual['issueKey'],'incarnation'=>substr($manual['issueKey'],7),
 storeOperationsIssues($conn,'100.68.165.190',['issues'=>[$stale]]);
 $closed=$conn->query("SELECT status,solvedAt FROM issue WHERE issueId=$id")->fetch_assoc();
 if ($closed['status'] !== 'solved' || !$closed['solvedAt']) throw new Exception('Stale worker reopened verified manual issue');
+
+require_once __DIR__.'/../html/gatekeeper/func/issues.php';
+function isAdmin() { return !empty($_SESSION['isAdmin']); }
+function getConnection() {
+    return new mysqli('127.0.0.1','root',getenv('ISSUE_TEST_PASSWORD') ?: '',
+        'tarasec_issue_test',(int)(getenv('ISSUE_TEST_PORT') ?: 3307));
+}
+$_SESSION=['isAdmin'=>false]; $_SERVER['REQUEST_METHOD']='GET'; $_GET=[];
+ob_start(); issues(); $html=ob_get_clean();
+if (strpos($html,'Administrator login required') === false || strpos($html,'<form') !== false) throw new Exception('Issues page admin gate failed');
+$_SESSION=['isAdmin'=>true,'manualIssueCsrf'=>str_repeat('d',64),'userid'=>9];
+manualIssueSubmit($conn,true,$_SESSION,['csrf'=>$_SESSION['manualIssueCsrf'],'description'=>'Unresolved manual issue for navigation test']);
+ob_start(); issues(); $html=ob_get_clean();
+if (strpos($html,'<h1>Open issues</h1>') === false || strpos($html,'Unresolved manual issue for navigation test') === false
+    || strpos($html,$manual['description']) !== false || strpos($html,'value="report"') !== false) throw new Exception('Open issues page filtering or navigation failed');
+$_GET=['history'=>'all'];
+ob_start(); issues(); $html=ob_get_clean();
+if (strpos($html,'<h1>Full issue history</h1>') === false || strpos($html,$manual['description']) === false) throw new Exception('Full history omitted solved issue');
+$_GET=[];
+ob_start(); reportIssue(); $html=ob_get_clean();
+if (strpos($html,'value="report"') === false || strpos($html,'Unresolved manual issue for navigation test') !== false) throw new Exception('New report form not separate from list');
+echo "Issues navigation and admin rendering checks passed\n";

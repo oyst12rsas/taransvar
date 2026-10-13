@@ -338,7 +338,7 @@ global $setupRow;
 <td bgcolor="white"><?php printMenuChoice("listLog", "Log"); ?></td>
 <td bgcolor="white"><?php printMenuChoice("traffic", "Traffic"); ?></td>
 <td bgcolor="white"><?php printMenuChoice("units", "Units"); ?></td>
-<?php if (isAdmin()) { ?><td bgcolor="white"><?php printMenuChoice("reportIssue", "Report an issue"); ?></td><?php } ?>
+<?php if (isAdmin()) { ?><td bgcolor="white"><?php printMenuChoice("issues", "Issues"); ?></td><?php } ?>
 <td bgcolor="white"><?php printMenuChoice("attack", "Attack"); ?></td>
 <td bgcolor="white"><?php printMenuChoice("demo", "Demo"); ?></td>
 <td bgcolor="white"><?php printMenuChoice("about", "About"); ?></td>
