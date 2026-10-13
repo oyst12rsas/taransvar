@@ -17,7 +17,7 @@ from operations_prompt import build_prompt, validate_decision, progress_feedback
 from operations_tools import gateway_tools, resolve_tool
 from operations_reporting import local_report, stage_error
 from operations_issues import observe as observe_issues, progress as issue_progress, report as issue_report
-from operations_schedule import choose_trigger, reserve_call
+from operations_schedule import choose_trigger, reserve_call, choose_issue, activate_issue, mark_issue_assessed
 from operations_manual import sync as sync_manual_issues
 from operations_reboot import inspect as inspect_reboot, maintain as maintain_reboot
 from operations_policy import maintenance_enabled, effective_policy
@@ -345,8 +345,7 @@ def main():
             save(path, state)
             record({'lightweight_tick': state['status']})
             return
-        pending_issues = [item for item in state.get('issues', {}).values() if item['status'] != 'solved']
-        state['active_issue_key'] = min(pending_issues, key=lambda item: item['discovered_at'])['key'] if pending_issues else None
+        activate_issue(state, choose_issue(state, now, requested))
         state.pop('issue_decision', None)
         state['last_model_attempt_at'] = now
         save(path, state)
@@ -401,6 +400,8 @@ def main():
                 save(path, state)
                 record({'model_budget_deferred': True})
                 return
+            if round_number == 0:
+                mark_issue_assessed(state, time.time())
             state['current_stage'] = 'model_request'
             state['model_provider'] = 'openai' if policy.get('model_provider') == 'openai' else 'flowise'
             save(path, state)

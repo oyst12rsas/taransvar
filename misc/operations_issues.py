@@ -53,6 +53,10 @@ def progress(state, now=None):
             continue
         selected = state.get('active_issue_key') in (None, item['key'])
         item['progress_fingerprint'] = digest
+        if not selected:
+            # Another issue's assessment is not an attempt or a retry delay here.
+            event(item, 'progress', now, dict(worker_status=status, action='other_issue'))
+            continue
         item['status'] = ('verification_pending' if selected and status in ('command_executed', 'procedure_ok', 'resource_ok') and result.get('read_only') is not True
                           else 'blocked' if status in ('blocked', 'model_stalled', 'model_budget_deferred', 'command_failed', 'procedure_failed')
                           else 'pending')
@@ -62,7 +66,7 @@ def progress(state, now=None):
         # Commands stay local: model argv may contain sensitive data.
         if selected and decision.get('argv'):
             item['commands'] = decision['argv']
-        event(item, 'progress', now, detail if selected else dict(worker_status=status, action='other_issue'))
+        event(item, 'progress', now, detail)
 
 
 def report(state, acknowledgements=None):

@@ -67,3 +67,40 @@ def reserve_call(state, policy, now=None):
         return False
     calls.append(now)
     return True
+
+
+def choose_issue(state, now, requested=False):
+    """Rotate due work by last assessment; discovery order only breaks ties."""
+    pending = [item for item in state.get('issues', {}).values()
+               if item.get('status') != 'solved']
+    due = [item for item in pending if isinstance(item.get('next_action_at'), (int, float))
+           and not isinstance(item['next_action_at'], bool) and item['next_action_at'] <= now]
+    candidates = due or (pending if requested else [])
+    def priority(item):
+        # Upgrade existing state without assessing its oldest issue once again.
+        previous = (state.get('last_assessment_checked_at', 0)
+                    if not state.get('fair_issue_queue') and state.get('active_issue_key') == item['key'] else 0)
+        return (item.get('last_assessed_at', previous), item['discovered_at'], item['key'])
+    return min(candidates, key=priority)['key'] if candidates else None
+
+
+def activate_issue(state, key):
+    """Keep another issue's old model goal from overriding the selected work."""
+    previous = state.get('active_issue_key')
+    if not state.get('fair_issue_queue'):
+        item = state.get('issues', {}).get(previous)
+        if item and state.get('last_assessment_checked_at'):
+            item.setdefault('last_assessed_at', state['last_assessment_checked_at'])
+        state['fair_issue_queue'] = True
+    if previous != key:
+        tasks = state.setdefault('issue_task_states', {})
+        if previous:
+            tasks[previous] = state.get('task_state', {})
+        state['task_state'] = tasks.get(key, {}) if key else {}
+    state['active_issue_key'] = key
+
+
+def mark_issue_assessed(state, now):
+    item = state.get('issues', {}).get(state.get('active_issue_key'))
+    if item and item['status'] != 'solved':
+        item['last_assessed_at'] = now
