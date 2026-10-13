@@ -76,3 +76,19 @@ class IssueTests(unittest.TestCase):
         self.assertEqual(state['issues']['service:a']['commands'], ['/bin/repair'])
         self.assertEqual(state['issues']['service:b']['commands'], [])
         self.assertNotEqual(state['issues']['service:b']['status'], 'verification_pending')
+
+    def test_string_receipt_is_accepted_and_description_explains_verification(self):
+        state = {}
+        observe(state, 'service', {'a.service':'Failed'}, 1)
+        item = state['issues']['service:a.service']
+        view = report(state, {item['incarnation']:'1'})[0]
+        self.assertEqual(view['history'], [])
+        self.assertIn('a.service', view['verification_needed'])
+        self.assertIn('no repair result', view['status_explanation'])
+
+    def test_read_only_command_is_not_a_successful_repair(self):
+        state = {}
+        observe(state, 'service', {'a':'Failed'}, 1)
+        state.update(status='command_executed', last_action_result={'read_only':True,'exit_code':0})
+        progress(state, 2)
+        self.assertEqual(state['issues']['service:a']['status'], 'pending')

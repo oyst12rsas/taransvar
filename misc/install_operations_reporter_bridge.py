@@ -47,7 +47,7 @@ sub tarasecIssueReceipt {
     $old = {} unless ref($old) eq "HASH";
     for my $key (keys %$value) {
         next unless $key =~ /^[a-f0-9]{32}$/ && $value->{$key} =~ /^\d+$/;
-        $old->{$key} = $value->{$key} if $value->{$key} > ($old->{$key} // 0);
+        $old->{$key} = 0 + $value->{$key} if $value->{$key} > ($old->{$key} // 0);
     }
     my $tmp = "$path.$$";
     return if -e $tmp || -l $tmp;
