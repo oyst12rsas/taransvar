@@ -1,6 +1,7 @@
 <?php
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 require __DIR__.'/../html/script/operationsIssues.php';
+require __DIR__.'/../html/gatekeeper/func/manualIssues.php';
 require __DIR__.'/../html/gatekeeper/func/agentStatusView.php';
 require __DIR__.'/../html/gatekeeper/func/operationsStatusView.php';
 $conn=new mysqli('127.0.0.1','root',getenv('ISSUE_TEST_PASSWORD') ?: '', '', (int)(getenv('ISSUE_TEST_PORT') ?: 3307));
@@ -35,3 +36,33 @@ echo "Issue database lifecycle checks passed\n";
 if (operationsStoredIssues($conn,'100.68.165.190',false) !== []) throw new Exception('Solved issue leaked into open list');
 if (count(operationsStoredIssues($conn,'100.68.165.190',true)) !== 1) throw new Exception('Full list must include solved');
 if (operationsStoredIssues($conn,'100.68.165.190',true,64) !== []) throw new Exception('Issue pagination offset ignored');
+
+$conn->query('ALTER TABLE setup ADD adminIP INT UNSIGNED, ADD nickname VARCHAR(64)');
+$conn->query('UPDATE setup SET adminIP=INET_ATON("100.68.165.190"),nickname="Standard"');
+$session=['manualIssueCsrf'=>str_repeat('c',64),'userid'=>9];
+$post=['csrf'=>$session['manualIssueCsrf'],'description'=>'New SSH login succeeds while the gate is closed','nodeIp'=>'1.2.3.4'];
+foreach ([[false,$post],[true,array_merge($post,['csrf'=>'wrong'])],[true,array_merge($post,['description'=>'short'])]] as [$admin,$bad]) {
+    try { manualIssueSubmit($conn,$admin,$session,$bad); throw new Exception('Invalid submission accepted'); }
+    catch (RuntimeException $expected) {}
+}
+manualIssueSubmit($conn,true,$session,$post);
+manualIssueSubmit($conn,true,$session,$post);
+$manual=$conn->query('SELECT *,INET_NTOA(nodeIp) ip FROM issue WHERE verification="manual"')->fetch_assoc();
+if ($manual['ip'] !== '100.68.165.190' || $manual['status'] !== 'open') throw new Exception('Manual report target or status incorrect');
+if ((int)$conn->query('SELECT COUNT(*) n FROM issue WHERE verification="manual"')->fetch_assoc()['n'] !== 1) throw new Exception('Retry duplicated issue');
+$id=(int)$manual['issueId'];
+if ((int)$conn->query("SELECT COUNT(*) n FROM issueReport WHERE issueId=$id")->fetch_assoc()['n'] !== 1) throw new Exception('Discovery history incorrect');
+try {
+    manualIssueSubmit($conn,true,$session,$post+['action'=>'verify','key'=>'manual:foreign']);
+    throw new Exception('Foreign issue accepted');
+} catch (RuntimeException $expected) {}
+manualIssueSubmit($conn,true,$session,array_merge($post,['action'=>'verify','key'=>$manual['issueKey'],'description'=>'Fresh new SSH connection rejected with gate closed; reopening permits login.']));
+if ($conn->query("SELECT status FROM issue WHERE issueId=$id")->fetch_assoc()['status'] !== 'solved') throw new Exception('Verified resolution not recorded');
+echo "Manual issue authorization, target binding, replay and verification checks passed\n";
+
+$stale=['key'=>$manual['issueKey'],'incarnation'=>substr($manual['issueKey'],7),
+    'discovered_at'=>100,'last_seen_at'=>microtime(true)+100,'checked_at'=>microtime(true)+100,
+    'description'=>'Stale snapshot','status'=>'pending','verification'=>'manual','history'=>[]];
+storeOperationsIssues($conn,'100.68.165.190',['issues'=>[$stale]]);
+$closed=$conn->query("SELECT status,solvedAt FROM issue WHERE issueId=$id")->fetch_assoc();
+if ($closed['status'] !== 'solved' || !$closed['solvedAt']) throw new Exception('Stale worker reopened verified manual issue');

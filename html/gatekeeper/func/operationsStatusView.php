@@ -30,6 +30,7 @@ function operationsStatusIssues($agent)
 {
     if (!is_array($agent)) return array('Operations report is unavailable or invalid.');
     $issues = array();
+    if (!empty($agent['manual_issue_sync_error'])) $issues[] = 'Manual issue collection unavailable; inspect the local database and operations worker installation.';
     $status = (string)($agent['status'] ?? 'unknown');
     if (in_array($status, array('stale', 'unavailable', 'unknown'), true))
         $issues[] = 'Operations report is '.$status.'.';
