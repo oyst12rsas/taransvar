@@ -64,3 +64,59 @@ class PersistentPressureTest(unittest.TestCase):
         self.assertIsNone(choose_trigger(state, policy, evidence, [], 1060))
         self.assertEqual(choose_trigger(state, policy, evidence, [], 1900), 'persistent_resource_pressure')
         self.assertFalse(reserve_call(state, policy, 1900))
+
+class FairIssueQueueTests(unittest.TestCase):
+    def state(self):
+        return {'issues': {
+            'reboot:required': {'key':'reboot:required','status':'pending','discovered_at':10,'next_action_at':100},
+            'manual:ssh': {'key':'manual:ssh','status':'open','discovered_at':50,'next_action_at':100}}}
+
+    def test_waiting_reboot_cannot_starve_ssh_report(self):
+        from operations_schedule import choose_issue, activate_issue, mark_issue_assessed
+        from operations_issues import progress
+        state=self.state()
+        for item in state['issues'].values():
+            item.update(history=[],sequence=0,verification='manual',checked_at=100)
+        activate_issue(state,choose_issue(state,100))
+        self.assertEqual(state['active_issue_key'],'reboot:required')
+        mark_issue_assessed(state,100)
+        state.update(status='reported',last_model_attempt_at=100)
+        progress(state,100)
+        ssh=state['issues']['manual:ssh']
+        self.assertEqual(ssh['status'],'open')
+        self.assertEqual(ssh['next_action_at'],100)
+        activate_issue(state,choose_issue(state,1000))
+        self.assertEqual(state['active_issue_key'],'manual:ssh')
+        mark_issue_assessed(state,1000)
+        progress(state,1000)
+        self.assertEqual(choose_issue(state,1900),'reboot:required')
+
+    def test_upgrade_uses_previous_focus_and_honours_due_times(self):
+        from operations_schedule import choose_issue
+        state=self.state()
+        state.update(active_issue_key='reboot:required',last_assessment_checked_at=99)
+        self.assertEqual(choose_issue(state,100),'manual:ssh')
+        state['issues']['manual:ssh']['next_action_at']=200
+        self.assertEqual(choose_issue(state,100),'reboot:required')
+        state['issues']['reboot:required']['status']='solved'
+        self.assertIsNone(choose_issue(state,100))
+        self.assertEqual(choose_issue(state,100,requested=True),'manual:ssh')
+
+    def test_selection_does_not_consume_turn_before_budget_granted(self):
+        from operations_schedule import choose_issue, activate_issue
+        state=self.state()
+        activate_issue(state,choose_issue(state,100))
+        self.assertFalse(reserve_call(state,{'model_schedule':{'max_calls_per_day':0}},100))
+        self.assertNotIn('last_assessed_at',state['issues']['reboot:required'])
+
+    def test_switching_focus_restores_each_issues_own_task(self):
+        from operations_schedule import activate_issue
+        state=self.state()
+        state.update(active_issue_key='reboot:required',task_state={'goal':'reboot'})
+        activate_issue(state,'manual:ssh')
+        self.assertEqual(state['task_state'],{})
+        state['task_state']={'goal':'test SSH gate'}
+        activate_issue(state,'reboot:required')
+        self.assertEqual(state['task_state'],{'goal':'reboot'})
+        activate_issue(state,'manual:ssh')
+        self.assertEqual(state['task_state'],{'goal':'test SSH gate'})

@@ -606,6 +606,11 @@ A command exit code or model claim cannot close an issue. Only a new successful
 check of its original category can clear it. Incomplete deployment inventory
 creates findings but cannot clear old findings. Failed commands remain pending;
 model-budget blocks retry after an hour, other continuations after 15 minutes.
+Due issues rotate by least recent assessment, with discovery time breaking ties.
+A blocked older issue cannot monopolize model assessments. An assessment of one
+issue does not postpone other issues or change their lifecycle status. Each issue
+retains its own model task context; a turn is recorded only after model-call
+budget is granted. Existing cooldowns, budgets and action guards still apply.
 An issue returning after closure reopens the same record with another event.
 
 The full local lifecycle is durably saved in the root-only operations `state.json`.
