@@ -32,3 +32,6 @@ if (strpos($html,'<script>') !== false || strpos($html,'verified_solved') === fa
 $conn->begin_transaction(); storeOperationsIssues($conn,'100.68.165.190',['issues'=>[['key'=>'reboot:required']+$item]]); $conn->rollback();
 if ((int)$conn->query('SELECT COUNT(*) AS n FROM issue')->fetch_assoc()['n'] !== 1) throw new Exception('Rollback failed');
 echo "Issue database lifecycle checks passed\n";
+if (operationsStoredIssues($conn,'100.68.165.190',false) !== []) throw new Exception('Solved issue leaked into open list');
+if (count(operationsStoredIssues($conn,'100.68.165.190',true)) !== 1) throw new Exception('Full list must include solved');
+if (operationsStoredIssues($conn,'100.68.165.190',true,64) !== []) throw new Exception('Issue pagination offset ignored');
