@@ -147,6 +147,16 @@ sub requestAssessment {
         "select inet_ntoa(st.src_ip) source_ip,count(distinct st.dst_ip) distinct_targets,count(*) threat_records,sum(st.`count`) occurrences,max(coalesce(st.severity,0)) max_severity from syslogThreat st left join partnerRouter pr on pr.ip=st.src_ip where unix_timestamp(coalesce(st.lastSeen,st.created)) > unix_timestamp(now())-? and (st.owner_id is null or coalesce(st.confirmed_unit_id,st.unit_id) is null) and pr.ip is null group by st.src_ip having count(distinct st.dst_ip)>=? order by distinct_targets desc limit $nMaxRowsPerSection",
         [$cutoff,$nMinimumIpsVisited], qw(source_ip distinct_targets threat_records occurrences max_severity));
 
+    # Completed sessions still explain observations inside their original window.
+    my $demoTables = $dbh->selectall_arrayref("SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('demoSshSession','demoSshSetup','demoSshNodeB')");
+    if (@$demoTables == 3) {
+        add_query_section($dbh, \$logs, 'registered SSH demo sessions (correlation context, not blanket exemptions)',
+            'session_id,source_ip,unit_id,state,created,expires,completed,node_a,node_a_port,node_b,node_b_port,node_a_evidence_id,node_b_evidence_id',
+            "SELECT s.demoSshSessionId session_id,INET_NTOA(s.sourceIp) source_ip,s.unitId unit_id,s.state,s.created,s.expires,s.completed,INET_NTOA(d.nodeAIp) node_a,d.nodeAPort node_a_port,INET_NTOA(n.ip) node_b,n.port node_b_port,s.nodeAEvidenceId node_a_evidence_id,s.nodeBEvidenceId node_b_evidence_id FROM demoSshSession s JOIN demoSshSetup d ON d.demoSshSetupId=s.demoSshSetupId JOIN demoSshNodeB n ON n.demoSshNodeBId=s.demoSshNodeBId WHERE s.expires>=NOW()-INTERVAL 30 DAY ORDER BY s.created DESC LIMIT $nMaxRowsPerSection",
+            [], qw(session_id source_ip unit_id state created expires completed node_a node_a_port node_b node_b_port node_a_evidence_id node_b_evidence_id));
+    }
+    $logs .= "\nDEMO RULES: Expected probes matching a registered demo's identity, endpoint and time window are test activity, not evidence of compromise. Explain the matching demo/session. A shared source IP or aggregate totals alone cannot establish a match. Preserve unexplained/out-of-window activity and real_infection_detected findings; state uncertainty if exact correlation is missing.\n";
+
     $dbh->disconnect();
 
     $logs .= "\nREQUIRED OUTPUT CONTRACT:\n".
