@@ -125,7 +125,9 @@ function operationsStatusDetails($agent, bool $includeIssues = true)
 function operationsMaintenanceDetails($agent): string
 {
     if (!is_array($agent)) return '<p>Operations report is unavailable.</p>';
-    $html = '<p>Worker: '.agentStatusEscape($agent['status'] ?? 'unknown').'. Last assessment: '.agentStatusEscape($agent['last_assessment_status'] ?? 'unknown').'.</p>';
+    $html = '';
+    if (isset($agent['status']) || isset($agent['last_assessment_status']))
+        $html = '<p>Worker: '.agentStatusEscape($agent['status'] ?? 'unknown').'. Last assessment: '.agentStatusEscape($agent['last_assessment_status'] ?? 'unknown').'.</p>';
     $reboot = $agent['reboot'] ?? null;
     if (is_array($reboot)) {
         $html .= '<p>Reboot: '.agentStatusEscape(str_replace('_',' ',(string)($reboot['status'] ?? 'unknown'))).'</p>';
@@ -149,6 +151,7 @@ function operationsMaintenanceDetails($agent): string
         foreach (array_slice($item['history'] ?? [], 0, 16) as $event) {
             $detail = $event['detail'] ?? null;
             $text = is_string($detail) ? $detail : implode('; ', array_filter([
+                !empty($detail['evidence']) ? 'Evidence: '.$detail['evidence'] : '',
                 isset($detail['worker_status']) ? 'Worker: '.str_replace('_',' ',$detail['worker_status']) : '',
                 isset($detail['action']) ? 'Action: '.$detail['action'] : '',
                 isset($detail['exit_code']) ? 'Exit code: '.$detail['exit_code'] : '',
