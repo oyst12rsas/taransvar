@@ -171,8 +171,13 @@ function unitsMore()
 		//$status = '{"ld":"0.00 0.00 0.00","knl":"1","df":"19G 9.8G 8.6G","updates":"3;0","boot":1000000,"cron":1,"mem":"552Mi/1.9Gi","sqlThrds":"3","nett":0,"dmesg":1,"msg":null,"lnk":1,"usr":0,"rsyslog":"log:1,byte:360,log:10,burst:20,prefix:TARASEC_tomato,rsyslog:active,setup:@100.68.181.35","trfc":58,"bootReq":0,"ip":0,"lstUp":885}';
 
 		$status = json_decode($status, true);
+        $showAllIssues = isAdmin() && (($_GET['issues'] ?? '') === 'all');
+        $issuePage = max(0, min(1000000, (int)($_GET['issuePage'] ?? 0)));
+        $hasMoreIssues = false;
         if (isAdmin() && is_array($status) && !empty($row['ip'])) {
-            $storedIssues = operationsStoredIssues($conn, (string)$row['ip']);
+            $storedIssues = operationsStoredIssues($conn, (string)$row['ip'], $showAllIssues, $issuePage * 64);
+            $hasMoreIssues = count($storedIssues) > 64;
+            $storedIssues = array_slice($storedIssues, 0, 64);
             if ($storedIssues) {
                 $liveIssues = [];
                 foreach (($status['operationsAgent']['issues'] ?? []) as $item)
@@ -183,6 +188,8 @@ function unitsMore()
                             $item[$field] = $liveIssues[$item['key']][$field];
                 unset($item);
                 $status['operationsAgent']['issues'] = $storedIssues;
+            } else {
+                $status['operationsAgent']['issues'] = [];
             }
         }
         if (!isAdmin()) unset($status['operationsAgent']['issues']);
@@ -193,8 +200,17 @@ function unitsMore()
         }
 
         if (isAdmin() && isset($status['operationsAgent'])) {
-            print '<h2>Maintenance issues and repair history</h2>';
-            print operationsMaintenanceDetails($status['operationsAgent']);
+            $issueParams = ['f'=>'unitsMore', 'view'=>($_GET['view'] ?? 'all')];
+            if (!empty($row['routerId'])) $issueParams['id'] = (int)$row['routerId'];
+            $otherParams = $issueParams + ['issues'=>$showAllIssues ? 'open' : 'all'];
+            print '<h2>'.($showAllIssues ? 'All maintenance issues' : 'Open maintenance issues').'</h2>';
+            print '<p><a href="index.php?'.htmlspecialchars(http_build_query($otherParams), ENT_QUOTES, 'UTF-8').'">'.($showAllIssues ? 'Show open issues only' : 'Full list of issues, including solved').'</a></p>';
+            $issueAgent = $status['operationsAgent'];
+            if (!$showAllIssues) $issueAgent['issues'] = array_values(array_filter($issueAgent['issues'] ?? [], fn($item)=>($item['status'] ?? '') !== 'solved'));
+            print operationsMaintenanceDetails($issueAgent);
+            $issueParams['issues'] = $showAllIssues ? 'all' : 'open';
+            if ($issuePage > 0) print '<p><a href="index.php?'.htmlspecialchars(http_build_query($issueParams + ['issuePage'=>$issuePage-1]),ENT_QUOTES,'UTF-8').'">Previous issues</a></p>';
+            if ($hasMoreIssues) print '<p><a href="index.php?'.htmlspecialchars(http_build_query($issueParams + ['issuePage'=>$issuePage+1]),ENT_QUOTES,'UTF-8').'">Next issues</a></p>';
         }
 
 		// Show the issue summary only when there is something to act on.

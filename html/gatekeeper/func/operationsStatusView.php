@@ -160,17 +160,19 @@ function operationsMaintenanceDetails($agent): string
         $html .= '</ul><p>Complete received history is retained in issueReport. Command arguments remain on the node.</p></details>';
     }
 
-    if (empty($agent['issues'])) $html .= '<p>No tracked issues were included in this report.</p>';
+    if (empty($agent['issues'])) $html .= '<p>No issues in this list.</p>';
     return $html;
 }
 
-function operationsStoredIssues($conn, string $ip): array
+function operationsStoredIssues($conn, string $ip, bool $includeSolved = true, int $offset = 0): array
 {
     // Additive rollout: old databases continue to show the ordinary status page.
     $version = $conn->query('SELECT dbVersion FROM setup LIMIT 1')->fetch_assoc();
     if ((int)($version['dbVersion'] ?? 0) < 100) return [];
-    $stmt = $conn->prepare('SELECT * FROM issue WHERE nodeIp=INET_ATON(?) ORDER BY status="solved", discoveredAt LIMIT 64');
-    $stmt->bind_param('s', $ip); $stmt->execute(); $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC); $stmt->close();
+    $filter = $includeSolved ? '' : ' AND status<>"solved"';
+    $stmt = $conn->prepare('SELECT * FROM issue WHERE nodeIp=INET_ATON(?)'.$filter.' ORDER BY status="solved", discoveredAt, issueId LIMIT 65 OFFSET ?');
+    $offset = max(0, $offset);
+    $stmt->bind_param('si', $ip, $offset); $stmt->execute(); $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC); $stmt->close();
     $items=[];
     foreach ($rows as $row) {
         $id=(int)$row['issueId'];
