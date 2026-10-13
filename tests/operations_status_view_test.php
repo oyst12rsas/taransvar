@@ -47,3 +47,14 @@ checkOperationsView(diskStatusPercent('11G 8.5G 2.5G') === 77, 'Decimal disk siz
 $custom = array('df' => '100G 77G 23G', 'operationsAgent' => array('status' => 'monitoring', 'resource_pressure' => array('disk_threshold_percent' => 75)));
 checkOperationsView(diskStatusThreshold($custom) === 75.0, 'Configured threshold missing');
 checkOperationsView(collectUnitIssues($custom, 0)[0]['label'] === 'Disk usage', 'Configured maintenance warning missing');
+
+$maintenance = operationsMaintenanceDetails(['status'=>'monitoring','last_assessment_status'=>'command_executed',
+    'reboot'=>['status'=>'waiting_for_quiet','target_kernel'=>'6.8.0-test','blockers'=>['interactive_sessions_active_or_unknown']],
+    'issues'=>[['description'=>'Failed <script>','status'=>'verification_pending','history'=>[
+        ['at'=>100,'kind'=>'progress','detail'=>['worker_status'=>'command_executed','exit_code'=>0]]]]]]);
+if (strpos($maintenance, '<script>') !== false || strpos($maintenance, 'Interactive sessions') === false
+    || strpos($maintenance, 'Exit code: 0') === false || strpos($maintenance, '6.8.0-test') === false)
+    throw new Exception('Admin maintenance details missing or unsafe');
+$unitSource = file_get_contents(__DIR__.'/../html/gatekeeper/func/unitsMore.php');
+if (strpos($unitSource, "if (isAdmin() && isset(\$status['operationsAgent']))") === false)
+    throw new Exception('Maintenance panel must require admin');

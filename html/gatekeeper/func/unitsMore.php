@@ -171,7 +171,7 @@ function unitsMore()
 		//$status = '{"ld":"0.00 0.00 0.00","knl":"1","df":"19G 9.8G 8.6G","updates":"3;0","boot":1000000,"cron":1,"mem":"552Mi/1.9Gi","sqlThrds":"3","nett":0,"dmesg":1,"msg":null,"lnk":1,"usr":0,"rsyslog":"log:1,byte:360,log:10,burst:20,prefix:TARASEC_tomato,rsyslog:active,setup:@100.68.181.35","trfc":58,"bootReq":0,"ip":0,"lstUp":885}';
 
 		$status = json_decode($status, true);
-        if (is_array($status) && !empty($row['ip'])) {
+        if (isAdmin() && is_array($status) && !empty($row['ip'])) {
             $storedIssues = operationsStoredIssues($conn, (string)$row['ip']);
             if ($storedIssues) {
                 $liveIssues = [];
@@ -185,10 +185,16 @@ function unitsMore()
                 $status['operationsAgent']['issues'] = $storedIssues;
             }
         }
+        if (!isAdmin()) unset($status['operationsAgent']['issues']);
         $nickname = $status['aiAgent']['nickname'] ?? '';
         if (is_string($nickname) && preg_match('/^[A-Za-z][A-Za-z0-9 _-]{2,31}$/D', $nickname)) {
             $sshUrl = 'https://tarasec.org/ops/agent/?'.http_build_query(['node'=>$nickname]);
             print '<p><a href="'.htmlspecialchars($sshUrl, ENT_QUOTES, 'UTF-8').'">Open SSH temporarily for this node</a> — Google sign-in and authenticator approval required.</p>';
+        }
+
+        if (isAdmin() && isset($status['operationsAgent'])) {
+            print '<h2>Maintenance issues and repair history</h2>';
+            print operationsMaintenanceDetails($status['operationsAgent']);
         }
 
 		// Show the issue summary only when there is something to act on.
@@ -214,7 +220,7 @@ function unitsMore()
 		}
 
 		if (array_key_exists('operationsAgent', $status)) {
-			print '<tr><td>Operations agent</td><td>'.operationsStatusDetails($status['operationsAgent']).'</td></tr>';
+			print '<tr><td>Operations agent</td><td>'.operationsStatusDetails($status['operationsAgent'], false).'</td></tr>';
 			unset($status['operationsAgent']);
 		}
 
