@@ -589,3 +589,68 @@ The overview disk dot and issues page use the automatic disk maintenance thresho
 (default 85%, reported as resource_pressure.disk_threshold_percent). Yellow begins
 at that threshold; red begins at 90%. Older reports use the 85% default until the
 worker is updated. Below that threshold disk usage is green.
+
+## Persistent issue repair lifecycle (schema 100)
+
+`issue` stores the current condition per registered router and deterministic finding
+key. `issueReport` stores discovery, worker progress, verified closure and reopening.
+The operations worker creates issues for failed services, resource pressure, required
+reboots and deployment inventory findings. Inventory runs every 15 minutes even
+when model budget is exhausted. Existing issues trigger another assessment when
+their next action is due, subject to the existing cooldown and model budget.
+The model receives the oldest unresolved issue as its focus and must advance its
+repair or identify a concrete blocker. This never bypasses local mode, approved
+procedures, command validation, activity or reboot guards.
+
+A command exit code or model claim cannot close an issue. Only a new successful
+check of its original category can clear it. Incomplete deployment inventory
+creates findings but cannot clear old findings. Failed commands remain pending;
+model-budget blocks retry after an hour, other continuations after 15 minutes.
+An issue returning after closure reopens the same record with another event.
+
+The full local lifecycle is durably saved in the root-only operations `state.json`.
+Heartbeat reports send the oldest unacknowledged 16 events per issue (64 issues
+per report). The DB commits issue snapshots and deduplicated events in the same
+transaction as the registered-router heartbeat, then returns an acknowledgement
+header. The reporter bridge accepts receipts only from the configured primary DB
+(`Db1`); it stores them atomically in `issue-ack.json`. Until receipt, events remain
+in subsequent reports. A missing/old DB endpoint or lost reply therefore causes
+replay, not deletion. Secondary DBs may receive duplicate events; the unique event
+key makes replay harmless. They are not guaranteed a complete replicated history.
+Local history is retained after acknowledgement; deleting the local state discards
+unsent events. Large backlogs drain over successive minute reports. Reports are
+still subject to the bounded reporter file/body limits; inspect them for unusually
+large numbers of findings instead of assuming central delivery succeeded.
+
+Proposed command argv stays on the node in `issues[issueKey].commands` and the
+existing private action audit. The central `commands` field contains the executable
+and a notice that arguments are retained locally. This avoids transmitting
+credential-bearing argument values. Database content never becomes an executable
+command source. The transport inherits the existing registered-router/IP trust
+model; these tables do not add node authentication or authorize remote execution.
+Gatekeeper unit details show status, discovery, blockers, next action and the most
+recent 16 centrally received lifecycle events. Complete history can be queried
+from `issueReport` ordered by `reportId`.
+
+### Deployment order
+
+1. Update the DB checkout and apply the additive migration using
+   `sudo perl misc/upgrade_db.pl` on the DB server. Version 100 creates both tables.
+2. Deploy the PHP files with the existing `misc/deploy_web.sh` procedure. Older
+   schemas skip issue ingestion while preserving ordinary heartbeat delivery.
+3. Install the operations worker from the new checkout with
+   `TARASEC_OPERATIONS_REVISION=<full-reviewed-commit> sudo -E bash misc/install_operations_agent.sh`
+   (or export that variable inside the root shell). Stop the agent timer and wait
+   for a current assessment to finish before replacing its code; restore the
+   timer's prior scheduling afterwards.
+4. Reapply the reporter bridge against the freshly discovered root-owned
+   `crontasks.pl` and SHA-256. The installer updates an existing bridge and adds
+   receipt handling to the standard LWP reporting layout. Custom reporter layouts
+   require a receipt adapter; without it the oldest batch repeats safely.
+5. Verify the node report contains `issues`, DB rows match the node's IP, and
+   `issue-ack.json` advances after an accepted primary heartbeat. Trigger a known
+   test failure, repair it under owner policy, and verify `verified_solved` appears.
+
+This implementation is source-tested; deployment and a live node repair remain
+separate acceptance checks. Reverting code leaves the additive tables and history
+intact. No credentials or node permission defaults change.

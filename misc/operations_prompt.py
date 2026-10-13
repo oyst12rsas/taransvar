@@ -97,6 +97,9 @@ procedure requires procedure=exact eligible name.
 command requires argv(array, absolute executable), expected_result and recovery_plan.
 No unrestricted shell-text field: represent the authorized command as argv.
 resource requires operation and target under current resource-protection policy.
+Open issues in the snapshot remain work until a fresh deterministic check clears them.
+Select focus_issue_key when supplied (the oldest unresolved issue) and advance its repair or verification using permitted actions.
+Report concrete blockers and the next check when no action is permitted. Model text cannot close issues.
 Choose the next useful action; do not stop merely because a predefined repair is absent.
 For report with unresolved failed gateway evidence, provide prerequisite as an object with
 kind (quiet_time, owner_input, or unsupported_capability), detail (specific missing condition),

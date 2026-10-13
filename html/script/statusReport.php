@@ -4,6 +4,7 @@ error_reporting(E_ALL);
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 include '../dbfunc.php';
+require_once __DIR__.'/operationsIssues.php';
 
 function statusPeerIp()
 {
@@ -61,6 +62,8 @@ try {
         echo 'unregistered router';
         return;
     }
+
+    $issueAck = storeOperationsIssues($conn, $sender, $incoming['operationsAgent'] ?? null);
 
     $current = json_decode((string)($routerRow['status'] ?? ''), true);
     if (!is_array($current)) {
@@ -123,6 +126,7 @@ try {
     }
 
     $conn->commit();
+    if ($issueAck) header('X-Tarasec-Issue-Ack: '.json_encode($issueAck));
     header('Content-Type: text/plain; charset=utf-8');
     echo 'ok';
 

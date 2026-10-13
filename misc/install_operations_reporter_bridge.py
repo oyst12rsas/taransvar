@@ -13,7 +13,7 @@ HELPER = r'''
 sub tarasecOperationsSnapshotForReport {
     my ($path) = @_;
     return {status => "unavailable", reason => "no_recent_assessment"}
-        unless -f $path && !-l $path && -r $path && (-s $path // 0) <= 16384;
+        unless -f $path && !-l $path && -r $path && (-s $path // 0) <= 262144;
     open(my $snapshot, "<", $path) or return {status => "unavailable"};
     local $/;
     my $raw = <$snapshot>;
@@ -30,9 +30,47 @@ sub tarasecOperationsSnapshotForReport {
 }
 '''
 
+ACK_HELPER = r'''
+# TARASEC_ISSUE_ACK_V1
+sub tarasecIssueReceipt {
+    my ($response, $primary) = @_;
+    return unless $primary && $response->is_success;
+    my $raw = $response->header("X-Tarasec-Issue-Ack") // "";
+    return unless length($raw) && length($raw) <= 8192;
+    my $value = eval { JSON::decode_json($raw) };
+    return unless ref($value) eq "HASH";
+    my $path = "/var/lib/tarasec-operations/issue-ack.json";
+    my $old = {};
+    if (-f $path && !-l $path && open(my $fh, "<", $path)) {
+        local $/; $old = eval { JSON::decode_json(<$fh>) } // {}; close($fh);
+    }
+    $old = {} unless ref($old) eq "HASH";
+    for my $key (keys %$value) {
+        next unless $key =~ /^[a-f0-9]{32}$/ && $value->{$key} =~ /^\d+$/;
+        $old->{$key} = $value->{$key} if $value->{$key} > ($old->{$key} // 0);
+    }
+    my $tmp = "$path.$$";
+    return if -e $tmp || -l $tmp;
+    if (open(my $fh, ">", $tmp)) {
+        chmod(0600, $tmp); print $fh JSON::encode_json($old); close($fh);
+        rename($tmp, $path);
+    }
+}
+'''
+
+def issue_receipt_bridge(source):
+    if '# TARASEC_ISSUE_ACK_V1' in source:
+        return source
+    anchor = '$szReply = $response->decoded_content;'
+    if anchor not in source:
+        return source  # A custom reporter needs its own receipt adapter.
+    source = source.replace(anchor, anchor + '\n\t\t\t\ttarasecIssueReceipt($response, $i == 1);', 1)
+    return source + ACK_HELPER
+
+
 def patched_source(source):
     if MARKER in source:
-        return source
+        return issue_receipt_bridge(source.replace("<= 16384", "<= 262144"))
     matches = list(re.finditer(r'sub reportStatus\s*\{(?:(?!\nsub ).){0,1000}?my %json;', source, re.S))
     if len(matches) != 1:
         raise ValueError('Unsupported reporter layout; preserve source for review')
@@ -41,7 +79,7 @@ def patched_source(source):
     if not re.search(r'["\x27]aiAgent["\x27]', source):
         fields += '\t$json{"aiAgent"} = tarasecOperationsSnapshotForReport("/var/lib/tarasec/agent-status.json");\n'
     start = matches[0].start()
-    return source[:start] + HELPER + source[start:insertion] + fields + source[insertion:]
+    return issue_receipt_bridge(source[:start] + HELPER + source[start:insertion] + fields + source[insertion:])
 
 def install_bridge(path, expected_sha):
     path = Path(path)
