@@ -30,6 +30,7 @@ jobs:
           php -l html/gatekeeper/func/unitsMore.php
           php tests/operations_status_view_test.php
           php tests/operations_issues_database_test.php
+          perl tests/operations_local_database_test.pl
         env:
           ISSUE_TEST_PORT: '3307'
           ISSUE_TEST_PASSWORD: issue-test-only
