@@ -646,8 +646,38 @@ CREATE TABLE IF NOT EXISTS demoSshIdentityProof (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 UPDATE setup SET dbVersion = 99;
 
+#version 100 (261013)
+CREATE TABLE IF NOT EXISTS issue (
+    issueId BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    nodeIp INT UNSIGNED NOT NULL,
+    issueKey VARCHAR(255) NOT NULL,
+    discoveredAt DOUBLE NOT NULL,
+    lastSeenAt DOUBLE NOT NULL,
+    checkedAt DOUBLE NOT NULL,
+    description TEXT NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    commands TEXT NULL,
+    verification VARCHAR(64) NOT NULL,
+    blocker TEXT NULL,
+    nextActionAt DOUBLE NULL,
+    solvedAt DOUBLE NULL,
+    UNIQUE KEY idx_issue_node_key (nodeIp, issueKey),
+    KEY idx_issue_pending (status, nextActionAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS issueReport (
+    reportId BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    issueId BIGINT UNSIGNED NOT NULL,
+    eventId CHAR(64) NOT NULL,
+    reportedAt DOUBLE NOT NULL,
+    kind VARCHAR(32) NOT NULL,
+    detail TEXT NOT NULL,
+    UNIQUE KEY idx_issue_report_event (issueId, eventId),
+    KEY idx_issue_report_history (issueId, reportedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+UPDATE setup SET dbVersion = 100;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 100;
+#update setup set dbVersion = 101;
 
 #NOTE! The versions (#version nn ...) are imported by the installed
 #diagnostics script. Deploy misc to /root/taransvar/perl, then run:

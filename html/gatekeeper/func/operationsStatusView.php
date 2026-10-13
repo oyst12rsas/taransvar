@@ -108,6 +108,18 @@ function operationsStatusDetails($agent)
     foreach ($rows as $label => $value)
         $html .= '<tr><td>'.agentStatusEscape($label).'</td><td>'.agentStatusEscape($value).'</td></tr>';
     $html .= '</table>';
+    foreach (array_slice(is_array($agent['issues'] ?? null) ? $agent['issues'] : [], 0, 64) as $item) {
+        if (!is_array($item)) continue;
+        $html .= '<details><summary>'.agentStatusEscape($item['description'] ?? 'Issue').' — '.agentStatusEscape($item['status'] ?? 'unknown').'</summary>';
+        foreach (['discovered_at'=>'Discovered', 'checked_at'=>'Last update', 'next_action_at'=>'Next action', 'solved_at'=>'Solved'] as $key=>$label)
+            if (is_numeric($item[$key] ?? null)) $html .= '<p>'.$label.': '.gmdate('Y-m-d H:i:s', (int)$item[$key]).' UTC</p>';
+        if (!empty($item['blocker'])) $html .= '<p>Blocker: '.agentStatusEscape($item['blocker']).'</p>';
+        $html .= '<p>Verification: '.agentStatusEscape($item['verification'] ?? 'unknown').'</p><ul>';
+        foreach (array_slice($item['history'] ?? [], 0, 16) as $event)
+            $html .= '<li>'.agentStatusEscape($event['kind'] ?? '').': '.agentStatusEscape(json_encode($event['detail'] ?? null)).'</li>';
+        $html .= '</ul><p>Complete received history is retained in issueReport. Command arguments remain on the node.</p></details>';
+    }
+
     $issues = operationsStatusIssues($agent);
     if ($issues) {
         $html .= '<p>Current reported issues:</p><ul>';
@@ -117,3 +129,23 @@ function operationsStatusDetails($agent)
     return $html;
 }
 
+
+function operationsStoredIssues($conn, string $ip): array
+{
+    // Additive rollout: old databases continue to show the ordinary status page.
+    $version = $conn->query('SELECT dbVersion FROM setup LIMIT 1')->fetch_assoc();
+    if ((int)($version['dbVersion'] ?? 0) < 100) return [];
+    $stmt = $conn->prepare('SELECT * FROM issue WHERE nodeIp=INET_ATON(?) ORDER BY status="solved", discoveredAt LIMIT 64');
+    $stmt->bind_param('s', $ip); $stmt->execute(); $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC); $stmt->close();
+    $items=[];
+    foreach ($rows as $row) {
+        $id=(int)$row['issueId'];
+        $stmt=$conn->prepare('SELECT reportedAt,kind,detail FROM issueReport WHERE issueId=? ORDER BY reportId DESC LIMIT 16');
+        $stmt->bind_param('i',$id); $stmt->execute(); $events=$stmt->get_result()->fetch_all(MYSQLI_ASSOC); $stmt->close();
+        $items[]=['key'=>$row['issueKey'],'description'=>$row['description'],'status'=>$row['status'],
+            'discovered_at'=>$row['discoveredAt'],'checked_at'=>$row['checkedAt'],'next_action_at'=>$row['nextActionAt'],
+            'solved_at'=>$row['solvedAt'],'verification'=>$row['verification'],'blocker'=>$row['blocker'],
+            'history'=>array_map(fn($event)=>['at'=>$event['reportedAt'],'kind'=>$event['kind'],'detail'=>json_decode($event['detail'],true)],array_reverse($events))];
+    }
+    return $items;
+}

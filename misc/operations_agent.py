@@ -16,12 +16,15 @@ from operations_actions import validate_command, pressure, validate_resource, pe
 from operations_prompt import build_prompt, validate_decision, progress_feedback, completed_check_feedback, reboot_decision_feedback
 from operations_tools import gateway_tools, resolve_tool
 from operations_reporting import local_report, stage_error
+from operations_issues import observe as observe_issues, progress as issue_progress, report as issue_report
 from operations_schedule import choose_trigger, reserve_call
 from operations_reboot import inspect as inspect_reboot, maintain as maintain_reboot
 from operations_policy import maintenance_enabled, effective_policy
 
 
 def save(path, value):
+    if path.name == "state.json":
+        issue_progress(value)
     if value.get('last_assessment_checked_at') and value.get('status') not in ('monitoring', 'resource_attention', 'inspecting'):
         value['last_assessment_status'] = value.get('status', 'unknown')
     result = value.get('last_action_result')
@@ -262,6 +265,17 @@ def main():
         failed_services = [line.strip().lstrip('●').strip().split()[0] for line in snapshot['services']['output'].splitlines()
                            if ' failed ' in line and line.strip().lstrip('●').strip().split()
                            and line.strip().lstrip('●').strip().split()[0].endswith('.service')]
+        if snapshot['services']['exit_code'] == 0:
+            observe_issues(state, 'service', {name: 'Service failed: ' + name for name in failed_services}, now)
+        observe_issues(state, 'resource', {'pressure': 'Configured resource threshold exceeded'}
+                       if snapshot['resource_pressure']['triggered'] else {}, now)
+        # Inventory is independent of model budget and is refreshed every 15 minutes.
+        if now - state.get('issue_inventory_checked_at', 0) >= 900:
+            deployment = diagnose('deployment_status', run)
+            state['issue_inventory_checked_at'] = now
+            state['deployment_findings'] = deployment['findings']
+            unknown = any('unknown' in finding for finding in deployment['findings'])
+            observe_issues(state, 'deployment', {finding: finding.replace('_', ' ') for finding in deployment['findings']}, now, complete=not unknown)
         # Requests are root-local, never accepted from model or retrieved text.
         request_path = directory / 'assessment-request.json'
         requested = not args.tick
@@ -297,10 +311,16 @@ def main():
             snapshot['resource_pressure'] = pressure(resources)
         state['current_stage'] = 'required_reboot'
         reboot = inspect_reboot(run)
+        if reboot.get('required') is True:
+            observe_issues(state, 'reboot', {'required': 'OS requires a reboot'}, now)
         if maintain_reboot(state, policy, reboot, boot, now, run, trusted, quiet,
                            lambda: save(path, state), record):
             return
         snapshot['reboot'] = state['reboot']
+        if reboot.get('required') is True:
+            observe_issues(state, 'reboot', {'required': 'OS requires a reboot'}, now)
+        elif reboot.get('required') is False and state['reboot'].get('status') not in ('verification_pending', 'failed', 'awaiting_boot'):
+            observe_issues(state, 'reboot', {}, now)
         snapshot['resource_pressure']['reboot_required'] = reboot['required']
         state['continuation_ready'] = False
         if state.get('last_assessment_status') == 'deferred_activity_or_unknown':
@@ -323,6 +343,9 @@ def main():
             save(path, state)
             record({'lightweight_tick': state['status']})
             return
+        pending_issues = [item for item in state.get('issues', {}).values() if item['status'] != 'solved']
+        state['active_issue_key'] = min(pending_issues, key=lambda item: item['discovered_at'])['key'] if pending_issues else None
+        state.pop('issue_decision', None)
         state['last_model_attempt_at'] = now
         save(path, state)
         registry = json.loads(trusted(policy['procedures_file']).read_text())
@@ -347,6 +370,9 @@ def main():
         deployment = diagnose('deployment_status', run)
         diagnostic_results['deployment_status'] = {'checked_at': time.time(), 'result': deployment}
         state['deployment_findings'] = deployment['findings']
+        # Unknown inventory is evidence of a blocker, never proof of recovery.
+        observe_issues(state, 'deployment', {finding: finding.replace('_', ' ') for finding in deployment['findings']},
+                       complete=not any('unknown' in finding for finding in deployment['findings']))
         record({'diagnostic': 'deployment_status', 'result': deployment})
         state['diagnostics'] = diagnostic_results
         save(path, state)
@@ -356,6 +382,8 @@ def main():
             observed = run([str(trusted(policy['quiet_probe']))], timeout=20)
             snapshot['activity'] = json.loads(observed['output']) if observed['exit_code'] == 0 else {'complete': False}
             state['activity'] = snapshot['activity']
+            snapshot['issues'] = issue_report(state)
+            snapshot['focus_issue_key'] = state.get('active_issue_key')
             snapshot['action_history'] = state.get('action_history', [])
             snapshot['boot_id'] = state.get('boot_id')
             save(path, state)
@@ -454,6 +482,7 @@ def main():
         action = decision.get('action')
         if action not in ('report', 'procedure', 'command', 'resource', 'reboot'):
             raise ValueError('Unknown model action')
+        state['issue_decision'] = {key: decision[key] for key in ('action', 'argv', 'procedure', 'expected_result') if key in decision}
         state['task_state'] = decision.get('task_state', {})
         state['summary'] = str(decision.get('reason', ''))[:4000]
         record({'decision': decision, 'snapshot': snapshot})
@@ -539,6 +568,7 @@ def main():
             result = run([str(executable)], min(600, int(entry.get('timeout_seconds', 120))))
             # Keep command output local; it is not submitted to the model or central DB.
             record({'procedure': decision['procedure'], 'result': result})
+            state['last_action_result'] = {'action': 'procedure', 'procedure': decision['procedure'], 'exit_code': result['exit_code']}
             state['status'] = 'procedure_ok' if result['exit_code'] == 0 else 'procedure_failed'
             state['task_state']['last_procedure'] = decision['procedure']
             state['task_state']['last_exit_code'] = result['exit_code']

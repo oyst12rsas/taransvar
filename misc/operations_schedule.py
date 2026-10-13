@@ -45,6 +45,9 @@ def choose_trigger(state, policy, evidence, failed_services, now, requested=Fals
         reason = 'verify_completed_action'
     elif evidence.get('triggered') and elapsed >= max(60, cfg['resource_retry_seconds']):
         reason = 'persistent_resource_pressure'
+    elif any(item.get('status') != 'solved' and isinstance(item.get('next_action_at'), (int, float))
+             and now >= item['next_action_at'] for item in state.get('issues', {}).values()):
+        reason = 'pending_issue'
     elif cfg['periodic_review_seconds'] and elapsed >= cfg['periodic_review_seconds']:
         reason = 'periodic_review_due'
     else:

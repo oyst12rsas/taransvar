@@ -1,5 +1,6 @@
 """Deterministic local reporting survives model transport failure; no model text."""
 import time
+from operations_issues import report as issue_report
 
 LABELS = {
     'minute_reporter_missing_security_status_field': 'Minute reporter lacks security-agent status.',
@@ -34,6 +35,7 @@ def local_report(state, now=None):
         'deployment_findings': [item for item in findings if isinstance(item, str)][:24],
         'deployment_summary': [LABELS.get(item, 'Deployment check: ' + item)
                                for item in findings if isinstance(item, str)][:24],
+        'issues': issue_report(state),
         'central_report_verified': False}
 
 def stage_error(error, stage, provider=None):
