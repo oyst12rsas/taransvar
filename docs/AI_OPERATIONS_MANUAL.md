@@ -690,3 +690,19 @@ reporting server. No additional schema migration beyond version 100 is needed.
 Reports remain stored if the worker is disabled or unavailable. Verify with an
 admin/non-admin session, a test report, worker collection, unchanged permissions,
 and an evidence-backed resolution. Live rollout is a separate acceptance check.
+
+### Local issue history on each reporting server
+
+The local DB bridge persists automated service, reboot, resource and deployment
+issues as well as manual reports. Gatekeeper's Issues and full-history pages
+therefore read all locally received issues, including solved ones. The root state
+remains the source for automatic checks; the bridge does not invent findings
+or allow model text to verify manual closure.
+
+Synchronization runs on worker ticks, independently of model assessment budgets.
+It replays at most 64 snapshots and 16 unacknowledged events per issue per tick.
+Local acknowledgements live in root state and are independent of central
+heartbeat receipts. Replay is transactional and deduplicated. Existing root
+history drains into the local DB after upgrading both operations_manual.py and
+operations_manual_issues.pl; central-only history no longer in root state is not
+retrieved. An enabled worker timer is required for regular tick synchronization.

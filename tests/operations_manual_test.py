@@ -43,3 +43,25 @@ class ManualIssueTests(unittest.TestCase):
             sync(state, 30)
         self.assertIn('manual_issue_sync_error', state)
         self.assertEqual(next(iter(state['issues'].values()))['status'], 'open')
+
+    def test_all_categories_replay_locally_in_bounded_acknowledged_batches(self):
+        import json
+        from types import SimpleNamespace
+        from operations_issues import observe, event
+        state={}
+        observe(state,'service',{'a.service':'Failed'},1)
+        observe(state,'reboot',{'required':'Reboot required'},1)
+        item=state['issues']['service:a.service']
+        for i in range(35):
+            event(item,'progress',i+2,{'worker_status':'pending'})
+        replies=SimpleNamespace(returncode=0,stdout=json.dumps({'issues':[],
+            'acknowledgements':{item['incarnation']:16}}))
+        with patch('operations_manual.subprocess.run',return_value=replies) as runner:
+            sync(state,40)
+            first=json.loads(runner.call_args.kwargs['input'])
+            self.assertEqual({i['verification'] for i in first},{'service','reboot'})
+            self.assertEqual(len(next(i for i in first if i['key']==item['key'])['history']),16)
+            sync(state,41)
+            second=json.loads(runner.call_args.kwargs['input'])
+            self.assertEqual(next(i for i in second if i['key']==item['key'])['history'][0]['event_id'],17)
+            self.assertNotIn('commands',str(second))

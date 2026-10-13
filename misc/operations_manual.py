@@ -3,7 +3,7 @@ import json
 import re
 import subprocess
 from pathlib import Path
-from operations_issues import event
+from operations_issues import event, report
 
 
 def ingest(state, rows, now):
@@ -30,18 +30,21 @@ def ingest(state, rows, now):
 
 def sync(state, now):
     bridge = Path(__file__).with_name('operations_manual_issues.pl')
-    # Send local progress only. Model claims cannot set solved in this bridge.
-    items = [{k: v for k, v in item.items() if k not in ('commands', 'progress_fingerprint')}
-             for item in state.get('issues', {}).values() if item.get('verification') == 'manual']
+    # Bounded, acknowledged replay to the local DB, independent of central delivery.
+    items = report(state, state.get('local_issue_ack', {}))
     try:
         result = subprocess.run(['/usr/bin/perl', str(bridge)], input=json.dumps(items),
                                 text=True, capture_output=True, timeout=15)
         if result.returncode:
             raise ValueError('Local issue database unavailable')
-        rows = json.loads(result.stdout)
-        if not isinstance(rows, list):
+        response = json.loads(result.stdout)
+        if not isinstance(response, dict) or not isinstance(response.get('issues'), list) or not isinstance(response.get('acknowledgements'), dict):
             raise ValueError('Invalid local issue response')
-        ingest(state, rows, now)
+        ingest(state, response['issues'], now)
+        acknowledgements = state.setdefault('local_issue_ack', {})
+        for incarnation, serial in response['acknowledgements'].items():
+            if re.fullmatch(r'[a-f0-9]{32}', incarnation) and isinstance(serial, int) and not isinstance(serial, bool) and serial > 0:
+                acknowledgements[incarnation] = max(acknowledgements.get(incarnation, 0), serial)
         state.pop('manual_issue_sync_error', None)
     except (OSError, ValueError, subprocess.TimeoutExpired):
-        state['manual_issue_sync_error'] = 'Manual issue collection unavailable; inspect the local database and bridge installation.'
+        state['manual_issue_sync_error'] = 'Local issue history synchronization unavailable; inspect the local database and bridge installation.'
