@@ -654,3 +654,31 @@ from `issueReport` ordered by `reportId`.
 This implementation is source-tested; deployment and a live node repair remain
 separate acceptance checks. Reverting code leaves the additive tables and history
 intact. No credentials or node permission defaults change.
+
+### Manual reports from a server administrator
+
+Gatekeeper → **Report an issue** is available only to the local server's admin
+session. The server target comes from local `setup.adminIP`; request parameters
+cannot target another server. A CSRF-protected submission atomically creates an
+open `manual:<id>` issue and its discovery history in `issueReport`. Repeated
+submission of the same form is deduplicated. Database version 100 is required.
+
+The installed root worker uses `operations_manual_issues.pl` to collect these
+reports from the local database on each tick, under its existing state lock.
+The bridge requires Perl DBI/DBD::mysql and the same root-local MariaDB connection
+as the schema upgrader. Collection errors appear in operations status. Existing
+model budgets, inspection mode and command/SSH permission guards still apply.
+Report text is untrusted evidence and grants no execution authority.
+
+A successful repair command does not resolve an arbitrary free-text problem.
+The administrator repeats the original check, then uses **Verify resolution**
+on the report page and records the fresh test and observed result. This writes
+an `admin_verified_solved` history entry. The worker collects closure on its next
+tick; stale worker state cannot overwrite verified closure in the local bridge.
+This is operator verification, not an automated claim of resolution.
+
+Deploy the new Gatekeeper files and reinstall the operations worker on each
+reporting server. No additional schema migration beyond version 100 is needed.
+Reports remain stored if the worker is disabled or unavailable. Verify with an
+admin/non-admin session, a test report, worker collection, unchanged permissions,
+and an evidence-backed resolution. Live rollout is a separate acceptance check.

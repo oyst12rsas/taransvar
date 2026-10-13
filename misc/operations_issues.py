@@ -92,6 +92,8 @@ def report(state, acknowledgements=None):
             'reboot': 'Complete an authorized reboot and pass the post-boot checks.',
             'deployment': 'Repeat deployment inventory and confirm this component is present and correctly configured.',
             'resource': 'Measure resources again and confirm the configured pressure threshold is clear.'}.get(item.get('verification'), 'Repeat the original check.')
+        if item.get('verification') == 'manual':
+            public['verification_needed'] = 'A server administrator must repeat the reported check and record the observed result in Gatekeeper → Report an issue.'
         if item.get('verification') == 'reboot':
             public['maintenance_blockers'] = state.get('reboot', {}).get('blockers', [])
             public['maintenance_status'] = state.get('reboot', {}).get('status')

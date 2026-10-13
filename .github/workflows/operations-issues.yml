@@ -1,7 +1,7 @@
 name: Operations issue lifecycle
 on:
   pull_request:
-    paths: ['misc/operations*', 'misc/install*', 'misc/upgrade_db.pl', 'html/script/statusReport.php', 'html/script/operationsIssues.php', 'html/gatekeeper/func/operationsStatusView.php', 'html/gatekeeper/func/unitsMore.php', 'tests/operations*', '.github/workflows/operations-issues.yml']
+    paths: ['misc/operations*', 'misc/install*', 'misc/upgrade_db.pl', 'html/script/statusReport.php', 'html/script/operationsIssues.php', 'html/gatekeeper/func/operationsStatusView.php', 'html/gatekeeper/func/unitsMore.php', 'html/gatekeeper/func/manualIssues.php', 'html/gatekeeper/func/reportIssue.php', 'html/gatekeeper/index.php', 'tests/operations*', '.github/workflows/operations-issues.yml']
 jobs:
   lifecycle:
     runs-on: ubuntu-latest
@@ -16,8 +16,13 @@ jobs:
           --health-interval=5s --health-timeout=5s --health-retries=10
     steps:
       - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y libdbi-perl libdbd-mysql-perl
+      - run: perl -c misc/operations_manual_issues.pl
       - run: python3 -m unittest discover -s tests -p 'operations*_test.py'
       - run: |
+          php -l html/gatekeeper/func/manualIssues.php
+          php -l html/gatekeeper/func/reportIssue.php
+          php -l html/gatekeeper/index.php
           php -l html/script/operationsIssues.php
           php -l html/script/statusReport.php
           php -l html/gatekeeper/func/operationsStatusView.php

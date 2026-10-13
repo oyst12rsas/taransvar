@@ -18,6 +18,7 @@ from operations_tools import gateway_tools, resolve_tool
 from operations_reporting import local_report, stage_error
 from operations_issues import observe as observe_issues, progress as issue_progress, report as issue_report
 from operations_schedule import choose_trigger, reserve_call
+from operations_manual import sync as sync_manual_issues
 from operations_reboot import inspect as inspect_reboot, maintain as maintain_reboot
 from operations_policy import maintenance_enabled, effective_policy
 
@@ -230,6 +231,7 @@ def main():
     state['worker_heartbeat_at'] = now
     state['checked_at'] = now
     state['status'] = 'inspecting'
+    sync_manual_issues(state, now)
     for field in ('error_type', 'error_detail', 'error_stage', 'summary', 'diagnostics'):
         state.pop(field, None)
     save(path, state)
