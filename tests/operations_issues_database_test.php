@@ -68,6 +68,7 @@ $closed=$conn->query("SELECT status,solvedAt FROM issue WHERE issueId=$id")->fet
 if ($closed['status'] !== 'solved' || !$closed['solvedAt']) throw new Exception('Stale worker reopened verified manual issue');
 
 require_once __DIR__.'/../html/gatekeeper/func/issues.php';
+require_once __DIR__.'/../html/gatekeeper/func/issue.php';
 function isAdmin() { return !empty($_SESSION['isAdmin']); }
 function getConnection() {
     return new mysqli('127.0.0.1','root',getenv('ISSUE_TEST_PASSWORD') ?: '',
@@ -92,7 +93,18 @@ echo "Issues navigation and admin rendering checks passed\n";
 $workerStatus=json_encode(['operationsAgent'=>['status'=>'monitoring','last_assessment_status'=>'reported']]);
 $stmt=$conn->prepare('UPDATE setup SET networkStatus=?'); $stmt->bind_param('s',$workerStatus); $stmt->execute();
 $_GET=[]; ob_start(); issues(); $html=ob_get_clean();
-if (strpos($html,'Worker: monitoring. Last assessment: reported.') === false || strpos($html,'Evidence: Unresolved manual issue for navigation test') === false) throw new Exception('Issue page lost worker metadata or discovery evidence');
+if (strpos($html,'f=issue&amp;key=') === false || strpos($html,'<details') !== false || strpos($html,'value="verify"') !== false)
+    throw new Exception('Issue list must link to details without inline evidence or controls');
+$selected = array_values(array_filter(operationsStoredIssues($conn,'100.68.165.190',false),
+    fn($item)=>$item['description']==='Unresolved manual issue for navigation test'))[0];
+$_GET=['key'=>$selected['key']]; ob_start(); issue(); $html=ob_get_clean();
+if (strpos($html,'<h1>Issue details</h1>') === false || strpos($html,'Evidence: Unresolved manual issue for navigation test') === false
+    || strpos($html,'value="verify"') === false || strpos($html,'<details open>') === false)
+    throw new Exception('Selected issue lost evidence or verification controls');
+$_GET=['key'=>'missing:issue']; ob_start(); issue(); $html=ob_get_clean();
+if (strpos($html,'Issue not found on this server') === false || strpos($html,'value="verify"') !== false)
+    throw new Exception('Missing issue should not expose other issues');
+$_GET=[];
 $conn->query('UPDATE setup SET networkStatus=NULL');
 ob_start(); issues(); $html=ob_get_clean();
 if (strpos($html,'Worker: unknown') !== false || strpos($html,'Worker status is unavailable') === false) throw new Exception('Missing snapshot fabricated unknown worker state');

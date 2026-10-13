@@ -122,7 +122,7 @@ function operationsStatusDetails($agent, bool $includeIssues = true)
 
 
 
-function operationsMaintenanceDetails($agent): string
+function operationsMaintenanceDetails($agent, bool $expanded = false): string
 {
     if (!is_array($agent)) return '<p>Operations report is unavailable.</p>';
     $html = '';
@@ -141,7 +141,7 @@ function operationsMaintenanceDetails($agent): string
     }
     foreach (array_slice(is_array($agent['issues'] ?? null) ? $agent['issues'] : [], 0, 64) as $item) {
         if (!is_array($item)) continue;
-        $html .= '<details><summary>'.agentStatusEscape($item['description'] ?? 'Issue').' — '.agentStatusEscape($item['status'] ?? 'unknown').'</summary>';
+        $html .= '<details'.($expanded ? ' open' : '').'><summary>'.agentStatusEscape($item['description'] ?? 'Issue').' — '.agentStatusEscape($item['status'] ?? 'unknown').'</summary>';
         foreach (['discovered_at'=>'Discovered', 'checked_at'=>'Last update', 'next_action_at'=>'Next action', 'solved_at'=>'Solved'] as $key=>$label)
             if (is_numeric($item[$key] ?? null)) $html .= '<p>'.$label.': '.gmdate('Y-m-d H:i:s', (int)$item[$key]).' UTC</p>';
         if (!empty($item['status_explanation'])) $html .= '<p>'.agentStatusEscape($item['status_explanation']).'</p>';
@@ -168,15 +168,17 @@ function operationsMaintenanceDetails($agent): string
     return $html;
 }
 
-function operationsStoredIssues($conn, string $ip, bool $includeSolved = true, int $offset = 0): array
+function operationsStoredIssues($conn, string $ip, bool $includeSolved = true, int $offset = 0, ?string $issueKey = null): array
 {
     // Additive rollout: old databases continue to show the ordinary status page.
     $version = $conn->query('SELECT dbVersion FROM setup LIMIT 1')->fetch_assoc();
     if ((int)($version['dbVersion'] ?? 0) < 100) return [];
     $filter = $includeSolved ? '' : ' AND status<>"solved"';
+    if ($issueKey !== null) $filter .= ' AND issueKey=?';
     $stmt = $conn->prepare('SELECT * FROM issue WHERE nodeIp=INET_ATON(?)'.$filter.' ORDER BY status="solved", discoveredAt, issueId LIMIT 65 OFFSET ?');
     $offset = max(0, $offset);
-    $stmt->bind_param('si', $ip, $offset); $stmt->execute(); $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC); $stmt->close();
+    if ($issueKey === null) $stmt->bind_param('si', $ip, $offset);
+    else $stmt->bind_param('ssi', $ip, $issueKey, $offset); $stmt->execute(); $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC); $stmt->close();
     $items=[];
     foreach ($rows as $row) {
         $id=(int)$row['issueId'];
