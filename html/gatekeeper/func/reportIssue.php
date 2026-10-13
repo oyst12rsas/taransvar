@@ -21,10 +21,11 @@ function renderLocalIssues(bool $newReport = false)
             print '<p>'.agentStatusEscape($message).'</p>';
             $newReport = false;
         }
+        $selectedKey = is_string($_GET['key'] ?? null) ? $_GET['key'] : null;
         $showAll = (($_GET['history'] ?? '') === 'all');
         $page = max(0, min(1000000, (int)($_GET['page'] ?? 0)));
         $listUrl = 'index.php?f=issues'.($showAll ? '&amp;history=all' : '');
-        print '<h1>'.($newReport ? 'Report a new issue' : ($showAll ? 'Full issue history' : 'Open issues')).'</h1><p>Server: '.agentStatusEscape($server['nickname']).' ('.agentStatusEscape($server['ip']).')</p>';
+        print '<h1>'.($newReport ? 'Report a new issue' : ($selectedKey !== null ? 'Issue details' : ($showAll ? 'Full issue history' : 'Open issues'))).'</h1><p>Server: '.agentStatusEscape($server['nickname']).' ('.agentStatusEscape($server['ip']).')</p>';
         print '<p><a href="index.php?f=issues">Open issues</a> · <a href="index.php?f=issues&amp;history=all">Full history, including solved issues</a> · <a href="index.php?f=reportIssue">Report a new issue</a></p>';
         if ($newReport) {
             print '<p>Describe what happened and what you expected. Avoid passwords, tokens and private data. Reports stay open until a fresh check verifies resolution. Repairs follow this server’s existing permissions.</p>';
@@ -33,7 +34,7 @@ function renderLocalIssues(bool $newReport = false)
             $conn->close();
             return;
         }
-        $issues = operationsStoredIssues($conn, $server['ip'], $showAll, $page * 64);
+        $issues = operationsStoredIssues($conn, $server['ip'], $showAll || $selectedKey !== null, $selectedKey !== null ? 0 : $page * 64, $selectedKey);
         $more = count($issues) > 64;
         $snapshot = $conn->query('SELECT networkStatus FROM setup LIMIT 1')->fetch_assoc();
         $status = json_decode((string)($snapshot['networkStatus'] ?? ''), true);
@@ -48,15 +49,28 @@ function renderLocalIssues(bool $newReport = false)
                 if (isset($liveIssues[$item['key']][$field]) && (float)($liveIssues[$item['key']]['checked_at'] ?? 0) >= (float)$item['checked_at'])
                     $item[$field] = $liveIssues[$item['key']][$field];
         unset($item);
-        print operationsMaintenanceDetails($agent);
+        if ($selectedKey === null) {
+            if (!$issues) print '<p>No issues in this list.</p>';
+            else {
+                print '<ul class="issue-list">';
+                foreach (array_slice($issues, 0, 64) as $issue) {
+                    $url = 'index.php?f=issue&amp;key='.rawurlencode($issue['key']);
+                    print '<li><a href="'.$url.'">'.agentStatusEscape($issue['description']).'</a> — '.agentStatusEscape(str_replace('_', ' ', $issue['status'])).'</li>';
+                }
+                print '</ul>';
+            }
+        } else {
+            if (!$issues) print '<p>Issue not found on this server.</p>';
+            else print operationsMaintenanceDetails($agent, true);
+        }
         foreach (array_slice($issues, 0, 64) as $issue) {
-            if ($issue['verification'] !== 'manual' || $issue['status'] === 'solved') continue;
-            print '<details><summary>Verify resolution: '.agentStatusEscape($issue['description']).'</summary><form method="post" action="'.$listUrl.'">';
+            if ($selectedKey === null || $issue['verification'] !== 'manual' || $issue['status'] === 'solved') continue;
+            print '<details><summary>Verify resolution: '.agentStatusEscape($issue['description']).'</summary><form method="post" action="index.php?f=issue&amp;key='.rawurlencode($issue['key']).'">';
             print '<input type="hidden" name="csrf" value="'.agentStatusEscape($_SESSION['manualIssueCsrf']).'"><input type="hidden" name="key" value="'.agentStatusEscape($issue['key']).'">';
             print '<label>Fresh check performed and observed result<br><textarea name="description" rows="3" cols="70" maxlength="4000" required></textarea></label><br><button name="action" value="verify">Confirm verified resolution</button></form></details>';
         }
-        if ($page) print '<p><a href="'.$listUrl.'&amp;page='.($page-1).'">Previous issues</a></p>';
-        if ($more) print '<p><a href="'.$listUrl.'&amp;page='.($page+1).'">Next issues</a></p>';
+        if ($selectedKey === null && $page) print '<p><a href="'.$listUrl.'&amp;page='.($page-1).'">Previous issues</a></p>';
+        if ($selectedKey === null && $more) print '<p><a href="'.$listUrl.'&amp;page='.($page+1).'">Next issues</a></p>';
     } catch (Throwable $e) { print '<p>'.agentStatusEscape($e->getMessage()).'</p>'; }
     $conn->close();
 }
