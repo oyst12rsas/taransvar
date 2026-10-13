@@ -657,7 +657,10 @@ intact. No credentials or node permission defaults change.
 
 ### Manual reports from a server administrator
 
-Gatekeeper → **Report an issue** is available only to the local server's admin
+Gatekeeper → **Issues** opens unresolved issues for this server, with links to
+**Full history, including solved issues** and **Report a new issue**. The new
+report form is separate from the list; successful submission returns to the list.
+These pages are available only to the local server's admin
 session. The server target comes from local `setup.adminIP`; request parameters
 cannot target another server. A CSRF-protected submission atomically creates an
 open `manual:<id>` issue and its discovery history in `issueReport`. Repeated

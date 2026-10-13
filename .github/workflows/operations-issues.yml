@@ -1,7 +1,7 @@
 name: Operations issue lifecycle
 on:
   pull_request:
-    paths: ['misc/operations*', 'misc/install*', 'misc/upgrade_db.pl', 'html/script/statusReport.php', 'html/script/operationsIssues.php', 'html/gatekeeper/func/operationsStatusView.php', 'html/gatekeeper/func/unitsMore.php', 'html/gatekeeper/func/manualIssues.php', 'html/gatekeeper/func/reportIssue.php', 'html/gatekeeper/index.php', 'tests/operations*', '.github/workflows/operations-issues.yml']
+    paths: ['misc/operations*', 'misc/install*', 'misc/upgrade_db.pl', 'html/script/statusReport.php', 'html/script/operationsIssues.php', 'html/gatekeeper/func/operationsStatusView.php', 'html/gatekeeper/func/unitsMore.php', 'html/gatekeeper/func/manualIssues.php', 'html/gatekeeper/func/reportIssue.php', 'html/gatekeeper/func/issues.php', 'html/gatekeeper/index.php', 'tests/operations*', '.github/workflows/operations-issues.yml']
 jobs:
   lifecycle:
     runs-on: ubuntu-latest
@@ -22,6 +22,7 @@ jobs:
       - run: |
           php -l html/gatekeeper/func/manualIssues.php
           php -l html/gatekeeper/func/reportIssue.php
+          php -l html/gatekeeper/func/issues.php
           php -l html/gatekeeper/index.php
           php -l html/script/operationsIssues.php
           php -l html/script/statusReport.php
