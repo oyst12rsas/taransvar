@@ -133,9 +133,13 @@ function operationsMaintenanceDetails($agent, bool $expanded = false): string
         $html .= '<p>Reboot: '.agentStatusEscape(str_replace('_',' ',(string)($reboot['status'] ?? 'unknown'))).'</p>';
         if (!empty($reboot['target_kernel'])) $html .= '<p>Target kernel: '.agentStatusEscape($reboot['target_kernel']).'</p>';
         foreach (($reboot['blockers'] ?? []) as $blocker) {
-            $label = $blocker === 'interactive_sessions_active_or_unknown'
-                ? 'Interactive sessions are active, or their absence could not be verified. Reboot is deferred.'
-                : str_replace('_',' ',(string)$blocker);
+            $labels = [
+                'interactive_sessions_active_or_unknown' => 'Interactive sessions are active, or their absence could not be verified. Reboot is deferred.',
+                'interactive_session_recently_active' => 'A login session has recent activity or was opened within the configured idle interval. Reboot is deferred.',
+                'interactive_session_activity_unverified' => 'Login session activity could not be measured. Reboot is deferred.',
+                'invalid_reboot_session_idle_seconds' => 'The reboot session idle interval is invalid; configure an integer of at least 60 seconds.',
+            ];
+            $label = $labels[$blocker] ?? str_replace('_',' ',(string)$blocker);
             $html .= '<p>Reboot blocker: '.agentStatusEscape($label).'</p>';
         }
     }
@@ -191,3 +195,4 @@ function operationsStoredIssues($conn, string $ip, bool $includeSolved = true, i
     }
     return $items;
 }
+
