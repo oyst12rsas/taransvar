@@ -173,7 +173,17 @@ function unitsMore()
 		$status = json_decode($status, true);
         if (is_array($status) && !empty($row['ip'])) {
             $storedIssues = operationsStoredIssues($conn, (string)$row['ip']);
-            if ($storedIssues) $status['operationsAgent']['issues'] = $storedIssues;
+            if ($storedIssues) {
+                $liveIssues = [];
+                foreach (($status['operationsAgent']['issues'] ?? []) as $item)
+                    if (is_array($item) && isset($item['key'])) $liveIssues[$item['key']] = $item;
+                foreach ($storedIssues as &$item)
+                    foreach (['status_explanation','verification_needed','last_attempt','maintenance_blockers','maintenance_status'] as $field)
+                        if (isset($liveIssues[$item['key']][$field]) && (float)($liveIssues[$item['key']]['checked_at'] ?? 0) >= (float)$item['checked_at'])
+                            $item[$field] = $liveIssues[$item['key']][$field];
+                unset($item);
+                $status['operationsAgent']['issues'] = $storedIssues;
+            }
         }
         $nickname = $status['aiAgent']['nickname'] ?? '';
         if (is_string($nickname) && preg_match('/^[A-Za-z][A-Za-z0-9 _-]{2,31}$/D', $nickname)) {

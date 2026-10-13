@@ -53,7 +53,7 @@ def progress(state, now=None):
             continue
         selected = state.get('active_issue_key') in (None, item['key'])
         item['progress_fingerprint'] = digest
-        item['status'] = ('verification_pending' if selected and status in ('command_executed', 'procedure_ok', 'resource_ok')
+        item['status'] = ('verification_pending' if selected and status in ('command_executed', 'procedure_ok', 'resource_ok') and result.get('read_only') is not True
                           else 'blocked' if status in ('blocked', 'model_stalled', 'model_budget_deferred', 'command_failed', 'procedure_failed')
                           else 'pending')
         item['checked_at'] = now
@@ -77,8 +77,25 @@ def report(state, acknowledgements=None):
     for item in state.get('issues', {}).values():
         public = {k: v for k, v in item.items() if k not in ('commands', 'progress_fingerprint', 'history')}
         ack = acknowledgements.get(item.get('incarnation'), 0)
+        if isinstance(ack, str) and ack.isascii() and ack.isdigit() and len(ack) <= 20:
+            ack = int(ack)
         ack = ack if isinstance(ack, int) and not isinstance(ack, bool) else 0
         public['history'] = [e for e in item.get('history', []) if e['event_id'] > ack][:16]
+        public['status_explanation'] = {
+            'open': 'Discovered; no repair result has been recorded.',
+            'pending': 'Still unresolved; awaiting the next permitted repair or check.',
+            'blocked': 'Progress is blocked; the recorded reason must be addressed.',
+            'verification_pending': 'An action returned success; recovery has not yet been verified.',
+            'solved': 'A fresh check no longer detected this condition.'}.get(item['status'], 'Unknown lifecycle state.')
+        public['verification_needed'] = {
+            'service': 'Recheck ' + item['key'].split(':', 1)[1] + ' and confirm it is no longer failed.',
+            'reboot': 'Complete an authorized reboot and pass the post-boot checks.',
+            'deployment': 'Repeat deployment inventory and confirm this component is present and correctly configured.',
+            'resource': 'Measure resources again and confirm the configured pressure threshold is clear.'}.get(item.get('verification'), 'Repeat the original check.')
+        if item.get('verification') == 'reboot':
+            public['maintenance_blockers'] = state.get('reboot', {}).get('blockers', [])
+            public['maintenance_status'] = state.get('reboot', {}).get('status')
+        public['last_attempt'] = next((e['detail'] for e in reversed(item.get('history', [])) if e['kind'] == 'progress'), None)
         public['command_executable'] = item.get('commands', [None])[0] if item.get('commands') else None
         result.append(public)
     return sorted(result, key=lambda x: (not bool(x['history']), x['status'] == 'solved', x['discovered_at']))[:64]

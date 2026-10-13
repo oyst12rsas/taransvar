@@ -113,6 +113,8 @@ function operationsStatusDetails($agent)
         $html .= '<details><summary>'.agentStatusEscape($item['description'] ?? 'Issue').' — '.agentStatusEscape($item['status'] ?? 'unknown').'</summary>';
         foreach (['discovered_at'=>'Discovered', 'checked_at'=>'Last update', 'next_action_at'=>'Next action', 'solved_at'=>'Solved'] as $key=>$label)
             if (is_numeric($item[$key] ?? null)) $html .= '<p>'.$label.': '.gmdate('Y-m-d H:i:s', (int)$item[$key]).' UTC</p>';
+        if (!empty($item['status_explanation'])) $html .= '<p>'.agentStatusEscape($item['status_explanation']).'</p>';
+        if (!empty($item['verification_needed'])) $html .= '<p>Required check: '.agentStatusEscape($item['verification_needed']).'</p>';
         if (!empty($item['blocker'])) $html .= '<p>Blocker: '.agentStatusEscape($item['blocker']).'</p>';
         $html .= '<p>Verification: '.agentStatusEscape($item['verification'] ?? 'unknown').'</p><ul>';
         foreach (array_slice($item['history'] ?? [], 0, 16) as $event)
