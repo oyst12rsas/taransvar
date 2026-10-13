@@ -72,7 +72,7 @@ function operationsStatusIssues($agent)
     return array_values(array_unique($issues));
 }
 
-function operationsStatusDetails($agent)
+function operationsStatusDetails($agent, bool $includeIssues = true)
 {
     if (!is_array($agent)) return 'Operations report is unavailable or invalid.';
     $rows = array(
@@ -108,19 +108,7 @@ function operationsStatusDetails($agent)
     foreach ($rows as $label => $value)
         $html .= '<tr><td>'.agentStatusEscape($label).'</td><td>'.agentStatusEscape($value).'</td></tr>';
     $html .= '</table>';
-    foreach (array_slice(is_array($agent['issues'] ?? null) ? $agent['issues'] : [], 0, 64) as $item) {
-        if (!is_array($item)) continue;
-        $html .= '<details><summary>'.agentStatusEscape($item['description'] ?? 'Issue').' — '.agentStatusEscape($item['status'] ?? 'unknown').'</summary>';
-        foreach (['discovered_at'=>'Discovered', 'checked_at'=>'Last update', 'next_action_at'=>'Next action', 'solved_at'=>'Solved'] as $key=>$label)
-            if (is_numeric($item[$key] ?? null)) $html .= '<p>'.$label.': '.gmdate('Y-m-d H:i:s', (int)$item[$key]).' UTC</p>';
-        if (!empty($item['status_explanation'])) $html .= '<p>'.agentStatusEscape($item['status_explanation']).'</p>';
-        if (!empty($item['verification_needed'])) $html .= '<p>Required check: '.agentStatusEscape($item['verification_needed']).'</p>';
-        if (!empty($item['blocker'])) $html .= '<p>Blocker: '.agentStatusEscape($item['blocker']).'</p>';
-        $html .= '<p>Verification: '.agentStatusEscape($item['verification'] ?? 'unknown').'</p><ul>';
-        foreach (array_slice($item['history'] ?? [], 0, 16) as $event)
-            $html .= '<li>'.agentStatusEscape($event['kind'] ?? '').': '.agentStatusEscape(json_encode($event['detail'] ?? null)).'</li>';
-        $html .= '</ul><p>Complete received history is retained in issueReport. Command arguments remain on the node.</p></details>';
-    }
+    if ($includeIssues) $html .= operationsMaintenanceDetails($agent);
 
     $issues = operationsStatusIssues($agent);
     if ($issues) {
@@ -131,6 +119,50 @@ function operationsStatusDetails($agent)
     return $html;
 }
 
+
+
+function operationsMaintenanceDetails($agent): string
+{
+    if (!is_array($agent)) return '<p>Operations report is unavailable.</p>';
+    $html = '<p>Worker: '.agentStatusEscape($agent['status'] ?? 'unknown').'. Last assessment: '.agentStatusEscape($agent['last_assessment_status'] ?? 'unknown').'.</p>';
+    $reboot = $agent['reboot'] ?? null;
+    if (is_array($reboot)) {
+        $html .= '<p>Reboot: '.agentStatusEscape(str_replace('_',' ',(string)($reboot['status'] ?? 'unknown'))).'</p>';
+        if (!empty($reboot['target_kernel'])) $html .= '<p>Target kernel: '.agentStatusEscape($reboot['target_kernel']).'</p>';
+        foreach (($reboot['blockers'] ?? []) as $blocker) {
+            $label = $blocker === 'interactive_sessions_active_or_unknown'
+                ? 'Interactive sessions are active, or their absence could not be verified. Reboot is deferred.'
+                : str_replace('_',' ',(string)$blocker);
+            $html .= '<p>Reboot blocker: '.agentStatusEscape($label).'</p>';
+        }
+    }
+    foreach (array_slice(is_array($agent['issues'] ?? null) ? $agent['issues'] : [], 0, 64) as $item) {
+        if (!is_array($item)) continue;
+        $html .= '<details><summary>'.agentStatusEscape($item['description'] ?? 'Issue').' — '.agentStatusEscape($item['status'] ?? 'unknown').'</summary>';
+        foreach (['discovered_at'=>'Discovered', 'checked_at'=>'Last update', 'next_action_at'=>'Next action', 'solved_at'=>'Solved'] as $key=>$label)
+            if (is_numeric($item[$key] ?? null)) $html .= '<p>'.$label.': '.gmdate('Y-m-d H:i:s', (int)$item[$key]).' UTC</p>';
+        if (!empty($item['status_explanation'])) $html .= '<p>'.agentStatusEscape($item['status_explanation']).'</p>';
+        if (!empty($item['verification_needed'])) $html .= '<p>Required check: '.agentStatusEscape($item['verification_needed']).'</p>';
+        if (!empty($item['blocker'])) $html .= '<p>Blocker: '.agentStatusEscape($item['blocker']).'</p>';
+        $html .= '<p>Verification: '.agentStatusEscape($item['verification'] ?? 'unknown').'</p><ul>';
+        foreach (array_slice($item['history'] ?? [], 0, 16) as $event) {
+            $detail = $event['detail'] ?? null;
+            $text = is_string($detail) ? $detail : implode('; ', array_filter([
+                isset($detail['worker_status']) ? 'Worker: '.str_replace('_',' ',$detail['worker_status']) : '',
+                isset($detail['action']) ? 'Action: '.$detail['action'] : '',
+                isset($detail['exit_code']) ? 'Exit code: '.$detail['exit_code'] : '',
+                !empty($detail['blocker']) ? 'Blocker: '.$detail['blocker'] : '',
+                !empty($detail['next_check']) ? 'Next check: '.$detail['next_check'] : ''
+            ]));
+            $stamp = is_numeric($event['at'] ?? null) ? gmdate('Y-m-d H:i:s',(int)$event['at']).' UTC — ' : '';
+            $html .= '<li>'.agentStatusEscape($stamp.($event['kind'] ?? '').': '.$text).'</li>';
+        }
+        $html .= '</ul><p>Complete received history is retained in issueReport. Command arguments remain on the node.</p></details>';
+    }
+
+    if (empty($agent['issues'])) $html .= '<p>No tracked issues were included in this report.</p>';
+    return $html;
+}
 
 function operationsStoredIssues($conn, string $ip): array
 {
