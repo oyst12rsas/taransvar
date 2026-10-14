@@ -77,3 +77,18 @@ class ProgressTest(unittest.TestCase):
         self.assertIsNone(progress_feedback(self.report,self.policy,self.evidence))
 
 if __name__ == '__main__':unittest.main()
+
+class ManualInvestigationTest(unittest.TestCase):
+    def test_verification_does_not_precede_investigation_even_in_inspection_mode(self):
+        text=build_prompt('',{'mode':'inspect'},{},{},{},{},{})
+        self.assertIn('required ONLY to mark a manual issue solved',text)
+        self.assertIn('Read-only diagnostics remain permitted',text)
+        report={'action':'report','reason':'Admin must verify before continuing'}
+        snapshot={'focus_issue_key':'manual:abc','issues':[{'key':'manual:abc','description':'New SSH login bypasses gate'}]}
+        feedback=progress_feedback(report,{'mode':'inspect'},{},snapshot)
+        self.assertIn('diagnostic=ssh_access',feedback)
+        self.assertIsNone(progress_feedback(report,{'mode':'inspect'},{'ssh_access':{'result':{}}},snapshot))
+
+    def test_non_ssh_reports_are_not_forced_into_ssh_diagnostics(self):
+        snapshot={'focus_issue_key':'manual:abc','issues':[{'key':'manual:abc','description':'Mail delivery failed'}]}
+        self.assertIsNone(progress_feedback({'action':'report'},{'mode':'inspect'},{},snapshot))

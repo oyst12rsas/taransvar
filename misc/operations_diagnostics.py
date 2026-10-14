@@ -11,6 +11,7 @@ CATALOG = {
     'large_logs': 'Find the 20 largest regular log files; metadata only, no contents.',
     'storage_summary': 'Measure allocated space under /var/log and /var/lib.',
     'gateway_startup': 'Inspect gateway service execution metadata and executable accessibility.',
+    'ssh_access': 'Read SSH listening/authentication settings, TCP listeners, IPv4/IPv6 filter rules and the app SSH window set. No changes, credentials or command execution from report text.',
 }
 
 
@@ -79,9 +80,38 @@ def gateway_startup(run):
     return {'exit_code': result['exit_code'], 'properties': fields}
 
 
+def ssh_access(run):
+    """Fixed read-only commands; base SSH settings do not resolve Match rules."""
+    def collect(argv):
+        try:
+            result = run(argv, 10)
+            output = result.get('output', '')
+            return {'exit_code': result['exit_code'], 'output': output[:8000],
+                    'truncated': len(output) > 8000}
+        except OSError:
+            return {'exit_code': 127, 'output': 'Diagnostic executable unavailable.', 'truncated': False}
+    sshd = collect(['/usr/sbin/sshd', '-T'])
+    allowed = {'port', 'listenaddress', 'passwordauthentication', 'pubkeyauthentication',
+               'authenticationmethods', 'permitrootlogin', 'usepam', 'kbdinteractiveauthentication'}
+    settings = {}
+    for line in sshd['output'].splitlines():
+        key, _, value = line.partition(' ')
+        if key in allowed:
+            settings.setdefault(key, []).append(value)
+    return {'sshd_base': {'exit_code': sshd['exit_code'], 'settings': settings,
+                         'note': 'Base settings only; user/source-specific Match rules and new-connection behaviour need separate verification.'},
+            'listeners': collect(['/usr/bin/ss', '-lnt']),
+            'ipv4_filter': collect(['/usr/sbin/iptables', '-S']),
+            'ipv6_filter': collect(['/usr/sbin/ip6tables', '-S']),
+            'app_window_set': collect(['/usr/sbin/ipset', 'list', 'tarasec_app_ssh']),
+            'note': 'Existing SSH sessions can survive closure. These observations do not prove a new connection is rejected, nor authorize changes to access.'}
+
+
 def diagnose(name, run):
     if name not in CATALOG:
         raise ValueError('Unknown read-only diagnostic')
+    if name == 'ssh_access':
+        return ssh_access(run)
     if name == 'deployment_status':
         from operations_deployment import deployment_inventory
         return deployment_inventory(run)
