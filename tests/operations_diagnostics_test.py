@@ -37,3 +37,26 @@ class DiagnosticsTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class SshAccessDiagnosticsTest(unittest.TestCase):
+    def test_fixed_read_only_commands_and_no_credential_fields(self):
+        calls=[]
+        def runner(argv,timeout):
+            calls.append(argv)
+            if argv==['/usr/sbin/sshd','-T']:
+                return {'exit_code':0,'output':'port 5822\nlistenaddress [::]:5822\nauthorizedkeyscommand /example SECRET\npasswordauthentication yes\n'}
+            return {'exit_code':0,'output':'Observed policy'}
+        result=diagnose('ssh_access',runner)
+        self.assertEqual(result['sshd_base']['settings']['port'],['5822'])
+        self.assertNotIn('SECRET',str(result))
+        self.assertEqual(calls,[['/usr/sbin/sshd','-T'],['/usr/bin/ss','-lnt'],
+            ['/usr/sbin/iptables','-S'],['/usr/sbin/ip6tables','-S'],
+            ['/usr/sbin/ipset','list','tarasec_app_ssh']])
+
+    def test_missing_binary_does_not_abort_other_observations(self):
+        def runner(argv,timeout):
+            if argv[0]=='/usr/sbin/ipset': raise FileNotFoundError('SECRET')
+            return {'exit_code':0,'output':''}
+        result=diagnose('ssh_access',runner)
+        self.assertEqual(result['app_window_set']['exit_code'],127)
+        self.assertNotIn('SECRET',str(result))

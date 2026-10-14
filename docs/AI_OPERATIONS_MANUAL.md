@@ -706,3 +706,23 @@ heartbeat receipts. Replay is transactional and deduplicated. Existing root
 history drains into the local DB after upgrading both operations_manual.py and
 operations_manual_issues.pl; central-only history no longer in root state is not
 retrieved. An enabled worker timer is required for regular tick synchronization.
+
+### Manual reports: investigate before verifying closure
+
+An administrator's fresh verification is a condition for closing a manual
+report, not a prerequisite for investigation or owner-authorized remediation.
+The worker should first collect available evidence and perform permitted repairs,
+then ask the administrator to verify the result. Quiet-time and recovery guards
+still apply to changes, including SSH firewall changes.
+
+The fixed `ssh_access` diagnostic reads base sshd settings, TCP listeners,
+IPv4/IPv6 filter rules and the app SSH window set. It changes nothing and accepts
+no paths or commands from report text. It omits credential-bearing sshd fields.
+Base settings and firewall observations do not establish source-specific Match
+behaviour or prove a fresh connection is rejected. Existing sessions may persist
+after closure. An administrator's browser Google login is distinct from an
+explicit SSH-opening approval. Missing tools are reported as unavailable.
+
+Read-only diagnostics may run despite busy traffic, but requesting a model
+decision still consumes the configured model budget. Running the fixed diagnostic
+directly requires no model call and grants no additional mutation authority.
