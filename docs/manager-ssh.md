@@ -13,8 +13,9 @@ Install `ipset` first if missing (`sudo apt-get install ipset`). From a current
 checkout run `sudo bash misc/setup_manager_ssh.sh` on the gateway. This is an
 explicit owner opt-in. The script checks the configured SSH port, an actual
 sshd listener and a recognised TaraSec INPUT policy before installing anything.
-It retains the baseline firewall, authorized keys, passwords and recovery
-sources. It does not request an opening. It backs up existing web endpoints and
+It retains authorized keys, passwords and the configured allowed-source list.
+It requires a verified active app opening before enforcing the timed gate.
+Console access is the recovery route; no SSH source has a permanent exemption. It backs up existing web endpoints and
 service units under `/var/backups/tarasec-manager-ssh.*`.
 
 The PHP web server does not read `/etc/tarasec` or execute privileged commands.
@@ -35,7 +36,7 @@ unrecognised firewall policy is an error, not a top-of-chain bypass.
 The temporary rule uses a separate chain with the exact IPv4 address/CIDR
 restrictions from `SSH_ALLOWED_SOURCES` in `/etc/tarasecfw.conf`. Empty means
 unrestricted, matching the existing firewall semantics; unsupported entries fail
-closed. Recovery rules remain separate. The app does not choose or replace the
+closed. Recovery source settings do not grant an exemption from the enforced gate. The app does not choose or replace the
 allowed sources.
 
 Public state is atomically written to `/run/tarasec-app-ssh/status.json`, root
@@ -50,21 +51,23 @@ The original installation added a temporary allowance while leaving the permanen
 SSH ACCEPT path intact. This was not a closed-by-default gate: a permitted source
 could still reach the baseline ACCEPT rule with no active app window.
 
-The correction is an explicit `setup_manager_ssh.sh --enforce-gate` upgrade. Before
+Installation now enforces the gate by default; `--enforce-gate` remains a
+compatible upgrade command. Before
 running it, use the app to request a five-minute opening and wait for confirmation.
 The installer checks both the active kernel lease (at least 60 seconds remain)
 and its latest applied, still-authorized manager request before changing access.
 It retains the current SSH authentication settings and backs up the old worker.
 
 The gate is reached for every connection to the configured IPv4 SSH port, before
-`TARASEC_SSH_SOURCE` or the permanent ACCEPT rule. Its order is loopback,
-established/related sessions, explicitly configured recovery sources, configured
+`TARASEC_SSH_SOURCE` or the permanent ACCEPT rule. Its order is
+established/related sessions, configured
 allowed sources with an active kernel lease, then a final REJECT. Ordinary allowed
 sources cannot fall through to permanent ACCEPT after expiry. Earlier global
 security drops remain ahead of the gate. The existing source list is not rewritten.
 The gate is rebuilt by the worker after a normal firewall refresh. IPv6 new remote
 SSH is rejected because this version supports only IPv4 configured sources;
-IPv6 loopback and established sessions remain available.
+IPv6 established sessions remain available; new IPv6 connections, including
+loopback, are rejected.
 
 A ten-minute rollback timer is installed before enabling the gate. If acceptance
 is not confirmed, it stops the worker, removes only the owned IPv4/IPv6 gate
@@ -89,15 +92,15 @@ use in an external SSH client. SSH login credentials are still required.
 Expiry does not depend on the app or worker staying alive. A worker failure can
 delay processing or revocation but cannot extend an already accepted kernel
 lease. With the gate enforced, ordinary allowed sources require an active window
-for a new connection. Explicit recovery sources and established sessions remain
-available after expiry. Without gate enforcement the legacy baseline may still
+for a new connection. Established sessions remain
+available after expiry. Recovery requires console access. Without gate enforcement the legacy baseline may still
 permit SSH. The worker does not restart sshd or alter SSH login credentials.
 If changing the configured SSH port, end all temporary windows and flush the
 temporary set before changing the node's authoritative configuration.
 
 ## Live acceptance and recovery
 
-Keep an independent recovery login. Confirm the node's effective sshd listener,
+Keep an independent recovery console. Confirm the node's effective sshd listener,
 key login, IPv4/IPv6 firewall and baseline access policy before relying on timed
 access. In the app choose SSH, request 5 minutes, wait for confirmation, and
 connect from a computer allowed by the conf to the displayed port. Check another unapproved peer is
@@ -106,7 +109,7 @@ Repeat a five-minute opening, stop the worker, and verify the set entry expires
 without it. Verify actual new SSH connections after expiry, not only the label.
 Live acceptance on wt-qw1 is pending; CI checks authorization, SQL queue behavior
 and production gate enforcement in a disposable network namespace, including the
-actual permanent ACCEPT bypass, established sessions, explicit recovery, expiry,
+actual permanent ACCEPT bypass, established sessions, denied recovery exemptions, expiry,
 reopening, IPv6 isolation and rollback.
 
 To disable the optional feature without changing baseline or recovery policy:

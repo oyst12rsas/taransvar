@@ -36,12 +36,8 @@ function sshAllowedSources(array $cfg): array {
 function sshGateRules(array $cfg, bool $enforced): array {
     $rules=[];
     if ($enforced) {
-        $rules[]=['-s','127.0.0.0/8','-i','lo','-j','ACCEPT'];
+        // Only existing sessions bypass the lease. Recovery uses the console.
         $rules[]=['-m','conntrack','--ctstate','RELATED,ESTABLISHED','-j','ACCEPT'];
-        if (in_array(strtolower($cfg['SSH_RECOVERY_PROTECT'] ?? 'on'),['on','1','yes','true'],true)) {
-            $recovery=sshAllowedSources(['SSH_ALLOWED_SOURCES'=>$cfg['SSH_RECOVERY_SOURCES'] ?? '']);
-            foreach ($recovery as $source) $rules[]=array_merge($source==='0.0.0.0/0' ? [] : ['-s',$source],['-j','ACCEPT']);
-        }
     }
     foreach (sshAllowedSources($cfg) ?: ['0.0.0.0/0'] as $source) {
         $args=$source==='0.0.0.0/0' ? [] : ['-s',$source];
@@ -101,9 +97,9 @@ function sshInstallGate(array $cfg, int $port, bool $enforced): void {
 }
 function sshIpv6Gate(int $port): void {
     // The supported conf source list is IPv4 only. Do not leave an IPv6 bypass
-    // to the same sshd listener; retain loopback and already established sessions.
+    // to the same sshd listener; retain already established sessions.
     // SYN-only also preserves sessions created before IPv6 conntrack was active.
-    $rule=['!','-s','::1/128','-p','tcp','-m','tcp','--dport',(string)$port,'--tcp-flags','FIN,SYN,RST,ACK','SYN','-m','comment','--comment','tarasec-app-ssh-ipv6','-j','REJECT','--reject-with','tcp-reset'];
+    $rule=['-p','tcp','-m','tcp','--dport',(string)$port,'--tcp-flags','FIN,SYN,RST,ACK','SYN','-m','comment','--comment','tarasec-app-ssh-ipv6','-j','REJECT','--reject-with','tcp-reset'];
     $rules=sshRun(['/usr/sbin/ip6tables','-w','5','-S','INPUT']);
     $tagged=array_values(array_filter(explode("\n",trim($rules)),fn($line)=>str_starts_with($line,'-A INPUT ') && str_contains($line,'tarasec-app-ssh-ipv6')));
     if ($tagged!==['-A INPUT '.implode(' ',$rule)]) {
