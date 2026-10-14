@@ -3,9 +3,63 @@ import os
 import re
 from pathlib import Path
 import time
+import math
 from operations_policy import maintenance_enabled
 
 DEFAULT_PROBE = "/usr/local/lib/tarasec-operations/reboot-verification-probe"
+
+
+def session_activity(run, policy, root=Path('/')):
+    """TTY input time measures activity, rather than merely an open login."""
+    idle_seconds = policy.get('reboot_session_idle_seconds', 900)
+    if not isinstance(idle_seconds, int) or isinstance(idle_seconds, bool) or idle_seconds < 60:
+        return {'blockers': ['invalid_reboot_session_idle_seconds'], 'sessions': []}
+    result = run(['loginctl', 'list-sessions', '--no-legend', '--no-pager'], 20)
+    evidence = {'idle_seconds': idle_seconds, 'sessions': [], 'blockers': []}
+    if result['exit_code'] != 0:
+        evidence['blockers'].append('interactive_session_activity_unverified')
+        return evidence
+    now = time.time()
+    for line in result['output'].splitlines():
+        if not line.strip():
+            continue
+        session = line.split()[0]
+        item = {'session': session, 'status': 'unknown'}
+        evidence['sessions'].append(item)
+        if not re.fullmatch(r'[A-Za-z0-9_-]+', session):
+            evidence['blockers'].append('interactive_session_activity_unverified')
+            continue
+        details = run(['loginctl', 'show-session', session, '--no-pager',
+                       '-p', 'TTY', '-p', 'TimestampMonotonic', '-p', 'IdleHint',
+                       '-p', 'IdleSinceHintMonotonic'], 20)
+        try:
+            if details['exit_code'] != 0:
+                raise ValueError('Session inspection failed')
+            properties = dict(line.split('=', 1) for line in details['output'].splitlines())
+            uptime = float((root / 'proc/uptime').read_text().split()[0])
+            age = uptime - int(properties['TimestampMonotonic']) / 1000000
+            tty = properties.get('TTY', '')
+            if tty:
+                if not re.fullmatch(r'(?:pts/[0-9]+|tty[0-9]+)', tty):
+                    raise ValueError('Unsupported TTY')
+                idle = min(age, now - (root / 'dev' / tty).stat().st_atime)
+            elif properties.get('IdleHint') == 'yes':
+                since = int(properties['IdleSinceHintMonotonic']) / 1000000
+                if since <= 0:
+                    raise ValueError('Missing idle timestamp')
+                idle = min(age, uptime - since)
+            else:
+                raise ValueError('Missing activity evidence')
+            if not math.isfinite(idle) or idle < 0:
+                raise ValueError('Invalid activity timestamp')
+            item.update(status='idle' if idle >= idle_seconds else 'recently_active',
+                        idle_seconds=int(idle))
+            if idle < idle_seconds:
+                evidence['blockers'].append('interactive_session_recently_active')
+        except (OSError, ValueError, KeyError, IndexError):
+            evidence['blockers'].append('interactive_session_activity_unverified')
+    evidence['blockers'] = sorted(set(evidence['blockers']))
+    return evidence
 
 
 def safe_runner(runner):
@@ -162,9 +216,10 @@ def maintain(state, policy, evidence, boot, now, run, trusted, quiet, persist, r
         state['reboot']['status'] = 'blocked'
         # Keep unrelated model diagnostics available even when reboot is disabled.
         return False
-    sessions = run(['loginctl', 'list-sessions', '--no-legend', '--no-pager'], 20)
-    if sessions['exit_code'] != 0 or sessions['output'].strip():
-        state['reboot'].update(status='waiting_for_quiet', blockers=['interactive_sessions_active_or_unknown'])
+    sessions = session_activity(run, policy, root)
+    state['reboot']['session_activity'] = sessions
+    if sessions['blockers']:
+        state['reboot'].update(status='waiting_for_quiet', blockers=sessions['blockers'])
         return False
     observed = run([str(trusted(policy['quiet_probe']))], 20)
     import json
@@ -184,9 +239,10 @@ def maintain(state, policy, evidence, boot, now, run, trusted, quiet, persist, r
     if not quiet(state, sample, time.time(), max(60, int(policy.get('quiet_seconds', 300)))):
         state['reboot'].update(status='waiting_for_quiet', blockers=['activity_changed_before_dispatch'])
         return False
-    sessions = run(['loginctl', 'list-sessions', '--no-legend', '--no-pager'], 20)
-    if sessions['exit_code'] != 0 or sessions['output'].strip():
-        state['reboot'].update(status='waiting_for_quiet', blockers=['interactive_sessions_active_or_unknown'])
+    sessions = session_activity(run, policy, root)
+    state['reboot']['session_activity'] = sessions
+    if sessions['blockers']:
+        state['reboot'].update(status='waiting_for_quiet', blockers=sessions['blockers'])
         return False
     checkpoint = {'boot_id': boot, 'requested_at': now, 'target_kernel': evidence['target_kernel'],
                   'reason': 'OS reboot-required marker', 'packages': evidence.get('packages', []),
@@ -236,3 +292,4 @@ def probe_main():
 
 if __name__ == '__main__':
     probe_main()
+

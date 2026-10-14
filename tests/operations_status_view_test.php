@@ -4,6 +4,11 @@ require __DIR__.'/../html/gatekeeper/func/operationsStatusView.php';
 function checkOperationsView($condition, $message) {
     if (!$condition) throw new RuntimeException($message);
 }
+foreach (['interactive_session_recently_active'=>'recent activity',
+          'interactive_session_activity_unverified'=>'could not be measured'] as $blocker=>$expected) {
+    $view = operationsMaintenanceDetails(['reboot'=>['status'=>'waiting_for_quiet','blockers'=>[$blocker]]]);
+    checkOperationsView(strpos($view, $expected) !== false, 'Specific session activity blocker missing');
+}
 $failure = array('checked_at'=>1791712335, 'stage'=>'decision_validation', 'detail'=>'Daily reboot limit reached');
 $agent = array('status'=>'resource_attention', 'last_assessment_status'=>'blocked',
     'last_failure'=>$failure, 'resource_pressure'=>array('triggered'=>true));
@@ -58,3 +63,4 @@ if (strpos($maintenance, '<script>') !== false || strpos($maintenance, 'Interact
 $unitSource = file_get_contents(__DIR__.'/../html/gatekeeper/func/unitsMore.php');
 if (strpos($unitSource, "if (isAdmin() && isset(\$status['operationsAgent']))") === false)
     throw new Exception('Maintenance panel must require admin');
+

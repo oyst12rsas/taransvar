@@ -137,7 +137,82 @@ class RebootTests(unittest.TestCase):
         self.fail = ['loginctl', 'list-sessions', '--no-legend', '--no-pager']
         self.assertFalse(self.tick())
         self.assertNotIn(['systemctl', 'reboot'], self.calls)
-        self.assertIn('interactive_sessions_active_or_unknown', self.state['reboot']['blockers'])
+        self.assertIn('interactive_session_activity_unverified', self.state['reboot']['blockers'])
+
+    def logged_in(self, idle=901, started=100):
+        tty = self.root / 'dev/pts/0'
+        tty.parent.mkdir(parents=True, exist_ok=True)
+        tty.touch()
+        os.utime(tty, (1000 - idle, 1000 - idle))
+        uptime = self.root / 'proc/uptime'
+        uptime.write_text('2000 0')
+        original = self.runner
+        def sessions(argv, timeout):
+            result = original(argv, timeout)
+            if argv[:2] == ['loginctl', 'list-sessions']:
+                result['output'] = '1 1000 ubuntu pts/0\n'
+            elif argv[:2] == ['loginctl', 'show-session']:
+                result['output'] = 'TTY=pts/0\nTimestampMonotonic=' + str(started * 1000000) + '\n'
+            return result
+        self.runner = sessions
+        return tty
+
+    def test_idle_ssh_session_does_not_block_even_with_exhausted_model_budget(self):
+        self.logged_in()
+        self.state['model_call_times'] = [999] * 32
+        self.assertTrue(self.tick())
+        self.assertEqual(self.calls[-1], ['systemctl', 'reboot'])
+        self.assertEqual(self.state['reboot']['session_activity']['sessions'][0]['status'], 'idle')
+
+    def test_recent_input_or_new_login_blocks(self):
+        for idle, started in ((899, 100), (901, 1900)):
+            self.runner = RebootTests.runner.__get__(self)
+            self.logged_in(idle, started)
+            self.assertFalse(self.tick())
+            self.assertIn('interactive_session_recently_active', self.state['reboot']['blockers'])
+        self.assertNotIn(['systemctl', 'reboot'], self.calls)
+
+    def test_input_at_dispatch_blocks(self):
+        tty = self.logged_in()
+        original = self.runner
+        reads = []
+        def changing(argv, timeout):
+            if argv[:2] == ['loginctl', 'list-sessions']:
+                reads.append(True)
+                if len(reads) == 2:
+                    os.utime(tty, (1000, 1000))
+            return original(argv, timeout)
+        self.runner = changing
+        self.assertFalse(self.tick())
+        self.assertNotIn(['systemctl', 'reboot'], self.calls)
+
+    def test_missing_tty_activity_and_invalid_threshold_block(self):
+        tty = self.logged_in()
+        tty.unlink()
+        self.assertFalse(self.tick())
+        self.assertIn('interactive_session_activity_unverified', self.state['reboot']['blockers'])
+        self.policy['reboot_session_idle_seconds'] = True
+        self.assertFalse(self.tick())
+        self.assertIn('invalid_reboot_session_idle_seconds', self.state['reboot']['blockers'])
+
+    def test_idle_boundary_and_custom_threshold(self):
+        self.logged_in(idle=900)
+        self.assertTrue(self.tick())
+        self.state = {}
+        self.policy['reboot_session_idle_seconds'] = 1200
+        self.assertFalse(self.tick())
+
+    def test_non_tty_idle_hint_requires_timestamp(self):
+        self.logged_in()
+        original = self.runner
+        def graphical(argv, timeout):
+            result = original(argv, timeout)
+            if argv[:2] == ['loginctl', 'show-session']:
+                result['output'] = ('TTY=\nTimestampMonotonic=100000000\n'
+                                    'IdleHint=yes\nIdleSinceHintMonotonic=1000000000\n')
+            return result
+        self.runner = graphical
+        self.assertTrue(self.tick())
 
     def test_same_boot_does_not_dispatch_twice(self):
         self.tick()
@@ -187,3 +262,4 @@ class ReceiptTest(unittest.TestCase):
                         dict(central_received_at=600), dict(operations_boot_id='old'),
                         dict(kernel_running=False), dict(link_running=False), dict(central_received_at=True)):
             self.assertFalse(functional_receipt(dict(sample, **changes), 'new', 900, 1000))
+
