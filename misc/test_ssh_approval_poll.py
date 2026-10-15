@@ -29,11 +29,12 @@ class PollTests(unittest.TestCase):
     def test_invalid_deadline_is_reported_failed_without_opening(self):
         with tempfile.TemporaryDirectory() as folder:
             token=Path(folder)/'token'; token.write_text('a'*64)
-            job={'operation':'open_ssh_temporarily','open_until':True,'id':'b'*32,'nonce':'c'*32}
+            job={'approved_operator_sha256':'d'*64,'operation':'open_ssh_temporarily','open_until':True,'id':'b'*32,'nonce':'c'*32}
             with mock.patch.object(poll.os, 'geteuid', return_value=0), \
                  mock.patch.object(poll.worker, 'enabled', return_value=True), \
                  mock.patch.object(poll.worker, 'TOKEN_PATH', str(token)), \
                  mock.patch.object(poll.worker, 'api', side_effect=[{'job':job},{'ok':True}]) as api, \
+                 mock.patch.object(poll.worker.local_manager_policy, 'require_manager'), \
                  mock.patch.object(poll.window, 'open_window') as opening:
                 with self.assertRaises(ValueError): poll.poll_once()
                 opening.assert_not_called()

@@ -140,3 +140,7 @@ The installer now includes `ssh_google_window.py` and its approval-worker
 integration. See [the Google SSH deployment guide](../docs/google-ssh.md)
 for enrollment, prerequisites, explicit enablement, acceptance and recovery.
 Ordinary installation does not enable this policy.
+
+Manager execution grants now live only in root-owned `/etc/tarasec/access.conf`.
+Configure local emails or normalized email SHA-256 identifiers before accepting
+approvals. No local roster is uploaded. See docs/google-ssh.md for migration.

@@ -13,6 +13,7 @@ import urllib.error
 import urllib.request
 
 import ssh_security_evidence
+import local_manager_policy
 
 CONF = "/etc/tarasecfw.conf"
 MANAGER_CONF = "/etc/tarasec-server-manager.conf"
@@ -87,6 +88,9 @@ def google_ssh_state():
 
 
 def execute_approved_job(job):
+    # Read current root-local policy for EVERY operation, including fast polls.
+    operator_hash = job.get("approved_operator_sha256")
+    local_manager_policy.require_manager(operator_hash)
     if job.get("operation") == "open_ssh_temporarily":
         if not enabled("SSH_GOOGLE_REOPEN_ENABLED"):
             raise RuntimeError("Google-controlled SSH is not enabled by the owner")
@@ -94,7 +98,7 @@ def execute_approved_job(job):
         if isinstance(until, bool) or not isinstance(until, int):
             raise ValueError("Invalid SSH window deadline")
         result = run("/usr/bin/python3", "/usr/local/lib/tarasec/ssh_google_window.py",
-                     "open", job["id"], str(until))
+                     "open", job["id"], str(until), operator_hash)
         success = result.returncode == 0
         audit({"action": "open_ssh_temporarily", "success": success})
         return success
