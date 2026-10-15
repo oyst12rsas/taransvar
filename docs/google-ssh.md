@@ -83,7 +83,14 @@ The installer validates all Python source files before replacing code, creates a
 root-only program/policy backup, and preserves existing node tokens and policies.
 It installs the helper as /usr/local/lib/tarasec/ssh_google_window.py and retains
 coordinator scheduling if that service is enabled. Otherwise it enables the
-standalone one-minute approval timer. Do not reinstall an older checkout: it can
+standalone five-second lightweight approval poller and a separate one-minute
+assessment timer. The lightweight poller collects no health evidence and makes no
+model calls; it does nothing while Google SSH is disabled. Five seconds is the
+interval after a completed poll, not a network-latency guarantee. Inspect it with
+`systemctl status tarasec-ssh-approval-poll.timer --no-pager` and
+`journalctl -u tarasec-ssh-approval-poll.service -n 20 --no-pager`.
+Coordinator installations retain their existing five-second dispatch and do not
+enable a second polling timer. Do not reinstall an older checkout: it can
 replace the Google-capable worker with one that rejects opening jobs.
 
 With the policy absent/no, installation does not close SSH. If already enabled,
