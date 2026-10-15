@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 [[ ${EUID:-$(id -u)} -eq 0 ]] || { echo 'Run with sudo on the gateway.' >&2; exit 1; }
-enforce=true
+enforce=false
 case ${1:-} in
     '') [[ $# -eq 0 ]] || exit 2 ;;
     --enforce-gate) [[ $# -eq 1 ]] || exit 2; enforce=true ;;
@@ -101,4 +101,6 @@ printf 'Installed manager SSH controls. Backup: %s\n' "$backup"
 if $enforce; then
     echo 'Timed gate enforced: configured sources need an active window for NEW connections. Existing sessions are retained; recovery requires console access.'
     echo 'Automatic rollback in 10 minutes. Test close, rejected new connection, reopen and successful NEW connection, then run setup_manager_ssh.sh --confirm-gate.'
+else
+    echo 'No new gate enabled. Existing SSH policy retained. Use --enforce-gate only after verifying the authorized reopening mechanism.'
 fi

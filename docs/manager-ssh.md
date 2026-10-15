@@ -51,8 +51,9 @@ The original installation added a temporary allowance while leaving the permanen
 SSH ACCEPT path intact. This was not a closed-by-default gate: a permitted source
 could still reach the baseline ACCEPT rule with no active app window.
 
-Installation now enforces the gate by default; `--enforce-gate` remains a
-compatible upgrade command. Before
+Normal installation preserves the existing SSH policy and does not enable a new
+timed gate. Enforcement requires an explicit `--enforce-gate` upgrade after the
+authorized reopening mechanism is installed and verified. Before
 running it, use the app to request a five-minute opening and wait for confirmation.
 The installer checks both the active kernel lease (at least 60 seconds remain)
 and its latest applied, still-authorized manager request before changing access.
