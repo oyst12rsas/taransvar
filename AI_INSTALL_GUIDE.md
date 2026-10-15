@@ -212,3 +212,9 @@ When a user says they want to install or test TaraSec:
 ## Operations pilot and shared deployment evidence
 
 Use `docs/AI_OPERATIONS_MANUAL.md` as the capability inventory for development, deployment and maintenance. Record exact commit/platform test evidence and verified recovery procedures; source presence alone does not authorize automatic deployment. The new operations pilot starts disabled and inspection-only, separate from the bounded-check approval worker. Model connectivity, tested procedures and a trustworthy demo/traffic activity adapter must be verified before enrolling a demo node for changes or reboots.
+
+## Optional Google/TOTP-controlled SSH windows
+
+See [docs/google-ssh.md](docs/google-ssh.md) for node-specific enrollment,
+repository-based installation, explicit enablement, acceptance and console recovery.
+Ordinary agent installation preserves the current SSH policy.

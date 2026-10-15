@@ -132,3 +132,10 @@ The `AUTH_*` keys record intended authentication capabilities; they do not
 enable methods on TaraSec's live approval page. That page currently uses
 Google sign-in and a separate authenticator code for approvals. TaraSec must
 enforce any stronger approval policy in the live service itself.
+
+## Google-authorized temporary SSH
+
+The installer now includes `ssh_google_window.py` and its approval-worker
+integration. See [the Google SSH deployment guide](../docs/google-ssh.md)
+for enrollment, prerequisites, explicit enablement, acceptance and recovery.
+Ordinary installation does not enable this policy.

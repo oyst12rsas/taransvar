@@ -77,6 +77,32 @@ def run(*argv):
                           stderr=subprocess.PIPE, timeout=15, check=False)
 
 
+def google_ssh_state():
+    """No source addresses, port, token or approval ID in public status."""
+    if not enabled("SSH_GOOGLE_REOPEN_ENABLED"):
+        return {"enabled": False}
+    import ssh_google_window as window
+    state = window.read_state()
+    return {"enabled": True, "remaining_seconds": max(0, int(state.get("until", 0)) - int(time.time()))}
+
+
+def execute_approved_job(job):
+    if job.get("operation") == "open_ssh_temporarily":
+        if not enabled("SSH_GOOGLE_REOPEN_ENABLED"):
+            raise RuntimeError("Google-controlled SSH is not enabled by the owner")
+        until = job.get("open_until")
+        if isinstance(until, bool) or not isinstance(until, int):
+            raise ValueError("Invalid SSH window deadline")
+        result = run("/usr/bin/python3", "/usr/local/lib/tarasec/ssh_google_window.py",
+                     "open", job["id"], str(until))
+        success = result.returncode == 0
+        audit({"action": "open_ssh_temporarily", "success": success})
+        return success
+    if job.get("operation") == "disable_obsolete_gateway_unit":
+        return disable_obsolete_gateway_unit()
+    raise RuntimeError("Unknown operation; refusing to execute")
+
+
 def terminal_state():
     declared = enabled("TERMINAL_AVAILABLE")
     heartbeat = manager_setting("TERMINAL_HEARTBEAT_FILE", "/run/tarasec/operator-terminal.heartbeat")
@@ -386,6 +412,10 @@ def main():
     nickname = setting("AGENT_PUBLIC_NICKNAME")
     if not re.fullmatch(r"[A-Za-z][A-Za-z0-9 _-]{2,31}", nickname):
         raise RuntimeError("Set AGENT_PUBLIC_NICKNAME in /etc/tarasecfw.conf")
+    if enabled("SSH_GOOGLE_REOPEN_ENABLED"):
+        result = run("/usr/bin/python3", "/usr/local/lib/tarasec/ssh_google_window.py", "reconcile")
+        if result.returncode != 0:
+            raise RuntimeError("Google SSH reconciliation failed: " + result.stderr[:300])
     evidence = ssh_security_evidence.collect()
     concerns = health(evidence)
     terminal = terminal_state()
@@ -406,7 +436,8 @@ def main():
         api("heartbeat", {"nickname": nickname,
                           "level": "attention" if needs_attention else "ok",
                           "findings": concerns,
-                          "assessment": current_assessment}, token)
+                          "assessment": current_assessment,
+                          "ssh_access": google_ssh_state()}, token)
         remote = "connected"
         print("Agent status: " + ("needs review (" + str(len(concerns)) + " checks)" if concerns else "operating"))
         if obsolete_unit_candidate(evidence):
@@ -419,9 +450,7 @@ def main():
             return
         success = False
         try:
-            if job.get("operation") != "disable_obsolete_gateway_unit":
-                raise RuntimeError("Unknown operation; refusing to execute")
-            success = disable_obsolete_gateway_unit()
+            success = execute_approved_job(job)
         except Exception as exc:
             print("Approved operation failed: " + str(exc), file=sys.stderr)
         api("result", {"id": job["id"], "nonce": job["nonce"], "success": success}, token)
