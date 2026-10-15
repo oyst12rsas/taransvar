@@ -99,8 +99,8 @@ systemctl start tarasec-manager-ssh.service
 systemctl enable --now tarasec-manager-ssh.timer
 printf 'Installed manager SSH controls. Backup: %s\n' "$backup"
 if $enforce; then
-    echo 'Timed gate enforced: configured sources need an active window for NEW connections. Existing sessions and explicit recovery sources are retained.'
+    echo 'Timed gate enforced: configured sources need an active window for NEW connections. Existing sessions are retained; recovery requires console access.'
     echo 'Automatic rollback in 10 minutes. Test close, rejected new connection, reopen and successful NEW connection, then run setup_manager_ssh.sh --confirm-gate.'
 else
-    echo 'No new gate enabled. Use --enforce-gate after verifying an app-requested opening.'
+    echo 'No new gate enabled. Existing SSH policy retained. Use --enforce-gate only after verifying the authorized reopening mechanism.'
 fi

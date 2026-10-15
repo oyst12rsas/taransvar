@@ -52,7 +52,7 @@ cfg={'SSH_ALLOWED_SOURCES':'100.68.10.7','SSH_RECOVERY_PROTECT':'on','SSH_RECOVE
 install='sshInstallGate(json_decode($argv[2],true),5822,true); sshIpv6Gate(5822);'
 php(install,json.dumps(cfg))
 assert not reachable('100.68.10.7'), 'Inactive timer fell through to permanent SSH ACCEPT'
-assert reachable('100.68.10.8'), 'Explicit recovery source must remain available'
+assert not reachable('100.68.10.8'), 'Recovery source bypassed the timed window'
 assert not reachable('100.68.10.9'), 'Unapproved source bypassed the source conf'
 assert connection('2001:db8::7',socket.AF_INET6) is None, 'IPv6 bypassed the IPv4-only allowed-source conf'
 for conn in [held,held6]:
@@ -60,6 +60,9 @@ for conn in [held,held6]:
 subprocess.run(['ipset','add','tarasec_app_ssh','5822','timeout','2'],check=True)
 assert reachable('100.68.10.7'), 'Active window failed to open the configured source'
 assert not reachable('100.68.10.9'), 'Active window bypassed the source conf'
+assert not reachable('100.68.10.8'), 'Active window bypassed the source conf for recovery'
+assert not reachable('127.0.0.1'), 'Loopback bypassed the allowed-source policy'
+assert connection('::1',socket.AF_INET6) is None, 'IPv6 loopback bypassed the timed gate'
 time.sleep(3)
 assert not reachable('100.68.10.7'), 'Window expiry failed to close new connections'
 held.sendall(b'after'); assert held.recv(64)==b'after', 'Expiry disconnected an established session'
@@ -76,7 +79,7 @@ subprocess.run(['iptables','-A','INPUT','-p','tcp','--dport','5822','-j','REJECT
 subprocess.run(['iptables','-A','INPUT','-i','lo','-j','ACCEPT'],check=True)
 php(install,json.dumps(cfg))
 assert not reachable('100.68.10.7'), 'Firewall refresh reopened SSH through a source-specific ACCEPT'
-assert reachable('100.68.10.8'), 'Firewall refresh broke explicit recovery'
+assert not reachable('100.68.10.8'), 'Firewall refresh restored the recovery bypass'
 held.sendall(b'refresh'); assert held.recv(64)==b'refresh', 'Firewall refresh disconnected an established session'
 php('sshRemoveOwnedJumps(sshRun(["/usr/sbin/iptables","-S","INPUT"])); sshRemoveOwnedJumps(sshRun(["/usr/sbin/ip6tables","-S","INPUT"]),"/usr/sbin/ip6tables");')
 assert reachable('100.68.10.7'), 'Rollback failed to restore the previous SSH path'
