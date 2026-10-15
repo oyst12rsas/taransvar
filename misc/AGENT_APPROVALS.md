@@ -25,7 +25,8 @@ For each node:
    `node_not_registered` from the live service.
 4. Install with `sudo bash misc/install_agent_approvals.sh` from a current
    taransvar checkout. The installer copies scripts to a root-owned path
-   and enables a one-minute systemd timer. Inspect its journal before
+   and enables a one-minute assessment timer plus a separate five-second approved-job
+   poller (or retains existing coordinator scheduling). Inspect its journal before
    allowing any operations.
 
 The first operator-approved executable proposal is

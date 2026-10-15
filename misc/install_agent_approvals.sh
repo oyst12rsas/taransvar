@@ -7,7 +7,7 @@ grep -Eq '^AGENT_PUBLIC_NICKNAME=' /etc/tarasecfw.conf || {
     echo "Missing AGENT_PUBLIC_NICKNAME in /etc/tarasecfw.conf" >&2; exit 1;
 }
 # Validate the complete bundle before stopping or replacing any installed worker.
-for file in agent_approval_worker.py ssh_google_window.py ssh_security_evidence.py; do
+for file in agent_approval_worker.py ssh_google_window.py ssh_security_evidence.py ssh_approval_poll.py; do
     python3 - "$root/$file" <<'CHECK'
 from pathlib import Path
 import sys
@@ -21,18 +21,23 @@ chmod 0700 "$backup"
 for path in /usr/local/lib/tarasec /etc/tarasec-server-manager.conf; do
     [[ ! -e $path ]] || cp -a --parents "$path" "$backup/"
 done
+poll_was_active=false
+systemctl is-active --quiet tarasec-ssh-approval-poll.timer && poll_was_active=true
 was_active=false
 systemctl is-active --quiet tarasec-agent-approvals.timer && was_active=true
 restore_timer() {
     if $was_active; then systemctl start tarasec-agent-approvals.timer; fi
+    if $poll_was_active; then systemctl start tarasec-ssh-approval-poll.timer; fi
 }
 trap restore_timer EXIT
+systemctl stop tarasec-ssh-approval-poll.timer 2>/dev/null || true
+systemctl stop tarasec-ssh-approval-poll.service 2>/dev/null || true
 systemctl stop tarasec-agent-approvals.timer 2>/dev/null || true
 systemctl stop tarasec-agent-approvals.service 2>/dev/null || true
 install -d -o root -g root -m 0755 /usr/local/lib/tarasec
 install -d -o root -g root -m 0750 /var/log/tarasec
 install -o root -g root -m 0755 "$root/ssh_security_evidence.py" /usr/local/lib/tarasec/
-install -o root -g root -m 0755 "$root/agent_approval_worker.py" "$root/ssh_google_window.py" /usr/local/lib/tarasec/
+install -o root -g root -m 0755 "$root/agent_approval_worker.py" "$root/ssh_google_window.py" "$root/ssh_approval_poll.py" /usr/local/lib/tarasec/
 install -o root -g root -m 0644 "$root/server-manager-prompt.md" /usr/local/lib/tarasec/
 install -o root -g root -m 0644 "$root/server-manager-knowledge.md" /usr/local/lib/tarasec/
 if [[ ! -e /etc/tarasec-server-manager.conf ]]; then
@@ -41,13 +46,19 @@ if [[ ! -e /etc/tarasec-server-manager.conf ]]; then
 fi
 install -o root -g root -m 0644 "$root/systemd/tarasec-agent-approvals.service" /etc/systemd/system/
 install -o root -g root -m 0644 "$root/systemd/tarasec-agent-approvals.timer" /etc/systemd/system/
+install -o root -g root -m 0644 "$root/systemd/tarasec-ssh-approval-poll.service" /etc/systemd/system/
+install -o root -g root -m 0644 "$root/systemd/tarasec-ssh-approval-poll.timer" /etc/systemd/system/
 systemctl daemon-reload
 # A coordinator already owns scheduling on enrolled coordinator installations.
 if systemctl is-enabled --quiet tarasec-node-coordinator.service 2>/dev/null; then
     was_active=false
+    poll_was_active=false
+    systemctl disable --now tarasec-ssh-approval-poll.timer 2>/dev/null || true
     echo "Coordinator scheduling retained; standalone approval timer not enabled."
 else
     systemctl enable --now tarasec-agent-approvals.timer
+    systemctl enable --now tarasec-ssh-approval-poll.timer
+    echo "Approved jobs checked five seconds after each completed poll; assessments remain on the minute timer."
 fi
 echo "Agent timer installed; check journalctl -u tarasec-agent-approvals.service"
 

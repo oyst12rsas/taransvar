@@ -1,0 +1,12 @@
+[Unit]
+Description=Check approved SSH openings every five seconds
+
+[Timer]
+OnBootSec=5s
+OnUnitInactiveSec=5s
+AccuracySec=1s
+RandomizedDelaySec=0
+Unit=tarasec-ssh-approval-poll.service
+
+[Install]
+WantedBy=timers.target
