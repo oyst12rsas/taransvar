@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import local_manager_policy
 
 CONF = "/etc/tarasecfw.conf"
 POLICY = "/etc/tarasec-server-manager.conf"
@@ -104,10 +105,17 @@ def apply_rules(port, sources, until):
 def reconcile():
     port, sources = configuration()
     state = read_state()
-    apply_rules(port, sources, int(state.get("until", 0)))
+    until = int(state.get("until", 0))
+    if until > time.time():
+        try:
+            local_manager_policy.require_manager(state.get("approved_operator_sha256"))
+        except (OSError, ValueError, RuntimeError):
+            until = 0
+    apply_rules(port, sources, until)
 
 
-def open_window(job_id, until):
+def open_window(job_id, until, operator_hash=None):
+    local_manager_policy.require_manager(operator_hash)
     port, sources = configuration()
     now = int(time.time())
     if (isinstance(until, bool) or not isinstance(until, int)
@@ -115,7 +123,7 @@ def open_window(job_id, until):
         raise ValueError("Expired or invalid approved window")
     state = read_state()
     if state.get("id") == job_id:
-        if int(state.get("until", 0)) != until:
+        if int(state.get("until", 0)) != until or state.get("approved_operator_sha256") != operator_hash:
             raise ValueError("Window retry changed deadline")
         reconcile()
         return
@@ -128,7 +136,7 @@ def open_window(job_id, until):
             "--on-calendar=@%d" % until, "--timer-property=AccuracySec=1s",
             "--timer-property=RandomizedDelaySec=0",
             "/usr/bin/python3", "/usr/local/lib/tarasec/ssh_google_window.py", "close", job_id)
-    write_state({"id": job_id, "until": until, "port": port})
+    write_state({"id": job_id, "until": until, "port": port, "approved_operator_sha256": operator_hash})
     try:
         apply_rules(port, sources, until)
     except Exception:
@@ -157,12 +165,12 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX)
         if sys.argv[1:] == ["reconcile"]:
             reconcile()
-        elif len(sys.argv) == 4 and sys.argv[1] == "open":
-            open_window(sys.argv[2], int(sys.argv[3]))
+        elif len(sys.argv) == 5 and sys.argv[1] == "open":
+            open_window(sys.argv[2], int(sys.argv[3]), sys.argv[4])
         elif len(sys.argv) == 3 and sys.argv[1] == "close":
             close_window(sys.argv[2])
         else:
-            raise ValueError("Expected reconcile, open ID DEADLINE, or close ID")
+            raise ValueError("Expected reconcile, open ID DEADLINE OPERATOR_SHA256, or close ID")
 
 
 if __name__ == "__main__":

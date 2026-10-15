@@ -19,22 +19,7 @@ def poll_once():
         return
     success = False
     try:
-        if job.get("operation") == "open_ssh_temporarily":
-            until = job.get("open_until")
-            if isinstance(until, bool) or not isinstance(until, int):
-                raise ValueError("Invalid SSH window deadline")
-            # Helper independently validates policy, allowlist, deadline and lock.
-            os.makedirs("/run/tarasec", mode=0o755, exist_ok=True)
-            import fcntl
-            with open(window.LOCK, "a", encoding="ascii") as lock:
-                os.chmod(window.LOCK, 0o600)
-                fcntl.flock(lock, fcntl.LOCK_EX)
-                window.open_window(job["id"], until)
-            success = True
-        elif job.get("operation") == "disable_obsolete_gateway_unit":
-            success = worker.disable_obsolete_gateway_unit()
-        else:
-            raise RuntimeError("Unknown approved operation")
+        success = worker.execute_approved_job(job)
     finally:
         worker.api("result", {"id": job["id"], "nonce": job["nonce"],
                              "success": success}, token)

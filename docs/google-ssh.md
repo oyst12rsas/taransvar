@@ -60,7 +60,7 @@ then run `sudo php -l /etc/tarasec/agent-approvals.php`. Gatekeeper browser hand
 (`gatekeeper_clients`) is a separate feature and does not enroll a node.
 
 The deployed approval service must support Google/TOTP approvals for the typed
-operation `open_ssh_temporarily`, returning a 32-hex job ID, nonce, and integer
+operation `open_ssh_temporarily`, returning approved_operator_sha256, a 32-hex job ID, nonce, and integer
 Unix `open_until` deadline in authenticated poll results. Some website repository
 revisions support only obsolete-unit approval: deploy a compatible operator
 service first. The node does not manufacture approvals or invent a deadline.
@@ -101,6 +101,49 @@ other. This guide concerns Google opening, not setup_manager_ssh.sh --enforce-ga
 Confirm registration by checking the operator page displays this node's fresh
 nickname/status (not merely a successful systemd exit). With console recovery
 available, prepare to test Google/TOTP opening immediately after enablement.
+
+## Node-owned manager policy
+
+Before enabling opening approvals, edit `/etc/tarasec/access.conf` as root:
+
+```ini
+MANAGER_EMAILS="owner@example.com,colleague@example.com"
+MANAGER_EMAIL_SHA256=""
+```
+
+The file must be root-owned, regular, not a symlink, and mode 0600 (0400 also
+accepted). To store only identifiers, put comma-separated SHA-256 hashes of
+trimmed, lowercase ASCII emails in MANAGER_EMAIL_SHA256. Both lists are combined;
+no Gmail alias/plus/dot rewriting occurs. Empty, absent, malformed or insecure
+policy denies approved operations. The installer creates an empty file only if
+absent and preserves existing grants. The template is misc/access.conf.example.
+
+The list and hashes **never leave the node**. Central sends only the deciding
+operator's hash in each authenticated job as approved_operator_sha256, calculated
+from its own verified Google/TOTP decision, not node input. Both poll paths check
+current local policy before every operation. The SSH helper checks again inside
+its firewall lock. Revocation denies subsequent jobs immediately; reconciliation
+closes any opening whose operator is no longer allowed. Existing SSH sessions
+remain connected. No grants are automatically copied from central configuration.
+
+A hash is an account identifier, not proof of identity or a secret. The node still
+trusts the configured HTTPS approval service to verify Google/TOTP and bind the
+operator to the node-specific job/deadline. This protects against a central
+operator assignment mistake; it does not protect against a compromised approval
+service that fabricates identities. Independent locally verifiable identity
+proofs would be a separate protocol change.
+
+Central visibility/Gatekeeper grants remain a separate filter. Their existing
+configuration is not populated from the local policy. Not uploading the list
+means central cannot automatically display it or infer server ownership. Both
+central visibility grants and local execution grants must allow the operator.
+
+Deploy the central identity-hash job payload first, then install the node update,
+configure the local policy and test an approved opening. Older API jobs without
+the identity hash are deliberately rejected. Older local active-window state
+without a hash is closed on reconciliation; keep console access during upgrade.
+On a newer locally modified live API, port the payload addition into its real
+poll handler instead of replacing that API with an older repository revision.
 
 ## Enable and verify
 

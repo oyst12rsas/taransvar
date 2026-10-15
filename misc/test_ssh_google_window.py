@@ -11,6 +11,11 @@ import agent_approval_worker as worker
 
 
 class GoogleWindowTests(unittest.TestCase):
+    def setUp(self):
+        self.auth = mock.patch.object(window.local_manager_policy, 'require_manager')
+        self.auth.start()
+        self.addCleanup(self.auth.stop)
+
     def test_configuration_opt_in_and_explicit_sources(self):
         with tempfile.TemporaryDirectory() as folder:
             cfg, policy = Path(folder)/'fw', Path(folder)/'policy'
@@ -77,12 +82,12 @@ class GoogleWindowTests(unittest.TestCase):
             run.assert_not_called()
 
     def test_worker_uses_approved_deadline_and_rejects_unknown_jobs(self):
-        job = {'operation':'open_ssh_temporarily', 'id':'a'*32, 'open_until':int(time.time())+300}
+        job = {'operation':'open_ssh_temporarily', 'id':'a'*32, 'open_until':int(time.time())+300, 'approved_operator_sha256':'c'*64}
         with mock.patch.object(worker, 'enabled', return_value=True), \
              mock.patch.object(worker, 'run', return_value=mock.Mock(returncode=0)) as run, \
              mock.patch.object(worker, 'audit'):
             self.assertTrue(worker.execute_approved_job(job))
-            self.assertEqual(run.call_args.args[-2:], (job['id'], str(job['open_until'])))
+            self.assertEqual(run.call_args.args[-2:], (str(job['open_until']), job.get('approved_operator_sha256')))
             for value in ('123', None, True):
                 with self.assertRaises(ValueError): worker.execute_approved_job(dict(job,open_until=value))
             with self.assertRaises(RuntimeError): worker.execute_approved_job({'operation':'arbitrary-command'})

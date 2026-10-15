@@ -1,0 +1,7 @@
+# Install as /etc/tarasec/access.conf, root:root, mode 0600.
+# Local grants only: neither this list nor its hashes are uploaded.
+# Comma-separated emails are trimmed, lowercased, then hashed as UTF-8/ASCII.
+MANAGER_EMAILS=""
+# Alternatively store SHA-256 of normalized emails. Both lists are combined.
+# These hashes identify accounts; they are NOT passwords or proof of identity.
+MANAGER_EMAIL_SHA256=""
