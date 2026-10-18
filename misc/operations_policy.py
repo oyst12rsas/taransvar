@@ -2,6 +2,11 @@
 
 
 def maintenance_enabled(policy):
+    # Selecting demo mode is the owner's maintenance authorization, including
+    # required reboots. Never combine it with a legacy allow_reboot flag: older
+    # installations can retain allow_reboot=False even after demo enrollment.
+    # Production also permits typed maintenance; readiness and budgets are
+    # enforced by the action, not by another enable switch here.
     return policy.get('mode') in ('demo', 'production')
 
 

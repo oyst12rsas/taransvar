@@ -519,6 +519,14 @@ and omitted from model policy, including when they are false. No config-file
 migration or simultaneous edits to multiple flags are required. To pause all
 maintenance, select inspect mode or stop future worker scheduling.
 
+In particular, `mode: "demo"` always grants required-reboot permission, whether
+the legacy `allow_reboot` field is false, true or absent. Do not diagnose a
+current demo worker's pending reboot from that field or tell the owner to
+toggle it. Check the deployed worker version and its fresh `reboot.status` and
+`reboot.blockers` instead. Older installations must update the worker and its
+policy/reboot helpers together. Permission still requires an OS reboot marker
+and does not bypass readiness, activity, daily limits or post-boot verification.
+
 Mode does not invent cleanup targets or bypass safety checks. Configured disposable
 logs, protected services, action plans, measured pressure, reviewed procedure
 identity/readiness, quiet evidence, reboot budgets and post-boot receipt still

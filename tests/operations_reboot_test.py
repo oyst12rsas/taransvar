@@ -82,6 +82,44 @@ class RebootTests(unittest.TestCase):
         self.assertTrue(self.tick())
         self.assertEqual(self.calls[-1], ['systemctl', 'reboot'])
 
+    def test_demo_dispatch_ignores_false_true_and_absent_legacy_flags(self):
+        for legacy in ({}, dict(execute=False, allow_reboot=False),
+                       dict(execute=True, allow_reboot=True)):
+            with self.subTest(legacy=legacy):
+                self.policy.pop('execute', None)
+                self.policy.pop('allow_reboot', None)
+                self.policy.update(legacy)
+                self.state = {'model_call_times': [999] * 32}
+                self.calls.clear()
+                self.assertTrue(self.tick())
+                self.assertEqual(self.calls.count(['systemctl', 'reboot']), 1)
+                self.assertEqual(self.state['status'], 'reboot_requested')
+
+    def test_demo_false_legacy_flag_does_not_bypass_reboot_guards(self):
+        self.policy.update(execute=False, allow_reboot=False)
+        cases = (
+            ('budget', 'daily_reboot_limit_reached'),
+            ('interrupted', 'interrupted_command_requires_reconciliation'),
+            ('readiness', 'target_initramfs_missing'),
+            ('activity', 'activity_or_quiet_time_unverified'),
+        )
+        initramfs = self.root / ('boot/initrd.img-' + self.kernel)
+        for scenario, blocker in cases:
+            with self.subTest(scenario=scenario):
+                self.state = {}
+                self.calls.clear()
+                self.active = scenario == 'activity'
+                initramfs.write_text('')
+                if scenario == 'budget':
+                    self.state['reboots'] = [999]
+                elif scenario == 'interrupted':
+                    self.state['command_pending'] = {'argv': ['/bin/true']}
+                elif scenario == 'readiness':
+                    initramfs.unlink()
+                self.assertFalse(self.tick())
+                self.assertIn(blocker, self.state['reboot']['blockers'])
+                self.assertNotIn(['systemctl', 'reboot'], self.calls)
+
     def test_missing_module_headers_initramfs_and_custom_boot_block(self):
         for name in ('boot/initrd.img-' + self.kernel, 'etc/default/grub'):
             (self.root / name).unlink()
