@@ -127,6 +127,10 @@ def inspect(run, root=Path('/')):
 
 
 def permission(policy, state, now):
+    # Demo mode always grants reboot permission, even if the obsolete
+    # allow_reboot setting is false or absent. Permission is not unconditional
+    # dispatch: interrupted work and the daily limit still block here, while
+    # maintain() separately checks boot readiness, activity and quiet time.
     if not maintenance_enabled(policy):
         return 'local_mode_prohibits_reboot'
     if state.get('command_pending'):
