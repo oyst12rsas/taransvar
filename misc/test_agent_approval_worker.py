@@ -54,6 +54,21 @@ class ServerManagerTests(unittest.TestCase):
             worker.write_status_snapshot(report)
             self.assertEqual(os.stat(worker.STATUS_PATH).st_mode & 0o777, 0o600)
 
+    def test_google_gate_status_reports_disabled_and_missing_hooks(self):
+        import ssh_google_window as window
+        with mock.patch.object(worker, 'enabled', return_value=False):
+            self.assertEqual(worker.google_ssh_state(), {'enabled': False, 'state': 'disabled'})
+        with mock.patch.object(worker, 'enabled', return_value=True), \
+             mock.patch.object(window, 'read_state', return_value={}), \
+             mock.patch.object(window, 'configuration', return_value=(4810, [])), \
+             mock.patch.object(window, 'command', return_value=True):
+            self.assertEqual(worker.google_ssh_state()['state'], 'closed')
+        with mock.patch.object(worker, 'enabled', return_value=True), \
+             mock.patch.object(window, 'read_state', return_value={'until': int(time.time())+300}), \
+             mock.patch.object(window, 'configuration', return_value=(4810, [])), \
+             mock.patch.object(window, 'command', return_value=False):
+            self.assertEqual(worker.google_ssh_state()['state'], 'unverified')
+
     def test_terminal_requires_declaration_and_fresh_heartbeat(self):
         with tempfile.NamedTemporaryFile() as heartbeat:
             values = {
