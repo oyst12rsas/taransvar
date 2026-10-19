@@ -682,3 +682,5 @@ UPDATE setup SET dbVersion = 100;
 #NOTE! The versions (#version nn ...) are imported by the installed
 #diagnostics script. Deploy misc to /root/taransvar/perl, then run:
 #sudo bash -c 'cd /root/taransvar/perl && perl diagnose.pl'
+
+CREATE TABLE IF NOT EXISTS demoDeviceSession (clientIp VARCHAR(45) PRIMARY KEY, sessionId INT UNSIGNED NOT NULL, participantId INT UNSIGNED NOT NULL, registeredAt DATETIME NOT NULL, sessionJson MEDIUMTEXT NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
