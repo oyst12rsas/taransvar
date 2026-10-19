@@ -2,12 +2,37 @@
 set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo "Run as root" >&2; exit 1; }
 root="$(cd "$(dirname "$0")" && pwd)"
-test -r /etc/tarasec/agent-node.token || { echo "Missing /etc/tarasec/agent-node.token" >&2; exit 1; }
+# Enrollment is an owner action; unattended upgrades retain their existing policy.
+enroll=false
+skip_enrollment=false
+enroll_args=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --enroll-google) enroll=true; shift ;;
+        --email|--approval-url|--nickname)
+            [[ $# -ge 2 ]] || { echo "Missing value for $1" >&2; exit 1; }
+            enroll=true; enroll_args+=("$1" "$2"); shift 2 ;;
+        --sync) enroll=true; enroll_args+=("--sync"); shift ;;
+        --no-enrollment) skip_enrollment=true; shift ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+if ! $enroll && ! $skip_enrollment && [[ -t 0 ]]; then
+    read -r -p 'Google manager email (Enter to keep current enrollment): ' manager_email
+    if [[ -n $manager_email ]]; then enroll=true; enroll_args+=(--email "$manager_email"); fi
+fi
+# Self-enrollment creates a unique node credential if absent and authenticates
+# updates using the existing credential. It never closes SSH or changes grants
+# on another node. Failed enrollment leaves identity intact for a safe retry.
+if $enroll; then python3 "$root/enroll_google_manager.py" "${enroll_args[@]}"; fi
+test -r /etc/tarasec/agent-node.token || {
+    echo "No node identity. Run this installer with --enroll-google." >&2; exit 1;
+}
 grep -Eq '^AGENT_PUBLIC_NICKNAME=' /etc/tarasecfw.conf || {
     echo "Missing AGENT_PUBLIC_NICKNAME in /etc/tarasecfw.conf" >&2; exit 1;
 }
 # Validate the complete bundle before stopping or replacing any installed worker.
-for file in agent_approval_worker.py ssh_google_window.py ssh_security_evidence.py ssh_approval_poll.py local_manager_policy.py; do
+for file in agent_approval_worker.py ssh_google_window.py ssh_security_evidence.py ssh_approval_poll.py local_manager_policy.py enroll_google_manager.py; do
     python3 - "$root/$file" <<'CHECK'
 from pathlib import Path
 import sys
@@ -37,8 +62,9 @@ systemctl stop tarasec-agent-approvals.service 2>/dev/null || true
 install -d -o root -g root -m 0755 /usr/local/lib/tarasec
 install -d -o root -g root -m 0750 /var/log/tarasec
 install -o root -g root -m 0755 "$root/ssh_security_evidence.py" /usr/local/lib/tarasec/
-install -o root -g root -m 0755 "$root/agent_approval_worker.py" "$root/ssh_google_window.py" "$root/ssh_approval_poll.py" "$root/local_manager_policy.py" /usr/local/lib/tarasec/
-# New nodes start with no local manager grants. Never infer or upload a roster.
+install -o root -g root -m 0755 "$root/agent_approval_worker.py" "$root/ssh_google_window.py" "$root/ssh_approval_poll.py" "$root/local_manager_policy.py" "$root/enroll_google_manager.py" /usr/local/lib/tarasec/
+# Without enrollment, preserve existing grants and never infer a manager roster.
+# Explicit enrollment publishes hashes only; raw emails remain on the node.
 install -d -o root -g root -m 0700 /etc/tarasec
 if [[ ! -e /etc/tarasec/access.conf ]]; then
     install -o root -g root -m 0600 "$root/access.conf.example" /etc/tarasec/access.conf
