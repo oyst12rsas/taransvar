@@ -5,6 +5,8 @@ import importlib.util
 from pathlib import Path
 import unittest
 import sys
+import io
+import urllib.error
 
 spec = importlib.util.spec_from_file_location('agent', Path(__file__).parents[1] / 'misc/operations_agent.py')
 agent = importlib.util.module_from_spec(spec)
@@ -83,6 +85,50 @@ class CommandCaptureTests(unittest.TestCase):
 
 
 class ErrorReportTest(unittest.TestCase):
+    def http_error(self, code, body):
+        return urllib.error.HTTPError('https://SECRET.invalid', code,
+                                      'SECRET', {'Authorization': 'SECRET'}, io.BytesIO(body))
+
+    def test_flowise_wrapped_quota_error_is_actionable_and_private(self):
+        error = self.http_error(500, b'{"message":"429 You have no credits remaining. SECRET"}')
+        message = agent.safe_error(error)
+        self.assertIn('HTTP 500', message)
+        self.assertIn('credits/quota exhausted', message)
+        self.assertIn('billing', message)
+        self.assertNotIn('SECRET', message)
+
+    def test_direct_quota_is_distinct_from_transient_rate_limit(self):
+        quota = agent.safe_error(self.http_error(429, b'{"error":{"code":"insufficient_quota"}}'))
+        rate = agent.safe_error(self.http_error(429, b'{"error":{"code":"rate_limit_exceeded"}}'))
+        self.assertIn('credits/quota exhausted', quota)
+        self.assertIn('retry after', rate)
+        self.assertNotIn('quota exhausted', rate)
+
+    def test_authentication_errors_use_fixed_labels(self):
+        for code, body in ((500, b'Incorrect API key provided: SECRET'),
+                           (401, b'SECRET'), (403, b'SECRET')):
+            message = agent.safe_error(self.http_error(code, body))
+            self.assertIn('credential', message)
+            self.assertNotIn('SECRET', message)
+
+    def test_unknown_or_unreadable_http_body_keeps_status_without_content(self):
+        from unittest.mock import Mock
+        for body in (b'SECRET <html>failure</html>', b'\xff\xfe'):
+            message = agent.safe_error(self.http_error(502, body))
+            self.assertIn('HTTP 502', message)
+            self.assertNotIn('SECRET', message)
+        error = self.http_error(500, b'')
+        error.read = Mock(side_effect=OSError('SECRET'))
+        self.assertIn('HTTP 500', agent.safe_error(error))
+        error.read.assert_called_once_with(16384)
+
+    def test_body_read_is_bounded(self):
+        from unittest.mock import Mock
+        error = self.http_error(500, b'')
+        error.read = Mock(return_value=b'SECRET')
+        self.assertNotIn('SECRET', agent.safe_error(error))
+        error.read.assert_called_once_with(16384)
+
     def test_static_policy_error_is_visible(self):
         self.assertEqual(agent.safe_error(ValueError('Unknown model action')), 'Unknown model action')
     def test_arbitrary_exception_text_is_private(self):

@@ -166,7 +166,28 @@ def safe_error(error):
     if isinstance(error, json.JSONDecodeError):
         return "Model or local JSON could not be parsed; inspect format without sharing credentials"
     if isinstance(error, urllib.error.HTTPError):
-        return "Model endpoint returned HTTP " + str(error.code)
+        # Flowise can wrap upstream quota/authentication errors in HTTP 500.
+        # Inspect a bounded body only to select fixed labels: never publish raw
+        # provider messages, which can contain credentials or submitted prompts.
+        prefix = "Model endpoint returned HTTP " + str(error.code)
+        try:
+            detail = error.read(16384).decode('utf-8', errors='replace').lower()
+        except Exception:
+            detail = ''
+        finally:
+            error.close()
+        if any(marker in detail for marker in (
+                'insufficient_quota', 'no credits remaining',
+                'exceeded your current quota', 'credit balance is too low')):
+            return prefix + ": model provider credits/quota exhausted; check billing and the credential used by this flow. No model decision returned."
+        if any(marker in detail for marker in (
+                'invalid_api_key', 'incorrect api key', 'invalid api key')):
+            return prefix + ": model provider API credential rejected; check the configured credential. No model decision returned."
+        if error.code in (401, 403):
+            return prefix + ": model endpoint authentication/access denied; check credentials and permissions."
+        if error.code == 429 or 'rate_limit_exceeded' in detail or 'rate limit reached' in detail:
+            return prefix + ": model request rate limited; retry after the provider cooldown."
+        return prefix + "; inspect model service logs for the underlying error (response details withheld)."
     return "Unclassified " + type(error).__name__ + "; inspect local prerequisites"
 
 
