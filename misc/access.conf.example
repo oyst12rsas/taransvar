@@ -1,5 +1,6 @@
 # Install as /etc/tarasec/access.conf, root:root, mode 0600.
-# Local grants only: neither this list nor its hashes are uploaded.
+# Local grants remain authoritative. Explicit Google enrollment publishes hashes
+# to the approval service; raw emails and this file are never uploaded.
 # Comma-separated emails are trimmed, lowercased, then hashed as UTF-8/ASCII.
 MANAGER_EMAILS=""
 # Alternatively store SHA-256 of normalized emails. Both lists are combined.
