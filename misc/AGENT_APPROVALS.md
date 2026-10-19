@@ -144,3 +144,12 @@ Ordinary installation does not enable this policy.
 Manager execution grants now live only in root-owned `/etc/tarasec/access.conf`.
 Configure local emails or normalized email SHA-256 identifiers before accepting
 approvals. No local roster is uploaded. See docs/google-ssh.md for migration.
+
+## Node-owned Google manager enrollment
+
+Use `sudo bash misc/install_agent_approvals.sh --enroll-google` on the node.
+The installer asks for the manager Google email, saves local grants, creates or
+reuses the node credential, and explicitly publishes manager hashes to central
+persistent state. See `docs/google-ssh.md` for private endpoints, revocation,
+Google/TOTP setup, deployment order and SSH close/open/expiry verification.
+This enrollment step does not close SSH or copy central grants onto the node.
