@@ -1,3 +1,4 @@
+"""Run with sudo: fixtures exercise real root-owned policy/token checks."""
 import hashlib
 import io
 import json
