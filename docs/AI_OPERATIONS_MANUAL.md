@@ -383,6 +383,13 @@ This compact report uses deterministic deployment findings, not model prose, raw
 logs or credentials. It records the assessment timestamp separately from the
 publication timestamp; it must not be treated as proof of healthy execution.
 Model transport failures record `error_stage` and an explicit provider timeout.
+HTTP failures also classify known credits/quota exhaustion, rejected API keys and
+temporary rate limits from a bounded response body, including upstream errors
+wrapped by Flowise as HTTP 500. Only fixed descriptions enter the journal and
+operations status; raw error bodies, prompts and credentials remain withheld.
+For credits/quota exhaustion, check billing for the credential selected in the
+flow. For rate limits, wait for the provider cooldown. Unknown failures retain
+the HTTP status and require inspection of the model service logs.
 The local report survives a timeout. Model request audit events contain provider,
 round, prompt byte count and duration only, never keys or request contents.
 
