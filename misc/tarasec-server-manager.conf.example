@@ -71,3 +71,7 @@ AUTH_DANGEROUS_ACTION_MINIMUM=phishing_resistant_mfa
 # Install and verify Google/TOTP reopening plus console recovery before enabling.
 # See docs/google-ssh.md. Missing or no preserves ordinary SSH access policy.
 SSH_GOOGLE_REOPEN_ENABLED=no
+
+# HTTPS approvals endpoint; enrollment and both pollers use the same service.
+# Set during --approval-url enrollment for a private approval service.
+AGENT_APPROVAL_URL="https://tarasec.org/ops/agent/api.php"

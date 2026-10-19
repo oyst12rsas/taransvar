@@ -33,6 +33,7 @@ jobs:
           bash -n misc/setup_manager_ssh.sh misc/manager_ssh_rollback.sh misc/test_manager_ssh_kernel.sh misc/test_manager_ssh_gate_kernel.sh
           sudo unshare --net bash misc/test_manager_ssh_kernel.sh
           sudo unshare --net bash misc/test_manager_ssh_gate_kernel.sh
+          sudo python3 misc/test_enroll_google_manager.py
           python3 misc/test_local_manager_policy.py
           python3 misc/test_ssh_approval_poll.py
           python3 misc/test_ssh_google_window.py

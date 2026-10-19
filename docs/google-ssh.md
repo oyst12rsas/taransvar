@@ -7,7 +7,69 @@ survive closure; console access is the recovery route. SSH authentication and
 SSH_ALLOWED_SOURCES remain additional conditions. There are no permanent trusted,
 recovery-address or loopback exemptions while the gate is closed.
 
-## Prerequisites and enrollment
+## Automatic node and manager enrollment
+
+Run on the server being enrolled, with sudo:
+
+```bash
+clear
+cd ~/taransvar
+sudo bash misc/install_agent_approvals.sh --enroll-google
+```
+
+The script asks for the authorized Google email. An interactive installation
+without flags also offers enrollment; Enter keeps the existing enrollment.
+For unattended use, pass `--email owner@example.com` (repeat for other managers).
+`--no-enrollment` preserves existing identity and permissions without prompting.
+Root access is the owner's authority to select this server's managers; no TaraSec
+team enrollment approval is required.
+
+The helper creates a unique root-only node credential when absent, retains it on
+retry, and sends only normalized manager email SHA-256 hashes plus the public
+nickname to `https://tarasec.org/ops/agent/enroll.php`. Existing registered tokens
+retain their original private node ID. New identities are derived from their
+credential; a submitted node ID cannot claim another server. Central stores the
+credential hash and manager hashes in its private persistent state, without
+rewriting `/etc/tarasec/agent-approvals.php` or adding global operator privileges.
+Manager hashes identify accounts; they remain personal data, not proof of identity.
+
+Sign in with the enrolled Google account at the approvals page. Newly enrolled
+managers can set up and verify their authenticator there; Google sign-in alone
+never approves an SSH opening. Existing configured authenticators are preserved.
+Each approval still sends the verified deciding account hash back to the server,
+which independently checks its current local policy.
+
+Enrollment adds managers to existing local grants; it does not silently remove
+other owners. To revoke managers, edit `/etc/tarasec/access.conf` and publish the
+current list (including an empty list to revoke all central grants):
+
+```bash
+clear
+sudo python3 /usr/local/lib/tarasec/enroll_google_manager.py --sync
+```
+
+For a private approval host, add `--approval-url https://approval.example.org/ops/agent/api.php`.
+Enrollment and both approval pollers use this same HTTPS endpoint through
+`AGENT_APPROVAL_URL` in `/etc/tarasec-server-manager.conf`. Redirects are refused.
+Deploy the central endpoint before enrolling nodes. Connection failure leaves
+SSH unchanged and retains the local credential for retry; it does not report
+successful enrollment. The success receipt is `/etc/tarasec/agent-enrollment.json`.
+
+Enrollment **does not close SSH**. Follow the enable/verify and console-recovery
+steps below after confirming Google sign-in, MFA and independent console access.
+This implementation retains five-minute approved windows and five-second local
+polling without model calls. Test actual closed/open/expiry behavior per node.
+
+On the approval host deploy `_enrollment.php`, `enroll.php`, `_totp_setup.php`
+and the compatible `_common.php`, `api.php` and `index.php` from the website
+repository. The existing live API/UI can contain local SSH changes; back them up
+and merge their changes rather than overwriting them with an older checkout.
+Central configuration still needs the Google web client ID and writable private
+`state_dir`; a static node token or global operator email is no longer required
+for self-enrolled nodes. `self_enrollment_enabled=false` disables registration
+updates if an operator chooses that deployment policy.
+
+## Manual enrollment (existing deployments)
 
 Keep a working independent VM/local console open. Inspect the effective sshd
 listener, authentication, and both firewall families. Install Python 3,
@@ -118,7 +180,9 @@ no Gmail alias/plus/dot rewriting occurs. Empty, absent, malformed or insecure
 policy denies approved operations. The installer creates an empty file only if
 absent and preserves existing grants. The template is misc/access.conf.example.
 
-The list and hashes **never leave the node**. Central sends only the deciding
+Raw local email lists and the access file never leave the node. Explicit self-enrollment
+publishes their hashes; manual enrollment can retain the earlier local-only model.
+Central sends only the deciding
 operator's hash in each authenticated job as approved_operator_sha256, calculated
 from its own verified Google/TOTP decision, not node input. Both poll paths check
 current local policy before every operation. The SSH helper checks again inside
@@ -133,10 +197,12 @@ operator assignment mistake; it does not protect against a compromised approval
 service that fabricates identities. Independent locally verifiable identity
 proofs would be a separate protocol change.
 
-Central visibility/Gatekeeper grants remain a separate filter. Their existing
-configuration is not populated from the local policy. Not uploading the list
-means central cannot automatically display it or infer server ownership. Both
-central visibility grants and local execution grants must allow the operator.
+For self-enrolled nodes, central visibility/Gatekeeper grants use the published
+manager hashes and cannot display the original email list. A new registration
+replaces older static per-node grants for that identity, including when the new
+list is empty. For manually enrolled nodes, the existing per-node central grants
+remain separate. Both central grants and current local execution grants must
+allow the operator.
 
 Deploy the central identity-hash job payload first, then install the node update,
 configure the local policy and test an approved opening. Older API jobs without

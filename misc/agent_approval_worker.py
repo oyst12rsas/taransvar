@@ -61,12 +61,16 @@ def audit(event):
 
 
 def api(action, body, token):
+    from enroll_google_manager import enrollment_url
+    endpoint = manager_setting("AGENT_APPROVAL_URL", URL)
+    enrollment_url(endpoint)  # The same HTTPS-only endpoint validation as enrollment.
     data = json.dumps(body, separators=(",", ":")).encode("utf-8")
     request = urllib.request.Request(
-        URL + "?action=" + action, data=data,
+        endpoint + "?action=" + action, data=data,
         headers={"Content-Type": "application/json", "Authorization": "Bearer " + token},
         method="POST")
-    with urllib.request.urlopen(request, timeout=12) as response:
+    from enroll_google_manager import NoRedirect
+    with urllib.request.build_opener(NoRedirect()).open(request, timeout=12) as response:
         answer = json.load(response)
     if not isinstance(answer, dict) or answer.get("ok") is not True:
         raise RuntimeError("Approval API rejected " + action)
@@ -81,10 +85,18 @@ def run(*argv):
 def google_ssh_state():
     """No source addresses, port, token or approval ID in public status."""
     if not enabled("SSH_GOOGLE_REOPEN_ENABLED"):
-        return {"enabled": False}
+        return {"enabled": False, "state": "disabled"}
     import ssh_google_window as window
     state = window.read_state()
-    return {"enabled": True, "remaining_seconds": max(0, int(state.get("until", 0)) - int(time.time()))}
+    remaining = max(0, int(state.get("until", 0)) - int(time.time()))
+    # A saved lease is not proof that firewall hooks still exist. Reconciliation
+    # precedes heartbeat; inspect both families before claiming enforcement.
+    port, _ = window.configuration()
+    verified = all(window.command(tool, "-w", "5", "-C", "INPUT", "-p", "tcp",
+        "--dport", str(port), "-m", "conntrack", "--ctstate", "NEW", "-j", window.CHAIN,
+        check=False) for tool in ("iptables", "ip6tables"))
+    return {"enabled": True, "state": ("open" if remaining else "closed") if verified else "unverified",
+            "remaining_seconds": remaining, "expires_at": int(state.get("until", 0))}
 
 
 def execute_approved_job(job):

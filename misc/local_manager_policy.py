@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Node-owned manager grants. Never transmit this file or its contents."""
+"""Node-owned manager grants. Explicit enrollment may publish hashes, never this file."""
 import hashlib
 import hmac
 import os
