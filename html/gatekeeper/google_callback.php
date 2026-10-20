@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__.'/../script/serviceDiscoveryCommon.php';
+require_once __DIR__.'/loginDestination.php';
+require_once __DIR__.'/managerGoogleEmail.php';
 session_start();
 header('Cache-Control: no-store');
 function gatekeeperGoogleFail(string $message): never {
@@ -14,7 +16,8 @@ if (!preg_match('/^[a-f0-9]{48}$/D', $state) || !preg_match('/^[a-f0-9]{64}$/D',
     || (int)($_SESSION['google_admin_until'] ?? 0) < time())
     gatekeeperGoogleFail('Sign-in request expired. Please try again.');
 $startedService = $_SESSION['google_admin_service'] ?? null;
-unset($_SESSION['google_admin_state'], $_SESSION['google_admin_until'], $_SESSION['google_admin_service']);
+$returnTo = gatekeeperSafeLoginDestination($_SESSION['google_admin_return'] ?? null);
+unset($_SESSION['google_admin_state'], $_SESSION['google_admin_until'], $_SESSION['google_admin_service'], $_SESSION['google_admin_return']);
 $cfgPath = '/etc/tarasec/gatekeeper-google.php';
 $cfg = is_readable($cfgPath) ? require $cfgPath : null;
 if (!is_array($cfg) || !preg_match('/^[a-f0-9]{64}$/D', (string)($cfg['shared_secret'] ?? '')))
@@ -49,4 +52,5 @@ session_regenerate_id(true);
 $_SESSION['userid'] = (int)$user['userId'];
 $_SESSION['isAdmin'] = 1;
 $_SESSION['hold'] = 0;
-header('Location: index.php?f=main', true, 303);
+managerRecordGoogleIdentity($_SESSION, (int)$user['userId'], $email);
+header('Location: '.$returnTo, true, 303);

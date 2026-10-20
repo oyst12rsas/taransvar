@@ -1,5 +1,6 @@
 
 <?php
+require_once __DIR__.'/../loginDestination.php';
 
 error_reporting( E_ALL );
 ini_set('display_errors', '1');
@@ -13,6 +14,11 @@ else
 
 function login()
 {
+    if (isset($_SESSION['gatekeeper_login_destination'])) {
+        $requestId = gatekeeperApprovalRequestId($_SESSION['gatekeeper_login_destination']['requestId'] ?? null);
+        print '<h2>Sign in to approve management access'.($requestId === null ? '' : ' — request #'.$requestId).'</h2>';
+        print '<p>After sign-in you will return to the management approval page.</p>';
+    }
 	//$szSQL = "select count(*) theCount from loginAttempt where theTime > now() - interval 1 miunute";
 	$szSQL = "SELECT ".
     			"SUM(theTime > NOW() - INTERVAL 1 MINUTE) AS last1Minute, ".
