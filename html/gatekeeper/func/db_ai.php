@@ -7,6 +7,7 @@ function aiDecodeStoredResponse($raw)
 {
     $outer = json_decode($raw ?? '', true);
     if (!is_array($outer)) return null;
+    if (isset($outer['assessment']) && is_array($outer['assessment'])) return $outer['assessment'];
     $text = $outer['text'] ?? '';
     $text = preg_replace('/^\s*```(?:json)?\s*/i', '', $text);
     $text = preg_replace('/\s*```\s*$/', '', $text);
@@ -26,8 +27,8 @@ function aiTableExists($conn, $name)
 
 function aiPercent($confidence)
 {
-    if ($confidence === null || $confidence === '') return '-';
-    return round(((float)$confidence) * 100) . '%';
+    if (!is_numeric($confidence) || $confidence < 0 || $confidence > 100) return '-';
+    return round($confidence <= 1 ? ((float)$confidence) * 100 : (float)$confidence) . '%';
 }
 
 function db_ai()
