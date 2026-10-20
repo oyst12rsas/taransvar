@@ -21,16 +21,20 @@ use lib_net;
 
 use POSIX qw(setsid);
 use Fcntl qw(:flock);
+use FindBin;
+use lib $FindBin::Bin;
+use receiver_event_policy qw(is_receiver_rejection receiver_report_category);
 use LWP::UserAgent;		#Using this for posting status to partners
 use IO::Socket::INET;	#Using this for fire and forget status to partners
 
-print "Usage:\nperl crontasks.pl\tRun only debugging tasks then quit.\nperl crontasks.pl cron\t\tTo run as by cron\nperl crontasks.pl status\tSend one status report and quit\nperl crontasks.pl force\t\tStart even if crontasks.pl already running\n";
+print "Usage:\nperl crontasks.pl\tRun only debugging tasks then quit.\nperl crontasks.pl cron\t\tTo run as by cron\nperl crontasks.pl status\tSend one status report and quit\nperl crontasks.pl force\t\tStart even if crontasks.pl already running\nperl crontasks.pl threats\tRun dedicated receiver reporting\n";
 
 #Prevent that multiple instances are running by using lock file
+my $receiverOnly = defined($ARGV[0]) && $ARGV[0] eq "threats";
 my $szCrontasksLockFileName = '/tmp/crontasks.lock';
 my $lock_fh;   # must stay alive
 
-if (!$ARGV[0] || ($ARGV[0] ne "force" && $ARGV[0] ne "status")) 
+if (!$ARGV[0] || ($ARGV[0] ne "force" && $ARGV[0] ne "status" && !$receiverOnly))
 {
 	open($lock_fh, '>', $szCrontasksLockFileName) or die "Cannot open lock file: $!";
 	flock($lock_fh, LOCK_EX | LOCK_NB) or die "Already running. Aborting.\n";
@@ -875,7 +879,7 @@ sub trySendWarningToRouter
     my %params = (
         ip => $row->{'src'}, port => $row->{'src_port'} || 0,
         wt => $row->{'description'} || 'receiver rejection',
-        code => ($row->{'service'} || '') eq 'iptables' ? 'iptables' : 'ssh_fail',
+        code => receiver_report_category($row->{'service'}, $row->{'description'}),
         severity => defined $row->{'severity'} ? $row->{'severity'} : 7,
     );
     # Associate the full observed connection with its contemporaneous tag.
@@ -907,6 +911,14 @@ sub trySendWarningToRouter
 
 sub handle_syslogThreat_record {
 	my ($conn, $row) = @_;
+
+    # Also filter historical rows normalized before the event policy update.
+    if (!is_receiver_rejection($row->{'service'}, $row->{'description'}, $row->{'is_attack'})) {
+        my $sth = $conn->prepare("update syslogThreat set handled=b'1', handling='Informational receiver event' where syslogThreatId=?");
+        $sth->execute($row->{'syslogThreatId'});
+        $sth->finish();
+        return;
+    }
 
 	if (! defined $row->{'protocol'} || (lc($row->{'protocol'}) ne "tcp" && lc($row->{'protocol'}) ne 'udp' && lc($row->{'protocol'}) ne 'icmp')) {
 		print "Unknown or unspecified protocol (only tcp, udp and ICMP allowed). Skipping...\n";
@@ -956,7 +968,13 @@ sub handle_syslogThreat_table
 	#finding unitId for records in syslogThreat by calling conntrack... Should probably also put in 
 	my ($dbh) = @_;
 
-	my $szSQL = "select t.syslogId, t.syslogThreatId, t.src_ip, inet_ntoa(t.src_ip) as src, t.src_port, t.dst_ip, inet_ntoa(t.dst_ip) as dst, t.dst_port, t.protocol, t.service, t.description, t.severity, unix_timestamp(l.created) eventEpoch from syslogThreat t join syslog l on l.syslogId=t.syslogId where t.handled is null order by t.syslogThreatId desc limit 100";
+    # Cron remains a fallback; both paths must hold this same batch lock.
+    # Skip, rather than wait behind, another delivery worker.
+    mkdir('/run/tarasec', 0755) unless -d '/run/tarasec';
+    open(my $deliveryLock, '>>', '/run/tarasec/receiver-reports.lock');
+    return unless flock($deliveryLock, LOCK_EX | LOCK_NB);
+
+	my $szSQL = "select t.syslogId, t.syslogThreatId, t.src_ip, inet_ntoa(t.src_ip) as src, t.src_port, t.dst_ip, inet_ntoa(t.dst_ip) as dst, t.dst_port, t.protocol, t.service, t.description, t.severity, CAST(t.is_attack AS UNSIGNED) is_attack, unix_timestamp(l.created) eventEpoch from syslogThreat t join syslog l on l.syslogId=t.syslogId where t.handled is null order by t.syslogThreatId asc limit 100";
 	my $sth = $dbh->prepare($szSQL);
 	print "\n\nFinding unhandled syslogThreat records.\n";
 	$sth->execute() or die "execution failed: $sth->errstr()";
@@ -1114,6 +1132,18 @@ my $pSetup = getSetup();
 my $dbh = getConnection();
 setCronLibDbh($dbh);
 
+# Dedicated delivery has no WHOIS, status collection, pending-wget or startup
+# maintenance in its path. Never use the cron "force" mode for this worker.
+if ($receiverOnly) {
+    $| = 1;
+    print "Receiver report worker started (one-second idle interval)\n";
+    while (1) {
+        handle_syslogThreat_table($dbh);
+        sleep 1;
+    }
+}
+
+
 # Deployment and diagnostics can publish the newly installed status schema
 # immediately without starting the full minute-long cron maintenance cycle.
 if (defined($ARGV[0]) && $ARGV[0] eq "status") {
@@ -1265,12 +1295,13 @@ while (time() - $nTimeStarted < 52)
 	#Enable some warnings here so you remember to enable again...
 	#saveWarning("handleConntrack() removed from cron job");
 
+	handle_syslogThreat_table($dbh); # Prompt fallback when the dedicated worker is absent.
 	checkDisableSshChange();
 	check_dhcpEvent($dbh);	
 	#Now running as service: handleConntrack($dbh);	#NOTE! Import port assignments. Import dhcp leases before this..
 	checkWhoIs($dbh, $nNumberOfWhoIsLookupsPerIteration);
 	sendPendingWgets();
-	handle_syslogThreat_table($dbh);	#iptables drops ++ are handled here.
+
 
 	print "\nWaiting to do repetitive tasks (dmesg capture, whois lookups, ++?). Ctrl-C to break\n";
 	sleep $nSecondsToSleepBetweenIterations;

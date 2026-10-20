@@ -52,6 +52,7 @@ case "$ROLE" in
         install_ai_worker request-AI.pl
         install_ai_worker persist_ai_candidates.pl
         install_ai_worker remote_syslog_normalizer.pl
+        install_ai_worker receiver_event_policy.pm
         install_ai_worker queue_ai_assessment.pl
         install_ai_worker dispatch_ai_assessment.pl
         install_ai_worker ai_evidence_watch.pl
@@ -68,6 +69,8 @@ case "$ROLE" in
         systemctl enable --now tarasec-ai.timer
         systemctl enable --now tarasec-ai-dispatch.timer
         systemctl enable --now tarasec-remote-normalizer.service
+        systemctl restart tarasec-remote-normalizer.service
+        bash "$SCRIPT_DIR/install_receiver_reports.sh"
         systemctl enable --now tarasec-ai-evidence-watch.timer
 
         echo "Installed DB-server reliable telemetry receiver, AI workers and services."
