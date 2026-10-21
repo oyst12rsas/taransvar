@@ -2,6 +2,7 @@ name: Unit activity telemetry
 on:
   pull_request:
     paths:
+      - 'tests/unit_activity_ajax.php'
       - 'misc/unit_activity.py'
       - 'misc/test_unit_activity.py'
       - 'misc/crontasks.pl'
@@ -21,3 +22,5 @@ jobs:
           php -l html/gatekeeper/func/unitActivity.php
           php -l html/gatekeeper/func/units.php
           php -l html/gatekeeper/ajax/units_partners.php
+
+      - run: php tests/unit_activity_ajax.php
