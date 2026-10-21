@@ -31,10 +31,16 @@ try {
     foreach ($queries as $sql) {
         $row=$db->query($sql)->fetch_assoc();$active=$active || (bool)$row['active'];
     }
+    if ($ip === '127.0.0.1' || $ip === '::1') {
+        // Authenticated central-local observer: use the central server's own report.
+        $node=$db->query('SELECT UNIX_TIMESTAMP(networkStatusChecked) received, networkStatus status FROM setup LIMIT 1')->fetch_assoc();
+    } else {
     $receipt=$db->prepare('SELECT UNIX_TIMESTAMP(partnerStatusReceived) received, status FROM partnerRouter WHERE ip=INET_ATON(?) ORDER BY partnerStatusReceived DESC LIMIT 1');
     $receipt->bind_param('s',$ip);
     $receipt->execute();
     $node=$receipt->get_result()->fetch_assoc();
+    $receipt->close();
+    }
     $status=$node ? json_decode((string)$node['status'],true) : null;
     operationsActivityReply(200,['central_received_at'=>$node ? (int)$node['received'] : null,
         'operations_boot_id'=>is_array($status) ? ($status['operationsAgent']['boot_id']??null) : null,

@@ -59,6 +59,16 @@ def validate_feed_url(cfg, runner):
     if not url.hostname or url.username or url.password or url.fragment:
         raise ValueError('Invalid demo feed URL')
     if url.scheme=='https':return
+    if url.scheme == 'http' and cfg.get('allow_loopback_http') is True:
+        address = ipaddress.ip_address(url.hostname)
+        if not address.is_loopback:
+            raise ValueError('Local feed requires a literal loopback address')
+        result = runner(['/usr/sbin/ip', '-j', 'route', 'get', str(address)], 3)
+        routes = json.loads(result['output']) if result['exit_code'] == 0 else []
+        if len(routes) != 1 or routes[0].get('dev') != 'lo':
+            raise ValueError('Loopback feed route not verified')
+        return
+
     if url.scheme!='http' or cfg.get('allow_netbird_http') is not True:
         raise ValueError('HTTPS or explicit NetBird HTTP required')
     address=ipaddress.ip_address(url.hostname)

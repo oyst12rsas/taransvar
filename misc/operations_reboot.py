@@ -4,9 +4,70 @@ import re
 from pathlib import Path
 import time
 import math
+import stat
 from operations_policy import maintenance_enabled
 
 DEFAULT_PROBE = "/usr/local/lib/tarasec-operations/reboot-verification-probe"
+
+
+TTY_NAME = r'(?:pts/[0-9]+|tty(?:S|AMA|USB|ACM|hvc)?[0-9]+|hvc[0-9]+|xvc[0-9]+)'
+
+
+def session_terminals(run, session, properties, root):
+    """Resolve missing logind TTY through kernel session-scope membership."""
+    scope = properties.get('Scope', '')
+    if scope != 'session-' + session + '.scope':
+        raise ValueError('Session scope unavailable')
+    answer = run(['systemctl', 'show', scope, '-p', 'ControlGroup', '--value'], 5)
+    group = answer['output'].strip()
+    if (answer['exit_code'] != 0 or not group.startswith('/') or
+            '..' in group.split('/') or not group.endswith('/' + scope)):
+        raise ValueError('Invalid session control group')
+    directory = root / 'sys/fs/cgroup' / group.lstrip('/')
+    members = set()
+    for path in [directory / 'cgroup.procs', *directory.glob('**/cgroup.procs')]:
+        members.update(path.read_text().split())
+    if not members or len(members) > 512:
+        raise ValueError('Session process inventory unavailable')
+    terminals = set()
+    for pid in members:
+        if not pid.isdigit():
+            raise ValueError('Invalid session PID')
+        proc = root / 'proc' / pid
+        try:
+            # Recheck membership to reject PID reuse or a process moved elsewhere.
+            memberships = [line.split(':', 2)[2] for line in
+                           (proc / 'cgroup').read_text().splitlines()]
+            if not any(g == group or g.startswith(group + '/') for g in memberships):
+                raise ValueError('Session membership changed')
+            fields = (proc / 'stat').read_text().rsplit(')', 1)[1].split()
+            device = int(fields[4]) & 0xffffffff  # tty_nr, after pid and comm.
+            if device == 0:
+                continue
+            major = (device >> 8) & 0xfff
+            minor = (device & 0xff) | ((device >> 12) & 0xfff00)
+            found = False
+            for fd in ('0', '1', '2'):
+                link = proc / 'fd' / fd
+                try:
+                    name = os.readlink(link)
+                except FileNotFoundError:
+                    continue
+                if not name.startswith('/dev/') or not re.fullmatch(TTY_NAME, name[5:]):
+                    continue
+                metadata = (root / name.lstrip('/')).stat()
+                if (stat.S_ISCHR(metadata.st_mode) and os.major(metadata.st_rdev) == major
+                        and os.minor(metadata.st_rdev) == minor):
+                    terminals.add(name[5:])
+                    found = True
+            if not found:
+                raise ValueError('Controlling terminal unresolved')
+        except FileNotFoundError:
+            # A session process may exit during inspection; never infer idle from it.
+            raise ValueError('Session process disappeared')
+    if not terminals:
+        raise ValueError('No verified session terminal')
+    return sorted(terminals)
 
 
 def session_activity(run, policy, root=Path('/')):
@@ -31,7 +92,7 @@ def session_activity(run, policy, root=Path('/')):
             continue
         details = run(['loginctl', 'show-session', session, '--no-pager',
                        '-p', 'TTY', '-p', 'TimestampMonotonic', '-p', 'IdleHint',
-                       '-p', 'IdleSinceHintMonotonic'], 20)
+                       '-p', 'IdleSinceHintMonotonic', '-p', 'Scope'], 20)
         try:
             if details['exit_code'] != 0:
                 raise ValueError('Session inspection failed')
@@ -40,23 +101,27 @@ def session_activity(run, policy, root=Path('/')):
             age = uptime - int(properties['TimestampMonotonic']) / 1000000
             tty = properties.get('TTY', '')
             if tty:
-                if not re.fullmatch(r'(?:pts/[0-9]+|tty[0-9]+)', tty):
+                if not re.fullmatch(TTY_NAME, tty):
                     raise ValueError('Unsupported TTY')
                 idle = min(age, now - (root / 'dev' / tty).stat().st_atime)
+                item['terminals'] = [tty]
             elif properties.get('IdleHint') == 'yes':
                 since = int(properties['IdleSinceHintMonotonic']) / 1000000
                 if since <= 0:
                     raise ValueError('Missing idle timestamp')
                 idle = min(age, uptime - since)
             else:
-                raise ValueError('Missing activity evidence')
+                terminals = session_terminals(run, session, properties, root)
+                idle = min([age] + [now - (root / 'dev' / t).stat().st_atime for t in terminals])
+                item['terminals'] = terminals
             if not math.isfinite(idle) or idle < 0:
                 raise ValueError('Invalid activity timestamp')
             item.update(status='idle' if idle >= idle_seconds else 'recently_active',
                         idle_seconds=int(idle))
             if idle < idle_seconds:
                 evidence['blockers'].append('interactive_session_recently_active')
-        except (OSError, ValueError, KeyError, IndexError):
+        except (OSError, ValueError, KeyError, IndexError) as error:
+            item['reason'] = str(error)[:160]
             evidence['blockers'].append('interactive_session_activity_unverified')
     evidence['blockers'] = sorted(set(evidence['blockers']))
     return evidence
