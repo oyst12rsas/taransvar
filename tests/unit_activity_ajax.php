@@ -1,5 +1,7 @@
 <?php
 // Load the real AJAX module without index.php, as ajax.php does.
+chdir(__DIR__.'/../html/gatekeeper');
+$pSystem = (object)['cCommands' => []];
 require_once __DIR__.'/../html/gatekeeper/ajax/units_partners.php';
 class EmptyRows {
     public $num_rows = 0;
@@ -11,9 +13,6 @@ class FakeConnection {
         if (strpos($sql, 'from setup') !== false) throw new RuntimeException('reached-status');
         return new EmptyRows();
     }
-}
-class CXmlCommand {
-    static function setInnerHTML($id, $unused, $html) {}
 }
 function getConnection() { return new FakeConnection(); }
 foreach ([[], ['isAdmin' => 0], ['isAdmin' => 1]] as $session) {
