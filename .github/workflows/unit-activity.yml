@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y libdbi-perl libwww-perl libjson-perl php-cli
       - run: python3 -m unittest discover -s misc -p test_unit_activity.py
-      - run: perl -I misc -c misc/crontasks.pl
+      - run: sudo perl -I "$PWD/misc" -c misc/crontasks.pl
       - run: |
           php -l html/gatekeeper/func/unitActivity.php
           php -l html/gatekeeper/func/units.php
