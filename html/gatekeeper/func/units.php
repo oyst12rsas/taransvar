@@ -106,12 +106,14 @@ function vpn_demo()
 			$nCount++;
 		}
 		print "</table>";
-		print "*) Dots: tarakernel, taralink, crontasks, dmesg, traffic data, sql connections. Number: Active users last 5 minutes.";
+		print "*) Dots: tarakernel, taralink, crontasks, dmesg, traffic data, sql connections. Number: Active routed clients last 5 minutes (unknown on older nodes).";
 	}
 	$result->free();//260717
 	$conn->close();
 }
 
+
+require_once __DIR__.'/unitActivity.php';
 
 function units()
 {
@@ -119,6 +121,7 @@ function units()
 	vpn_demo();
 
 	$conn = getConnection();
+	if (isAdmin()) print '<div id="unitActivityOverview">'.unitActivityOverview($conn).'</div>';
 	if (isAdmin())
 	{
 		//If logged in as admin and this is a DB server, list reported status.

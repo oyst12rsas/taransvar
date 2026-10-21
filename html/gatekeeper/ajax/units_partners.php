@@ -316,12 +316,12 @@ function getServerStatus($seconds_since, $status, $nId)
 	}
 
 	//Active users
-	if (isset($json["usr"]))
+	if (isset($json["unitActivity"]["clients"]))
 	{
 		$szServerStatus .= getDotByInterval($json, "usr", 1, 3, 
-					$json["usr"]." user is active on this computer",
-					$json["usr"]." users are active on this computer",
-					$json["usr"]." users are active on this computer. Consider choosing one less congested.");
+					$json["usr"]." routed client active in the last five minutes",
+					$json["usr"]." routed clients active in the last five minutes",
+					$json["usr"]." routed clients active in the last five minutes. Consider choosing one less congested.");
 
 		//$nActiveUsers = isset($json["usr"])?$json["usr"]:"?";
 		//$szServerStatus .= "&nbsp;$nActiveUsers";
@@ -359,6 +359,10 @@ function units_partners()
 {
 
 	$conn=getConnection();
+	if (isAdmin()) {
+		require_once __DIR__.'/../func/unitActivity.php';
+		CXmlCommand::setInnerHTML("unitActivityOverview", "", unitActivityOverview($conn));
+	}
 
 	$setupRow = getNetworkStatusThisComputer($conn);
 	$status = getServerStatus($setupRow["seconds_since"], $setupRow["status"], 0);
