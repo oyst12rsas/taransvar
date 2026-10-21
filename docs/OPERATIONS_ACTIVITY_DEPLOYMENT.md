@@ -77,3 +77,40 @@ default for other deployments. Source-IP token binding on the feed remains uncha
 Transfer the root-only generated key using the configured admin SSH port; do not use
 a honeypot port or copy secrets into chat. Remove any temporary user-readable transfer
 copy after successful installation on Audi.
+
+## Central DB server's own activity feed
+
+Update the operations bundle first. On dbserver1, use the helper from that same
+checkout (the example assumes the actual web root is `/var/www/html`):
+
+```sh
+clear
+sudo bash misc/configure_operations_local_activity.sh /var/www/html
+```
+
+This enrolls a separate token bound to `127.0.0.1` and configures the explicit
+`--loopback-http` transport. No secret is printed or transferred. The collector
+requires a literal loopback address and an observed `lo` route; it still disables
+proxies and redirects. The feed still checks the token, central DB role and all
+demo tables. A complete feed response is required before the helper reports
+success. An HTTP 403/503 or missing schema remains a blocker, not an idle result.
+The local web server must serve this installation on its loopback/default host.
+
+For authenticated loopback clients the post-boot receipt uses the central server's
+own `setup.networkStatus` and `networkStatusChecked`, including the operations boot
+ID and kernel/link health. Other nodes continue to use their source-bound partner
+report. Install the reporter bridge from the bundle so that boot identity is in
+the minute report. This helper does not select policy or enable the operations
+timer; the existing owner's mode and activity/readiness checks remain in force.
+
+After configuration, wait for observer samples and inspect the live state:
+
+```sh
+clear
+sudo cat /run/tarasec-operations/activity.json
+sudo python3 -c 'import json; print(json.dumps(json.load(open("/var/lib/tarasec-operations/state.json")).get("reboot"), indent=2))'
+```
+
+An active demo legitimately blocks every node. Complete idle evidence still needs
+the quiet interval and session inactivity threshold. Verify a new boot ID, target
+kernel, fresh minute report and post-boot verification before claiming success.

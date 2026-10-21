@@ -46,3 +46,16 @@ receipt before treating the reboot issue as resolved.
 Source regression tests cover idle/recent/new sessions, activity at dispatch,
 missing evidence, threshold boundaries, exhausted model budget, kernel readiness
 and post-boot verification. Live node acceptance remains separate.
+
+## Serial consoles and missing logind terminal metadata
+
+Serial consoles such as `ttyS0`, `ttyAMA0`, and virtual consoles `hvc0` are valid
+terminals. When logind omits TTY metadata for an SSH session, the checker resolves
+its exact systemd session scope, reads cgroup process membership, rechecks each
+process's membership and matches its kernel controlling-terminal device number
+to a terminal descriptor. It takes the most recent input time across the verified
+terminals, bounded by the login age. A new login or recent input still blocks.
+Missing processes, ambiguous scope, inaccessible devices and sessions with no
+verified terminal or idle timestamps remain unknown and block reboot. Per-session
+reason and terminal fields make unresolved checks visible. Checks repeat before
+dispatch; a successful inspection is not proof a reboot has occurred.
