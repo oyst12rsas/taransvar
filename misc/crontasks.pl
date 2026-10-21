@@ -416,25 +416,23 @@ sub reportStatus {
 		rename("/tmp/tarasec-status-counters.json.tmp", $szMetricStateFile);
 	}
 
-	# Count recent local users through sargable time ranges. COALESCE(lastSeen,
-	# created) forced a full traffic-table scan on every status heartbeat.
-	my $szSQL = "SELECT COUNT(*) AS unique_ips FROM (" .
-		"SELECT ipFrom FROM traffic WHERE lastSeen > NOW() - INTERVAL 5 MINUTE " .
-		"AND ipFrom BETWEEN INET_ATON('10.100.0.0') AND INET_ATON('10.100.255.255') " .
-		"AND ipFrom <> INET_ATON('10.100.0.1') " .
-		"UNION " .
-		"SELECT ipFrom FROM traffic WHERE lastSeen IS NULL AND created > NOW() - INTERVAL 5 MINUTE " .
-		"AND ipFrom BETWEEN INET_ATON('10.100.0.0') AND INET_ATON('10.100.255.255') " .
-		"AND ipFrom <> INET_ATON('10.100.0.1')" .
-		") recent_local_users";
-	my $sthCount = $dbh->prepare($szSQL);
-	$sthCount->execute() or die "execution failed: $sthSetup->errstr()";
-	my $cCount = $sthCount->fetchrow_hashref();
-	$json{"usr"} = $cCount->{"unique_ips"};
-	$sthCount->finish();
+	# Read-only routed traffic and authenticated SSH sessions. Unknown is not zero.
+	my $activityPath = __FILE__;
+	$activityPath =~ s{[^/]+$}{unit_activity.py};
+	if (open(my $activityPipe, "-|", "/usr/bin/python3", $activityPath)) {
+		local $/;
+		my $activityText = <$activityPipe>;
+		if (close($activityPipe)) {
+			my $activity = eval { JSON::decode_json($activityText) };
+			if (ref($activity) eq "HASH") {
+				$json{"unitActivity"} = $activity;
+				$json{"usr"} = $activity->{"clients"} if defined $activity->{"clients"};
+			}
+		}
+	}
 
 	#Find seconds since the last dmesg was logged.
-	$szSQL = "select TIMESTAMPDIFF(SECOND, created, NOW()) AS seconds_since from dmesg order by dmesgId desc limit 1";
+	my $szSQL = "select TIMESTAMPDIFF(SECOND, created, NOW()) AS seconds_since from dmesg order by dmesgId desc limit 1";
 	my $sth = $dbh->prepare($szSQL);
 	$sth->execute() or die "execution failed: $sthSetup->errstr()";
 	my $cSeconds = $sth->fetchrow_hashref();

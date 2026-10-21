@@ -1,0 +1,23 @@
+name: Unit activity telemetry
+on:
+  pull_request:
+    paths:
+      - 'misc/unit_activity.py'
+      - 'misc/test_unit_activity.py'
+      - 'misc/crontasks.pl'
+      - 'html/gatekeeper/func/unitActivity.php'
+      - 'html/gatekeeper/func/units.php'
+      - 'html/gatekeeper/ajax/units_partners.php'
+      - '.github/workflows/unit-activity.yml'
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libdbi-perl libwww-perl libjson-perl php-cli
+      - run: python3 -m unittest discover -s misc -p test_unit_activity.py
+      - run: sudo perl -I "$PWD/misc" -c misc/crontasks.pl
+      - run: |
+          php -l html/gatekeeper/func/unitActivity.php
+          php -l html/gatekeeper/func/units.php
+          php -l html/gatekeeper/ajax/units_partners.php
