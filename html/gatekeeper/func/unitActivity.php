@@ -1,7 +1,13 @@
 <?php
+// Also loaded by ajax.php, which does not load index.php's isAdmin().
+function unitActivityIsAdmin()
+{
+    return isset($_SESSION['isAdmin']) && $_SESSION['isAdmin'] == 1;
+}
+
 function unitActivityOverview($conn)
 {
-    if (!isAdmin()) return '';
+    if (!unitActivityIsAdmin()) return '';
     $result = $conn->query("SELECT R.routerId, P.name, INET_NTOA(R.ip) AS ip, R.status, R.partnerStatusReceived, TIMESTAMPDIFF(SECOND,R.partnerStatusReceived,NOW()) AS age FROM partnerRouter R JOIN partner P ON P.partnerId=R.partnerId ORDER BY P.name,R.routerId");
     $groups = ['Active client traffic' => '', 'Missing reports (over 200 seconds or never received)' => '', 'Other reporting units' => ''];
     $escape = function($value) { return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8'); };
