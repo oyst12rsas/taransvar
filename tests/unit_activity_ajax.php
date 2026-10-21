@@ -7,13 +7,15 @@ class EmptyRows {
     function free() {}
 }
 class FakeConnection {
-    function query($sql) { return new EmptyRows(); }
+    function query($sql) {
+        if (strpos($sql, 'from setup') !== false) throw new RuntimeException('reached-status');
+        return new EmptyRows();
+    }
 }
 class CXmlCommand {
     static function setInnerHTML($id, $unused, $html) {}
 }
 function getConnection() { return new FakeConnection(); }
-function getNetworkStatusThisComputer($conn) { throw new RuntimeException('reached-status'); }
 foreach ([[], ['isAdmin' => 0], ['isAdmin' => 1]] as $session) {
     $_SESSION = $session;
     if (unitActivityIsAdmin() !== (($session['isAdmin'] ?? 0) == 1)) {
