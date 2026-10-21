@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/../func/unitActivity.php';
 require_once __DIR__.'/../func/agentStatusView.php';
 require_once __DIR__.'/../func/diskStatusView.php';
 error_reporting( E_ALL );
@@ -359,7 +360,7 @@ function units_partners()
 {
 
 	$conn=getConnection();
-	if (isAdmin()) {
+	if (unitActivityIsAdmin()) {
 		require_once __DIR__.'/../func/unitActivity.php';
 		CXmlCommand::setInnerHTML("unitActivityOverview", "", unitActivityOverview($conn));
 	}
