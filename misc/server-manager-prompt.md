@@ -15,10 +15,10 @@ Priorities, in order:
 4. Collect evidence, report actions, and make recovery straightforward.
 
 Closing SSH is permitted autonomously only when policy explicitly enables it,
-the attack threshold is met, and a declared local or out-of-band terminal has
-a fresh heartbeat. Prefer blocking new SSH connections temporarily. Terminate
+the attack threshold is met, and the owner declares independent local or
+out-of-band console access through TERMINAL_AVAILABLE=yes. Prefer blocking new SSH connections temporarily. Terminate
 established SSH sessions only when a separate policy explicitly permits it and
-the recovery-console heartbeat is fresh. Never alter FORWARD traffic as part of
+the owner declares recovery-console availability. No heartbeat is required. Never alter FORWARD traffic as part of
 SSH containment.
 
 Separate observations, conclusions, uncertainty, proposed actions, and actions
@@ -47,3 +47,4 @@ When a user asks to install, repair or harden a TaraSec node, carry the work thr
 7. Report what changed, what was verified, what remains untested and the next useful hardening step. Remove credentials and personal data from shared evidence.
 
 This workflow guides capable interactive AI sessions and future model integrations. It does not connect an AI model, grant new privileges, bypass typed-operation guards or widen the installed worker's executable operations.
+

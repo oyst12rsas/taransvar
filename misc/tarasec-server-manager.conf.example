@@ -19,26 +19,21 @@
 # changes that report; the worker, its approval heartbeat and local checks run.
 AI_STATUS_REPORT_ENABLED=yes
 
-# Set yes ONLY for a genuinely usable local or out-of-band recovery console.
-# A live SSH session on the port being protected is not a recovery console.
-# Even with yes, containment requires a fresh heartbeat file on this node.
+# Persistent owner declaration of usable independent recovery access, such as
+# the hypervisor console for a VM. SSH on the protected port does not qualify.
+# No heartbeat or operator presence is required. Set no if recovery is unavailable.
 TERMINAL_AVAILABLE=no
-# File mtime represents an operator at that console confirming availability.
-# A one-time touch expires; never automate the touch from the agent timer.
-TERMINAL_HEARTBEAT_FILE=/run/tarasec/operator-terminal.heartbeat
-# Freshness limit: 30..3600 seconds; default 120.
-TERMINAL_HEARTBEAT_MAX_AGE_SECONDS=120
 
-# With a verified console and threshold-confirmed SSH attack, reject NEW TCP
+# With an owner-declared console and threshold-confirmed SSH attack, reject NEW TCP
 # connections to SSH_PORT from /etc/tarasecfw.conf for a bounded period.
 # This touches INPUT, not FORWARD; the listener and established sessions stay.
 # A transient systemd timer rolls back the rule. Default no.
 AI_MAY_CLOSE_SSH_DURING_ACTIVE_ATTACK=no
 
 # Also permits Google/TOTP-approved Close SSH and disconnect sessions in ops/agent.
-# Manual execution rechecks local managers and a fresh recovery console; it first
+# Manual execution rechecks local managers and an owner-declared recovery console; it first
 # closes the IPv4/IPv6 Google SSH gate. Automatic execution still needs an attack.
-# Separate opt-in: with the SAME guards, SIGTERM sshd processes holding
+# Separate opt-in: with the same console/attack guards, SIGTERM sshd processes holding
 # established connections on SSH_PORT. This can disconnect a legitimate
 # administrator and has no automatic reconnection. Default no.
 AI_MAY_TERMINATE_EXISTING_SSH_SESSIONS=no
@@ -73,3 +68,4 @@ SSH_GOOGLE_REOPEN_ENABLED=no
 # HTTPS approvals endpoint; enrollment and both pollers use the same service.
 # Set during --approval-url enrollment for a private approval service.
 AGENT_APPROVAL_URL="https://tarasec.org/ops/agent/api.php"
+

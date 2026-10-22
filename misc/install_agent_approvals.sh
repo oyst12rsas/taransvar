@@ -107,14 +107,15 @@ if [[ ! -e /etc/tarasec-server-manager.conf ]]; then
     install -o root -g root -m 0600 "$root/tarasec-server-manager.conf.example" /etc/tarasec-server-manager.conf
     echo "Installed conservative /etc/tarasec-server-manager.conf; review it before enabling containment."
 fi
-# AI_AGENT_MODE was an assessment label, never an execution/reboot permission.
+# Remove obsolete assessment labels and console-heartbeat settings.
+# TERMINAL_AVAILABLE is now a persistent owner declaration, not a timed lease.
 # Remove obsolete assignments after the policy backup above; preserve real flags.
 python3 - <<'CLEAN_POLICY'
 from pathlib import Path
 import re
 path = Path('/etc/tarasec-server-manager.conf')
 text = path.read_text()
-updated = re.sub(r'^\s*AI_AGENT_MODE\s*=[^\n]*(?:\n|$)', '', text, flags=re.M)
+updated = re.sub(r'^\s*(?:AI_AGENT_MODE|TERMINAL_HEARTBEAT_FILE|TERMINAL_HEARTBEAT_MAX_AGE_SECONDS)\s*=[^\n]*(?:\n|$)', '', text, flags=re.M)
 if updated != text:
     path.write_text(updated)
 CLEAN_POLICY
@@ -142,3 +143,4 @@ echo "Ask your AI assistant to check the next missing control, test it and fix i
 
 printf "Program backup: %s\n" "$backup"
 echo "Google SSH remains owner-configured; see docs/google-ssh.md before enabling. Existing enabled policy is retained."
+
