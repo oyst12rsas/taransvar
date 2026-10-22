@@ -123,7 +123,7 @@ def execute_approved_job(job):
         if not enabled("SSH_GOOGLE_REOPEN_ENABLED") or not enabled("AI_MAY_TERMINATE_EXISTING_SSH_SESSIONS"):
             raise RuntimeError("Local SSH closure/session-termination permission is disabled")
         if not terminal_state()["verified"]:
-            raise RuntimeError("Independent recovery console is not verified")
+            raise RuntimeError("Independent recovery console is not declared available")
         result = run("/usr/bin/python3", "/usr/local/lib/tarasec/ssh_google_window.py",
                      "lock", job["id"], operator_hash)
         if result.returncode != 0:
@@ -152,16 +152,13 @@ def execute_approved_job(job):
 
 
 def terminal_state():
+    # The owner declares independent recovery access (for example a VM console).
+    # Availability is persistent; an unattended VM does not need an operator
+    # repeatedly touching a file. Default/missing/no still denies containment.
     declared = enabled("TERMINAL_AVAILABLE")
-    heartbeat = manager_setting("TERMINAL_HEARTBEAT_FILE", "/run/tarasec/operator-terminal.heartbeat")
-    max_age = bounded_int("TERMINAL_HEARTBEAT_MAX_AGE_SECONDS", 120, 30, 3600)
-    age = None
-    try:
-        age = max(0, int(time.time() - os.stat(heartbeat).st_mtime))
-    except OSError:
-        pass
-    return {"declared": declared, "verified": declared and age is not None and age <= max_age,
-            "heartbeat_age_seconds": age, "maximum_age_seconds": max_age}
+    # Keep "verified" for older report/API consumers; its basis is explicitly
+    # owner declaration, not a live console probe or operator-presence claim.
+    return {"declared": declared, "verified": declared, "basis": "owner_declared"}
 
 
 def ssh_attack_evidence():
@@ -369,7 +366,7 @@ def terminate_existing_ssh_sessions(evidence, terminal, attack, operator_request
             return {"action": "terminate_existing_ssh_sessions", "result": "partially_applied",
                     "sessions_terminated": terminated}
     action = {"action": "terminate_existing_ssh_sessions", "result": "applied",
-              "reason": "operator_request_with_verified_console" if operator_requested else "ongoing_attack_with_verified_console",
+              "reason": "operator_request_with_declared_console" if operator_requested else "ongoing_attack_with_declared_console",
               "sessions_terminated": terminated,
               "forwarding_after": forwarding_health(ssh_security_evidence.collect())}
     audit({**action, "success": True})
@@ -519,3 +516,4 @@ if __name__ == "__main__":
     except (OSError, ValueError, RuntimeError, urllib.error.URLError) as exc:
         print("Agent unavailable: " + str(exc), file=sys.stderr)
         sys.exit(1)
+

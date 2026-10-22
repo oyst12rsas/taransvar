@@ -66,9 +66,7 @@ the supplied example; values shown are defaults.
 | Setting | Values and current effect |
 | --- | --- |
 | `AI_STATUS_REPORT_ENABLED=yes` | Include the latest agent summary in the normal per-minute node status. Set `no` to send `"aiAgent":"report disabled"` instead. This does not stop the worker or its separate approval heartbeat. |
-| `TERMINAL_AVAILABLE=no` | Boolean declaration of a genuine independent recovery console. SSH on the protected port does not qualify. |
-| `TERMINAL_HEARTBEAT_FILE=/run/tarasec/operator-terminal.heartbeat` | Local path whose modification time proves that an operator recently checked the console. Do not refresh it automatically. |
-| `TERMINAL_HEARTBEAT_MAX_AGE_SECONDS=120` | Maximum age, clamped to 30–3600 seconds. Console is verified only when declared and fresh. |
+| `TERMINAL_AVAILABLE=no` | Persistent owner declaration of an independent recovery console. Set yes for an accessible VM/hypervisor console. No heartbeat is required; an SSH session does not qualify. |
 | `AI_MAY_CLOSE_SSH_DURING_ACTIVE_ATTACK=no` | Boolean permission to temporarily reject **new** admin-SSH connections after the attack threshold and console checks. |
 | `AI_MAY_TERMINATE_EXISTING_SSH_SESSIONS=no` | Independent boolean permission to SIGTERM established admin-SSH sessions after the same checks. A legitimate session may be disconnected. |
 | `SSH_ATTACK_WINDOW_SECONDS=120` | Journal lookback, clamped to 60–900 seconds. |
@@ -103,18 +101,14 @@ TaraSec manages the live approval page, operator accounts, node enrollment,
 and authenticator setup separately. Node configuration changes do not change
 website login or approval requirements.
 
-`TERMINAL_AVAILABLE=yes` declares that a local or out-of-band recovery terminal
-exists. It is considered usable only while
-`TERMINAL_HEARTBEAT_FILE` is newer than
-`TERMINAL_HEARTBEAT_MAX_AGE_SECONDS`. An operator at that terminal can refresh
-the default heartbeat with:
+`TERMINAL_AVAILABLE=yes` persistently declares independent recovery access, such
+as an accessible VM/hypervisor console. It does not require a heartbeat, periodic
+manual commands or an operator currently present. Missing/no denies console-
+dependent actions. This is an owner declaration, not an automatic verification
+of hypervisor access. Legacy TERMINAL_HEARTBEAT_* settings are ignored and removed
+on installer upgrade after backup.
 
-```bash
-sudo install -d -m 0755 /run/tarasec
-sudo touch /run/tarasec/operator-terminal.heartbeat
-```
-
-When `AI_MAY_CLOSE_SSH_DURING_ACTIVE_ATTACK=yes`, a fresh terminal heartbeat
+When `AI_MAY_CLOSE_SSH_DURING_ACTIVE_ATTACK=yes`, owner-declared console access
 and the configured authentication-failure threshold permit the agent to reject
 only **new** connections to the real administrative SSH port for a bounded
 period. Existing sessions and the FORWARD chain are unchanged. A transient
@@ -159,3 +153,4 @@ after the normal backup. It never controls reboot permission. The separate
 `mode` in `/etc/tarasec/operations-agent.json` is functional: `inspect` does not
 authorize maintenance; `demo` and `production` authorize typed maintenance subject
 to the existing activity, readiness and verification checks.
+

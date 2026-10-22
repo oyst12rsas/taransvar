@@ -69,18 +69,20 @@ class ServerManagerTests(unittest.TestCase):
              mock.patch.object(window, 'command', return_value=False):
             self.assertEqual(worker.google_ssh_state()['state'], 'unverified')
 
-    def test_terminal_requires_declaration_and_fresh_heartbeat(self):
-        with tempfile.NamedTemporaryFile() as heartbeat:
-            values = {
-                "TERMINAL_AVAILABLE": "yes",
-                "TERMINAL_HEARTBEAT_FILE": heartbeat.name,
-                "TERMINAL_HEARTBEAT_MAX_AGE_SECONDS": "120",
-            }
-            with mock.patch.object(worker, "manager_setting",
-                                   side_effect=lambda name, default="": values.get(name, default)):
-                self.assertTrue(worker.terminal_state()["verified"])
-                os.utime(heartbeat.name, (time.time() - 180, time.time() - 180))
-                self.assertFalse(worker.terminal_state()["verified"])
+    def test_terminal_availability_is_persistent_owner_declaration(self):
+        values = {"TERMINAL_AVAILABLE": "yes",
+                  "TERMINAL_HEARTBEAT_FILE": "/nonexistent/legacy-heartbeat",
+                  "TERMINAL_HEARTBEAT_MAX_AGE_SECONDS": "1"}
+        with mock.patch.object(worker, "manager_setting",
+                               side_effect=lambda name, default="": values.get(name, default)), \
+             mock.patch.object(worker.os, "stat") as stat:
+            self.assertTrue(worker.terminal_state()["verified"])
+            self.assertEqual(worker.terminal_state()["basis"], "owner_declared")
+            stat.assert_not_called()
+            values["TERMINAL_AVAILABLE"] = "no"
+            self.assertFalse(worker.terminal_state()["verified"])
+            values.pop("TERMINAL_AVAILABLE")
+            self.assertFalse(worker.terminal_state()["verified"])
 
     def test_assessment_prioritizes_intrusion_before_forwarding(self):
         item = worker.assessment(evidence(gateway=True), [], {"verified": True},
@@ -124,3 +126,4 @@ class ServerManagerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -57,7 +57,7 @@ function agentStatusDetails($agent)
     $rows[] = array('Approval service', agentStatusEscape($agent['approval_service'] ?? 'unknown'));
     $rows[] = array('Assessment age', isset($agent['age_seconds']) ? (int)$agent['age_seconds'].' seconds' : 'unknown');
     $rows[] = array('Ongoing SSH attack', !empty($agent['ssh_attack_ongoing']) ? 'Reported' : 'Not reported');
-    $rows[] = array('Recovery console verified', !empty($agent['recovery_console_verified']) ? 'Yes' : 'No');
+    $rows[] = array('Recovery console available (owner declared)', !empty($agent['recovery_console_verified']) ? 'Yes' : 'No');
     if (array_key_exists('is_gateway', $forwarding))
         $rows[] = array('Agent gateway role', $forwarding['is_gateway'] ? 'Gateway' : 'Node');
     foreach (array('pending_operator_messages' => 'For operator', 'actions' => 'Actions', 'findings' => 'SSH findings') as $field => $label) {
@@ -75,3 +75,4 @@ function agentStatusRows($rows)
         $html .= '<tr><td>'.agentStatusEscape($row[0]).'</td><td>'.$row[1].'</td></tr>';
     return $html;
 }
+

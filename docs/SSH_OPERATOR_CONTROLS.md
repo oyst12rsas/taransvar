@@ -14,26 +14,24 @@ AI_MAY_TERMINATE_EXISTING_SSH_SESSIONS=yes
 TERMINAL_AVAILABLE=yes
 ```
 
-A VM/local console must actually be usable. From that independent console,
-confirm availability immediately before the operation:
+A VM/local console must actually be usable. `TERMINAL_AVAILABLE=yes` is the
+owner’s persistent declaration of that recovery access; there is no heartbeat,
+timeout, or requirement for an operator currently to be at the console. Start
+the approval service once after updating policy to publish a fresh node report:
 
 ```sh
-sudo install -d -m 0755 /run/tarasec
-sudo touch /run/tarasec/operator-terminal.heartbeat
 sudo systemctl start tarasec-agent-approvals.service
 ```
 
-The default heartbeat lifetime is 120 seconds. Do not automate its refresh or
-use an SSH session as proof of independent recovery access. The UI enables the
-control only when a recent node report advertises permission and verified
-console availability; execution checks the current local policy and heartbeat
+The UI enables the control only when a recent node report advertises permission
+and owner-declared console availability. Execution reads the current local policy
 again. Older nodes without the capability fields cannot select the control.
 The local Google gate and local session-termination permission must both be on.
 
 Execution first closes the Google SSH gate for IPv4 and IPv6. If gate closure
 fails, sessions are not terminated. It then SIGTERMs sshd/sshd-session processes
 owning established sockets on the configured admin SSH port. Other services and
-ports are excluded. Permission or console expiry during execution may leave SSH
+ports are excluded. Permission or console-declaration changes during execution may leave SSH
 closed without terminating sessions; the job reports failure rather than success.
 The manual action checks that admin SSH sockets disappear after SIGTERM; lingering
 sessions or an unavailable check report failure. This is still local evidence,
@@ -55,7 +53,7 @@ AI_MAY_CLOSE_SSH_DURING_ACTIVE_ATTACK=yes
 AI_MAY_TERMINATE_EXISTING_SSH_SESSIONS=yes
 ```
 
-These remain explicit owner permissions, combined with the same fresh console
+These remain explicit owner permissions, combined with the same owner-declared console
 checks and the configured authentication-failure threshold. The manual action
 requires no attack, since the verified operator is explicitly requesting it.
 The legacy automatic temporary-REJECT path is IPv4-only; the new manual action
@@ -69,8 +67,8 @@ worker and `ssh_google_window.py` together using `install_agent_approvals.sh
 --no-enrollment`. Existing policies are preserved. Configure the permissions
 above only on the intended node with working independent console recovery.
 
-Test on a console-accessible node: without a fresh heartbeat no action is allowed;
-with one, approve closure, verify fresh SSH fails on both families and the old
+Test on a console-accessible node: with TERMINAL_AVAILABLE=no the action is refused;
+with yes, approve closure, verify fresh SSH fails on both families and the old
 admin SSH sessions end, then request a new approved opening and verify recovery.
 Unit/API tests are not a live SSH-disconnection acceptance claim.
 
@@ -83,3 +81,4 @@ reduce exposure and contain attacks while the host remains trustworthy; they
 cannot guarantee recovery after root compromise. Independently enforced network
 isolation at a gateway, hypervisor or network controller is required for that
 case. The current operator control does not implement external isolation.
+
