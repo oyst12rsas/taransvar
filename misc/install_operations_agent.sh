@@ -3,7 +3,13 @@ set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo 'Run as root'; exit 1; }
 source_dir="$(cd "$(dirname "$0")" && pwd)"
 install -d -o root -g root -m 0755 /usr/local/lib/tarasec-operations
-install -d -o root -g root -m 0700 /etc/tarasec /var/lib/tarasec-operations
+# /etc/tarasec is shared with Gatekeeper: preserve existing permissions/ACLs.
+# Resetting it to 0700 masks Apache traversal access and hides Google sign-in.
+# New directories remain private; web-readable configuration is set up separately.
+if [[ ! -d /etc/tarasec ]]; then
+    install -d -o root -g root -m 0700 /etc/tarasec
+fi
+install -d -o root -g root -m 0700 /var/lib/tarasec-operations
 install -o root -g root -m 0755 "$source_dir/operations_agent.py" "$source_dir/operations_activity.py" "$source_dir/operations_diagnostics.py" "$source_dir/operations_actions.py" "$source_dir/operations_prompt.py" "$source_dir/operations_model_probe.py" "$source_dir/operations_collectors.py" "$source_dir/operations_model.py" "$source_dir/install_operations_reporter_bridge.py" "$source_dir/operations_policy.py" "$source_dir/operations_reboot.py" "$source_dir/operations_schedule.py" "$source_dir/operations_reporting.py" "$source_dir/operations_issues.py" "$source_dir/operations_manual.py" "$source_dir/operations_manual_issues.pl" "$source_dir/operations_deployment.py" "$source_dir/operations_tools.py" "$source_dir/configure_operations_journal.py" "$source_dir/configure_operations_direct_probe.py" /usr/local/lib/tarasec-operations/
 cat > /usr/local/lib/tarasec-operations/activity-probe <<'EOF'
 #!/bin/sh
