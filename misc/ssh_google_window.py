@@ -114,7 +114,7 @@ def reconcile():
     apply_rules(port, sources, until)
 
 
-def open_window(job_id, until, operator_hash=None):
+def open_window(job_id, until, operator_hash=None, approved_at=None):
     local_manager_policy.require_manager(operator_hash)
     port, sources = configuration()
     now = int(time.time())
@@ -122,6 +122,9 @@ def open_window(job_id, until, operator_hash=None):
             or not re.fullmatch(r"[a-f0-9]{32}", job_id) or not now < until <= now + 900):
         raise ValueError("Expired or invalid approved window")
     state = read_state()
+    closed_at = int(state.get("closed_at", 0))
+    if closed_at and (isinstance(approved_at, bool) or not isinstance(approved_at, int) or approved_at <= closed_at):
+        raise ValueError("Opening predates the last explicit SSH closure")
     if state.get("id") == job_id:
         if int(state.get("until", 0)) != until or state.get("approved_operator_sha256") != operator_hash:
             raise ValueError("Window retry changed deadline")
@@ -136,11 +139,11 @@ def open_window(job_id, until, operator_hash=None):
             "--on-calendar=@%d" % until, "--timer-property=AccuracySec=1s",
             "--timer-property=RandomizedDelaySec=0",
             "/usr/bin/python3", "/usr/local/lib/tarasec/ssh_google_window.py", "close", job_id)
-    write_state({"id": job_id, "until": until, "port": port, "approved_operator_sha256": operator_hash})
+    write_state({"id": job_id, "until": until, "port": port, "approved_operator_sha256": operator_hash, "closed_at": closed_at})
     try:
         apply_rules(port, sources, until)
     except Exception:
-        write_state({"id": job_id, "until": 0, "port": port})
+        write_state({"id": job_id, "until": 0, "port": port, "closed_at": int(state.get("closed_at", 0))})
         apply_rules(port, sources, 0)
         raise
 
@@ -152,7 +155,20 @@ def close_window(job_id):
     port = int(state["port"])
     if not 1 <= port <= 65535:
         raise ValueError("Invalid saved SSH port")
-    write_state({"id": job_id, "until": 0, "port": port})
+    write_state({"id": job_id, "until": 0, "port": port, "closed_at": int(state.get("closed_at", 0))})
+    apply_rules(port, [], 0)
+
+
+def lock_now(job_id, operator_hash):
+    local_manager_policy.require_manager(operator_hash)
+    if not re.fullmatch(r"[a-f0-9]{32}", job_id):
+        raise ValueError("Invalid closure job")
+    port, _ = configuration()
+    state = read_state()
+    # Persist revocation before changing either firewall family; reconciliation
+    # then retains the closed policy if a command fails partway through.
+    closed_at = int(state.get("closed_at", 0)) if state.get("id") == job_id else int(time.time())
+    write_state({"id": job_id, "until": 0, "port": port, "closed_at": closed_at})
     apply_rules(port, [], 0)
 
 
@@ -165,12 +181,14 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX)
         if sys.argv[1:] == ["reconcile"]:
             reconcile()
-        elif len(sys.argv) == 5 and sys.argv[1] == "open":
-            open_window(sys.argv[2], int(sys.argv[3]), sys.argv[4])
+        elif len(sys.argv) in (5, 6) and sys.argv[1] == "open":
+            open_window(sys.argv[2], int(sys.argv[3]), sys.argv[4], int(sys.argv[5]) if len(sys.argv) == 6 else None)
+        elif len(sys.argv) == 4 and sys.argv[1] == "lock":
+            lock_now(sys.argv[2], sys.argv[3])
         elif len(sys.argv) == 3 and sys.argv[1] == "close":
             close_window(sys.argv[2])
         else:
-            raise ValueError("Expected reconcile, open ID DEADLINE OPERATOR_SHA256, or close ID")
+            raise ValueError("Expected reconcile, open ID DEADLINE OPERATOR_SHA256 [APPROVED_AT], lock ID OPERATOR_SHA256, or close ID")
 
 
 if __name__ == "__main__":

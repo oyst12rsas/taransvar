@@ -14,11 +14,6 @@
 # Integer values outside the documented range are clamped; malformed values
 # fall back to the default. Avoid inline comments on value lines.
 
-# The only documented mode today is conservative (default). It is reported in
-# assessments, but it does not itself enable/disable an action; the two action
-# flags below are the actual controls. Other mode values have no defined effect.
-AI_AGENT_MODE=conservative
-
 # Include the latest bounded local agent assessment in crontasks.pl's per-minute
 # status report. Set no to send exactly "report disabled" as aiAgent. This only
 # changes that report; the worker, its approval heartbeat and local checks run.
@@ -40,6 +35,9 @@ TERMINAL_HEARTBEAT_MAX_AGE_SECONDS=120
 # A transient systemd timer rolls back the rule. Default no.
 AI_MAY_CLOSE_SSH_DURING_ACTIVE_ATTACK=no
 
+# Also permits Google/TOTP-approved Close SSH and disconnect sessions in ops/agent.
+# Manual execution rechecks local managers and a fresh recovery console; it first
+# closes the IPv4/IPv6 Google SSH gate. Automatic execution still needs an attack.
 # Separate opt-in: with the SAME guards, SIGTERM sshd processes holding
 # established connections on SSH_PORT. This can disconnect a legitimate
 # administrator and has no automatic reconnection. Default no.

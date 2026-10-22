@@ -65,7 +65,6 @@ the supplied example; values shown are defaults.
 
 | Setting | Values and current effect |
 | --- | --- |
-| `AI_AGENT_MODE=conservative` | Assessment label only. `conservative` is the only documented value. This key does not grant privileges or select an LLM. |
 | `AI_STATUS_REPORT_ENABLED=yes` | Include the latest agent summary in the normal per-minute node status. Set `no` to send `"aiAgent":"report disabled"` instead. This does not stop the worker or its separate approval heartbeat. |
 | `TERMINAL_AVAILABLE=no` | Boolean declaration of a genuine independent recovery console. SSH on the protected port does not qualify. |
 | `TERMINAL_HEARTBEAT_FILE=/run/tarasec/operator-terminal.heartbeat` | Local path whose modification time proves that an operator recently checked the console. Do not refresh it automatically. |
@@ -153,3 +152,10 @@ reuses the node credential, and explicitly publishes manager hashes to central
 persistent state. See `docs/google-ssh.md` for private endpoints, revocation,
 Google/TOTP setup, deployment order and SSH close/open/expiry verification.
 This enrollment step does not close SSH or copy central grants onto the node.
+
+The obsolete `AI_AGENT_MODE` assessment label has been removed. Upgrading the
+approval worker removes its assignment from the installed manager configuration
+after the normal backup. It never controls reboot permission. The separate
+`mode` in `/etc/tarasec/operations-agent.json` is functional: `inspect` does not
+authorize maintenance; `demo` and `production` authorize typed maintenance subject
+to the existing activity, readiness and verification checks.

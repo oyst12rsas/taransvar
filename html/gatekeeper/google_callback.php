@@ -38,13 +38,36 @@ if ($http !== 200 || !is_array($identity) || ($identity['ok'] ?? false) !== true
 require __DIR__.'/dbfunc.php';
 $conn = getConnection();
 $email = strtolower((string)$identity['email']);
-$stmt = $conn->prepare('SELECT userId FROM user WHERE LOWER(username) = ? AND CAST(isAdmin AS UNSIGNED) = 1 LIMIT 1');
-$stmt->bind_param('s', $email);
-$stmt->execute();
-$user = $stmt->get_result()->fetch_assoc();
-$stmt->close();
+if (($cfg['authorization'] ?? '') === 'local_managers') {
+    require_once __DIR__.'/google_local_managers.php';
+    if (!gatekeeperLocalManager($email))
+        gatekeeperGoogleFail('This Google account is not authorized by this unit.');
+    // Keep a real local user ID for audit/account references, without persisting
+    // an administrator password grant. Google session authority comes from the
+    // root-owned manager list, independently of the legacy DB admin flag.
+    $stmt = $conn->prepare('SELECT userId FROM user WHERE LOWER(username) = ? ORDER BY userId LIMIT 1');
+    $stmt->bind_param('s', $email);
+    $stmt->execute();
+    $user = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$user) {
+        $password = bin2hex(random_bytes(64));
+        $stmt = $conn->prepare("INSERT INTO user(username,password,isAdmin) VALUES (?, ?, b'0')");
+        $stmt->bind_param('ss', $email, $password);
+        $stmt->execute();
+        $user = ['userId'=>$conn->insert_id];
+        $stmt->close();
+    }
+} else {
+    // Legacy manually configured clients retain the existing local DB check.
+    $stmt = $conn->prepare('SELECT userId FROM user WHERE LOWER(username) = ? AND CAST(isAdmin AS UNSIGNED) = 1 LIMIT 1');
+    $stmt->bind_param('s', $email);
+    $stmt->execute();
+    $user = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$user) gatekeeperGoogleFail('This Google account is not an existing Gatekeeper administrator.');
+}
 $conn->close();
-if (!$user) gatekeeperGoogleFail('This Google account is not an existing Gatekeeper administrator.');
 session_regenerate_id(true);
 $_SESSION['userid'] = (int)$user['userId'];
 $_SESSION['isAdmin'] = 1;

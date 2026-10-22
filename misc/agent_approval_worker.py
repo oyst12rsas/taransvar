@@ -96,7 +96,9 @@ def google_ssh_state():
         "--dport", str(port), "-m", "conntrack", "--ctstate", "NEW", "-j", window.CHAIN,
         check=False) for tool in ("iptables", "ip6tables"))
     return {"enabled": True, "state": ("open" if remaining else "closed") if verified else "unverified",
-            "remaining_seconds": remaining, "expires_at": int(state.get("until", 0))}
+            "remaining_seconds": remaining, "expires_at": int(state.get("until", 0)),
+            "can_disconnect": enabled("AI_MAY_TERMINATE_EXISTING_SSH_SESSIONS"),
+            "console_verified": bool(terminal_state()["verified"])}
 
 
 def execute_approved_job(job):
@@ -109,10 +111,40 @@ def execute_approved_job(job):
         until = job.get("open_until")
         if isinstance(until, bool) or not isinstance(until, int):
             raise ValueError("Invalid SSH window deadline")
-        result = run("/usr/bin/python3", "/usr/local/lib/tarasec/ssh_google_window.py",
-                     "open", job["id"], str(until), operator_hash)
+        args = ["/usr/bin/python3", "/usr/local/lib/tarasec/ssh_google_window.py",
+                "open", job["id"], str(until), operator_hash]
+        if isinstance(job.get("approved_at"), int) and not isinstance(job["approved_at"], bool):
+            args.append(str(job["approved_at"]))
+        result = run(*args)
         success = result.returncode == 0
         audit({"action": "open_ssh_temporarily", "success": success})
+        return success
+    if job.get("operation") == "close_ssh_and_disconnect":
+        if not enabled("SSH_GOOGLE_REOPEN_ENABLED") or not enabled("AI_MAY_TERMINATE_EXISTING_SSH_SESSIONS"):
+            raise RuntimeError("Local SSH closure/session-termination permission is disabled")
+        if not terminal_state()["verified"]:
+            raise RuntimeError("Independent recovery console is not verified")
+        result = run("/usr/bin/python3", "/usr/local/lib/tarasec/ssh_google_window.py",
+                     "lock", job["id"], operator_hash)
+        if result.returncode != 0:
+            audit({"action": "close_ssh_and_disconnect", "success": False, "stage": "close_gate"})
+            return False
+        action = terminate_existing_ssh_sessions(ssh_security_evidence.collect(), terminal_state(),
+                                                {"ongoing": False}, operator_requested=True)
+        success = bool(action and action.get("result") == "applied")
+        if success:
+            # SIGTERM delivery alone is not proof the SSH sockets went away.
+            try:
+                port = int(ssh_security_evidence.collect()["tarasecfw_selected_fields"]["SSH_PORT"])
+                for attempt in range(5):
+                    if not established_ssh_session_pids(port):
+                        break
+                    time.sleep(0.2)
+                else:
+                    success = False
+            except (OSError, ValueError, KeyError, RuntimeError, subprocess.TimeoutExpired):
+                success = False
+        audit({"action": "close_ssh_and_disconnect", "success": success})
         return success
     if job.get("operation") == "disable_obsolete_gateway_unit":
         return disable_obsolete_gateway_unit()
@@ -162,7 +194,6 @@ def assessment(evidence, concerns, terminal, attack, actions):
         "schema_version": 1,
         "prompt_version": "server-manager-v1",
         "knowledge_revision": "server-manager-core-v1",
-        "agent_mode": manager_setting("AI_AGENT_MODE", "conservative"),
         "priority": priority,
         "summary": ("Ongoing SSH authentication attack detected" if attack["ongoing"] else
                     ("Configuration or service findings need review" if concerns else "No issue found by bounded checks")),
@@ -200,7 +231,6 @@ def status_snapshot(evidence, concerns, terminal, attack, actions, pending, remo
     return {
         "checked_at": int(time.time()),
         "engine": "bounded_checks",
-        "mode": manager_setting("AI_AGENT_MODE", "conservative").lower(),
         "status": ("checking" if remote == "checking" else
                    "attention" if concerns or attack["ongoing"] or actions or pending or
                    remote == "unavailable" else "ok"),
@@ -307,16 +337,16 @@ def established_ssh_session_pids(port):
         columns = line.split()
         if len(columns) < 5 or columns[2].rsplit(":", 1)[-1] != str(port):
             continue
-        for match in re.finditer(r'\("sshd",pid=([0-9]+),', line):
+        for match in re.finditer(r'\("sshd(?:-session)?",pid=([0-9]+),', line):
             pid = int(match.group(1))
             if pid > 1:
                 pids.add(pid)
     return sorted(pids)
 
 
-def terminate_existing_ssh_sessions(evidence, terminal, attack):
+def terminate_existing_ssh_sessions(evidence, terminal, attack, operator_requested=False):
     if (not enabled("AI_MAY_TERMINATE_EXISTING_SSH_SESSIONS")
-            or not terminal["verified"] or not attack["ongoing"]):
+            or not terminal["verified"] or (not operator_requested and not attack["ongoing"])):
         return None
     port = int(evidence["tarasecfw_selected_fields"].get("SSH_PORT", "22"))
     try:
@@ -339,7 +369,7 @@ def terminate_existing_ssh_sessions(evidence, terminal, attack):
             return {"action": "terminate_existing_ssh_sessions", "result": "partially_applied",
                     "sessions_terminated": terminated}
     action = {"action": "terminate_existing_ssh_sessions", "result": "applied",
-              "reason": "ongoing_attack_with_verified_console",
+              "reason": "operator_request_with_verified_console" if operator_requested else "ongoing_attack_with_verified_console",
               "sessions_terminated": terminated,
               "forwarding_after": forwarding_health(ssh_security_evidence.collect())}
     audit({**action, "success": True})

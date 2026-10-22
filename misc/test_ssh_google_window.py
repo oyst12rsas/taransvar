@@ -93,5 +93,27 @@ class GoogleWindowTests(unittest.TestCase):
             with self.assertRaises(RuntimeError): worker.execute_approved_job({'operation':'arbitrary-command'})
 
 
+
+class ExplicitClosureTests(unittest.TestCase):
+    def test_closure_revokes_saved_window_and_rejects_old_opening(self):
+        state={'id':'a'*32,'until':2000,'port':5822}
+        def save(value): state.clear();state.update(value)
+        with mock.patch.object(window.local_manager_policy,'require_manager'), \
+             mock.patch.object(window,'configuration',return_value=(5822,[])), \
+             mock.patch.object(window,'read_state',side_effect=lambda:dict(state)), \
+             mock.patch.object(window,'write_state',side_effect=save), \
+             mock.patch.object(window,'apply_rules') as rules, \
+             mock.patch.object(window.time,'time',return_value=1000):
+            window.lock_now('b'*32,'c'*64)
+            self.assertEqual(state['until'],0)
+            self.assertEqual(state['closed_at'],1000)
+            rules.assert_called_with(5822,[],0)
+            for approved_at in (None,999,1000):
+                with self.assertRaises(ValueError):window.open_window('a'*32,1200,'c'*64,approved_at)
+            with mock.patch.object(window,'command'):
+                window.open_window('d'*32,1200,'c'*64,1001)
+            self.assertEqual(state['closed_at'],1000)
+
+
 if __name__ == '__main__':
     unittest.main()
