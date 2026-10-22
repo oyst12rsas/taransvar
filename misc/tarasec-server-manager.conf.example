@@ -35,6 +35,9 @@ TERMINAL_HEARTBEAT_MAX_AGE_SECONDS=120
 # A transient systemd timer rolls back the rule. Default no.
 AI_MAY_CLOSE_SSH_DURING_ACTIVE_ATTACK=no
 
+# Also permits Google/TOTP-approved Close SSH and disconnect sessions in ops/agent.
+# Manual execution rechecks local managers and a fresh recovery console; it first
+# closes the IPv4/IPv6 Google SSH gate. Automatic execution still needs an attack.
 # Separate opt-in: with the SAME guards, SIGTERM sshd processes holding
 # established connections on SSH_PORT. This can disconnect a legitimate
 # administrator and has no automatic reconnection. Default no.

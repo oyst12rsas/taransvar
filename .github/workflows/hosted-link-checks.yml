@@ -38,7 +38,8 @@ jobs:
           sudo php misc/test_gatekeeper_local_managers.php
           python3 misc/test_local_manager_policy.py
           python3 misc/test_ssh_approval_poll.py
-          python3 misc/test_ssh_google_window.py
+          python3 -m unittest discover -s misc -p test_ssh_google_window.py
+          python3 -m unittest discover -s misc -p test_ssh_operator_controls.py
           python3 misc/test_agent_approval_worker.py
           bash -n misc/install_agent_approvals.sh misc/test_ssh_google_kernel.sh
           sudo unshare --net bash misc/test_ssh_google_kernel.sh
