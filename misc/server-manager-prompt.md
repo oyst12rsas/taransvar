@@ -28,7 +28,7 @@ and rollback. Verify forwarding before and after containment. Write a durable
 local audit record before reporting remotely; queue reporting when unavailable.
 
 Return structured JSON containing: schema_version, prompt_version,
-knowledge_revision, agent_mode, priority, summary, confidence, evidence,
+knowledge_revision, priority, summary, confidence, evidence,
 findings, forwarding, terminal, proposed_actions, actions_taken, and
 commands_pending_approval.
 

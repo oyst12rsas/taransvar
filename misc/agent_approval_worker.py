@@ -162,7 +162,6 @@ def assessment(evidence, concerns, terminal, attack, actions):
         "schema_version": 1,
         "prompt_version": "server-manager-v1",
         "knowledge_revision": "server-manager-core-v1",
-        "agent_mode": manager_setting("AI_AGENT_MODE", "conservative"),
         "priority": priority,
         "summary": ("Ongoing SSH authentication attack detected" if attack["ongoing"] else
                     ("Configuration or service findings need review" if concerns else "No issue found by bounded checks")),
@@ -200,7 +199,6 @@ def status_snapshot(evidence, concerns, terminal, attack, actions, pending, remo
     return {
         "checked_at": int(time.time()),
         "engine": "bounded_checks",
-        "mode": manager_setting("AI_AGENT_MODE", "conservative").lower(),
         "status": ("checking" if remote == "checking" else
                    "attention" if concerns or attack["ongoing"] or actions or pending or
                    remote == "unavailable" else "ok"),

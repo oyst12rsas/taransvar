@@ -46,7 +46,6 @@ function agentStatusDetails($agent)
     if (isset($access['ipv4'], $access['ipv6']))
         $rows[] = array('SSH access enforcement', agentStatusEscape(
             'IPv4: '.$access['ipv4'].'; IPv6: '.$access['ipv6']));
-    $rows[] = array('Mode', agentStatusEscape($agent['mode'] ?? 'unknown'));
     $rows[] = array('Overall status', agentStatusEscape($agent['status'] ?? 'unknown'));
     $rows[] = array('SSH protection', agentStatusEscape($ssh['status'] ?? 'unknown'));
     $rows[] = array('SSH authentication', !empty($ssh['password_alone_possible'])
