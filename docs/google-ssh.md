@@ -118,8 +118,10 @@ PYTHON
 ```
 
 Never transmit the raw token. Back up the server configuration before editing,
-then run `sudo php -l /etc/tarasec/agent-approvals.php`. Gatekeeper browser handoff
-(`gatekeeper_clients`) is a separate feature and does not enroll a node.
+then run `sudo php -l /etc/tarasec/agent-approvals.php`. Explicit manager enrollment through `install_agent_approvals.sh --enroll-google`
+also configures Google browser handoff when Gatekeeper is deployed locally; see
+[GATEKEEPER_GOOGLE_LOGIN.md](GATEKEEPER_GOOGLE_LOGIN.md). Legacy manual
+`gatekeeper_clients` entries remain supported.
 
 The deployed approval service must support Google/TOTP approvals for the typed
 operation `open_ssh_temporarily`, returning approved_operator_sha256, a 32-hex job ID, nonce, and integer

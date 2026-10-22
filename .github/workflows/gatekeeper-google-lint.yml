@@ -16,6 +16,7 @@ jobs:
           php -l html/gatekeeper/google_config.example.php
           php -l html/gatekeeper/google_start.php
           php -l html/gatekeeper/google_callback.php
+          php -l html/gatekeeper/google_local_managers.php
           php -l html/gatekeeper/func/login.php
           php -l html/gatekeeper/func/main.php
           php -l html/gatekeeper/func/unitsMore.php

@@ -100,8 +100,10 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise ValueError('Enrollment redirects are prohibited')
 
 
-def register(api_url, token, nickname, hashes, opener=None):
-    payload = json.dumps({'nickname': nickname, 'manager_hashes': sorted(hashes)}).encode()
+def register(api_url, token, nickname, hashes, opener=None, gatekeeper=None):
+    data = {'nickname': nickname, 'manager_hashes': sorted(hashes)}
+    if gatekeeper is not None: data['gatekeeper'] = gatekeeper
+    payload = json.dumps(data).encode()
     req = urllib.request.Request(enrollment_url(api_url), data=payload,
         headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token}, method='POST')
     opener = opener or urllib.request.build_opener(NoRedirect())

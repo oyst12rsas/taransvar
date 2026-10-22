@@ -34,6 +34,8 @@ jobs:
           sudo unshare --net bash misc/test_manager_ssh_kernel.sh
           sudo unshare --net bash misc/test_manager_ssh_gate_kernel.sh
           sudo python3 misc/test_enroll_google_manager.py
+          sudo python3 misc/test_enroll_gatekeeper_google.py
+          sudo php misc/test_gatekeeper_local_managers.php
           python3 misc/test_local_manager_policy.py
           python3 misc/test_ssh_approval_poll.py
           python3 misc/test_ssh_google_window.py
