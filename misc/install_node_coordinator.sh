@@ -9,7 +9,12 @@ done
 test -f /usr/local/lib/tarasec/agent_approval_worker.py
 test -f /usr/local/lib/tarasec/ssh_google_window.py
 install -d -o root -g root -m 0755 /usr/local/lib/tarasec
-install -d -o root -g root -m 0700 /etc/tarasec
+# /etc/tarasec is shared with Gatekeeper: preserve existing permissions/ACLs.
+# Resetting it to 0700 masks Apache traversal access and hides Google sign-in.
+# New directories remain private; web-readable configuration is set up separately.
+if [[ ! -d /etc/tarasec ]]; then
+    install -d -o root -g root -m 0700 /etc/tarasec
+fi
 backup=$(mktemp -d /var/lib/tarasec-coordinator-backup.XXXXXX)
 chmod 0700 "$backup"
 crontab -l > "$backup/root.cron"
