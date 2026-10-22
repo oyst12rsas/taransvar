@@ -65,7 +65,12 @@ install -o root -g root -m 0755 "$root/ssh_security_evidence.py" /usr/local/lib/
 install -o root -g root -m 0755 "$root/agent_approval_worker.py" "$root/ssh_google_window.py" "$root/ssh_approval_poll.py" "$root/local_manager_policy.py" "$root/enroll_google_manager.py" /usr/local/lib/tarasec/
 # Without enrollment, preserve existing grants and never infer a manager roster.
 # Explicit enrollment publishes hashes only; raw emails remain on the node.
-install -d -o root -g root -m 0700 /etc/tarasec
+# /etc/tarasec is shared with Gatekeeper: preserve existing permissions/ACLs.
+# Resetting it to 0700 masks Apache traversal access and hides Google sign-in.
+# New directories remain private; web-readable configuration is set up separately.
+if [[ ! -d /etc/tarasec ]]; then
+    install -d -o root -g root -m 0700 /etc/tarasec
+fi
 if [[ ! -e /etc/tarasec/access.conf ]]; then
     install -o root -g root -m 0600 "$root/access.conf.example" /etc/tarasec/access.conf
     echo 'Configure local manager emails/hashes in /etc/tarasec/access.conf before accepting approvals.'
