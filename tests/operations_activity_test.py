@@ -15,6 +15,16 @@ class ObserverTest(unittest.TestCase):
                 {'checked_at': now, 'complete': True, 'meaningful_traffic': False,
                  'reporting_exclusion_verified': True})
 
+    def test_missing_demo_feed_reason_survives_aggregation(self):
+        demo,traffic=self.inputs(1000)
+        demo={'checked_at':1000,'complete':False,'reason':'demo_feed_http_403'}
+        sample=combine({},demo,traffic,1000,'boot')
+        self.assertFalse(sample['complete'])
+        self.assertIsNone(sample['active_demo'])
+        self.assertEqual(sample['blockers'],['demo_feed_http_403'])
+        demo['reason']='PRIVATE MESSAGE'
+        self.assertEqual(combine({},demo,traffic,1000,'boot')['blockers'],['demo_activity_unavailable'])
+
     def test_continuous_quiet(self):
         previous = {}
         for now in range(1000, 1310, 10):

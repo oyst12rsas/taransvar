@@ -18,6 +18,17 @@ def combine(previous, demo, traffic, now, boot_id):
     sample = {'checked_at': now, 'complete': valid, 'active_demo': demo.get('active_demo'),
               'meaningful_traffic': traffic.get('meaningful_traffic'), 'boot_id': boot_id,
               'quiet_for_seconds': 0}
+    if not valid:
+        sample['blockers'] = []
+        if not fresh(demo) or not isinstance(demo.get('active_demo'), bool):
+            sample['blockers'].append(demo.get('reason') if demo.get('reason') in {
+                'demo_feed_url_not_configured', 'demo_feed_unreachable',
+                'demo_configuration_or_key_missing', 'demo_feed_incomplete_or_stale',
+                'demo_feed_netbird_route_unverified', 'demo_feed_loopback_route_unverified',
+                'demo_feed_http_401', 'demo_feed_http_403', 'demo_feed_http_404',
+                'demo_feed_http_409', 'demo_feed_http_500', 'demo_feed_http_503'} else 'demo_activity_unavailable')
+        if not fresh(traffic) or not isinstance(traffic.get('meaningful_traffic'), bool) or traffic.get('reporting_exclusion_verified') is not True:
+            sample['blockers'].append('traffic_activity_unavailable_or_awaiting_baseline')
     idle = valid and not sample['active_demo'] and not sample['meaningful_traffic']
     old_stamp = previous.get('checked_at', 0)
     consecutive = (previous.get('complete') is True and previous.get('active_demo') is False

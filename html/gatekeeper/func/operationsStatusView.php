@@ -26,6 +26,26 @@ function operationsIssueHtml($message, $agent)
 }
 
 // Report heartbeat freshness separately from the most recent AI assessment.
+function operationsActivityBlockerLabel($blocker)
+{
+    $labels = array(
+        'demo_feed_url_not_configured' => 'Demo activity feed is not configured; run sudo tarasec upgrade --configure-activity',
+        'demo_configuration_or_key_missing' => 'Demo activity configuration or node key is missing',
+        'demo_feed_http_403' => 'Demo activity feed rejected this node; check its source-IP enrollment and key',
+        'demo_feed_http_409' => 'Demo activity endpoint is not connected to the central database',
+        'demo_feed_http_503' => 'Central demo activity feed is unavailable; check its database/schema',
+        'demo_feed_unreachable' => 'Cannot reach the configured demo activity feed',
+        'demo_activity_unavailable' => 'Demo activity evidence is unavailable',
+        'activity_observer_missing_or_stale' => 'Activity observer report is missing or stale',
+        'activity_observer_incomplete' => 'Activity observer lacks complete demo or traffic evidence',
+        'traffic_activity_unavailable_or_awaiting_baseline' => 'Traffic observer is unavailable or establishing its baseline',
+        'quiet_period_not_yet_elapsed' => 'Verified quiet time is accumulating; required interval has not elapsed',
+        'demo_currently_active' => 'An active demo was reported by the central feed',
+        'meaningful_client_traffic_active' => 'Routed client traffic was observed'
+    );
+    return $labels[$blocker] ?? str_replace('_', ' ', (string)$blocker);
+}
+
 function operationsStatusIssues($agent)
 {
     if (!is_array($agent)) return array('Operations report is unavailable or invalid.');
@@ -59,7 +79,7 @@ function operationsStatusIssues($agent)
         if (!empty($reboot['required']) || in_array($reboot['status'] ?? '', array('verification_pending','failed','awaiting_boot'), true)) {
             $issues[] = 'Reboot maintenance: '.str_replace('_', ' ', (string)($reboot['status'] ?? 'unknown')).'.';
             foreach (($reboot['blockers'] ?? array()) as $blocker)
-                if (is_string($blocker)) $issues[] = 'Reboot: '.str_replace('_', ' ', $blocker).'.';
+                if (is_string($blocker)) $issues[] = 'Reboot: '.operationsActivityBlockerLabel($blocker).'.';
         }
     }
     $security = operationsSecurityFindings($agent);
@@ -143,7 +163,7 @@ function operationsMaintenanceDetails($agent, bool $expanded = false): string
                 'interactive_session_activity_unverified' => 'Login session activity could not be measured. Reboot is deferred.',
                 'invalid_reboot_session_idle_seconds' => 'The reboot session idle interval is invalid; configure an integer of at least 60 seconds.',
             ];
-            $label = $labels[$blocker] ?? str_replace('_',' ',(string)$blocker);
+            $label = $labels[$blocker] ?? operationsActivityBlockerLabel($blocker);
             $html .= '<p>Reboot blocker: '.agentStatusEscape($label).'</p>';
         }
     }

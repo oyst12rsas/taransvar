@@ -639,6 +639,65 @@ def configure_operations_model(policy, policy_path, directory, root=Path('/')):
     return True
 
 
+def ensure_operations_activity(root=Path('/'), interactive=False):
+    """Resume a configured observer; require real feed enrollment for missing data."""
+    path = root / 'etc/tarasec/operations-activity.json'
+    try:
+        config = json.loads(path.read_text())
+    except (OSError, ValueError):
+        config = {}
+    if interactive:
+        print('The reboot observer needs the authenticated central demo feed, separately from minute status reports.')
+        print('On the central DB server, enroll this node source IP with misc/install_operations_activity_feed.sh SOURCE_IP WEB_ROOT.')
+        print('Transfer its node key securely to THIS server; never paste a key into chat.')
+        print('Use HTTPS, or explicitly enter the existing NetBird HTTP feed. No missing response is treated as idle.')
+        url = input('Demo feed URL [Enter = keep existing, none = postpone]: ').strip()
+        if url.lower() == 'none':
+            return 'needs_configuration'
+        if url:
+            key = input('Node feed key file ON THIS SERVER [Enter = existing configured path]: ').strip() or config.get('demo_key_file', '/etc/tarasec/operations-activity.key')
+            parsed = urllib.parse.urlsplit(url)
+            flag = []
+            if parsed.scheme == 'http':
+                import ipaddress
+                try:
+                    address = ipaddress.ip_address(parsed.hostname or '')
+                except ValueError:
+                    raise ValueError('HTTP demo feed requires a literal loopback or NetBird address')
+                if address.is_loopback:
+                    flag = ['--loopback-http']
+                elif address.version == 4 and address in ipaddress.ip_network('100.64.0.0/10'):
+                    flag = ['--netbird-http']
+                else:
+                    raise ValueError('HTTP demo feed must use loopback or NetBird; otherwise use HTTPS')
+            run(['bash', REPO / 'misc/configure_operations_activity.sh', url, key, *flag])
+            config = json.loads(path.read_text())
+    if not config.get('demo_url'):
+        print('Activity observer pending: no demo feed URL configured. Run sudo tarasec upgrade --configure-activity.')
+        return 'needs_configuration'
+    try:
+        # Verify the configured collector before claiming activity readiness.
+        collector = config.get('demo_collector', '/usr/local/lib/tarasec-operations/demo-collector')
+        from operations_agent import trusted
+        executable = trusted(collector)
+        observed = run([executable], capture_output=True, text=True, timeout=15)
+        sample = json.loads(observed.stdout)
+        stamp = sample.get('checked_at')
+        if (sample.get('complete') is not True or not isinstance(sample.get('active_demo'), bool)
+                or not isinstance(stamp, (int, float)) or isinstance(stamp, bool)
+                or not 0 <= time.time() - stamp <= 30):
+            print('Activity observer pending: authenticated demo feed is incomplete. Run the demo-collector for its specific reason.')
+            return 'feed_unavailable'
+        run(['systemctl', 'enable', '--now', 'tarasec-operations-activity.service'])
+        run(['systemctl', 'restart', 'tarasec-operations-activity.service'])
+        run(['systemctl', 'is-active', '--quiet', 'tarasec-operations-activity.service'])
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+        print('Activity observer pending: collector or observer service unavailable. Inspect demo-collector and the activity-service journal.')
+        return 'feed_unavailable'
+    print('Authenticated demo feed verified; continuous observer active. Fresh traffic baseline and quiet time are still required.')
+    return 'active'
+
+
 def activate_operations(directory, root=Path('/')):
     policy_path = root / 'etc/tarasec/operations-agent.json'
     policy = json.loads(policy_path.read_text())
@@ -657,10 +716,11 @@ def activate_operations(directory, root=Path('/')):
     backup(policy_path, directory)
     policy['mode'] = mode
     atomic(policy_path, json.dumps(policy, indent=2) + '\n')
+    activity = ensure_operations_activity(root)
     run(['systemctl', 'enable', '--now', 'tarasec-operations-agent.timer'])
     run(['systemctl', 'is-active', '--quiet', 'tarasec-operations-agent.timer'])
     print('AI operations agent activated in ' + mode + ' mode. Scheduled checks are enabled; action-specific readiness checks still apply.')
-    return {'activation': 'active', 'mode': mode}
+    return {'activation': 'active', 'mode': mode, 'activity_observer': activity}
 
 
 def apply_feature(name, directory, allow_enrollment=False):
@@ -871,6 +931,7 @@ def main(argv=None):
     parser.add_argument('--mode', choices=('demo', 'production'))
     parser.add_argument('--roles', help='Comma-separated local roles: database,gateway,node')
     parser.add_argument('--review-declined', action='store_true')
+    parser.add_argument('--configure-activity', action='store_true', help='Repair authenticated activity-feed configuration and resume the observer without a full upgrade')
     parser.add_argument('--status', action='store_true', help='Read status without changing anything')
     parser.add_argument('--plan', action='store_true', help='Show applicable features without changing anything')
     args = parser.parse_args(argv)
@@ -889,6 +950,21 @@ def main(argv=None):
         if details.get('approval_worker') == 'needs_configuration':
             print('    Optional approval worker needs configuration: ' + ', '.join(details.get('missing_policy', [])))
     if args.status or args.plan: return 0
+    if args.configure_activity:
+        if args.automatic: parser.error('--configure-activity requires interactive owner configuration')
+        if os.geteuid() != 0 or not sys.stdin.isatty(): parser.error('Run with sudo in an interactive terminal')
+        STATE.parent.mkdir(parents=True, exist_ok=True)
+        with (STATE.parent / 'upgrade.lock').open('w') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            # Preserve the previous configuration before any enrollment change.
+            stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
+            directory = STATE.parent / 'backups' / stamp
+            backup(Path('/etc/tarasec/operations-activity.json'), directory)
+            backup(Path('/etc/tarasec/operations-activity.key'), directory)
+            run(['bash', REPO / 'misc/install_operations_agent.sh'])
+            readiness = ensure_operations_activity(interactive=True)
+            print('Activity observer: ' + readiness)
+            return 0 if readiness == 'active' else 1
     if args.automatic: return automatic_upgrade(args, state, old_mode)
     if os.geteuid() != 0: parser.error('Run with sudo on the intended server')
     if not sys.stdin.isatty(): parser.error('An interactive terminal is required for owner confirmation')

@@ -6,6 +6,20 @@ from operations_collectors import forward_total,traffic_sample,validate_feed_url
 from operations_actions import read_only_command
 
 class CollectorTest(unittest.TestCase):
+    def test_demo_failure_reasons_are_specific_and_sanitized(self):
+        from unittest.mock import patch
+        from urllib.error import HTTPError
+        from operations_collectors import collector_sample
+        for error, reason in [(ValueError('Demo feed URL not configured'),'demo_feed_url_not_configured'),
+                              (FileNotFoundError('PRIVATE KEY PATH'),'demo_configuration_or_key_missing'),
+                              (HTTPError('https://private.test/token',403,'PRIVATE',{},None),'demo_feed_http_403'),
+                              (ValueError('PRIVATE SECRET'),'demo_collector_unavailable')]:
+            with patch('operations_collectors.demo',side_effect=error):
+                sample=collector_sample('demo')
+            self.assertFalse(sample['complete'])
+            self.assertEqual(sample['reason'],reason)
+            self.assertNotIn('PRIVATE',str(sample))
+
     def test_only_forward_counts_include_policy_and_rules(self):
         self.assertEqual(forward_total(':FORWARD ACCEPT [10:100]\n[4:40] -A FORWARD -j ACCEPT\n[500:5000] -A OUTPUT -j ACCEPT'),14)
     def test_missing_chain_or_rule_counter_is_unknown(self):

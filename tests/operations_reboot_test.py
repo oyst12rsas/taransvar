@@ -52,6 +52,30 @@ class RebootTests(unittest.TestCase):
                 self.runner, Path, quiet, lambda: self.saved.append(json.loads(json.dumps(self.state))),
                 self.events.append, self.root)
 
+    def test_session_activity_does_not_hide_missing_demo_evidence(self):
+        original=self.runner
+        def runner(argv,timeout):
+            if argv == ['loginctl','list-sessions','--no-legend','--no-pager']:
+                return dict(exit_code=1,output='')
+            if argv == ['/quiet']:
+                return dict(exit_code=0,output=json.dumps(dict(checked_at=1000,complete=False,blockers=['demo_feed_url_not_configured'])))
+            return original(argv,timeout)
+        self.runner=runner
+        self.assertFalse(self.tick())
+        self.assertIn('interactive_session_activity_unverified',self.state['reboot']['blockers'])
+        self.assertIn('demo_feed_url_not_configured',self.state['reboot']['blockers'])
+        self.assertNotIn(['systemctl','reboot'],self.calls)
+
+    def test_activity_blockers_distinguish_unknown_active_and_waiting(self):
+        from operations_reboot import activity_blockers
+        sample=dict(checked_at=1000,complete=True,active_demo=False,meaningful_traffic=False)
+        self.assertEqual(activity_blockers(sample,1000),['quiet_period_not_yet_elapsed'])
+        self.assertEqual(activity_blockers(dict(sample,active_demo=True),1000),['demo_currently_active'])
+        self.assertEqual(activity_blockers(dict(sample,meaningful_traffic=True),1000),['meaningful_client_traffic_active'])
+        self.assertEqual(activity_blockers(sample,1100),['activity_observer_missing_or_stale'])
+        self.assertEqual(activity_blockers(dict(sample,complete=False,blockers=['demo_feed_http_403']),1000),['demo_feed_http_403'])
+        self.assertEqual(activity_blockers(dict(sample,complete=False,blockers=['PRIVATE']),1000),['activity_observer_incomplete'])
+
     def test_required_reboot_persists_checkpoint_and_budget_before_dispatch(self):
         self.assertTrue(self.tick())
         self.assertEqual(self.calls[-1], ['systemctl', 'reboot'])
@@ -101,7 +125,7 @@ class RebootTests(unittest.TestCase):
             ('budget', 'daily_reboot_limit_reached'),
             ('interrupted', 'interrupted_command_requires_reconciliation'),
             ('readiness', 'target_initramfs_missing'),
-            ('activity', 'activity_or_quiet_time_unverified'),
+            ('activity', 'demo_currently_active'),
         )
         initramfs = self.root / ('boot/initrd.img-' + self.kernel)
         for scenario, blocker in cases:

@@ -241,6 +241,29 @@ def verify(checkpoint, policy, run, trusted, root=Path('/')):
     return blockers
 
 
+def activity_blockers(sample, now):
+    stamp = sample.get('checked_at')
+    if not isinstance(stamp, (int, float)) or isinstance(stamp, bool) or not 0 <= now - stamp <= 90:
+        return ['activity_observer_missing_or_stale']
+    if sample.get('complete') is not True:
+        allowed = {'demo_feed_url_not_configured', 'demo_feed_unreachable',
+                   'demo_configuration_or_key_missing', 'demo_feed_incomplete_or_stale',
+                   'demo_feed_netbird_route_unverified', 'demo_feed_loopback_route_unverified',
+                   'demo_activity_unavailable', 'traffic_activity_unavailable_or_awaiting_baseline',
+                   'demo_feed_http_401', 'demo_feed_http_403', 'demo_feed_http_404',
+                   'demo_feed_http_409', 'demo_feed_http_500', 'demo_feed_http_503'}
+        reasons = sample.get('blockers', [])
+        if not isinstance(reasons, list): reasons = []
+        return [b for b in reasons if isinstance(b, str) and b in allowed] or ['activity_observer_incomplete']
+    if not isinstance(sample.get('active_demo'), bool) or not isinstance(sample.get('meaningful_traffic'), bool):
+        return ['activity_observer_incomplete']
+    if sample['active_demo']:
+        return ['demo_currently_active']
+    if sample['meaningful_traffic']:
+        return ['meaningful_client_traffic_active']
+    return ['quiet_period_not_yet_elapsed']
+
+
 def maintain(state, policy, evidence, boot, now, run, trusted, quiet, persist, record, root=Path('/')):
     """Return True when reboot maintenance owns this tick (including blockers)."""
     run = safe_runner(run)
@@ -287,15 +310,19 @@ def maintain(state, policy, evidence, boot, now, run, trusted, quiet, persist, r
         return False
     sessions = session_activity(run, policy, root)
     state['reboot']['session_activity'] = sessions
-    if sessions['blockers']:
-        state['reboot'].update(status='waiting_for_quiet', blockers=sessions['blockers'])
-        return False
     observed = run([str(trusted(policy['quiet_probe']))], 20)
     import json
-    sample = json.loads(observed['output']) if observed['exit_code'] == 0 else {}
+    try:
+        sample = json.loads(observed['output']) if observed['exit_code'] == 0 else {}
+        if not isinstance(sample, dict): sample = {}
+    except ValueError:
+        sample = {}
     state['activity'] = sample
+    blockers = list(sessions['blockers'])
     if not quiet(state, sample, time.time(), max(60, int(policy.get('quiet_seconds', 300)))):
-        state['reboot'].update(status='waiting_for_quiet', blockers=['activity_or_quiet_time_unverified'])
+        blockers += activity_blockers(sample, time.time())
+    if blockers:
+        state['reboot'].update(status='waiting_for_quiet', blockers=blockers)
         return False
     # Repeat readiness and activity immediately before dispatch. No model output
     # or cached diagnosis can substitute for either observation.
