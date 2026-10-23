@@ -263,6 +263,7 @@ def apply_feature(name, directory):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=('upgrade',))
+    parser.add_argument('--no-pull', action='store_true', help='Use the current checkout without fetching updates')
     parser.add_argument('--mode', choices=('demo', 'production'))
     parser.add_argument('--roles', help='Comma-separated local roles: database,gateway,node')
     parser.add_argument('--review-declined', action='store_true')
@@ -290,7 +291,7 @@ def main(argv=None):
         mode = args.mode or (input('Choose deployment mode [demo/production]: ').strip().lower()
                              if old_mode == 'unconfigured' else old_mode)
         if mode not in ('demo', 'production'): raise ValueError('Choose demo or production explicitly')
-        print('Source: ' + str(REPO) + ' (use a reviewed checkout; this command does not fetch code)')
+        print('Source: ' + str(REPO) + ' (feature changes require your confirmation)')
         if choice('Confirm local roles: ' + ', '.join(roles)) != 'yes': return 0
         # Backups and audit state are private even when the caller has a permissive umask.
         os.umask(0o077)

@@ -10,10 +10,17 @@ sudo ./tarasec upgrade
 The first run installs the `tarasec` command, confirms the local roles (database,
 gateway, node; combinations allowed), and requires an explicit demo/production
 choice. Role detection is a suggestion, not authorization. Keep this checkout
-at the same path; the command points to it. Fetch/review new source before each
-upgrade. This command does not pull, merge or certify releases automatically.
+at the same path; the command points to it. Normal upgrades fetch `origin/main` and fast-forward a clean `main` checkout
+before offering feature changes. Local edits, detached checkouts and unpublished
+or divergent commits stop the automatic update. Git runs as the checkout owner
+when invoked through sudo. Fetch failure stops the upgrade; it does not silently
+install stale code. After fetching, the command restarts its updated launcher.
+It does not certify production readiness. Use `--no-pull` to deliberately use the
+current checkout offline or test a reviewed feature branch. `--plan`, `--status`
+and `--help` never fetch or modify source.
 
 ```bash
+sudo tarasec upgrade --no-pull
 sudo tarasec upgrade --plan
 sudo tarasec upgrade --status
 sudo tarasec upgrade --review-declined
