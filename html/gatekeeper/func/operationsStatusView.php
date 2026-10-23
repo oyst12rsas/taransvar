@@ -29,7 +29,7 @@ function operationsIssueHtml($message, $agent)
 function operationsActivityBlockerLabel($blocker)
 {
     $labels = array(
-        'demo_feed_url_not_configured' => 'Demo activity feed is not configured; run sudo tarasec upgrade --configure-activity',
+        'demo_feed_url_not_configured' => 'Demo activity feed is not configured; run sudo tarasec upgrade',
         'demo_configuration_or_key_missing' => 'Demo activity configuration or node key is missing',
         'demo_feed_http_403' => 'Demo activity feed rejected this node; check its source-IP enrollment and key',
         'demo_feed_http_409' => 'Demo activity endpoint is not connected to the central database',
@@ -51,6 +51,11 @@ function operationsStatusIssues($agent)
     if (!is_array($agent)) return array('Operations report is unavailable or invalid.');
     $issues = array();
     if (!empty($agent['manual_issue_sync_error'])) $issues[] = 'Local issue history synchronization unavailable; inspect the local database and operations worker installation.';
+    $observer = $agent['activity_observer'] ?? null;
+    if (is_array($observer) && ($observer['status'] ?? '') !== 'ready') {
+        foreach (($observer['blockers'] ?? array()) as $blocker)
+            if (is_string($blocker)) $issues[] = 'Activity monitoring: '.operationsActivityBlockerLabel($blocker).'.';
+    }
     $status = (string)($agent['status'] ?? 'unknown');
     if (in_array($status, array('stale', 'unavailable', 'unknown'), true))
         $issues[] = 'Operations report is '.$status.'.';

@@ -116,6 +116,20 @@ class UpgradeTests(unittest.TestCase):
         apply.assert_not_called()
         run.assert_called_once_with(['bash',u.REPO/'misc/install_operations_agent.sh'])
 
+    def test_normal_upgrade_includes_activity_configuration(self):
+        u.MODE.write_text('demo\n')
+        with patch.object(u,'FEATURES',(('operations','Operations',{'node'}),)), patch.object(u,'COMMAND',self.root/'tarasec'), patch.object(u.sys.stdin,'isatty',return_value=True), patch('builtins.input',side_effect=['yes']), patch.object(u,'apply_feature') as apply, patch('sys.stdout',new=io.StringIO()):
+            self.assertEqual(u.main(['upgrade','--roles','node']),0)
+        self.assertTrue(apply.call_args.kwargs['configure_activity'])
+
+    def test_configured_activity_is_reused_without_prompt_in_normal_upgrade(self):
+        path=self.root/'etc/tarasec/operations-activity.json'
+        path.parent.mkdir(parents=True)
+        path.write_text('{"demo_url":"https://example.test/feed","demo_collector":"/collector"}')
+        sample=dict(complete=True,active_demo=False,checked_at=u.time.time())
+        with patch('operations_agent.trusted',return_value=Path('/collector')), patch.object(u,'run',return_value=Mock(stdout=u.json.dumps(sample))), patch('builtins.input',side_effect=AssertionError('Existing enrollment must not prompt')), patch('sys.stdout',new=io.StringIO()):
+            self.assertEqual(u.ensure_operations_activity(self.root,interactive=True),'active')
+
     def test_mode_is_explicit(self):
         self.assertEqual(u.read_mode(), 'unconfigured')
         u.MODE.write_text('production\n')

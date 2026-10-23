@@ -72,3 +72,6 @@ checkOperationsView(strpos($upgradeHtml,'&lt;now&gt;') !== false, 'Upgrade reaso
 
 if (strpos(operationsActivityBlockerLabel('demo_feed_http_403'), 'enrollment') === false) throw new Exception('Feed authentication failure must be actionable');
 if (strpos(operationsActivityBlockerLabel('quiet_period_not_yet_elapsed'), 'accumulating') === false) throw new Exception('Quiet interval must be distinct from missing evidence');
+
+$observerIssues = operationsStatusIssues(['status'=>'monitoring','activity_observer'=>['status'=>'unavailable','blockers'=>['demo_feed_url_not_configured']]]);
+if (strpos(implode(' ', $observerIssues), 'Activity monitoring:') === false) throw new Exception('Observer readiness must be reported without a reboot');

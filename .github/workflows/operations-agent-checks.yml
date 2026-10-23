@@ -20,6 +20,8 @@ on:
       - 'misc/operations_reporting.py'
       - 'misc/operations_agent.py'
       - 'misc/operations_activity.py'
+      - 'misc/operations_observer.py'
+      - 'tests/operations_observer_test.py'
       - 'misc/operations_diagnostics.py'
       - 'misc/operations_actions.py'
       - 'misc/operations_prompt.py'
