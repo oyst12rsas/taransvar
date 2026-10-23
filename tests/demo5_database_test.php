@@ -49,6 +49,7 @@ check((int)$db->query('SELECT COUNT(*) n FROM vListings')->fetch_assoc()['n']===
 echo "Demo 5 migration and database checks passed\n";
 // Exercise real API scripts using an isolated fixture DB, without an HTTP server.
 $temp=sys_get_temp_dir().'/tarasec-demo5-api-'.bin2hex(random_bytes(6));mkdir($temp);mkdir($temp.'/script');
+copy(__DIR__.'/../html/deploymentMode.php', $temp.'/deploymentMode.php');
 file_put_contents($temp.'/dbfunc.php', <<<'PHP'
 <?php
 function getConnection(){return new mysqli(getenv('DEMO5_TEST_PORT')?'127.0.0.1':'localhost','root',getenv('DEMO5_TEST_PASSWORD')?:'','tarasec_demo5_test',(int)(getenv('DEMO5_TEST_PORT')?:0),getenv('DEMO5_TEST_PORT')?null:getenv('DEMO5_TEST_SOCKET'));}

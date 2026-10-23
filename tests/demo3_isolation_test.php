@@ -22,6 +22,7 @@ sql3($db,"CREATE TABLE setup(globalDb1ip INT UNSIGNED,globalDb2ip INT UNSIGNED,g
     CREATE TABLE assistanceRequest(requestId INT AUTO_INCREMENT PRIMARY KEY,purpose VARCHAR(32),ip INT UNSIGNED,port INT,senderIp INT UNSIGNED,senderPort INT,category VARCHAR(64),comment TEXT,requestQuality INT,wantSpoofed BIT,active BIT,isDemo BIT DEFAULT b'0',handled BIT,regardingRequestId INT,fromOther BIT,sentPartners BIT DEFAULT b'0',handlingComment TEXT);
     INSERT INTO assistanceRequest(purpose,ip,port,category,active,isDemo) VALUES('forDistribution',INET_ATON('100.68.1.1'),0,'production',b'1',b'0');");
 $temp=sys_get_temp_dir().'/tarasec-demo3-api-'.bin2hex(random_bytes(5));mkdir($temp);mkdir($temp.'/script');
+copy(__DIR__.'/../html/deploymentMode.php', $temp.'/deploymentMode.php');
 file_put_contents($temp.'/dbfunc.php', <<<'PHP'
 <?php
 function getConnection(){return new mysqli('127.0.0.1','root',getenv('DEMO3_TEST_PASSWORD')?:'','tarasec_demo3_test',(int)getenv('DEMO3_TEST_PORT'));}
