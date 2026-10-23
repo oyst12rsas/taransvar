@@ -559,10 +559,39 @@ def activate_operations(directory, root=Path('/')):
 def apply_feature(name, directory, allow_enrollment=False):
     directory.mkdir(parents=True, mode=0o700, exist_ok=True)
     if name == 'database':
+        client = shutil.which('mariadb') or shutil.which('mysql')
+        if not client: raise ValueError('Install mariadb-client before database migration')
+        versions = re.findall(r'^#version\s+(\d+)\b', (REPO / 'misc/install.sql').read_text(), re.M)
+        if not versions: raise ValueError('No database migrations found')
+        latest = max(map(int, versions))
+        current_text = run([client, '--batch', '--skip-column-names', 'taransvar', '-e',
+                            'SELECT dbVersion FROM setup'], capture_output=True, text=True).stdout.strip()
+        if not current_text.isdigit(): raise ValueError('Expected one database schema version')
+        current = int(current_text)
+        if current > latest: raise ValueError('Database schema is newer than this checkout')
+        if current == latest:
+            print('Database schema ' + str(current) + ' is already current; no migration or database dump needed.')
+            return {'schema_version': current, 'migration': 'not_needed'}
         dump = shutil.which('mariadb-dump') or shutil.which('mysqldump')
         if not dump: raise ValueError('Install mariadb-client before database migration')
-        with (directory / 'taransvar.sql').open('wb') as out:
-            run([dump, '--single-transaction', '--routines', '--events', '--triggers', 'taransvar'], stdout=out)
+        size = run([client, '--batch', '--skip-column-names', '-e',
+                    "SELECT COALESCE(SUM(data_length+index_length),0) FROM information_schema.tables WHERE table_schema='taransvar'"],
+                   capture_output=True, text=True).stdout.strip()
+        if not size.isdigit(): raise ValueError('Could not estimate database backup size')
+        required = 2 * int(size) + 256 * 1024 * 1024
+        if shutil.disk_usage(directory).free < required:
+            raise ValueError('Insufficient space for a safe database backup: need approximately ' + str(required // (1024*1024)) + ' MiB including reserve. No dump or migration started. Free space or expand the disk, then rerun.')
+        partial = directory / 'taransvar.sql.partial'
+        created = False
+        try:
+            with partial.open('xb') as out:
+                created = True
+                run([dump, '--single-transaction', '--routines', '--events', '--triggers', 'taransvar'], stdout=out)
+                out.flush(); os.fsync(out.fileno())
+            partial.replace(directory / 'taransvar.sql')
+        except BaseException:
+            if created: partial.unlink(missing_ok=True)
+            raise
         run(['perl', REPO / 'misc/upgrade_db.pl', '--confirmed'])
     elif name == 'runtime':
         target = Path('/root/taransvar/perl')

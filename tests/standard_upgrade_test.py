@@ -189,11 +189,32 @@ class UpgradeTests(unittest.TestCase):
 
     def test_database_dump_failure_prevents_migration(self):
         error = u.subprocess.CalledProcessError(1, 'mariadb-dump')
-        with patch.object(u.shutil, 'which', return_value='mariadb-dump'), patch.object(u, 'run', side_effect=error) as run:
+        def execute(argv, **kwargs):
+            if 'stdout' in kwargs:
+                kwargs['stdout'].write(b'incomplete backup')
+                raise error
+            return Mock(stdout='99' if 'taransvar' in argv else '1024')
+        with patch.object(u.shutil, 'which', side_effect=lambda name:name), patch.object(u.shutil,'disk_usage',return_value=Mock(free=1024**3)), patch.object(u, 'run', side_effect=execute) as run:
             with self.assertRaises(u.subprocess.CalledProcessError):
                 u.apply_feature('database', self.root / 'backup')
-        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_count, 3)
         self.assertEqual(run.call_args.args[0][0], 'mariadb-dump')
+        self.assertFalse((self.root/'backup/taransvar.sql.partial').exists())
+        self.assertFalse((self.root/'backup/taransvar.sql').exists())
+
+    def test_current_schema_needs_no_dump_or_space(self):
+        with patch.object(u.shutil,'which',side_effect=lambda name:name),patch.object(u,'run',return_value=Mock(stdout='100')) as run,patch.object(u.shutil,'disk_usage') as disk:
+            result=u.apply_feature('database',self.root/'backup')
+        self.assertEqual(result['migration'],'not_needed')
+        self.assertEqual(run.call_count,1)
+        disk.assert_not_called()
+
+    def test_database_space_check_precedes_dump_and_migration(self):
+        with patch.object(u.shutil,'which',side_effect=lambda name:name),patch.object(u,'run',side_effect=[Mock(stdout='99'),Mock(stdout='1000000')]) as run,patch.object(u.shutil,'disk_usage',return_value=Mock(free=100)):
+            with self.assertRaisesRegex(ValueError,'Insufficient space'):
+                u.apply_feature('database',self.root/'backup')
+        self.assertEqual(run.call_count,2)
+        self.assertFalse((self.root/'backup/taransvar.sql.partial').exists())
 
     def test_production_refuses_active_services(self):
         with patch.object(u, 'settings', return_value={}), patch.object(u.subprocess, 'run', return_value=Mock(returncode=0)):
