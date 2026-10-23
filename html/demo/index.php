@@ -1,3 +1,4 @@
+<?php require_once __DIR__ . '/../deploymentMode.php'; tarasecRequireDemo(); ?>
 <!doctype html>
 <html lang="en">
 <head>

@@ -1,4 +1,7 @@
 <?php
+require_once __DIR__ . '/../../deploymentMode.php';
+tarasecRequireDemo();
+
 function appDemo3Esc($value){ return htmlspecialchars((string)$value, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8'); }
 function appDemo3(){
  global $setupRow; $isDbServer=isset($setupRow['isDbServer'])&&(int)$setupRow['isDbServer']===1;

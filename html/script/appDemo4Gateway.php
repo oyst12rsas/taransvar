@@ -1,4 +1,7 @@
 <?php
+require_once __DIR__ . '/../deploymentMode.php';
+tarasecRequireDemo();
+
 declare(strict_types=1);
 ini_set('display_errors', '0');
 error_reporting(E_ALL);

@@ -1,4 +1,7 @@
 <?php
+require_once __DIR__ . '/../../deploymentMode.php';
+tarasecRequireDemo();
+
 
 include_once "saveDemoInfo.php";
 

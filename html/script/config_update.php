@@ -1,4 +1,7 @@
 <?php
+require_once __DIR__ . '/../deploymentMode.php';
+if (($_GET['f'] ?? '') === 'demo') tarasecRequireDemo();
+
 
 // Backward compatibility for older TaraSec/Taralink nodes. Keep the historic
 // URLs working while using the current validated, race-safe handlers.

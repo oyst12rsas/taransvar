@@ -1,6 +1,8 @@
 <?php
 session_start();
 $nRequiredDbVersion=83;	//NOTE! Make sure this line is always number 3 in the file because that's claimed below.
+require_once __DIR__ . '/../deploymentMode.php';
+if (preg_match('/demo/i', (string)($_GET['f'] ?? ''))) tarasecRequireDemo();
 
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
@@ -302,6 +304,7 @@ var bGatekeeperAdmin = <?php print isAdmin() ? "true" : "false"; ?>;
 ?></title>
 </head>
 <body onload="pageLoader()">
+<p><strong>TaraSec mode: <?php echo htmlspecialchars(tarasecDeploymentMode(), ENT_QUOTES, 'UTF-8'); ?></strong></p>
 <div id="targetTime" style="display:none;"><?php print $szTargetTime; ?></div>
 <table class="center"><tr><td bgcolor="#AAB396" style="position: relative;">
 <?php
@@ -340,7 +343,7 @@ global $setupRow;
 <td bgcolor="white"><?php printMenuChoice("units", "Units"); ?></td>
 <?php if (isAdmin()) { ?><td bgcolor="white"><?php printMenuChoice("issues", "Issues"); ?></td><?php } ?>
 <td bgcolor="white"><?php printMenuChoice("attack", "Attack"); ?></td>
-<td bgcolor="white"><?php printMenuChoice("demo", "Demo"); ?></td>
+<td bgcolor="white"><?php if (tarasecDeploymentMode() !== "production") printMenuChoice("demo", "Demo"); ?></td>
 <td bgcolor="white"><?php printMenuChoice("about", "About"); ?></td>
 <td bgcolor="white"><?php printMenuChoice("setupMenu", "Setup menu"); ?></td>
 <td bgcolor="white"><?php printMenuChoice("help", "Help"); ?></td>

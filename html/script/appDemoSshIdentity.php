@@ -1,4 +1,7 @@
 <?php
+require_once __DIR__ . '/../deploymentMode.php';
+tarasecRequireDemo();
+
 // Gateway-observed identity proof. Never accept an app-supplied unit ID/IP.
 declare(strict_types=1);
 ini_set('display_errors', '0');

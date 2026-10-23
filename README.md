@@ -33,3 +33,10 @@ See **[AI_INSTALL_GUIDE.md](AI_INSTALL_GUIDE.md#netbird-and-tarasec-service-conn
 - **[Demo 4: NATed Hotspot Contribution Through a TaraSec VPS Partner](docs/DEMO4_WHITEPAPER.md)** — proposed use of NetBird and policy routing so only tagged traffic to registered TaraSec participants uses the overlay.
 
 You can also learn more at **https://tarasec.org**.
+
+## Standard owner-confirmed upgrades
+
+Run `sudo ./tarasec upgrade` from a reviewed checkout on the intended server.
+It confirms demo/production mode and local roles, then offers applicable features
+with saved Yes/No/Never choices. See [Standard upgrade](docs/STANDARD_UPGRADE.md)
+for backups, security prerequisites, status and mode transitions.
