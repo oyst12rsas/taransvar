@@ -40,7 +40,8 @@ echo "Operations status view checks passed.\n";
 
 require __DIR__.'/../html/gatekeeper/func/unitsMore.php';
 foreach (array(70 => null, 77 => null, 84 => null, 85 => 'yellow', 89 => 'yellow', 90 => 'red') as $percent => $severity) {
-    $issues = collectUnitIssues(array('df' => '100G '.$percent.'G '.(100-$percent).'G'), 0);
+    $issues = array_values(array_filter(collectUnitIssues(array('df' => '100G '.$percent.'G '.(100-$percent).'G'), 0),
+        fn($issue) => $issue['label'] === 'Disk usage'));
     checkOperationsView(count($issues) === ($severity === null ? 0 : 1), 'Disk warning boundary mismatch');
     if ($severity !== null) {
         checkOperationsView($issues[0]['severity'] === $severity, 'Disk dot severity mismatch');
@@ -51,7 +52,7 @@ checkOperationsView(diskStatusPercent('11G 8.5G 2.5G') === 77, 'Decimal disk siz
 
 $custom = array('df' => '100G 77G 23G', 'operationsAgent' => array('status' => 'monitoring', 'resource_pressure' => array('disk_threshold_percent' => 75)));
 checkOperationsView(diskStatusThreshold($custom) === 75.0, 'Configured threshold missing');
-checkOperationsView(collectUnitIssues($custom, 0)[0]['label'] === 'Disk usage', 'Configured maintenance warning missing');
+checkOperationsView(count(array_filter(collectUnitIssues($custom, 0), fn($issue) => $issue['label'] === 'Disk usage')) === 1, 'Configured maintenance warning missing');
 
 $maintenance = operationsMaintenanceDetails(['status'=>'monitoring','last_assessment_status'=>'command_executed',
     'reboot'=>['status'=>'waiting_for_quiet','target_kernel'=>'6.8.0-test','blockers'=>['interactive_sessions_active_or_unknown']],

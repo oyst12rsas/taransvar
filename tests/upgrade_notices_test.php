@@ -16,4 +16,7 @@ ensure(taraSecUpgradeAssessment([],['notices'=>[$notice]])['catalog_status']==='
 $view=taraSecUpgradeView(['role'=>'node']);
 ensure($view['color']==='red','Bundled important release marks legacy node red');
 ensure(str_contains($view['message'],'not reported'),'Explain unknown version');
+require_once __DIR__.'/../html/gatekeeper/func/unitsMore.php';
+$issues=collectUnitIssues([],0);
+ensure(count(array_filter($issues, fn($i)=>$i['label']==='TaraSec upgrade' && $i['severity']==='red'))===1,'Unit issue must explain upgrade red dot');
 echo "Upgrade notice checks passed\n";
