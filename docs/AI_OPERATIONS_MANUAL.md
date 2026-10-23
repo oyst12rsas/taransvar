@@ -758,3 +758,5 @@ updates. Notices never choose commands or widen execution grants, and urgency is
 separate from deployment risk. The adapter records an upgrade issue until a fresh
 DB assessment verifies the deployed release. No SSH bypass is added. See
 [Standard upgrade](STANDARD_UPGRADE.md) for risk classification and recovery.
+
+The deployment inventory recognizes root minute reporting jobs in root’s crontab, `/etc/crontab`, and valid files under `/etc/cron.d`. A reporter scheduled in `/etc/cron.d/tarasec-status` does not need a duplicate root crontab entry. Schedule detection does not prove database receipt.

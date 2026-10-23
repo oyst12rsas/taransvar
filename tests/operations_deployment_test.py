@@ -71,4 +71,36 @@ class DeploymentTests(unittest.TestCase):
             result = deployment_inventory(lambda *args: {'exit_code': 1, 'output': 'PRIVATE ERROR'}, Path(directory))
             self.assertIn('minute_reporter_inventory_unknown', result['findings'])
             self.assertNotIn('minute_reporter_not_found_in_root_cron', result['findings'])
+            self.assertNotIn('minute_reporter_not_found_in_cron', result['findings'])
             self.assertNotIn('PRIVATE ERROR', json.dumps(result))
+
+    def test_system_cron_reporter_replaces_commented_root_entry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            cron=root/'etc/cron.d';cron.mkdir(parents=True)
+            reporter='/root/taransvar/perl/crontasks.pl'
+            (cron/'tarasec-status').write_text('* * * * * root sleep 3; /usr/bin/perl '+reporter+' cron --secret=PRIVATE_VALUE\n')
+            result=self.inspect(root,'#* * * * * /usr/bin/perl '+reporter+' cron\n')
+            self.assertTrue(result['system_cron_inspected'])
+            self.assertEqual([p['path'] for p in result['reporters']],[reporter])
+            self.assertNotIn('minute_reporter_not_found_in_cron',result['findings'])
+            self.assertNotIn('minute_reporter_inventory_unknown',result['findings'])
+            self.assertNotIn('PRIVATE_VALUE',json.dumps(result))
+
+    def test_inactive_or_non_root_system_cron_is_not_a_minute_reporter(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);cron=root/'etc/cron.d';cron.mkdir(parents=True)
+            command='/usr/bin/perl /root/taransvar/perl/crontasks.pl cron\n'
+            (cron/'tarasec-status').write_text('#* * * * * root '+command+'* * * * * ubuntu '+command+'0 * * * * root '+command)
+            (cron/'tarasec-status.disabled').write_text('* * * * * root '+command)
+            result=self.inspect(root,'')
+            self.assertEqual(result['reporters'],[])
+            self.assertIn('minute_reporter_not_found_in_cron',result['findings'])
+
+    def test_etc_crontab_and_root_crontab_reporter_are_deduplicated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);(root/'etc').mkdir()
+            command='/usr/bin/perl /root/taransvar/perl/crontasks.pl cron\n'
+            (root/'etc/crontab').write_text('*/1 * * * * root '+command)
+            result=self.inspect(root,'* * * * * '+command)
+            self.assertEqual(len(result['reporters']),1)
