@@ -10,6 +10,13 @@ from operations_tools import gateway_tools, resolve_tool
 
 def main():
     policy = json.loads(trusted('/etc/tarasec/operations-agent.json').read_text())
+    if '--connection-check' in sys.argv:
+        policy = dict(policy, mode='inspect', task='Connection test only. Return a valid inspect decision; no action will execute.')
+        manual = trusted('/usr/local/lib/tarasec-operations/AI_OPERATIONS_MANUAL.md').read_text()
+        validate_decision(model(policy, build_prompt(manual, policy,
+            {'integration_test_only': True}, {}, {}, {}, {})))
+        print('Model connection and decision protocol verified; no action executed.')
+        return
     if '--direct' in sys.argv:
         policy = json.loads(trusted('/etc/tarasec/operations-direct.json').read_text())
         if policy.get('model_provider') != 'openai':

@@ -91,5 +91,5 @@ path.chmod(0o644)
 PYREF
 python3 "$source_dir/configure_log_retention.py"
 systemctl daemon-reload
-echo 'Installed, not enabled. Configure and test the dedicated model connection first.'
+echo 'Agent files installed; existing timer state retained. The standard upgrader next checks the model connection and activates the agent.'
 echo 'See docs/AI_OPERATIONS_MANUAL.md for pilot enrollment and activity-probe contract.'

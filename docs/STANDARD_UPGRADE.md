@@ -1,5 +1,16 @@
 # Standard upgrade
 
+The **AI operations agent** step detects an existing installation. A missing
+agent requires installation confirmation, even in demo mode; unattended runs
+skip first installation. After installation or update, the upgrader tests the
+configured model connection and decision protocol without executing returned
+actions, copies the selected demo/production mode into the agent policy, and
+enables its recurring timer. Production upgrades still require confirmation.
+Other local policy settings and action-specific readiness checks remain in force.
+Missing model configuration or a failed probe is recorded as partial, pending
+activation, with instructions to configure the endpoint/key and rerun. No model
+credentials are printed. A standalone installer still only installs files.
+
 Run on the server being updated, from a reviewed TaraSec checkout:
 
 ```bash
