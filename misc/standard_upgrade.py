@@ -30,7 +30,7 @@ FEATURES = (
     ('google', 'Install/update Google manager sign-in and approval worker', set(ROLES)),
     ('ssh-window', 'Enable/refresh Google-controlled temporary SSH access (requires verified console and MFA)', set(ROLES)),
     ('ssh-key', 'Add an administrator SSH public key (password policy unchanged)', set(ROLES)),
-    ('honeypot', 'Move administrator SSH and deploy/update the SSH honeypot', set(ROLES)),
+    ('honeypot', 'Install or refresh the fake SSH service (honeypot)', set(ROLES)),
 )
 class FeaturePostponed(Exception):
     pass
@@ -64,6 +64,8 @@ def atomic(path, text, mode=0o600):
 
 
 def choice(prompt):
+    print('yes = apply this step; no (or Enter) = skip this time; never = skip on future runs too.')
+    print('To reconsider a never choice later, run: sudo tarasec upgrade --review-declined')
     while True:
         answer = input(prompt + ' [yes/no/never]: ').strip().lower()
         if answer in ('yes', 'y'): return 'yes'
@@ -201,6 +203,56 @@ def public_key_input(value, home):
 
 
 def feature_guidance(name, root=Path('/')):
+    explanations = {
+        'database': (
+            'The database stores TaraSec units, reports and settings. This updates its tables to the format required by this release.',
+            'Yes creates a database backup and applies schema migrations; this does not upgrade MariaDB itself.',
+            'Choose yes on a server hosting the TaraSec database. Skipping may leave newer features unavailable.',
+        ),
+        'runtime': (
+            'The runtime is the installed set of Perl scripts used for scheduled TaraSec maintenance and reporting.',
+            'Yes replaces those scripts while preserving local configuration. Choose yes to use the current maintenance code.',
+        ),
+        'taralink': (
+            'Taralink is the background service that processes TaraSec traffic and security reports.',
+            'Yes builds and replaces the installed program. A running service is briefly stopped and restarted.',
+            'Choose yes to update an existing installation; this step requires its build tools and libraries.',
+        ),
+        'gatekeeper': (
+            'Gatekeeper is the web interface for units, issues, reports and administration.',
+            'Yes backs up and updates the installed web files while preserving the database connection settings.',
+            'Choose yes on a server already hosting Gatekeeper to make the current pages available.',
+        ),
+        'operations': (
+            'The operations agent monitors this server and can perform maintenance allowed by its configured policy.',
+            'Yes installs or updates its files while retaining existing policy and scheduling.',
+            'A new installation stays disabled until its model connection and operating policy are configured and tested.',
+        ),
+        'google': (
+            'This connects the manager/approval pages to Google sign-in and the approval worker.',
+            'Yes refreshes an existing integration, or starts enrollment if none exists and you explicitly approve it.',
+            'This step alone does not enable temporary SSH closure. The separate ssh-window step controls that.',
+        ),
+        'ssh-window': (
+            'SSH is remote terminal access. An SSH window temporarily permits NEW connections after Google sign-in and authenticator verification.',
+            'Yes enables or refreshes this access control: new SSH connections are blocked outside an approved opening.',
+            'You still need your SSH key and any required server password. Existing sessions may survive window expiry.',
+            'Choose yes only after Google enrollment and recovery-console testing; choose no to leave the current access policy unchanged.',
+        ),
+        'ssh-key': (
+            'An SSH key identifies your administrator computer when logging in to this server.',
+            'Yes adds its public key to a chosen server account. The private key and its passphrase stay on your computer.',
+            'Choose no if your intended key already works. Adding a key does not remove existing keys or change password requirements.',
+        ),
+        'honeypot': (
+            'A honeypot is a fake SSH service that records suspicious connection and login attempts for TaraSec reporting.',
+            'It is separate from your real administrator login; do not use the honeypot port for administration.',
+            'Yes refreshes an existing setup, or deploys the honeypot and moves real SSH to a separate administrator port when needed.',
+            'Choose no to leave the current setup unchanged for this run. A port migration needs console recovery and a fresh login test.',
+        ),
+    }
+    for explanation in explanations.get(name, ()):
+        print(explanation)
     if name == 'ssh-key':
         print('Choose the Linux account ON THIS SERVER that you want to log in to: the username you normally use with ssh.')
         print('Find the key on your ADMINISTRATOR COMPUTER (for example Acer), in another terminal:')
