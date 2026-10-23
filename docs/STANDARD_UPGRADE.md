@@ -1,5 +1,17 @@
 # Standard upgrade
 
+At model setup, **blank selects the TaraSec system** (including at the Flowise
+prediction URL prompt); **none postpones**. A custom Flowise HTTP(S) prediction
+URL or direct OpenAI configuration remains available. Explicit custom HTTP uses
+an insecure transport flag and prints a warning; central enrollment always uses
+HTTPS without redirects. Existing complete custom connections are retained.
+The default creates a node-specific AI activation request on the existing
+Google/TOTP agent approval page. After approval, rerun the upgrade to retrieve
+the grant, test the connection and activate the local agent. The central Flowise
+key stays on the website; the node uses its existing enrollment token. Central
+model configuration must be installed once by the site administrator. Missing
+central configuration is reported separately from pending operator approval.
+
 When the AI agent lacks a model connection, an interactive upgrade now offers
 guided Flowise or direct OpenAI setup. API keys are entered without echo and
 stored with mode 0600; existing complete settings are reused. Unattended runs
