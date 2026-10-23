@@ -109,6 +109,14 @@ class UpgradeTests(unittest.TestCase):
         self.assertTrue(demo_automatic('database', 'demo'))
         self.assertFalse(demo_automatic('runtime', 'production'))
 
+    def test_existing_google_refresh_is_eligible_but_enrollment_is_not(self):
+        state={'mode':'demo','google_existing':True,'features':{}}
+        self.assertEqual(automatic_features(state,['google']),['google'])
+        self.assertEqual(upgrade_risk('google',context=state),'medium')
+        state['google_existing']=False
+        self.assertEqual(automatic_features(state,['google']),[])
+        self.assertEqual(upgrade_risk('google',context=state),'high')
+
     def test_high_risk_database_blocks_dependents_until_manually_installed(self):
         state = {'mode':'demo','features':{}}
         release = {'version':2,'risks':{'database':'high'}}

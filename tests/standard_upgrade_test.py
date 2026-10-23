@@ -153,6 +153,55 @@ class UpgradeTests(unittest.TestCase):
         apply.assert_called_once()
         self.assertEqual(u.load_state()['features']['operations']['approval'], 'demo_policy')
 
+    def test_legacy_gatekeeper_config_is_detected_without_node_receipt(self):
+        config = self.root / 'etc/tarasec/gatekeeper-google.php'
+        config.parent.mkdir(parents=True)
+        config.write_text('<?php return [];')
+        self.assertTrue(u.existing_google_setup(self.root))
+        self.assertFalse((config.parent / 'agent-enrollment.json').exists())
+
+    def test_existing_google_refresh_in_demo_has_no_upgrade_prompt(self):
+        u.MODE.write_text('demo\n')
+        with patch.object(u, 'existing_google_setup', return_value=True), patch.object(u, 'FEATURES', (('google', 'Google', {'node'}),)), patch.object(u, 'COMMAND', self.root / 'tarasec'), patch.object(u.sys.stdin, 'isatty', return_value=True), patch('builtins.input', side_effect=['yes']) as prompt, patch.object(u, 'apply_feature') as apply, patch('sys.stdout', new=io.StringIO()):
+            self.assertEqual(u.main(['upgrade', '--roles', 'node']), 0)
+        self.assertEqual(prompt.call_count, 1)
+        self.assertNotIn('allow_enrollment', apply.call_args.kwargs)
+        self.assertEqual(u.load_state()['features']['google']['risk'], 'medium')
+
+    def test_existing_google_in_production_still_requires_confirmation(self):
+        u.MODE.write_text('production\n')
+        with patch.object(u, 'existing_google_setup', return_value=True), patch.object(u, 'FEATURES', (('google', 'Google', {'node'}),)), patch.object(u, 'COMMAND', self.root / 'tarasec'), patch.object(u.sys.stdin, 'isatty', return_value=True), patch('builtins.input', side_effect=['yes','no']) as prompt, patch.object(u, 'apply_feature') as apply, patch('sys.stdout', new=io.StringIO()):
+            self.assertEqual(u.main(['upgrade', '--roles', 'node']), 0)
+        self.assertEqual(prompt.call_count, 2)
+        apply.assert_not_called()
+
+    def test_legacy_gatekeeper_only_refresh_does_not_enroll_worker(self):
+        config = self.root / 'etc/tarasec/gatekeeper-google.php'
+        config.parent.mkdir(parents=True); config.write_text('unchanged credentials')
+        web = self.root / 'var/www/html/gatekeeper'; web.mkdir(parents=True)
+        common = web.parent / 'script/serviceDiscoveryCommon.php'
+        common.parent.mkdir(); common.write_text('<?php')
+        with patch.object(u, 'run') as run, patch('sys.stdout', new=io.StringIO()):
+            u.refresh_google(self.root / 'backup', root=self.root)
+        self.assertEqual(config.read_text(), 'unchanged credentials')
+        self.assertEqual(run.call_count, 3)
+        self.assertTrue(all(call.args[0][0] == 'php' for call in run.call_args_list))
+        self.assertTrue((web / 'google_callback.php').exists())
+
+    def test_existing_node_identity_refresh_uses_update_only(self):
+        token = self.root / 'etc/tarasec/agent-node.token'
+        token.parent.mkdir(parents=True); token.write_text('existing private identity')
+        with patch.object(u, 'run') as run, patch('sys.stdout', new=io.StringIO()):
+            u.refresh_google(self.root / 'backup', root=self.root)
+        run.assert_called_once_with(['bash', u.REPO / 'misc/install_agent_approvals.sh', '--no-enrollment', '--update-only'])
+        self.assertEqual(token.read_text(), 'existing private identity')
+
+    def test_unattended_google_cannot_fall_back_to_new_enrollment(self):
+        with patch.object(u, 'existing_google_setup', return_value=False), patch.object(u, 'backup'), patch.object(u, 'run') as run:
+            with self.assertRaisesRegex(ValueError, 'explicit confirmation'):
+                u.apply_feature('google', self.root / 'backup')
+        run.assert_not_called()
+
     def test_shell_settings(self):
         p = self.root / 'config'
         p.write_text('SSH_PORT="5822"\nSSH_FAILSAFE=on\nSSH_HONEYPOT_DEMO_PORT=0\n')
