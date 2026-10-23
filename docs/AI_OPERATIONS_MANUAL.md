@@ -745,12 +745,16 @@ directly requires no model call and grants no additional mutation authority.
 ## Coordinated standard upgrades
 
 The typed upgrade-maintenance adapter (`operations_upgrade.py`) consumes fresh
-primary-DB advisory receipts from the minute reporter. Local interactive standard
-upgrade opt-in, maintenance mode, trusted root-owned source/launcher, quiet demo
-and traffic observations, and idle/known interactive sessions are required. It
-runs only the fixed standard-upgrade action for already installed approved
-components, retains retry budgets and private backups, and records an upgrade
-issue until a fresh DB assessment verifies the required deployed release. It
-adds no experimental command permission or SSH bypass. Initial installation is
-still disabled/inspection-only. See [Standard upgrade](STANDARD_UPGRADE.md) for
-notice publishing, bootstrap, transport limitations and per-host verification.
+primary-DB advisory receipts from the minute reporter. Demo authorizes automatic
+none/low/medium risk upgrades for testing, including new bounded adapters; the
+old opt-in flag is ignored. High/unknown risk changes require confirmation.
+Production always requires fresh user confirmation for every upgrade and rejects
+unattended execution, even with an old opt-in flag or prior Yes. Both the agent
+policy and authoritative host mode are checked; inspection-only/disabled workers
+are not silently enrolled in maintenance. Root-owned trusted source/launcher,
+quiet demo/traffic evidence, idle sessions, retry budgets and private backups
+remain required. High-risk dependencies cannot be bypassed by automatic dependent
+updates. Notices never choose commands or widen execution grants, and urgency is
+separate from deployment risk. The adapter records an upgrade issue until a fresh
+DB assessment verifies the deployed release. No SSH bypass is added. See
+[Standard upgrade](STANDARD_UPGRADE.md) for risk classification and recovery.

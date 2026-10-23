@@ -128,6 +128,10 @@ function operationsMaintenanceDetails($agent, bool $expanded = false): string
     $html = '';
     if (isset($agent['status']) || isset($agent['last_assessment_status']))
         $html = '<p>Worker: '.agentStatusEscape($agent['status'] ?? 'unknown').'. Last assessment: '.agentStatusEscape($agent['last_assessment_status'] ?? 'unknown').'.</p>';
+    if (is_array($agent['upgrade'] ?? null)) {
+        $html .= '<p>TaraSec upgrade: '.agentStatusEscape(str_replace('_', ' ', (string)($agent['upgrade']['status'] ?? 'unknown'))).'</p>';
+        if (!empty($agent['upgrade']['reason'])) $html .= '<p>'.agentStatusEscape($agent['upgrade']['reason']).'</p>';
+    }
     $reboot = $agent['reboot'] ?? null;
     if (is_array($reboot)) {
         $html .= '<p>Reboot: '.agentStatusEscape(str_replace('_',' ',(string)($reboot['status'] ?? 'unknown'))).'</p>';

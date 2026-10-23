@@ -3,6 +3,24 @@ import json
 import re
 
 AUTOMATIC_FEATURES = {'database', 'runtime', 'taralink', 'gatekeeper', 'operations'}
+RISK_LEVELS = {'none': 0, 'low': 1, 'medium': 2, 'high': 3}
+FEATURE_RISK = {'database': 'medium', 'runtime': 'low', 'taralink': 'medium',
+                'gatekeeper': 'low', 'operations': 'medium', 'google': 'high',
+                'ssh-window': 'high', 'ssh-key': 'high', 'honeypot': 'high'}
+
+
+def upgrade_risk(name, release=None):
+    # Unknown features/ratings require confirmation. Release metadata may raise
+    # risk, but cannot lower a control's built-in minimum classification.
+    baseline = FEATURE_RISK.get(name, 'high')
+    declared = (release or {}).get('risks', {}).get(name, baseline)
+    if not isinstance(declared, str) or declared not in RISK_LEVELS: return 'high'
+    return max((baseline, declared), key=RISK_LEVELS.get)
+
+
+def demo_automatic(name, mode, release=None):
+    return mode == 'demo' and RISK_LEVELS[upgrade_risk(name, release)] <= RISK_LEVELS['medium']
+
 
 
 def release_info(repo):
@@ -15,6 +33,8 @@ def release_info(repo):
             not components[role] or any(c not in AUTOMATIC_FEATURES for c in components[role])
             for role in ('database', 'gateway', 'node')):
         raise ValueError('Invalid release component list')
+    if not isinstance(release.get('risks', {}), dict):
+        raise ValueError('Invalid release risk classification')
     return release
 
 
@@ -28,15 +48,29 @@ def deployment_status(state, release):
         raise ValueError('Invalid installed component version')
     return {'version': min(versions) if versions else 0,
             'available_version': release['version'], 'roles': state.get('roles', []),
-            'automatic_enabled': state.get('automatic_enabled') is True,
+            'mode': state.get('mode', 'unconfigured'),
+            'automatic_enabled': state.get('mode') == 'demo',
+            'upgrade_policy': 'automatic_through_medium' if state.get('mode') == 'demo' else 'confirmation_each_upgrade',
             'components': {name: {k: v for k, v in record.items() if k in
                           ('installed_version', 'installed_revision', 'status')}
                            for name, record in features.items() if name in AUTOMATIC_FEATURES}}
 
 
-def automatic_features(state, applicable):
-    if state.get('automatic_enabled') is not True:
-        raise ValueError('Automatic upgrades have not been enabled by the owner')
-    return [name for name in applicable if name in AUTOMATIC_FEATURES and
-            state.get('features', {}).get(name, {}).get('choice') == 'yes' and
-            (state['features'][name].get('installed_once') is True or state['features'][name].get('installed_version', 0) > 0)]
+def automatic_features(state, applicable, mode=None, release=None):
+    mode = state.get('mode') if mode is None else mode
+    if mode != 'demo':
+        raise ValueError('Production upgrades require user confirmation for every upgrade')
+    selected = [name for name in applicable if demo_automatic(name, mode, release) and
+                state.get('features', {}).get(name, {}).get('choice') != 'never']
+    if release is not None:
+        dependencies = {'runtime': ['database'], 'taralink': ['runtime'],
+                        'gatekeeper': ['database', 'runtime'], 'operations': ['runtime']}
+        # Do not deploy a dependent against an unapproved/high-risk older schema.
+        while True:
+            blocked = [name for name in selected if any(
+                dep in applicable and dep not in selected and
+                state.get('features', {}).get(dep, {}).get('installed_version', 0) < release['version']
+                for dep in dependencies.get(name, []))]
+            if not blocked: break
+            selected = [name for name in selected if name not in blocked]
+    return selected

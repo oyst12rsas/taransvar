@@ -65,3 +65,7 @@ $unitSource = file_get_contents(__DIR__.'/../html/gatekeeper/func/unitsMore.php'
 if (strpos($unitSource, "if (isAdmin() && isset(\$status['operationsAgent']))") === false)
     throw new Exception('Maintenance panel must require admin');
 
+
+$upgradeHtml = operationsMaintenanceDetails(['upgrade'=>['status'=>'awaiting_confirmation','reason'=>'Production requires confirmation <now>']]);
+checkOperationsView(strpos($upgradeHtml,'awaiting confirmation') !== false, 'Production upgrade confirmation state missing');
+checkOperationsView(strpos($upgradeHtml,'&lt;now&gt;') !== false, 'Upgrade reason must be escaped');

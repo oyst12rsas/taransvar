@@ -1,8 +1,30 @@
 {
-  "version": 1,
+  "version": 2,
   "components": {
-    "node": ["runtime", "taralink", "operations"],
-    "gateway": ["database", "runtime", "taralink", "gatekeeper", "operations"],
-    "database": ["database", "runtime", "gatekeeper", "operations"]
+    "node": [
+      "runtime",
+      "taralink",
+      "operations"
+    ],
+    "gateway": [
+      "database",
+      "runtime",
+      "taralink",
+      "gatekeeper",
+      "operations"
+    ],
+    "database": [
+      "database",
+      "runtime",
+      "gatekeeper",
+      "operations"
+    ]
+  },
+  "risks": {
+    "database": "medium",
+    "runtime": "low",
+    "taralink": "medium",
+    "gatekeeper": "low",
+    "operations": "medium"
   }
 }
