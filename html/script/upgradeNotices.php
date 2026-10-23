@@ -50,6 +50,11 @@ function taraSecUpgradeView(array $status): array
         $messages[] = strtoupper($item['severity']).': '.$item['note'].' '.($item['network_impact'] ?? '').
             ' Required release: '.$item['minimum_version'].'.';
     }
+    $google = $status['software']['components']['google']['details'] ?? null;
+    if (is_array($google) && ($google['approval_worker'] ?? '') === 'needs_configuration') {
+        if ($color === 'green') $color = 'yellow';
+        $messages[] = 'Optional approval worker needs local policy configuration; existing Google web login is independent.';
+    }
     $version = $assessment['installed_version'];
     if ($version === null && $color === 'green') $color = 'yellow';
     $text = 'Installed TaraSec release: '.($version === null ? 'not reported' : $version).'.';

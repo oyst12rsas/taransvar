@@ -196,6 +196,7 @@ def existing_google_setup(root=Path('/')):
 def refresh_google(directory, root=Path('/')):
     web = root / 'var/www/html/gatekeeper'
     refreshed = False
+    details = {}
     if (root / 'etc/tarasec/gatekeeper-google.php').is_file() and web.is_dir():
         if not (web.parent / 'script/serviceDiscoveryCommon.php').is_file():
             raise ValueError('Update Gatekeeper before refreshing its Google integration')
@@ -206,13 +207,36 @@ def refresh_google(directory, root=Path('/')):
             backup(web / name, directory)
             shutil.copy2(REPO / 'html/gatekeeper' / name, web / name)
         refreshed = True
+        details['gatekeeper_google'] = 'updated'
         print('Existing Gatekeeper Google login refreshed; client configuration retained.')
     if (root / 'etc/tarasec/agent-node.token').is_file():
-        run(['bash', REPO / 'misc/install_agent_approvals.sh', '--no-enrollment', '--update-only'])
-        refreshed = True
-    if not refreshed:
+        missing = [path for path in ('/etc/tarasec/access.conf', '/etc/tarasec-server-manager.conf')
+                   if not (root / path.lstrip('/')).is_file() or
+                   not os.access(root / path.lstrip('/'), os.R_OK)]
+        if not settings(root / 'etc/tarasecfw.conf').get('AGENT_PUBLIC_NICKNAME'):
+            missing.append('AGENT_PUBLIC_NICKNAME in /etc/tarasecfw.conf')
+        if missing:
+            details.update(pending_configuration=True, approval_worker='needs_configuration', missing_policy=missing)
+            print('Optional approval worker needs configuration: ' + ', '.join(missing))
+            print('Worker left unchanged; continuing other upgrades. Existing Google web login is independent.')
+        else:
+            run(['bash', REPO / 'misc/install_agent_approvals.sh', '--no-enrollment', '--update-only'])
+            refreshed = True
+            details['approval_worker'] = 'updated'
+    if not refreshed and not details.get('pending_configuration'):
         raise ValueError('Existing enrollment receipt has no deployed Google configuration or worker identity; repair is required')
     print('Existing Google setup retained. No manager enrollment or SSH policy change requested.')
+    return details
+
+
+def record_feature_result(record, name, result, version, revision):
+    details = result if isinstance(result, dict) else {}
+    partial = details.get('pending_configuration') is True
+    record['status'] = 'partial' if partial else 'completed'
+    if details: record['details'] = details
+    else: record.pop('details', None)
+    if name in AUTOMATIC_FEATURES:
+        record.update(installed_once=True, installed_version=0 if partial else version, installed_revision=revision)
 
 
 def apply_feature(name, directory, allow_enrollment=False):
@@ -263,7 +287,7 @@ def apply_feature(name, directory, allow_enrollment=False):
         backup(Path('/etc/tarasec'), directory)
         backup(Path('/etc/tarasec-server-manager.conf'), directory)
         if existing_google_setup():
-            refresh_google(directory)
+            return refresh_google(directory)
         elif allow_enrollment:
             run(['bash', REPO / 'misc/install_agent_approvals.sh', '--enroll-google'])
         else:
@@ -352,16 +376,18 @@ def automatic_upgrade(args, state, mode):
                           approval='demo_policy', risk=upgrade_risk(name, release, state))
             save(state)
             try:
-                apply_feature(name, directory / name)
-                record.update(status='completed', installed_once=True, installed_version=release['version'], installed_revision=revision)
+                result = apply_feature(name, directory / name)
+                record_feature_result(record, name, result, release['version'], revision)
             except (OSError, ValueError, subprocess.CalledProcessError) as error:
                 record.update(status='failed', error=type(error).__name__)
                 state['history'].append({'time': stamp, 'feature': name, 'status': 'failed', 'automatic': True})
                 save(state)
                 raise
-            state['history'].append({'time': stamp, 'feature': name, 'status': 'completed', 'automatic': True})
+            state['history'].append({'time': stamp, 'feature': name, 'status': record['status'], 'automatic': True})
             save(state)
-        print('Approved component updates completed; the next heartbeat verifies notice clearance.')
+        print('Eligible component updates finished; the next heartbeat verifies notice clearance.')
+        if any(r.get('status') == 'partial' for r in state['features'].values()):
+            print('Configuration warnings remain; see sudo tarasec upgrade --status.')
         return 0
 
 
@@ -387,6 +413,9 @@ def main(argv=None):
     for name, title, _ in applicable:
         prior = state['features'].get(name, {})
         print(f"  {name}: {title} [{prior.get('status', 'not recorded')}; risk: {upgrade_risk(name, release_info(REPO), state)}]")
+        details = prior.get('details', {})
+        if details.get('approval_worker') == 'needs_configuration':
+            print('    Optional approval worker needs configuration: ' + ', '.join(details.get('missing_policy', [])))
     if args.status or args.plan: return 0
     if args.automatic: return automatic_upgrade(args, state, old_mode)
     if os.geteuid() != 0: parser.error('Run with sudo on the intended server')
@@ -465,14 +494,10 @@ def main(argv=None):
                         record['installed_version'] = 0
                         save(state)
                     if name == 'google' and not auto:
-                        apply_feature(name, directory / name, allow_enrollment=True)
+                        result = apply_feature(name, directory / name, allow_enrollment=True)
                     else:
-                        apply_feature(name, directory / name)
-                    record['status'] = 'completed'
-                    if name in AUTOMATIC_FEATURES:
-                        record['installed_once'] = True
-                        record['installed_version'] = release_info(REPO)['version']
-                        record['installed_revision'] = source_revision()
+                        result = apply_feature(name, directory / name)
+                    record_feature_result(record, name, result, release_info(REPO)['version'], source_revision())
                 except (OSError, ValueError, subprocess.CalledProcessError) as error:
                     record['status'] = 'pending_verification' if isinstance(error, PendingVerification) else 'failed'
                     # Do not store command arguments or enrollment output in the audit.
@@ -484,6 +509,8 @@ def main(argv=None):
             save(state)
             if failed: break
         print('Upgrade ' + ('stopped; fix the reported prerequisite and rerun.' if failed else 'finished.'))
+        if any(r.get('status') == 'partial' for r in state['features'].values()):
+            print('Configuration warnings remain; optional components were left unchanged.')
         print('Status: sudo tarasec upgrade --status')
         return 1 if failed else 0
 

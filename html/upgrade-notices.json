@@ -35,6 +35,18 @@
       ],
       "note": "Recognize existing Google login and refresh it automatically in demo mode without enrolling new managers.",
       "network_impact": "Existing Google integration can receive routine updates without blocking demo upgrade coordination."
+    },
+    {
+      "id": "optional-google-worker-v4",
+      "minimum_version": 4,
+      "severity": "important",
+      "roles": [
+        "database",
+        "gateway",
+        "node"
+      ],
+      "note": "Keep Google web login upgrades independent of incomplete optional approval-worker policy.",
+      "network_impact": "Upgrade coordination can continue while optional worker setup is reported separately."
     }
   ]
 }

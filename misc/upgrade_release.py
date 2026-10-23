@@ -54,7 +54,7 @@ def deployment_status(state, release):
             'automatic_enabled': state.get('mode') == 'demo',
             'upgrade_policy': 'automatic_through_medium' if state.get('mode') == 'demo' else 'confirmation_each_upgrade',
             'components': {name: {k: v for k, v in record.items() if k in
-                          ('installed_version', 'installed_revision', 'status')}
+                          ('installed_version', 'installed_revision', 'status', 'details')}
                            for name, record in features.items() if name in AUTOMATIC_FEATURES}}
 
 

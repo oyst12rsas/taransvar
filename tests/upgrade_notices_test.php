@@ -19,4 +19,7 @@ ensure(str_contains($view['message'],'not reported'),'Explain unknown version');
 require_once __DIR__.'/../html/gatekeeper/func/unitsMore.php';
 $issues=collectUnitIssues([],0);
 ensure(count(array_filter($issues, fn($i)=>$i['label']==='TaraSec upgrade' && $i['severity']==='red'))===1,'Unit issue must explain upgrade red dot');
+$view=taraSecUpgradeView(['role'=>'node','software'=>['version'=>999,'components'=>['google'=>['details'=>['approval_worker'=>'needs_configuration']]]]]);
+ensure($view['color']==='yellow','Optional worker setup must remain visible');
+ensure(str_contains($view['message'],'existing Google web login is independent'),'Explain separate login/worker state');
 echo "Upgrade notice checks passed\n";
