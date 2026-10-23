@@ -26,6 +26,7 @@ def local_report(state, now=None):
         'decision_feedback': state.get('decision_feedback'),
         'mode': state.get('mode'),
         'reboot': state.get('reboot'),
+        'activity_observer': state.get('activity_observer'),
         'upgrade': state.get('upgrade'),
         'boot_id': state.get('boot_id'),
         'engine': 'operations_worker', 'status': state.get('status', 'unknown'),

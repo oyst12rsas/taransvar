@@ -644,9 +644,10 @@ def ensure_operations_activity(root=Path('/'), interactive=False):
     path = root / 'etc/tarasec/operations-activity.json'
     try:
         config = json.loads(path.read_text())
+        if not isinstance(config, dict): config = {}
     except (OSError, ValueError):
         config = {}
-    if interactive:
+    if interactive and not config.get('demo_url'):
         print('The reboot observer needs the authenticated central demo feed, separately from minute status reports.')
         print('On the central DB server, enroll this node source IP with misc/install_operations_activity_feed.sh SOURCE_IP WEB_ROOT.')
         print('Transfer its node key securely to THIS server; never paste a key into chat.')
@@ -673,7 +674,7 @@ def ensure_operations_activity(root=Path('/'), interactive=False):
             run(['bash', REPO / 'misc/configure_operations_activity.sh', url, key, *flag])
             config = json.loads(path.read_text())
     if not config.get('demo_url'):
-        print('Activity observer pending: no demo feed URL configured. Run sudo tarasec upgrade --configure-activity.')
+        print('Activity observer pending: no demo feed URL configured. Run sudo tarasec upgrade to complete activity enrollment.')
         return 'needs_configuration'
     try:
         # Verify the configured collector before claiming activity readiness.
@@ -698,12 +699,15 @@ def ensure_operations_activity(root=Path('/'), interactive=False):
     return 'active'
 
 
-def activate_operations(directory, root=Path('/')):
+def activate_operations(directory, root=Path('/'), interactive=False):
     policy_path = root / 'etc/tarasec/operations-agent.json'
     policy = json.loads(policy_path.read_text())
     mode = read_mode()
     if mode not in ('demo', 'production'):
         raise ValueError('Select demo or production mode before AI agent activation')
+    backup(root / 'etc/tarasec/operations-activity.json', directory)
+    backup(root / 'etc/tarasec/operations-activity.key', directory)
+    activity = ensure_operations_activity(root, interactive=interactive)
     if not configure_operations_model(policy, policy_path, directory, root):
         print('AI agent installed; activation pending model configuration. Rerun sudo tarasec upgrade to resume setup.')
         return {'pending_configuration': True, 'activation': 'pending_model_configuration'}
@@ -716,14 +720,13 @@ def activate_operations(directory, root=Path('/')):
     backup(policy_path, directory)
     policy['mode'] = mode
     atomic(policy_path, json.dumps(policy, indent=2) + '\n')
-    activity = ensure_operations_activity(root)
     run(['systemctl', 'enable', '--now', 'tarasec-operations-agent.timer'])
     run(['systemctl', 'is-active', '--quiet', 'tarasec-operations-agent.timer'])
     print('AI operations agent activated in ' + mode + ' mode. Scheduled checks are enabled; action-specific readiness checks still apply.')
     return {'activation': 'active', 'mode': mode, 'activity_observer': activity}
 
 
-def apply_feature(name, directory, allow_enrollment=False):
+def apply_feature(name, directory, allow_enrollment=False, configure_activity=False):
     directory.mkdir(parents=True, mode=0o700, exist_ok=True)
     if name == 'database':
         client = shutil.which('mariadb') or shutil.which('mysql')
@@ -796,7 +799,7 @@ def apply_feature(name, directory, allow_enrollment=False):
         backup(Path('/usr/local/lib/tarasec-operations'), directory)
         backup(Path('/etc/tarasec/operations-agent.json'), directory)
         run(['bash', REPO / 'misc/install_operations_agent.sh'])
-        return activate_operations(directory)
+        return activate_operations(directory, interactive=configure_activity)
     elif name == 'google':
         backup(Path('/etc/tarasec'), directory)
         backup(Path('/etc/tarasec-server-manager.conf'), directory)
@@ -931,7 +934,7 @@ def main(argv=None):
     parser.add_argument('--mode', choices=('demo', 'production'))
     parser.add_argument('--roles', help='Comma-separated local roles: database,gateway,node')
     parser.add_argument('--review-declined', action='store_true')
-    parser.add_argument('--configure-activity', action='store_true', help='Repair authenticated activity-feed configuration and resume the observer without a full upgrade')
+    parser.add_argument('--configure-activity', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--status', action='store_true', help='Read status without changing anything')
     parser.add_argument('--plan', action='store_true', help='Show applicable features without changing anything')
     args = parser.parse_args(argv)
@@ -1062,6 +1065,8 @@ def main(argv=None):
                         save(state)
                     if name == 'google' and not auto:
                         result = apply_feature(name, directory / name, allow_enrollment=True)
+                    elif name == 'operations':
+                        result = apply_feature(name, directory / name, configure_activity=True)
                     else:
                         result = apply_feature(name, directory / name)
                     record_feature_result(record, name, result, release_info(REPO)['version'], source_revision())

@@ -179,7 +179,7 @@ Blank collectors deliberately produce unknown activity.
 The observer samples every ten seconds. It requires both inputs no more than
 30 seconds old, resets quiet time on missing data, traffic, demo activity, a
 sampling gap or a new boot, and resets continuity after an observer restart.
-Enable this service only after collector acceptance tests. Its read probe treats
+The standard operations upgrade verifies the configured demo collector and enables the observer. The agent checks observer readiness each cycle and resumes a configured stopped/stale observer in maintenance mode; real collector evidence and acceptance tests remain required before disruptive actions. Its read probe treats
 missing or stale observer output as unknown. Recheck activity immediately before
 a reviewed procedure or reboot. An inspection-only model run needs no collectors.
 The installed demo-collector and traffic-collector implement the pilot feed and

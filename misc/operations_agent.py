@@ -22,6 +22,7 @@ from operations_manual import sync as sync_manual_issues
 from operations_reboot import inspect as inspect_reboot, maintain as maintain_reboot
 from operations_policy import maintenance_enabled, effective_policy
 from operations_upgrade import maintain as maintain_upgrade
+from operations_observer import maintain as maintain_activity
 
 
 def save(path, value):
@@ -293,6 +294,7 @@ def main():
             observe_issues(state, 'service', {name: 'Service failed: ' + name for name in failed_services}, now)
         observe_issues(state, 'resource', {'pressure': 'Configured resource threshold exceeded'}
                        if snapshot['resource_pressure']['triggered'] else {}, now)
+        snapshot['activity_observer'] = maintain_activity(state, policy, now, run, trusted, lambda: save(path, state))
         # Inventory is independent of model budget and is refreshed every 15 minutes.
         if now - state.get('issue_inventory_checked_at', 0) >= 900:
             deployment = diagnose('deployment_status', run)
