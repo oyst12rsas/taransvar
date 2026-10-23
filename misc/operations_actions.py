@@ -1,5 +1,6 @@
 """Owner-configured demo commands and typed production resource protection."""
 import os
+import fcntl
 from pathlib import Path
 import re
 import stat
@@ -110,6 +111,48 @@ def perform_resource(decision, config, run, trusted):
     return run([str(trusted(config['assistance_executable']))], 30)
 
 
+def prune_upgrade_dumps(directory=Path('/var/lib/tarasec/upgrade')):
+    """Retain two newest completed SQL dumps; never touch other recovery files."""
+    result = {'removed': 0, 'freed_bytes': 0, 'status': 'unchanged'}
+    try:
+        if not directory.exists():
+            return result
+        if directory.resolve() != directory.absolute():
+            return dict(result, status='unsafe_path')
+        if (directory / 'upgrade.lock').is_symlink():
+            return dict(result, status='unsafe_path')
+        with (directory / 'upgrade.lock').open('a') as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return dict(result, status='upgrade_busy')
+            complete = []
+            for path in sorted((directory / 'backups').glob('*/database/taransvar.sql')):
+                if (not re.fullmatch(r'[0-9]{8}T[0-9]{6}\.[0-9]{6}Z', path.parent.parent.name)
+                        or path.resolve() != path.absolute()
+                        or not stat.S_ISREG(path.lstat().st_mode)):
+                    continue
+                with path.open('rb') as stream:
+                    info = os.fstat(stream.fileno())
+                    if not stat.S_ISREG(info.st_mode):
+                        continue
+                    stream.seek(max(0, info.st_size - 8192))
+                    if b'-- Dump completed on' in stream.read():
+                        complete.append((path, info))
+            for path, info in complete[:-2]:
+                current = path.lstat()
+                if (current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns) != (
+                        info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns):
+                    continue
+                path.unlink()
+                result['removed'] += 1
+                result['freed_bytes'] += info.st_size
+            result['status'] = 'completed'
+    except OSError:
+        result['status'] = 'filesystem_error'
+    return result
+
+
 def automatic_log_rotation(policy, evidence, state, now, run, save, record):
     """Apply installed retention rules before any model scheduling or budget check."""
     config = policy.get('resource_protection', {})
@@ -126,11 +169,16 @@ def automatic_log_rotation(policy, evidence, state, now, run, save, record):
     cache_result = None
     if after['disk_used_percent'] >= float(config.get('disk_used_percent', 85)):
         # Package downloads are reproducible; installed packages, databases and
-        # recovery backups are outside this bounded housekeeping operation.
+        # recovery configuration files remain outside this housekeeping operation.
         cache_result = run(['/usr/bin/apt-get', 'clean'], 120)
+        after = pressure(config)
+    backup_result = None
+    if after['disk_used_percent'] >= float(config.get('disk_used_percent', 85)):
+        backup_result = prune_upgrade_dumps()
         after = pressure(config)
     state['last_log_rotation'] = {
         'checked_at': now, 'exit_code': result['exit_code'],
+        'upgrade_backup_cleanup': backup_result,
         'disk_used_percent_before': evidence['disk_used_percent'],
         'disk_used_percent_after': after['disk_used_percent'],
         'package_cache_exit_code': cache_result['exit_code'] if cache_result is not None else None,
