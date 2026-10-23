@@ -88,6 +88,37 @@ class ActionsTest(unittest.TestCase):
             self.assertFalse(automatic_log_rotation(dict(mode=mode), dict(disk_used_percent=disk),
                              {}, 1000, None, lambda: None, lambda event: None))
 
+    def test_upgrade_retention_preserves_two_complete_and_other_files(self):
+        from operations_actions import prune_upgrade_dumps
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dumps = []
+            for number in range(5):
+                folder = root / 'backups' / f'20261023T10000{number}.000000Z' / 'database'
+                folder.mkdir(parents=True)
+                dump = folder / 'taransvar.sql'
+                dump.write_bytes(b'SQL\n-- Dump completed on today\n' if number < 4 else b'incomplete')
+                (folder / 'config.backup').write_text('preserve')
+                dumps.append(dump)
+            result = prune_upgrade_dumps(root)
+            self.assertEqual(result['removed'], 2)
+            self.assertGreater(result['freed_bytes'], 0)
+            self.assertEqual([p.exists() for p in dumps], [False, False, True, True, True])
+            self.assertEqual(len(list(root.glob('backups/*/database/config.backup'))), 5)
+            self.assertEqual(prune_upgrade_dumps(root)['removed'], 0)
+
+    def test_upgrade_retention_skips_active_upgrade_and_symlinks(self):
+        import fcntl
+        from operations_actions import prune_upgrade_dumps
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with (root / 'upgrade.lock').open('w') as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self.assertEqual(prune_upgrade_dumps(root)['status'], 'upgrade_busy')
+            link = root / 'linked'
+            link.symlink_to(root, target_is_directory=True)
+            self.assertEqual(prune_upgrade_dumps(link)['status'], 'unsafe_path')
+
     def test_measured_pressure(self):
         result=pressure(dict(disk_used_percent=0))
         self.assertTrue(result['triggered'])

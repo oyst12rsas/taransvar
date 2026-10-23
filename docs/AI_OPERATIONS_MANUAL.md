@@ -760,3 +760,5 @@ DB assessment verifies the deployed release. No SSH bypass is added. See
 [Standard upgrade](STANDARD_UPGRADE.md) for risk classification and recovery.
 
 The deployment inventory recognizes root minute reporting jobs in root’s crontab, `/etc/crontab`, and valid files under `/etc/cron.d`. A reporter scheduled in `/etc/cron.d/tarasec-status` does not need a duplicate root crontab entry. Schedule detection does not prove database receipt.
+
+Under measured disk pressure, the agent performs log rotation, package-cache cleanup, then upgrade database-dump retention if pressure persists. This housekeeping runs before model scheduling and reboot quiet-time checks in demo and production maintenance modes. It retains the two newest dumps bearing a completion marker under `/var/lib/tarasec/upgrade/backups`, leaves incomplete dumps and configuration backups intact, and skips pruning while the standard upgrade lock is held. A completion marker is not a restore test. Cleanup counts and bytes are recorded in `last_log_rotation.upgrade_backup_cleanup`.
