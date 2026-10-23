@@ -1,5 +1,11 @@
 # Standard upgrade
 
+Central AI approval waits for up to five minutes using a monotonic deadline.
+The terminal first shows the browser URL, machine nickname and approval steps.
+Ctrl+C during this wait postpones AI activation and continues the remaining
+upgrade steps; it does not cancel the website request. Approve later and rerun
+the upgrade to resume. Unattended runs do not wait for browser interaction.
+
 Database upgrades first compare the live schema version with this checkout.
 An already current schema is recorded without another database dump or migration.
 When migration is needed, free space must cover a conservative size estimate and

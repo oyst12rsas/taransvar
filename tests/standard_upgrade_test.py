@@ -122,6 +122,29 @@ class UpgradeTests(unittest.TestCase):
             self.assertEqual(enroll.called,called)
             secret.assert_not_called()
 
+    def test_approval_wait_uses_five_minute_deadline(self):
+        with patch.object(u.time,'monotonic',side_effect=[0,0,300]),patch.object(u.time,'sleep') as sleep,patch.object(u.urllib.request,'build_opener') as opener,patch('sys.stdout',new=io.StringIO()) as output:
+            answer=u.wait_operations_approval(Mock(),{'state':'pending'})
+        self.assertEqual(answer['state'],'pending')
+        sleep.assert_called_once_with(5)
+        opener.assert_not_called()
+        self.assertIn('5 minutes',output.getvalue())
+
+    def test_ctrl_c_postpones_only_the_approval_wait(self):
+        with patch.object(u.time,'monotonic',return_value=0),patch.object(u.time,'sleep',side_effect=KeyboardInterrupt),patch('sys.stdout',new=io.StringIO()) as output:
+            answer=u.wait_operations_approval(Mock(),{'state':'pending'})
+        self.assertFalse(answer['approved'])
+        self.assertIn('Continuing remaining upgrades',output.getvalue())
+
+    def test_approval_received_during_wait_returns_immediately(self):
+        import contextlib
+        response=Mock();response.read.return_value=b'{"approved":true,"model_ready":true}'
+        opener=Mock();opener.open.return_value=contextlib.nullcontext(response)
+        with patch.object(u.time,'monotonic',side_effect=[0,0,5]),patch.object(u.time,'sleep'),patch.object(u.urllib.request,'build_opener',return_value=opener):
+            answer=u.wait_operations_approval(Mock(),{'state':'pending'})
+        self.assertTrue(answer['approved'])
+        self.assertEqual(opener.open.call_count,1)
+
     def test_central_enrollment_installs_only_node_identity_after_approval(self):
         import contextlib
         config=self.root/'etc/tarasec';config.mkdir(parents=True)
