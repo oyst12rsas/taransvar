@@ -29,6 +29,72 @@ class UpgradeTests(unittest.TestCase):
         self.installed.stop()
         self.uid.stop(); self.mode.stop(); self.state.stop(); self.tmp.cleanup()
 
+    def test_ssh_auth_always_requires_confirmation_and_honors_never(self):
+        for mode in ('demo', 'production'):
+            for answer in ('no', 'never'):
+                u.MODE.write_text(mode+'\n')
+                u.save({'features': {}, 'history': []})
+                with patch.object(u, 'FEATURES', (('ssh-auth', 'SSH factors', {'node'}),)), patch.object(u, 'COMMAND', self.root/'tarasec'), patch.object(u.sys.stdin, 'isatty', return_value=True), patch.object(u, 'ssh_auth_policy', return_value={'authenticationmethods':'any'}), patch('builtins.input', side_effect=['yes', answer]) as prompt, patch.object(u, 'apply_feature') as apply, patch('sys.stdout', new=io.StringIO()) as output:
+                    self.assertEqual(u.main(['upgrade','--roles','node']),0)
+                    self.assertIn('WARNING: SSH AuthenticationMethods is any',output.getvalue())
+                self.assertEqual(prompt.call_count,2)
+                apply.assert_not_called()
+                self.assertEqual(u.load_state()['features']['ssh-auth']['choice'],answer)
+                if answer == 'never':
+                    with patch.object(u, 'FEATURES', (('ssh-auth','SSH factors',{'node'}),)), patch.object(u, 'COMMAND', self.root/'tarasec'), patch.object(u.sys.stdin,'isatty',return_value=True), patch('builtins.input',side_effect=['yes']) as prompt, patch.object(u,'ssh_auth_policy') as check, patch('sys.stdout',new=io.StringIO()):
+                        self.assertEqual(u.main(['upgrade','--roles','node']),0)
+                    check.assert_not_called()
+
+    def test_ssh_auth_current_skips_offer(self):
+        u.MODE.write_text('demo\n')
+        with patch.object(u,'FEATURES',(('ssh-auth','SSH factors',{'node'}),)), patch.object(u,'COMMAND',self.root/'tarasec'), patch.object(u.sys.stdin,'isatty',return_value=True), patch.object(u,'ssh_auth_policy',return_value={'authenticationmethods':'publickey,password'}), patch('builtins.input',side_effect=['yes']) as prompt, patch.object(u,'apply_feature') as apply, patch('sys.stdout',new=io.StringIO()):
+            self.assertEqual(u.main(['upgrade','--roles','node']),0)
+        self.assertEqual(prompt.call_count,1)
+        apply.assert_not_called()
+
+    def test_ssh_auth_guarded_apply_and_rollback(self):
+        for failure in (False, True):
+            target=self.root/'ssh'/('failed.conf' if failure else 'success.conf')
+            target.parent.mkdir(exist_ok=True)
+            target.write_text('# previous config\n')
+            before={'authenticationmethods':'any'}
+            after={'authenticationmethods':'publickey,password','pubkeyauthentication':'yes','passwordauthentication':'yes'}
+            checks=[before, before if failure else after, after]
+            commands=[]
+            def runner(argv, **kwargs):
+                commands.append([str(x) for x in argv])
+                return Mock(stdout='ubuntu P today 0 99999 7 -1' if argv[0]=='passwd' else 'loaded\n')
+            with patch.object(u,'SSH_AUTH_TARGET',target), patch.object(u,'run',side_effect=runner), patch.object(u,'ssh_auth_policy',side_effect=checks), patch.object(u.pwd,'getpwnam'), patch('builtins.input',return_value='ubuntu'), patch.object(u,'confirm_verified'), patch('sys.stdout',new=io.StringIO()):
+                directory=self.root/('backup-fail' if failure else 'backup-ok')
+                if failure:
+                    with self.assertRaises(ValueError):u.require_ssh_key_password(directory)
+                else:
+                    result=u.require_ssh_key_password(directory)
+                    self.assertTrue(result['new_login_confirmed'])
+            arm=next(i for i,c in enumerate(commands) if c[0]=='systemd-run')
+            self.assertIn('--on-active=10m',commands[arm])
+            self.assertTrue((directory/str(target).lstrip('/')).exists())
+            if failure:
+                self.assertTrue(any(c[0]=='/bin/sh' for c in commands))
+                self.assertFalse(any(c[:2]==['systemctl','reload'] for c in commands))
+            else:
+                reload=next(i for i,c in enumerate(commands) if c[:2]==['systemctl','reload'])
+                self.assertLess(arm,reload)
+
+    def test_ssh_auth_custom_policy_and_locked_password_never_mutate(self):
+        for status, methods in [('ubuntu L today', 'any'), ('ubuntu P today', 'publickey')]:
+            with patch('builtins.input',return_value='ubuntu'), patch.object(u.pwd,'getpwnam'), patch.object(u,'run',return_value=Mock(stdout=status)) as run, patch.object(u,'ssh_auth_policy',return_value={'authenticationmethods':methods}), patch.object(u,'atomic') as write:
+                with self.assertRaises(ValueError):u.require_ssh_key_password(self.root/'backup')
+            self.assertEqual(run.call_count,1)
+            write.assert_not_called()
+
+    def test_ssh_auth_policy_uses_actual_connection_context(self):
+        with patch.dict(u.os.environ,{'SSH_CONNECTION':'100.68.1.2 1234 100.68.176.110 5822'}), patch.object(u,'run',return_value=Mock(stdout='authenticationmethods any\n')) as run:
+            self.assertEqual(u.ssh_auth_policy('ubuntu')['authenticationmethods'],'any')
+        self.assertIn('user=ubuntu',run.call_args.args[0][-1])
+        self.assertIn('addr=100.68.1.2',run.call_args.args[0][-1])
+        self.assertIn('lport=5822',run.call_args.args[0][-1])
+
     def test_mode_is_explicit(self):
         self.assertEqual(u.read_mode(), 'unconfigured')
         u.MODE.write_text('production\n')

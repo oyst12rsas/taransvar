@@ -319,3 +319,9 @@ before stopping the honeypot or changing firewall access. Listener checks consum
 all output (avoiding pipefail/SIGPIPE false failures) and wait for startup. An
 effective-port mismatch or socket ListenStream override still requires console
 diagnosis; a failed listener check is not automatically treated as success.
+
+### Require both SSH key and account password
+
+The `ssh-auth` step checks the effective SSH policy for the invoking administrator. `AuthenticationMethods any` produces a warning and offers `yes/no/never`. This high-risk step always requires confirmation, even in demo mode; `never` can be reconsidered with `--review-declined`. An effective `publickey,password` policy skips the offer. Custom policies are reported and require manual review.
+
+Yes asks for the administrator account, requires a set account password and confirmation of a tested key login and independent console recovery. It backs up its managed drop-in, arms a ten-minute rollback, validates SSH syntax and effective policy, then reloads SSH. The operator must test a new connection with connection sharing disabled and confirm that both the key and server account password were required. Only then is rollback cancelled. Refusal or interruption restores the previous drop-in immediately; loss of the terminal leaves the recovery timer armed. Google/TOTP opening, SSH ports and firewall rules are preserved. A private-key passphrase is not the server account password. This applies to new connections; existing sessions remain available during verification.

@@ -23,6 +23,7 @@ REPO = Path(__file__).resolve().parent.parent
 STATE = Path('/var/lib/tarasec/upgrade/state.json')
 MODE = Path('/etc/tarasec-deployment-mode')
 COMMAND = Path('/usr/local/sbin/tarasec')
+SSH_AUTH_TARGET = Path('/etc/ssh/sshd_config.d/00-tarasec-key-password.conf')
 ROLES = ('database', 'gateway', 'node')
 FEATURES = (
     ('database', 'Back up and migrate the local database schema', {'database', 'gateway'}),
@@ -33,6 +34,7 @@ FEATURES = (
     ('google', 'Install/update Google manager sign-in and approval worker', set(ROLES)),
     ('ssh-window', 'Enable/refresh Google-controlled temporary SSH access (requires verified console and MFA)', set(ROLES)),
     ('ssh-key', 'Add an administrator SSH public key (password policy unchanged)', set(ROLES)),
+    ('ssh-auth', 'Require both administrator SSH key and account password', set(ROLES)),
     ('honeypot', 'Install or refresh the fake SSH service (honeypot)', set(ROLES)),
 )
 class FeaturePostponed(Exception):
@@ -243,6 +245,15 @@ def feature_guidance(name, root=Path('/')):
             'You still need your SSH key and any required server password. Existing sessions may survive window expiry.',
             'Choose yes only after Google enrollment and recovery-console testing; choose no to leave the current access policy unchanged.',
         ),
+        'ssh-auth': (
+            'A working SSH key does not prevent password-only login when AuthenticationMethods is any.',
+            'Yes requires BOTH the SSH key and the server account password for new SSH connections.',
+            'The private-key passphrase is separate and does not replace the account password.',
+            'Google/TOTP temporary opening remains an additional requirement; ports and firewall rules are unchanged.',
+            'First test your key and account password, and keep independent console recovery available.',
+            'A ten-minute rollback is armed before reloading SSH. Confirm a NEW key-plus-password login to retain the change.',
+            'No skips this run; never suppresses this upgrade offer until --review-declined.',
+        ),
         'ssh-key': (
             'An SSH key identifies your administrator computer when logging in to this server.',
             'Yes adds its public key to a chosen server account. The private key and its passphrase stay on your computer.',
@@ -290,6 +301,81 @@ def feature_guidance(name, root=Path('/')):
         print('Only an actual port migration changes SSH and arms a recovery timer.')
         print('Keep the VM/physical console open. Afterward, test a NEW SSH login on the displayed administrator port.')
         print('The rollback timer stays armed until you complete those checks; this upgrader does not cancel it.')
+
+
+def ssh_auth_policy(user=None):
+    user = user or os.environ.get('SUDO_USER') or getpass.getuser()
+    context = f'user={user},host=localhost,addr=127.0.0.1'
+    connection = os.environ.get('SSH_CONNECTION', '').split()
+    if len(connection) == 4:
+        context = f'user={user},host={connection[0]},addr={connection[0]},laddr={connection[2]},lport={connection[3]}'
+    output = run(['/usr/sbin/sshd', '-T', '-C', context], capture_output=True, text=True).stdout
+    return dict(line.split(None, 1) for line in output.splitlines() if ' ' in line)
+
+
+def require_ssh_key_password(directory):
+    user = input('Administrator Linux username ON THIS SERVER [blank = postpone]: ').strip()
+    if not user:
+        raise FeaturePostponed('SSH authentication change postponed')
+    try:
+        pwd.getpwnam(user)
+    except KeyError:
+        raise ValueError('Administrator account does not exist; no SSH changes made')
+    status = run(['passwd', '-S', user], capture_output=True, text=True).stdout.split()
+    if len(status) < 2 or status[1] != 'P':
+        raise ValueError('Set an account password with sudo passwd USER before requiring both factors')
+    current = ssh_auth_policy(user)
+    if current.get('authenticationmethods') == 'publickey,password':
+        return {'authentication_methods': 'publickey,password', 'changed': False}
+    if current.get('authenticationmethods') != 'any':
+        raise ValueError('Custom SSH authentication policy requires manual review; nothing changed')
+    confirm_verified('Confirm a tested key login, known account password AND independent console recovery',
+                     lambda: feature_guidance('ssh-auth'))
+    target = SSH_AUTH_TARGET
+    if any(p.is_symlink() for p in [target, *target.parents]):
+        raise ValueError('Symlinked SSH configuration requires manual review')
+    if target.exists() and not target.is_file():
+        raise ValueError('SSH authentication drop-in must be a regular file')
+    run(['/usr/sbin/sshd', '-t'])
+    service = next((unit for unit in ('ssh.service', 'sshd.service') if
+                    run(['systemctl', 'show', unit, '--property=LoadState', '--value'],
+                        capture_output=True, text=True).stdout.strip() == 'loaded'), None)
+    if service is None:
+        raise ValueError('No installed SSH service found; nothing changed')
+    backup(target, directory)
+    snapshot = directory / str(target).lstrip('/')
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    rollback = directory / 'restore-ssh-auth.sh'
+    restore = ('cp -p -- ' + shlex.quote(str(snapshot)) + ' ' + shlex.quote(str(target))
+               if target.exists() else 'rm -f -- ' + shlex.quote(str(target)))
+    atomic(rollback, '#!/bin/sh\nset -eu\n' + restore + '\n/usr/sbin/sshd -t\nsystemctl reload ' + service + '\n', 0o700)
+    unit = 'tarasec-ssh-auth-rollback-' + str(os.getpid()) + '-' + str(time.time_ns())
+    run(['systemd-run', '--unit=' + unit, '--on-active=10m', '/bin/sh', rollback])
+    try:
+        atomic(target, 'PubkeyAuthentication yes\nPasswordAuthentication yes\nAuthenticationMethods publickey,password\n', 0o644)
+        run(['/usr/sbin/sshd', '-t'])
+        effective = ssh_auth_policy(user)
+        if any(effective.get(key) != value for key, value in {
+                'authenticationmethods': 'publickey,password', 'pubkeyauthentication': 'yes',
+                'passwordauthentication': 'yes'}.items()):
+            raise ValueError('Existing SSH configuration overrides the new policy; restoring previous configuration')
+        run(['systemctl', 'reload', service])
+        print('Rollback armed for ten minutes. Keep this session open. Open the normal Google/TOTP SSH window if configured.')
+        print('From your administrator computer, open a NEW connection with connection sharing disabled:')
+        print('  ssh -o ControlMaster=no -o ControlPath=none YOUR_SSH_ALIAS')
+        print('It must accept your key AND ask for the SERVER ACCOUNT password. A private-key passphrase is not this password.')
+        confirm_verified('Confirm the NEW key-plus-account-password login succeeded', lambda: feature_guidance('ssh-auth'))
+        run(['systemctl', 'stop', unit + '.timer'])
+        run(['systemctl', 'stop', unit + '.service'])
+        if ssh_auth_policy(user).get('authenticationmethods') != 'publickey,password':
+            raise ValueError('SSH policy changed or rollback already ran; retry verification')
+    except BaseException:
+        # Restore immediately on failure, refusal or Ctrl+C. Timer remains a fallback
+        # if the session disappears before restoration can run.
+        run(['/bin/sh', rollback])
+        run(['systemctl', 'stop', unit + '.timer'])
+        raise
+    return {'authentication_methods': 'publickey,password', 'changed': True, 'new_login_confirmed': True}
 
 
 def install_key(directory):
@@ -676,6 +762,8 @@ def apply_feature(name, directory, allow_enrollment=False):
         print('Google gate applied. Test a NEW connection closed, approved, then expired; existing sessions can survive closure.')
     elif name == 'ssh-key':
         install_key(directory)
+    elif name == 'ssh-auth':
+        return require_ssh_key_password(directory)
     elif name == 'honeypot':
         cfg_path = Path('/etc/tarasecfw.conf')
         cfg = settings(cfg_path)
@@ -851,6 +939,17 @@ def main(argv=None):
             if name == 'ssh-window' and ssh_window_current():
                 print('\nSSH window already enabled and current; installed code, polling timers and IPv4/IPv6 firewall hooks checked. No changes made.')
                 continue
+            if name == 'ssh-auth':
+                try:
+                    methods = ssh_auth_policy().get('authenticationmethods', 'unknown')
+                except (OSError, subprocess.CalledProcessError):
+                    methods = 'unknown'
+                if methods == 'publickey,password':
+                    print('\nSSH already requires both public key and account password; no change needed.')
+                    continue
+                print('\nWARNING: SSH AuthenticationMethods is ' + methods +
+                      ('; a public key and account password are not both required.' if methods == 'any'
+                       else '; inspect the effective policy before changing it.'))
             print('\n' + title)
             feature_guidance(name)
             print('Affected configuration is backed up under ' + str(directory))
