@@ -17,10 +17,12 @@ class UpgradeTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.state = patch.object(u, 'STATE', self.root / 'private/state.json')
         self.mode = patch.object(u, 'MODE', self.root / 'deployment-mode')
+        self.uid = patch.object(u.os, 'geteuid', return_value=0)
+        self.uid.start()
         self.state.start(); self.mode.start()
 
     def tearDown(self):
-        self.mode.stop(); self.state.stop(); self.tmp.cleanup()
+        self.uid.stop(); self.mode.stop(); self.state.stop(); self.tmp.cleanup()
 
     def test_mode_is_explicit(self):
         self.assertEqual(u.read_mode(), 'unconfigured')
@@ -128,6 +130,8 @@ class UpgradeTests(unittest.TestCase):
         for p in (root / 'html/script').glob('appDemo*.php'):
             text = p.read_text()
             self.assertIn('tarasecRequireDemo();', text, str(p))
+            if 'declare(strict_types=1);' in text:
+                self.assertLess(text.index('declare(strict_types=1);'), text.index('tarasecRequireDemo();'))
             self.assertLess(text.index('tarasecRequireDemo();'), text.find("include '../dbfunc.php'") if "include '../dbfunc.php'" in text else len(text))
 
 
