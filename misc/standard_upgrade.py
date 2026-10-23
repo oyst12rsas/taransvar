@@ -437,6 +437,31 @@ def operations_installed():
             and Path('/etc/systemd/system/tarasec-operations-agent.timer').is_file())
 
 
+def wait_operations_approval(request, answer):
+    from enroll_google_manager import NoRedirect
+    print('Waiting up to 5 minutes. Press Ctrl+C to skip AI activation for now and continue the remaining upgrades.')
+    print('You can approve later and rerun sudo tarasec upgrade to resume.')
+    deadline = time.monotonic() + 300
+    try:
+        while answer.get('state') == 'pending' and answer.get('approved') is not True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0: break
+            time.sleep(min(5, remaining))
+            remaining = deadline - time.monotonic()
+            if remaining <= 0: break
+            with urllib.request.build_opener(NoRedirect()).open(request, timeout=min(20, remaining)) as response:
+                answer = json.loads(response.read(8193))
+    except KeyboardInterrupt:
+        print('\nAI activation postponed; the approval request remains available. Continuing remaining upgrades.')
+        return {'approved': False, 'state': 'pending'}
+    except (OSError, ValueError):
+        print('Approval check unavailable; activation postponed. Rerun sudo tarasec upgrade to resume.')
+        return {'approved': False, 'state': 'pending'}
+    if answer.get('approved') is not True and answer.get('state') == 'pending':
+        print('Five-minute wait ended; activation postponed. Approve on the website and rerun sudo tarasec upgrade to resume.')
+    return answer
+
+
 def enroll_operations_model(policy, policy_path, directory, root=Path('/')):
     from enroll_google_manager import private_read, NoRedirect, enrollment_url
     receipt_path = root / 'etc/tarasec/agent-enrollment.json'
@@ -459,17 +484,13 @@ def enroll_operations_model(policy, policy_path, directory, root=Path('/')):
         print('TaraSec AI enrollment unavailable; deploy the central enrollment update and retry. Local credentials were retained.')
         return False
     if answer.get('approved') is not True:
-        print('AI activation awaits confirmation at ' + api.rsplit('/', 1)[0] + '/ for ' + str(receipt.get('nickname', 'this node')) + '.')
-        print('Sign in with Google and approve the AI model request using your authenticator; no prediction URL or provider key is needed.')
+        print('\nACTION REQUIRED IN YOUR BROWSER — activate the AI agent')
+        print('1. Open ' + api.rsplit('/', 1)[0] + '/')
+        print('2. Sign in with Google and select machine: ' + str(receipt.get('nickname', 'this node')))
+        print('3. Find "Activate AI operations agent", enter your authenticator code, and click Approve.')
+        print('Leave this terminal open. No prediction URL or provider key is needed.')
         if sys.stdin.isatty() and answer.get('state') == 'pending':
-            print('Waiting up to 60 seconds for approval. If needed, rerun sudo tarasec upgrade later to resume.')
-            for attempt in range(12):
-                time.sleep(5)
-                try:
-                    with urllib.request.build_opener(NoRedirect()).open(request, timeout=20) as response:
-                        answer = json.loads(response.read(8193))
-                except (OSError, ValueError): return False
-                if answer.get('approved') is True or answer.get('state') == 'rejected': break
+            answer = wait_operations_approval(request, answer)
         if answer.get('approved') is not True: return False
     if answer.get('model_ready') is not True:
         print('AI activation approved; the central TaraSec model connection still needs configuration by its administrator. Rerun after it is ready.')
