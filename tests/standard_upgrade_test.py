@@ -111,7 +111,7 @@ class UpgradeTests(unittest.TestCase):
     def test_activity_repair_is_separate_from_full_upgrade(self):
         u.MODE.write_text('demo\n')
         with patch.object(u.sys.stdin,'isatty',return_value=True), patch.object(u,'run') as run, patch.object(u,'backup'), patch.object(u,'ensure_operations_activity',return_value='active') as configure, patch.object(u,'apply_feature') as apply, patch('builtins.input',side_effect=AssertionError('No full-upgrade prompts')), patch('sys.stdout',new=io.StringIO()):
-            self.assertEqual(u.main(['upgrade','--configure-activity']),0)
+            self.assertEqual(u.main(['upgrade','--configure-activity','--roles','node']),0)
         configure.assert_called_once_with(interactive=True)
         apply.assert_not_called()
         run.assert_called_once_with(['bash',u.REPO/'misc/install_operations_agent.sh'])
