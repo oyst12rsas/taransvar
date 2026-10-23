@@ -77,12 +77,12 @@ class UpgradeTests(unittest.TestCase):
         for mode in ('demo','production'):
             u.MODE.write_text(mode+'\n')
             path.write_text(original)
-            with patch.object(u.subprocess,'run',return_value=Mock(returncode=1)), patch.object(u,'run') as run:
+            with patch.object(u,'configure_operations_model',return_value=True), patch.object(u.subprocess,'run',return_value=Mock(returncode=1)), patch.object(u,'run') as run:
                 result=u.activate_operations(self.root/'backup',root=self.root)
             self.assertTrue(result['pending_configuration'])
             self.assertEqual(path.read_text(),original)
             run.assert_not_called()
-            with patch.object(u.subprocess,'run',return_value=Mock(returncode=0)), patch.object(u,'run') as run:
+            with patch.object(u,'configure_operations_model',return_value=True), patch.object(u.subprocess,'run',return_value=Mock(returncode=0)), patch.object(u,'run') as run:
                 result=u.activate_operations(self.root/'backup',root=self.root)
             self.assertEqual(result['activation'],'active')
             self.assertEqual(u.json.loads(path.read_text())['mode'],mode)
@@ -93,12 +93,26 @@ class UpgradeTests(unittest.TestCase):
         path=self.root/'etc/tarasec/operations-agent.json'
         path.parent.mkdir(parents=True);path.write_text('{"mode":"inspect","model_url":""}')
         u.MODE.write_text('demo\n')
-        with patch.object(u.subprocess,'run') as run:
+        with patch.object(u.sys.stdin,'isatty',return_value=False), patch.object(u.subprocess,'run') as run:
             result=u.activate_operations(self.root/'backup',root=self.root)
         run.assert_not_called()
         record={}
         u.record_feature_result(record,'operations',result,5,'a'*40)
         self.assertEqual(record['status'],'partial')
+
+    def test_guided_connection_saves_private_settings_and_retries_url(self):
+        path=self.root/'etc/tarasec/operations-agent.json'
+        path.parent.mkdir(parents=True);path.write_text('{"mode":"inspect"}')
+        policy={'mode':'inspect'}
+        with patch.object(u.sys.stdin,'isatty',return_value=True),patch('builtins.input',side_effect=['yes','flowise','http://invalid','https://example.test/prediction/agent']),patch.object(u.getpass,'getpass',return_value='private-test-key'),patch('sys.stdout',new=io.StringIO()) as output:
+            self.assertTrue(u.configure_operations_model(policy,path,self.root/'backup',root=self.root))
+        self.assertNotIn('private-test-key',output.getvalue())
+        key=Path(policy['model_key_file'])
+        self.assertEqual(key.stat().st_mode & 0o777,0o600)
+        self.assertEqual(path.stat().st_mode & 0o777,0o600)
+        self.assertEqual(policy['mode'],'inspect')
+        with patch('builtins.input',side_effect=AssertionError('Must reuse configured connection')):
+            self.assertTrue(u.configure_operations_model(policy,path,self.root/'backup',root=self.root))
 
     def test_choice_defaults_to_postpone_and_retries_invalid(self):
         with patch('builtins.input', side_effect=['bogus', '']):

@@ -1,5 +1,16 @@
 # Standard upgrade
 
+When the AI agent lacks a model connection, an interactive upgrade now offers
+guided Flowise or direct OpenAI setup. API keys are entered without echo and
+stored with mode 0600; existing complete settings are reused. Unattended runs
+remain pending and request an interactive upgrade instead of asking for secrets.
+The chosen deployment mode is retained and a non-executing model check precedes
+activation. After activation, disk-pressure housekeeping runs installed logrotate
+rules and, if pressure remains high, clears downloaded APT packages. It never
+removes installed packages, database data or upgrade/recovery backups. Both
+housekeeping operations run under the agent's existing mode, threshold, cooldown
+and audit controls, independently of model-call budget.
+
 The **AI operations agent** step detects an existing installation. A missing
 agent requires installation confirmation, even in demo mode; unattended runs
 skip first installation. After installation or update, the upgrader tests the

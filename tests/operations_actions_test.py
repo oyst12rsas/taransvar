@@ -78,7 +78,7 @@ class ActionsTest(unittest.TestCase):
                                 1000, runner, lambda: None, lambda event: None))
                 self.assertFalse(automatic_log_rotation(policy, dict(disk_used_percent=89), state,
                                 1060, runner, lambda: None, lambda event: None))
-            self.assertEqual(calls, [(['/usr/sbin/logrotate', '/etc/logrotate.conf'], 120)])
+            self.assertEqual(calls, [(['/usr/sbin/logrotate', '/etc/logrotate.conf'], 120), (['/usr/bin/apt-get', 'clean'], 120)])
             self.assertEqual(state['last_log_rotation']['exit_code'], 1)
             self.assertEqual(state['last_log_rotation']['disk_used_percent_after'], 89)
 
