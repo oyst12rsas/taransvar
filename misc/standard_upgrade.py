@@ -26,7 +26,7 @@ FEATURES = (
     ('runtime', 'Update installed Perl runtime (preserves local configuration)', set(ROLES)),
     ('taralink', 'Build and update the installed systemd-managed Taralink service', set(ROLES)),
     ('gatekeeper', 'Back up and update Gatekeeper web files', {'database', 'gateway'}),
-    ('operations', 'Install/update the operations agent (retains existing policy and scheduling)', set(ROLES)),
+    ('operations', 'Install/update and activate the AI operations agent', set(ROLES)),
     ('google', 'Install/update Google manager sign-in and approval worker', set(ROLES)),
     ('ssh-window', 'Enable/refresh Google-controlled temporary SSH access (requires verified console and MFA)', set(ROLES)),
     ('ssh-key', 'Add an administrator SSH public key (password policy unchanged)', set(ROLES)),
@@ -225,8 +225,9 @@ def feature_guidance(name, root=Path('/')):
         ),
         'operations': (
             'The operations agent monitors this server and can perform maintenance allowed by its configured policy.',
-            'Yes installs or updates its files while retaining existing policy and scheduling.',
-            'A new installation stays disabled until its model connection and operating policy are configured and tested.',
+            'If missing, you are asked before installation, including in demo mode. Yes installs or updates it and activates its recurring timer.',
+            'Activation uses the demo/production mode already selected and first tests the configured model connection without executing model actions.',
+            'Missing model settings or a failed connection are reported as pending activation; rerun after fixing them.',
         ),
         'google': (
             'This connects the manager/approval pages to Google sign-in and the approval worker.',
@@ -405,6 +406,35 @@ def existing_honeypot_setup(cfg):
         return False
 
 
+def operations_installed():
+    return (Path('/usr/local/lib/tarasec-operations/operations_agent.py').is_file()
+            and Path('/etc/systemd/system/tarasec-operations-agent.timer').is_file())
+
+
+def activate_operations(directory, root=Path('/')):
+    policy_path = root / 'etc/tarasec/operations-agent.json'
+    policy = json.loads(policy_path.read_text())
+    mode = read_mode()
+    if mode not in ('demo', 'production'):
+        raise ValueError('Select demo or production mode before AI agent activation')
+    if not policy.get('model_url') and policy.get('model_provider', 'flowise') == 'flowise':
+        print('AI agent installed; activation pending: configure model_url in /etc/tarasec/operations-agent.json and its model_key_file, then rerun sudo tarasec upgrade.')
+        return {'pending_configuration': True, 'activation': 'pending_model_configuration'}
+    # Probe before policy/timer changes. The probe never dispatches returned actions.
+    probe = subprocess.run(['python3', '/usr/local/lib/tarasec-operations/operations_model_probe.py', '--connection-check'],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=240)
+    if probe.returncode:
+        print('AI agent activation pending: model connection/protocol check failed. Check the endpoint, credentials and model configuration; rerun sudo tarasec upgrade.')
+        return {'pending_configuration': True, 'activation': 'pending_model_connection'}
+    backup(policy_path, directory)
+    policy['mode'] = mode
+    atomic(policy_path, json.dumps(policy, indent=2) + '\n')
+    run(['systemctl', 'enable', '--now', 'tarasec-operations-agent.timer'])
+    run(['systemctl', 'is-active', '--quiet', 'tarasec-operations-agent.timer'])
+    print('AI operations agent activated in ' + mode + ' mode. Scheduled checks are enabled; action-specific readiness checks still apply.')
+    return {'activation': 'active', 'mode': mode}
+
+
 def apply_feature(name, directory, allow_enrollment=False):
     directory.mkdir(parents=True, mode=0o700, exist_ok=True)
     if name == 'database':
@@ -449,6 +479,7 @@ def apply_feature(name, directory, allow_enrollment=False):
         backup(Path('/usr/local/lib/tarasec-operations'), directory)
         backup(Path('/etc/tarasec/operations-agent.json'), directory)
         run(['bash', REPO / 'misc/install_operations_agent.sh'])
+        return activate_operations(directory)
     elif name == 'google':
         backup(Path('/etc/tarasec'), directory)
         backup(Path('/etc/tarasec-server-manager.conf'), directory)
@@ -541,6 +572,9 @@ def automatic_upgrade(args, state, mode):
         release = release_info(REPO)
         state['mode'] = 'demo'
         selected = automatic_features(state, names, 'demo', release)
+        if 'operations' in selected and not operations_installed():
+            selected.remove('operations')
+            print('AI agent not installed: run sudo tarasec upgrade to approve installation.')
         if not selected: raise ValueError('No upgrades eligible for automatic demo testing')
         revision = source_revision()
         stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
@@ -654,6 +688,11 @@ def main(argv=None):
             # A low-risk dependent still waits for its schema/runtime prerequisites.
             applicable_names = [n for n, _, rs in FEATURES if set(roles) & rs]
             auto = mode == 'demo' and name in automatic_features(state, applicable_names, mode, release)
+            if name == 'operations':
+                installed = operations_installed()
+                print('AI operations agent: ' + ('installed; update and activate.' if installed else 'not installed; installation requires your confirmation.'))
+                if not installed:
+                    auto = False
             print('Risk: ' + risk + '; release: ' + str(release['version']))
             if auto:
                 print('Applying automatically under demo testing policy.')

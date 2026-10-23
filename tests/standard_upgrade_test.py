@@ -21,9 +21,12 @@ class UpgradeTests(unittest.TestCase):
         self.mode = patch.object(u, 'MODE', self.root / 'deployment-mode')
         self.uid = patch.object(u.os, 'geteuid', return_value=0)
         self.uid.start()
+        self.installed = patch.object(u, 'operations_installed', return_value=True)
+        self.installed.start()
         self.state.start(); self.mode.start()
 
     def tearDown(self):
+        self.installed.stop()
         self.uid.stop(); self.mode.stop(); self.state.stop(); self.tmp.cleanup()
 
     def test_mode_is_explicit(self):
@@ -32,6 +35,43 @@ class UpgradeTests(unittest.TestCase):
         self.assertEqual(u.read_mode(), 'production')
         u.MODE.write_text('invalid')
         with self.assertRaises(ValueError): u.read_mode()
+
+    def test_new_agent_requires_installation_confirmation_in_demo(self):
+        u.MODE.write_text('demo\n')
+        with patch.object(u, 'operations_installed', return_value=False), patch.object(u, 'FEATURES', (('operations', 'AI agent', {'node'}),)), patch.object(u, 'COMMAND', self.root/'tarasec'), patch.object(u.sys.stdin, 'isatty', return_value=True), patch('builtins.input', side_effect=['yes','no']) as prompt, patch.object(u, 'apply_feature') as apply, patch('sys.stdout', new=io.StringIO()):
+            self.assertEqual(u.main(['upgrade','--roles','node']),0)
+        self.assertEqual(prompt.call_count,2)
+        apply.assert_not_called()
+
+    def test_agent_activation_uses_selected_mode_only_after_successful_probe(self):
+        path = self.root/'etc/tarasec/operations-agent.json'
+        path.parent.mkdir(parents=True)
+        original = '{"mode":"inspect","model_url":"https://example.test/agent","quiet_seconds":300}'
+        for mode in ('demo','production'):
+            u.MODE.write_text(mode+'\n')
+            path.write_text(original)
+            with patch.object(u.subprocess,'run',return_value=Mock(returncode=1)), patch.object(u,'run') as run:
+                result=u.activate_operations(self.root/'backup',root=self.root)
+            self.assertTrue(result['pending_configuration'])
+            self.assertEqual(path.read_text(),original)
+            run.assert_not_called()
+            with patch.object(u.subprocess,'run',return_value=Mock(returncode=0)), patch.object(u,'run') as run:
+                result=u.activate_operations(self.root/'backup',root=self.root)
+            self.assertEqual(result['activation'],'active')
+            self.assertEqual(u.json.loads(path.read_text())['mode'],mode)
+            self.assertEqual(u.json.loads(path.read_text())['quiet_seconds'],300)
+            run.assert_any_call(['systemctl','enable','--now','tarasec-operations-agent.timer'])
+
+    def test_missing_model_configuration_is_pending_not_completed(self):
+        path=self.root/'etc/tarasec/operations-agent.json'
+        path.parent.mkdir(parents=True);path.write_text('{"mode":"inspect","model_url":""}')
+        u.MODE.write_text('demo\n')
+        with patch.object(u.subprocess,'run') as run:
+            result=u.activate_operations(self.root/'backup',root=self.root)
+        run.assert_not_called()
+        record={}
+        u.record_feature_result(record,'operations',result,5,'a'*40)
+        self.assertEqual(record['status'],'partial')
 
     def test_choice_defaults_to_postpone_and_retries_invalid(self):
         with patch('builtins.input', side_effect=['bogus', '']):
