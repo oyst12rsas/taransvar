@@ -133,7 +133,7 @@ class UpgradeTests(unittest.TestCase):
         for approved in (False,True):
             response=Mock();response.read.return_value=u.json.dumps({'approved':approved,'model_ready':True}).encode()
             opener=Mock();opener.open.return_value=contextlib.nullcontext(response)
-            with patch('enroll_google_manager.urllib.request.build_opener',return_value=opener):
+            with patch('enroll_google_manager.private_read',side_effect=lambda p:p.read_text()), patch('enroll_google_manager.urllib.request.build_opener',return_value=opener):
                 policy={}
                 self.assertEqual(u.enroll_operations_model(policy,path,self.root/'backup',root=self.root),approved)
             if approved:
