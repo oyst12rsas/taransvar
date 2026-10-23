@@ -4,9 +4,25 @@
       "id": "upgrade-coordination-v1",
       "minimum_version": 1,
       "severity": "important",
-      "roles": ["database", "gateway", "node"],
+      "roles": [
+        "database",
+        "gateway",
+        "node"
+      ],
       "note": "Install upgrade coordination so this unit reports deployed versions and receives network upgrade warnings.",
       "network_impact": "Older units cannot participate in automatic upgrade coordination."
+    },
+    {
+      "id": "upgrade-mode-policy-v2",
+      "minimum_version": 2,
+      "severity": "important",
+      "roles": [
+        "database",
+        "gateway",
+        "node"
+      ],
+      "note": "Apply mode-based upgrade approvals: automatic testing through medium risk in demo; confirmation for every production upgrade.",
+      "network_impact": "Production units retain explicit upgrade approval. Demo units exercise eligible updates automatically."
     }
   ]
 }

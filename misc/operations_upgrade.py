@@ -9,6 +9,7 @@ from operations_reboot import session_activity
 NOTICE = Path('/var/lib/tarasec/upgrade/notice.json')
 SOFTWARE = Path('/var/lib/tarasec/upgrade/software.json')
 LAUNCHER = Path('/usr/local/sbin/tarasec')
+MODE = Path('/etc/tarasec-deployment-mode')
 
 
 def read_notice(path, now):
@@ -42,9 +43,13 @@ def maintain(state, policy, now, run, trusted, quiet, persist, record):
         state['upgrade']['reason'] = 'Inspection mode does not authorize upgrades'
         return False
     try:
-        software = json.loads(trusted(SOFTWARE).read_text())
-        if software.get('automatic_enabled') is not True:
-            state['upgrade']['reason'] = 'Owner has not enabled automatic upgrades'
+        mode = trusted(MODE).read_text().strip()
+        if mode == 'production' or policy.get('mode') == 'production':
+            state['upgrade'].update(status='awaiting_confirmation',
+                reason='Production requires user confirmation for each upgrade; run sudo tarasec upgrade')
+            return False
+        if mode != 'demo' or policy.get('mode') != 'demo':
+            state['upgrade']['reason'] = 'Automatic upgrades require demo mode in both local policies'
             return False
         launcher = trusted(LAUNCHER.resolve())
         # Reject writable checkout ancestors as well as a writable launcher.

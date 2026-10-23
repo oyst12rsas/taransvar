@@ -27,19 +27,43 @@ sudo tarasec upgrade --review-declined
 sudo tarasec upgrade --roles database,gateway --mode production
 ```
 
-Each feature asks **yes/no/never**. Yes applies it now, no postpones it, never
-suppresses subsequent prompts until `--review-declined`. Installed features
-remain installed when declined; never is not an uninstall. Updates are offered
-again because installed files can drift and the checkout can change. Database,
-runtime, managed Taralink and Gatekeeper deploy first, followed by Google enrollment, temporary
-SSH protection, public keys and the SSH/honeypot migration. Additional features
-belong in the explicit feature registry in `misc/standard_upgrade.py`.
+Upgrade approval follows the selected mode:
+
+| Mode | None / low / medium risk | High or unclassified risk |
+|---|---|---|
+| Demo | Apply automatically for testing | Ask for confirmation |
+| Production | Ask for confirmation every time | Ask for confirmation every time |
+
+Choosing Demo is the authorization for bounded automatic test upgrades, including
+new eligible components. The old `automatic_enabled` opt-in flag is ignored.
+Production never reuses a previous Yes as authorization for another upgrade and
+rejects `--automatic`, even if an older installation retained that flag.
+Explicit **Never** choices remain excluded until `--review-declined`; **No**
+postpones an interactive choice until a later run. A required mode/role change
+still needs confirmation. High-risk access changes retain their live recovery
+and credential prerequisites.
+
+Built-in minimum risks are low for the Perl runtime/Gatekeeper, medium for
+reviewed additive DB migrations/managed Taralink/operations-worker deployment,
+and high for Google enrollment and SSH keys, closure or port/honeypot changes.
+`release.json` may raise a component's risk for a particular release; it cannot
+lower an access control's minimum. Unknown or invalid ratings default to high.
+Security/important/routine **notice severity is urgency**, not deployment risk.
+A routine notice can still concern a high-risk change requiring confirmation.
+Low-risk dependents wait for required schema/runtime prerequisites; they do not
+automatically bypass a high-risk or Never-declined dependency.
+
+Database, runtime, managed Taralink and Gatekeeper deploy first, followed by the
+operations worker and optional access controls. Add future bounded components to
+the explicit feature registry and risk policy. Results record risk, source
+revision and whether authorization was demo policy or fresh user confirmation.
 
 The interactive command coordinates existing reviewed installers. It does not
 run the broad legacy OS installer or experimental kernel compiler automatically.
 Kernel builds and initial hotspot/network provisioning remain separate pending
-safe verified upgrade adapters. Existing database migration timers remain under
-their current owner policy; no/never affects this command, not those timers.
+safe verified upgrade adapters. Production disables the legacy independent DB-migration timer. The standalone
+schema migrator also requires confirmation in Production; unattended timer calls
+cannot bypass it. Other system package-maintenance policies are unchanged.
 
 ## Modes
 
@@ -128,16 +152,17 @@ No database migration is needed: version/evaluation data use the existing status
 JSON and heartbeat history. The agent's upgrade issues use the existing Issues
 lifecycle and history when that agent is installed.
 
-On each node, run the interactive upgrade once to install the new minute runtime
-and operations worker. Accept **Enable automatic updates of previously approved
-installed components** to permit unattended updates. The operations worker must
-already be enrolled in Demo or Production maintenance with its timer/coordinator
-and trusted activity probe working. Installation alone does not enable a disabled
-agent or change its inspection policy. Local no/never choices still take priority.
+On each node, run the standard upgrade once to install the new minute runtime
+and operations worker and confirm the host mode/roles. Demo automatically handles
+eligible upgrades without a separate opt-in. The operations worker must be running
+under Demo maintenance with a trusted activity probe. A disabled worker or explicit
+inspection-only agent policy is not silently enabled or expanded. Production
+notices remain **awaiting confirmation**, with the instruction to run
+`sudo tarasec upgrade`; its feature prompts provide fresh approval for each update.
 
 Only the primary configured DB heartbeat response supplies the local advisory
 receipt; secondary DBs cannot overwrite it. A receipt is valid for 180 seconds.
-The agent updates without a model call when it has owner opt-in, maintenance mode,
+The agent updates without a model call in Demo mode, with matching agent policy,
 a trusted root-owned launcher/checkout, quiet demo/traffic evidence and idle
 interactive-session evidence. Unknown activity blocks it. Attempts are limited to
 three per UTC day with a one-hour cooldown. A DB notice can request attention but
@@ -145,13 +170,15 @@ cannot specify a command, Git remote, commit, manager, feature or execution gran
 The existing registered-router/IP and private-network heartbeat trust model is
 unchanged; notices are not cryptographically signed release approvals.
 
-The fixed action is `tarasec upgrade --automatic`. It fetches normal `origin/main`
-and updates only previously installed, owner-approved database/runtime/Taralink/
-Gatekeeper/operations components. It never enables Google enrollment, changes SSH
-ports/windows/keys, changes mode/roles, installs new optional features or overrides
-never/postponed choices. The chosen release's component list determines what still
-needs an interactive installation. A missing/unapproved required component keeps
-the warning visible rather than silently broadening permission.
+The fixed action is `tarasec upgrade --automatic`. It is Demo-only and fetches
+normal `origin/main`, then applies eligible none-through-medium risk adapters,
+including new bounded components for testing. Existing current component revisions
+are skipped. Higher-risk and unknown adapters require interactive approval. This
+path never changes SSH enrollment/windows/keys/ports, mode/roles or Never choices.
+A high-risk prerequisite holds its dependents until that prerequisite is manually
+upgraded. Production refuses this path regardless of any historical opt-in, past
+Yes, or agent request. Every automatic component also rechecks Demo mode before
+execution. Failed eligible components remain retryable within the same budgets.
 
 Successful command exit leaves **verification pending**. The next successful
 heartbeat/DB assessment must confirm the installed release before the agent marks

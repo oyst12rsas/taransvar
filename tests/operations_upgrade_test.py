@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 import operations_upgrade as upgrade
-from upgrade_release import deployment_status, automatic_features
+from upgrade_release import deployment_status, automatic_features, upgrade_risk, demo_automatic
 
 
 class UpgradeTests(unittest.TestCase):
@@ -15,15 +15,17 @@ class UpgradeTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.notice = self.root / 'notice.json'
         self.software = self.root / 'software.json'
+        self.mode = self.root / 'mode'
+        self.mode.write_text('demo\n')
         self.notice.write_text(json.dumps({'checked_at':10000, 'catalog_status':'ok', 'pending':[
             {'id':'fix', 'severity':'security', 'minimum_version':2, 'note':'Compatibility/security fix'}]}))
         self.software.write_text(json.dumps({'automatic_enabled':True}))
         self.state = {}
-        self.policy = {'mode':'production','quiet_probe':'/probe'}
+        self.policy = {'mode':'demo','quiet_probe':'/probe'}
         self.run = Mock(side_effect=[{'exit_code':0,'output':'{}'}, {'exit_code':0,'output':'ok'}])
         self.quiet = Mock(return_value=True)
         self.saved, self.audit = Mock(), Mock()
-        self.patches = [patch.object(upgrade, 'NOTICE', self.notice), patch.object(upgrade, 'SOFTWARE', self.software),
+        self.patches = [patch.object(upgrade, 'NOTICE', self.notice), patch.object(upgrade, 'SOFTWARE', self.software), patch.object(upgrade, 'MODE', self.mode),
                         patch.object(upgrade, 'session_activity', return_value={'blockers':[]})]
         for p in self.patches: p.start()
 
@@ -47,11 +49,20 @@ class UpgradeTests(unittest.TestCase):
         self.assertFalse(self.maintain()); self.run.assert_not_called()
         self.assertEqual(self.state['upgrade']['status'], 'unknown')
 
-    def test_opt_in_and_maintenance_mode_are_required(self):
-        self.policy['mode'] = 'inspect'
-        self.assertFalse(self.maintain()); self.run.assert_not_called()
-        self.policy['mode'] = 'production'
+    def test_production_never_runs_automatically_even_with_old_opt_in(self):
+        for agent_mode, node_mode in [('production','production'), ('demo','production'), ('production','demo')]:
+            with self.subTest(agent_mode=agent_mode, node_mode=node_mode):
+                self.policy['mode'] = agent_mode
+                self.mode.write_text(node_mode)
+                self.assertFalse(self.maintain()); self.run.assert_not_called()
+                self.assertEqual(self.state['upgrade']['status'], 'awaiting_confirmation')
+
+    def test_demo_mode_is_authorization_even_when_legacy_opt_in_is_false(self):
         self.software.write_text('{"automatic_enabled":false}')
+        self.assertTrue(self.maintain())
+
+    def test_inspect_mode_blocks_automatic_upgrades(self):
+        self.policy['mode'] = 'inspect'
         self.assertFalse(self.maintain()); self.run.assert_not_called()
 
     def test_busy_activity_blocks_execution(self):
@@ -80,14 +91,31 @@ class UpgradeTests(unittest.TestCase):
         state['features']['taralink']['installed_version'] = 0
         self.assertEqual(deployment_status(state, release)['version'], 0)
 
-    def test_automatic_never_installs_unapproved_features_or_ssh(self):
-        state = {'automatic_enabled':True,'features':{
-            'runtime':{'choice':'yes','installed_once':True,'installed_version':0},
+    def test_demo_includes_new_bounded_features_but_honors_never(self):
+        state = {'mode':'demo', 'automatic_enabled':False, 'features':{
+            'runtime':{'choice':'no','installed_version':0},
             'gatekeeper':{'choice':'never','installed_version':1},
             'ssh-window':{'choice':'yes','installed_version':1}}}
-        self.assertEqual(automatic_features(state, ['runtime','gatekeeper','google','ssh-window']), ['runtime'])
-        state['automatic_enabled'] = False
+        self.assertEqual(automatic_features(state, ['runtime','gatekeeper','operations','google','ssh-window']), ['runtime','operations'])
+        state['mode'] = 'production'
+        state['automatic_enabled'] = True
         with self.assertRaises(ValueError): automatic_features(state, ['runtime'])
+
+    def test_risk_labels_fail_closed_and_cannot_lower_access_risk(self):
+        self.assertEqual(upgrade_risk('unclassified'), 'high')
+        self.assertFalse(demo_automatic('ssh-window', 'demo', {'risks':{'ssh-window':'none'}}))
+        self.assertFalse(demo_automatic('runtime', 'demo', {'risks':{'runtime':'high'}}))
+        self.assertFalse(demo_automatic('runtime', 'demo', {'risks':{'runtime':'invalid'}}))
+        self.assertTrue(demo_automatic('database', 'demo'))
+        self.assertFalse(demo_automatic('runtime', 'production'))
+
+    def test_high_risk_database_blocks_dependents_until_manually_installed(self):
+        state = {'mode':'demo','features':{}}
+        release = {'version':2,'risks':{'database':'high'}}
+        names=['database','runtime','gatekeeper','operations']
+        self.assertEqual(automatic_features(state, names, release=release), [])
+        state['features']['database']={'installed_version':2}
+        self.assertEqual(automatic_features(state, names, release=release), ['runtime','gatekeeper','operations'])
 
 
 if __name__ == '__main__': unittest.main()

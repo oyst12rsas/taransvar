@@ -3,7 +3,16 @@
 use strict;
 use warnings;
 use FindBin;
+use lib $FindBin::Bin;
+use upgrade_policy qw(requireUpgradeConfirmation);
 use DBI;
+
+die "Usage: upgrade_db.pl [--confirmed]\n" if @ARGV && (@ARGV != 1 || $ARGV[0] ne '--confirmed');
+requireUpgradeConfirmation('/etc/tarasec-deployment-mode', scalar(@ARGV), -t STDIN, sub {
+    print "Apply this production database schema upgrade? [yes/no]: ";
+    my $answer = <STDIN> // '';
+    return $answer =~ /^yes\s*$/i;
+});
 
 my $sql_file = "$FindBin::Bin/install.sql";
 open my $fh, '<', $sql_file or die "Cannot read $sql_file: $!\n";

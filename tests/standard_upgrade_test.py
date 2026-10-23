@@ -119,6 +119,40 @@ class UpgradeTests(unittest.TestCase):
         apply.assert_called_once()
         self.assertEqual(u.load_state()['features']['google']['status'], 'completed')
 
+    def test_production_rejects_automatic_even_with_legacy_opt_in(self):
+        u.MODE.write_text('production\n')
+        u.save({'mode':'production','roles':['node'],'automatic_enabled':True,'features':{},'history':[]})
+        with patch.object(u, 'detect_roles', side_effect=AssertionError('Saved roles must not inspect the host')), patch.object(u, 'apply_feature') as apply, patch('sys.stdout', new=io.StringIO()):
+            with self.assertRaisesRegex(ValueError, 'confirmation for every upgrade'):
+                u.main(['upgrade', '--automatic'])
+        apply.assert_not_called()
+
+    def test_demo_medium_update_needs_no_feature_prompt(self):
+        u.MODE.write_text('demo\n')
+        with patch.object(u, 'FEATURES', (('operations', 'Operations', {'node'}),)), patch.object(u, 'COMMAND', self.root / 'tarasec'), patch.object(u.sys.stdin, 'isatty', return_value=True), patch('builtins.input', side_effect=['yes']) as prompt, patch.object(u, 'apply_feature') as apply, patch('sys.stdout', new=io.StringIO()):
+            self.assertEqual(u.main(['upgrade', '--roles', 'node']), 0)
+        self.assertEqual(prompt.call_count, 1)  # Roles only, no upgrade confirmation.
+        apply.assert_called_once()
+        self.assertEqual(u.load_state()['features']['operations']['approval'], 'demo_policy')
+
+    def test_production_asks_again_on_every_run(self):
+        u.MODE.write_text('production\n')
+        features = (('operations', 'Operations', {'node'}),)
+        for attempt in range(2):
+            with patch.object(u, 'FEATURES', features), patch.object(u, 'COMMAND', self.root / 'tarasec'), patch.object(u.sys.stdin, 'isatty', return_value=True), patch('builtins.input', side_effect=['yes', 'yes']) as prompt, patch.object(u, 'apply_feature') as apply, patch('sys.stdout', new=io.StringIO()):
+                self.assertEqual(u.main(['upgrade', '--roles', 'node']), 0)
+            self.assertEqual(prompt.call_count, 2)
+            apply.assert_called_once()
+            self.assertEqual(u.load_state()['features']['operations']['approval'], 'user_confirmation')
+
+    def test_automatic_demo_applies_new_bounded_component_without_opt_in(self):
+        u.MODE.write_text('demo\n')
+        u.save({'mode':'demo','roles':['node'],'automatic_enabled':False,'features':{},'history':[]})
+        with patch.object(u, 'FEATURES', (('operations', 'Operations', {'node'}),)), patch.object(u, 'apply_feature') as apply, patch('builtins.input', side_effect=AssertionError('No unattended prompts')), patch('sys.stdout', new=io.StringIO()):
+            self.assertEqual(u.main(['upgrade', '--automatic']), 0)
+        apply.assert_called_once()
+        self.assertEqual(u.load_state()['features']['operations']['approval'], 'demo_policy')
+
     def test_shell_settings(self):
         p = self.root / 'config'
         p.write_text('SSH_PORT="5822"\nSSH_FAILSAFE=on\nSSH_HONEYPOT_DEMO_PORT=0\n')

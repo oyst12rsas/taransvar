@@ -40,6 +40,11 @@ WantedBy=timers.target
 EOF
 
 systemctl daemon-reload
+if [[ -f /etc/tarasec-deployment-mode ]] && [[ $(cat /etc/tarasec-deployment-mode) == production ]]; then
+    systemctl disable --now tarasec-db-migrate.timer
+    echo 'Production requires confirmation for every migration. Run: sudo tarasec upgrade'
+    exit 0
+fi
 systemctl enable --now tarasec-db-migrate.timer
 systemctl start tarasec-db-migrate.service
 echo "Local database migration is current; timer will check for new reviewed versions."
