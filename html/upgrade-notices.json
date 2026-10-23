@@ -47,6 +47,18 @@
       ],
       "note": "Keep Google web login upgrades independent of incomplete optional approval-worker policy.",
       "network_impact": "Upgrade coordination can continue while optional worker setup is reported separately."
+    },
+    {
+      "id": "ssh-honeypot-refresh-v5",
+      "minimum_version": 5,
+      "severity": "security",
+      "roles": [
+        "database",
+        "gateway",
+        "node"
+      ],
+      "note": "Refresh an existing honeypot without repeating SSH port migration or bypassing Google-window enforcement.",
+      "network_impact": "Preserve administrator access policy and existing recovery snapshots during node upgrades."
     }
   ]
 }

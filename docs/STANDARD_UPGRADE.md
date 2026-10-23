@@ -246,3 +246,29 @@ answer postpones key installation. Ctrl+C deliberately stops the run.
 
 Verification and key validation happen before changing SSH access or installing
 a key. The honeypot recovery check now also precedes writing its port settings.
+
+### Refreshing an existing SSH honeypot
+
+The upgrader compares the effective sshd port and live listener with the desired
+admin port and existing honeypot installation. A refresh uses `--refresh-only`: it
+revalidates readiness, replaces honeypot files and restarts only an already active
+honeypot. It does not rewrite sshd, open temporary firewall access, arm/cancel
+rollback or replace a recovery snapshot. An inactive honeypot remains inactive.
+An explicit first deployment can start the requested honeypot while leaving an
+already configured admin SSH listener intact. Only a real port migration uses
+the two-port transition and console verification.
+
+An already armed rollback timer blocks all new installer runs until recovery is
+verified from the independent console. Restore its saved state with
+`sudo systemctl start tarasec-ssh-rollback.service`, verify the service result,
+expected SSH/honeypot listeners, firewall policy and a new authorized SSH login.
+Only after successful verification cancel the leftover timer; never replace an
+unverified recovery snapshot by rerunning migration. Listening sockets alone do
+not prove that the Google gate is enforced or a new login works.
+
+Migrations refuse a configured or observed Google SSH gate rather than inserting
+temporary ACCEPT rules that could bypass it. Non-gated migrations arm rollback
+before stopping the honeypot or changing firewall access. Listener checks consume
+all output (avoiding pipefail/SIGPIPE false failures) and wait for startup. An
+effective-port mismatch or socket ListenStream override still requires console
+diagnosis; a failed listener check is not automatically treated as success.
