@@ -1,0 +1,12 @@
+{
+  "notices": [
+    {
+      "id": "upgrade-coordination-v1",
+      "minimum_version": 1,
+      "severity": "important",
+      "roles": ["database", "gateway", "node"],
+      "note": "Install upgrade coordination so this unit reports deployed versions and receives network upgrade warnings.",
+      "network_impact": "Older units cannot participate in automatic upgrade coordination."
+    }
+  ]
+}

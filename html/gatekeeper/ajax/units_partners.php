@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/../../script/upgradeNotices.php';
 require_once __DIR__.'/../func/unitActivity.php';
 require_once __DIR__.'/../func/agentStatusView.php';
 require_once __DIR__.'/../func/diskStatusView.php';
@@ -169,6 +170,9 @@ function getServerStatus($seconds_since, $status, $nId)
 	}
 	else
 		$bOldScript = 1;
+
+	$upgrade = taraSecUpgradeView(is_array($json) ? $json : []);
+	$szServerStatus .= '<span title="'.htmlspecialchars($upgrade['message'], ENT_QUOTES, 'UTF-8').'"><img src="img/'.$upgrade['color'].'_dot.png" alt="TaraSec upgrades"></span>';
 
 	// Keep the two status-dot rows balanced: update counts finish the first row.
 	$szServerStatus .= "<br>";

@@ -21,6 +21,7 @@ from operations_schedule import choose_trigger, reserve_call, choose_issue, acti
 from operations_manual import sync as sync_manual_issues
 from operations_reboot import inspect as inspect_reboot, maintain as maintain_reboot
 from operations_policy import maintenance_enabled, effective_policy
+from operations_upgrade import maintain as maintain_upgrade
 
 
 def save(path, value):
@@ -332,6 +333,9 @@ def main():
                 state['last_automatic_resource_result'] = {'operation': decision['operation'], 'exit_code': result['exit_code']}
                 save(path, state)
             snapshot['resource_pressure'] = pressure(resources)
+        state['current_stage'] = 'standard_upgrade'
+        if maintain_upgrade(state, policy, now, run, trusted, quiet, lambda: save(path, state), record):
+            return
         state['current_stage'] = 'required_reboot'
         reboot = inspect_reboot(run)
         if reboot.get('required') is True:

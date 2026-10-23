@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/../../script/upgradeNotices.php';
 require_once __DIR__.'/agentStatusView.php';
 require_once __DIR__.'/operationsStatusView.php';
 require_once __DIR__.'/diskStatusView.php';
@@ -32,6 +33,8 @@ function addUnitIssue(&$issues, $severity, $label, $message)
 function collectUnitIssues($status, $secondsSince)
 {
     $issues = array();
+    $upgrade = taraSecUpgradeView($status);
+    if ($upgrade['color'] !== 'green') addUnitIssue($issues, $upgrade['color'], 'TaraSec upgrade', $upgrade['message']);
     if (isset($status['df'])) {
         $diskIssue = diskStatusIssue($status['df'], diskStatusThreshold($status));
         if ($diskIssue !== null) $issues[] = $diskIssue;
@@ -230,6 +233,9 @@ function unitsMore()
 		print "<table>";
 
 		print '<tr><td>Name</td><td>'.htmlspecialchars($serverName, ENT_QUOTES, 'UTF-8').'</td></tr>';
+		$upgrade = taraSecUpgradeView($status);
+		print '<tr><td>TaraSec upgrade</td><td>'.htmlspecialchars($upgrade['message'], ENT_QUOTES, 'UTF-8').'</td></tr>';
+		unset($status['software'], $status['upgradeNotice']);
 		if (array_key_exists('aiAgent', $status)) {
 			print '<tr><td>Server manager</td><td>'.agentStatusDetails($status['aiAgent']).'</td></tr>';
 			unset($status['aiAgent']);
