@@ -13,6 +13,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import urllib.parse
 from upgrade_release import release_info, deployment_status, automatic_features, AUTOMATIC_FEATURES, upgrade_risk, demo_automatic
 
 REPO = Path(__file__).resolve().parent.parent
@@ -159,14 +160,69 @@ def copy_tree(source, target, excluded=()):
         else: shutil.copy2(item, dst)
 
 
+def public_key_input(value, home):
+    value = value.strip()
+    if len(value) > 16384: raise ValueError('Public-key input is too large')
+    if re.match(r'^(ssh-|ecdsa-)[^ ]+ ', value):
+        key = value
+    else:
+        if not value: raise ValueError('No key supplied. Find a .pub key on your administrator computer first.')
+        path = Path(home) / value[2:] if value.startswith('~/') else Path(value)
+        if not path.is_file():
+            raise ValueError('Public-key file not found on this server. Paste the complete .pub line from your administrator computer instead.')
+        if path.stat().st_size > 16384: raise ValueError('Public-key file is too large')
+        key = path.read_text().strip()
+    if len(key.splitlines()) != 1 or not re.fullmatch(r'(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(?:256|384|521)) [A-Za-z0-9+/]+=*(?: .*)?', key):
+        raise ValueError('Supply one OpenSSH PUBLIC key line from a .pub file, never a private key or authorized_keys list.')
+    return key
+
+
+def feature_guidance(name, root=Path('/')):
+    if name == 'ssh-key':
+        print('Choose the Linux account ON THIS SERVER that you want to log in to: the username you normally use with ssh.')
+        print('Find the key on your ADMINISTRATOR COMPUTER (for example Acer), in another terminal:')
+        print('  ls ~/.ssh/*.pub')
+        print('  cat ~/.ssh/id_ed25519.pub   # use a .pub filename from the list')
+        print('To compare the fingerprint shown here, run there: ssh-keygen -lf ~/.ssh/id_ed25519.pub')
+        print('Paste that entire public-key line here; it normally starts with ssh-ed25519 or ssh-rsa.')
+        print('A filename entered here is read ON THIS SERVER, not on your administrator computer.')
+        print('If no public key exists, create one on your administrator computer: ssh-keygen -t ed25519')
+        print('Keep the matching private key on that computer. Only the .pub public key is installed on this server.')
+        print('Adding a key does not disable password authentication. Test a NEW SSH login afterwards.')
+    elif name == 'ssh-window':
+        cfg = settings(root / 'etc/tarasecfw.conf')
+        nickname = cfg.get('AGENT_PUBLIC_NICKNAME', '')
+        if not re.fullmatch(r'[A-Za-z][A-Za-z0-9 _-]{2,31}', nickname): nickname = 'not configured'
+        print('Server nickname on the approvals page: ' + nickname)
+        manager = settings(root / 'etc/tarasec-server-manager.conf')
+        url = manager.get('AGENT_APPROVAL_URL', 'https://tarasec.org/ops/agent/api.php')
+        parsed = urllib.parse.urlsplit(url)
+        if parsed.scheme == 'https' and parsed.hostname and not parsed.username and not parsed.password and not parsed.query and not parsed.fragment:
+            print('Open the approvals page in your browser: ' + urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rsplit('/', 1)[0] + '/', '', '')))
+        else:
+            print('Find your approval service URL in AGENT_APPROVAL_URL in /etc/tarasec-server-manager.conf.')
+        print('Sign in with the enrolled Google account and authenticator (TOTP), then select this nickname and approve a temporary SSH opening.')
+        print('Google sign-in alone does not open SSH. Keep a working VM/hypervisor or physical console open for recovery.')
+        print('A console is independent of SSH: for a VM, open its console in the hypervisor. Keep it open while testing.')
+        print('After enabling, test a NEW SSH connection while closed, after an approved opening, and after expiry.')
+        print('Only type VERIFIED after checking the Google/TOTP flow and console access. Otherwise choose no or press Ctrl+C.')
+    elif name == 'honeypot':
+        print('This moves administrator SSH to another port and places the honeypot on its old port.')
+        print('Keep the VM/physical console open. Afterward, test a NEW SSH login on the displayed administrator port.')
+        print('The rollback timer stays armed until you complete those checks; this upgrader does not cancel it.')
+
+
 def install_key(directory):
     user = input('Local administrator username: ').strip()
-    account = pwd.getpwnam(user)
-    keyfile = Path(input('Path to administrator PUBLIC key: ').strip())
-    key = keyfile.read_text().strip()
-    if len(key.splitlines()) != 1 or not re.match(r'^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(?:256|384|521)) [A-Za-z0-9+/]+=*(?: .*)?$', key):
-        raise ValueError('Supply one OpenSSH public key; never a private key')
-    run(['ssh-keygen', '-l', '-f', keyfile], stdout=subprocess.DEVNULL)
+    try:
+        account = pwd.getpwnam(user)
+    except KeyError:
+        raise ValueError('That Linux account does not exist on this server. Enter its local login username.') from None
+    key = public_key_input(input('Paste administrator PUBLIC key, or enter its file path ON THIS SERVER: '), account.pw_dir)
+    # Validate and display the fingerprint identically for pasted keys and files.
+    with tempfile.NamedTemporaryFile(mode='w', prefix='tarasec-public-key-') as public:
+        public.write(key + '\n'); public.flush()
+        run(['ssh-keygen', '-l', '-f', public.name])
     ssh = Path(account.pw_dir) / '.ssh'
     target = ssh / 'authorized_keys'
     if ssh.is_symlink() or target.is_symlink(): raise ValueError('Symlinked SSH key paths require manual review')
@@ -466,6 +522,7 @@ def main(argv=None):
             prior = state['features'].get(name, {})
             if prior.get('choice') == 'never' and not args.review_declined: continue
             print('\n' + title)
+            feature_guidance(name)
             print('Affected configuration is backed up under ' + str(directory))
             release = release_info(REPO)
             state['google_existing'] = existing_google_setup()

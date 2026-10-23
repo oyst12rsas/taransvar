@@ -238,6 +238,31 @@ class UpgradeTests(unittest.TestCase):
                 u.apply_feature('google', self.root / 'backup')
         run.assert_not_called()
 
+    def test_public_key_can_be_pasted_or_read_from_server_file(self):
+        key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGZha2Vmb3JwYXJzZXJ0ZXN0b25seQ== admin@acer'
+        ssh = self.root / '.ssh'; ssh.mkdir()
+        path = ssh / 'id_ed25519.pub'; path.write_text(key + '\n')
+        self.assertEqual(u.public_key_input(key, self.root), key)
+        self.assertEqual(u.public_key_input(str(path), self.root), key)
+        self.assertEqual(u.public_key_input('~/.ssh/id_ed25519.pub', self.root), key)
+        with self.assertRaisesRegex(ValueError, 'ON|on this server'):
+            u.public_key_input('/missing/administrator.pub', self.root)
+        private = ssh / 'id_ed25519'; private.write_text('-----BEGIN OPENSSH PRIVATE KEY-----\nsecret\n')
+        with self.assertRaisesRegex(ValueError, 'PUBLIC'):
+            u.public_key_input(str(private), self.root)
+
+    def test_ssh_window_guidance_shows_local_nickname_and_approval_page(self):
+        etc = self.root / 'etc'; etc.mkdir()
+        (etc / 'tarasecfw.conf').write_text('AGENT_PUBLIC_NICKNAME="Silver Cedar"\n')
+        (etc / 'tarasec-server-manager.conf').write_text('AGENT_APPROVAL_URL=https://approvals.example.org/ops/agent/api.php\n')
+        output = io.StringIO()
+        with patch('sys.stdout', new=output): u.feature_guidance('ssh-window', self.root)
+        text = output.getvalue()
+        self.assertIn('Silver Cedar', text)
+        self.assertIn('https://approvals.example.org/ops/agent/', text)
+        self.assertIn('Google sign-in alone does not open SSH', text)
+        self.assertIn('console', text)
+
     def test_shell_settings(self):
         p = self.root / 'config'
         p.write_text('SSH_PORT="5822"\nSSH_FAILSAFE=on\nSSH_HONEYPOT_DEMO_PORT=0\n')

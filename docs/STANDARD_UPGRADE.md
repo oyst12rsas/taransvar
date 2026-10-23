@@ -213,3 +213,22 @@ Gatekeeper displays a yellow configuration warning after required releases are
 current. It does not infer manager grants, create enrollment, enable a service or
 claim that an incomplete worker was upgraded. Actual installer failures after
 prerequisite validation still stop the upgrade.
+
+### Help at access-control prompts
+
+Before asking for approval, access-control steps explain the checks in context.
+The SSH-window step displays this server's configured public nickname and its
+approval-service page, explains Google/TOTP opening and independent VM/physical
+console recovery, and tells the operator when to type VERIFIED. Signing in alone
+does not open SSH.
+
+The administrator key belongs to the computer used to connect **from** (for
+example Acer), while the target username belongs to the server. On the
+administrator computer, run `ls ~/.ssh/*.pub`, then `cat` the chosen `.pub` file.
+Paste the complete public-key line at the server's prompt; file transfer is not
+required. Alternatively enter a public-key file path already present on the
+server. A `~/` path is expanded against the selected server account's home, even
+under sudo. Private keys and multi-key files are rejected; the displayed
+fingerprint can be compared with `ssh-keygen -lf` on the administrator computer.
+If no key exists, create one on that computer with `ssh-keygen -t ed25519`.
+Adding a public key leaves password policy unchanged; verify a new SSH login.
