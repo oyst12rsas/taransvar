@@ -263,6 +263,39 @@ class UpgradeTests(unittest.TestCase):
         self.assertIn('Google sign-in alone does not open SSH', text)
         self.assertIn('console', text)
 
+    def test_verification_typo_retries_without_accepting_misspelling(self):
+        help_callback=Mock()
+        with patch('builtins.input',side_effect=['VERIDIED','?','verified']) as prompt, patch('sys.stdout',new=io.StringIO()):
+            u.confirm_verified('Confirm checks',help_callback)
+        self.assertEqual(prompt.call_count,3)
+        help_callback.assert_called_once()
+        with patch('builtins.input',return_value='no'):
+            with self.assertRaises(u.FeaturePostponed): u.confirm_verified('Confirm checks',Mock())
+
+    def test_key_help_invalid_account_and_missing_file_can_be_retried(self):
+        account=Mock(pw_dir=str(self.root),pw_uid=0,pw_gid=0)
+        with patch('builtins.input',side_effect=['wrong-user','ubuntu','?','/missing/key.pub','']) as prompt, patch.object(u.pwd,'getpwnam',side_effect=[KeyError('wrong-user'),account]), patch.object(u,'run') as run, patch('sys.stdout',new=io.StringIO()) as output:
+            with self.assertRaises(u.FeaturePostponed): u.install_key(self.root/'backup')
+        self.assertIn('ADMINISTRATOR COMPUTER',output.getvalue())
+        self.assertIn('does not exist',output.getvalue())
+        self.assertIn('not found on this server',output.getvalue())
+        self.assertEqual(prompt.call_count,5)
+        run.assert_not_called()
+        self.assertFalse((self.root/'.ssh/authorized_keys').exists())
+
+    def test_postponing_verification_continues_later_features(self):
+        u.MODE.write_text('demo\n')
+        features=(('ssh-window','SSH window',{'node'}),('operations','Operations',{'node'}))
+        with patch.object(u,'FEATURES',features),patch.object(u,'COMMAND',self.root/'tarasec'),patch.object(u.sys.stdin,'isatty',return_value=True),patch('builtins.input',side_effect=['yes','yes']),patch.object(u,'apply_feature',side_effect=[u.FeaturePostponed('Not confirmed'),None]) as apply,patch('sys.stdout',new=io.StringIO()):
+            self.assertEqual(u.main(['upgrade','--roles','node']),0)
+        self.assertEqual(apply.call_count,2)
+        self.assertEqual(u.load_state()['features']['ssh-window']['status'],'postponed')
+        self.assertEqual(u.load_state()['features']['operations']['status'],'completed')
+
+    def test_mode_typo_can_be_corrected(self):
+        with patch('builtins.input',side_effect=['demoo','demo']),patch('sys.stdout',new=io.StringIO()):
+            self.assertEqual(u.choose_mode(),'demo')
+
     def test_shell_settings(self):
         p = self.root / 'config'
         p.write_text('SSH_PORT="5822"\nSSH_FAILSAFE=on\nSSH_HONEYPOT_DEMO_PORT=0\n')

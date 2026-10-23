@@ -32,6 +32,10 @@ FEATURES = (
     ('ssh-key', 'Add an administrator SSH public key (password policy unchanged)', set(ROLES)),
     ('honeypot', 'Move administrator SSH and deploy/update the SSH honeypot', set(ROLES)),
 )
+class FeaturePostponed(Exception):
+    pass
+
+
 class PendingVerification(ValueError):
     pass
 
@@ -66,6 +70,25 @@ def choice(prompt):
         if answer in ('no', 'n', ''): return 'no'
         if answer == 'never': return 'never'
         print('Enter yes, no or never. Enter postpones the change.')
+
+
+def confirm_verified(prompt, help_callback):
+    while True:
+        answer = input(prompt + ' [VERIFIED / no / ?]: ').strip()
+        if answer.upper() == 'VERIFIED': return
+        if answer.lower() in ('', 'no', 'n', 'skip'):
+            raise FeaturePostponed('Step postponed; verification was not confirmed')
+        if answer.lower() in ('?', 'help'):
+            help_callback()
+        else:
+            print('Not recognized. Type VERIFIED after completing the checks, no to postpone, or ? for help. This verification has not changed SSH access.')
+
+
+def choose_mode():
+    while True:
+        mode = input('Choose deployment mode [demo/production]: ').strip().lower()
+        if mode in ('demo', 'production'): return mode
+        print('Enter demo for automatic testing upgrades, or production for confirmation before each upgrade. Ctrl+C cancels.')
 
 
 def detect_roles():
@@ -213,16 +236,36 @@ def feature_guidance(name, root=Path('/')):
 
 
 def install_key(directory):
-    user = input('Local administrator username: ').strip()
-    try:
-        account = pwd.getpwnam(user)
-    except KeyError:
-        raise ValueError('That Linux account does not exist on this server. Enter its local login username.') from None
-    key = public_key_input(input('Paste administrator PUBLIC key, or enter its file path ON THIS SERVER: '), account.pw_dir)
-    # Validate and display the fingerprint identically for pasted keys and files.
-    with tempfile.NamedTemporaryFile(mode='w', prefix='tarasec-public-key-') as public:
-        public.write(key + '\n'); public.flush()
-        run(['ssh-keygen', '-l', '-f', public.name])
+    feature_guidance('ssh-key')
+    print('You can enter ? for help or leave an answer blank to postpone this step.')
+    while True:
+        user = input('Local administrator username ON THIS SERVER [blank = postpone, ? = help]: ').strip()
+        if not user or user.lower() in ('skip', 'no'): raise FeaturePostponed('Public-key installation postponed')
+        if user.lower() in ('?', 'help'):
+            feature_guidance('ssh-key'); continue
+        try:
+            account = pwd.getpwnam(user)
+            break
+        except KeyError:
+            print('That account does not exist on this server. Use its Linux login username (for example the name before @ in your server prompt). Try again or leave blank to postpone.')
+    print('Target account: ' + user + '; server home: ' + account.pw_dir)
+    while True:
+        value = input('Paste administrator PUBLIC key, or enter its path ON THIS SERVER [blank = postpone, ? = help]: ').strip()
+        if not value or value.lower() in ('skip', 'no'): raise FeaturePostponed('Public-key installation postponed')
+        if value.lower() in ('?', 'help'):
+            feature_guidance('ssh-key'); continue
+        try:
+            key = public_key_input(value, account.pw_dir)
+            with tempfile.NamedTemporaryFile(mode='w', prefix='tarasec-public-key-') as public:
+                public.write(key + '\n'); public.flush()
+                run(['ssh-keygen', '-l', '-f', public.name])
+            break
+        except ValueError as error:
+            print(str(error) + ' Try again, enter ? for help, or leave blank to postpone.')
+        except (OSError, UnicodeError):
+            print('Cannot read a public-key file on this server. Paste the complete .pub line from your administrator computer, or enter ? for help.')
+        except subprocess.CalledProcessError:
+            print('OpenSSH could not validate that public key. Paste the complete .pub line again, enter ? for help, or leave blank to postpone.')
     ssh = Path(account.pw_dir) / '.ssh'
     target = ssh / 'authorized_keys'
     if ssh.is_symlink() or target.is_symlink(): raise ValueError('Symlinked SSH key paths require manual review')
@@ -350,12 +393,12 @@ def apply_feature(name, directory, allow_enrollment=False):
             raise ValueError('New Google enrollment requires explicit confirmation')
         print('Verify Google/TOTP and console recovery before enabling temporary SSH closure; see docs/google-ssh.md.')
     elif name == 'ssh-window':
+        feature_guidance('ssh-window')
         if not Path('/etc/tarasec/agent-enrollment.json').exists():
             raise ValueError('Complete Google enrollment first')
         if os.environ.get('SSH_CONNECTION') or os.environ.get('SSH_TTY'):
             raise ValueError('Enable SSH closure from the independent console, not an SSH session')
-        if input('Verify Google/TOTP opening AND independent console recovery. Type VERIFIED: ') != 'VERIFIED':
-            raise ValueError('MFA and recovery were not confirmed')
+        confirm_verified('Confirm Google/TOTP opening AND independent console recovery', lambda: feature_guidance('ssh-window'))
         policy = Path('/etc/tarasec-server-manager.conf')
         backup(policy, directory)
         set_setting(policy, 'SSH_GOOGLE_REOPEN_ENABLED', 'yes')
@@ -365,20 +408,24 @@ def apply_feature(name, directory, allow_enrollment=False):
     elif name == 'ssh-key':
         install_key(directory)
     elif name == 'honeypot':
+        feature_guidance('honeypot')
+        confirm_verified('Confirm independent console recovery and ability to test a NEW login', lambda: feature_guidance('honeypot'))
         cfg_path = Path('/etc/tarasecfw.conf')
         cfg = settings(cfg_path)
         if not cfg or cfg.get('SSH_PORT', '22').strip() == '22':
-            port = input('New administrator SSH port [48222]: ').strip() or '48222'
-            if not port.isdigit() or not 1 <= int(port) <= 65535 or int(port) == 22:
-                raise ValueError('Choose an administrator port other than 22, within 1..65535')
+            while True:
+                port = input('New administrator SSH port [48222; no = postpone, ? = help]: ').strip() or '48222'
+                if port.lower() in ('no', 'skip'): raise FeaturePostponed('SSH port migration postponed')
+                if port.lower() in ('?', 'help'):
+                    feature_guidance('honeypot'); continue
+                if port.isdigit() and 1 <= int(port) <= 65535 and int(port) != 22: break
+                print('Enter a port from 1 to 65535 other than 22, or no to postpone. Try again.')
             backup(cfg_path, directory)
             set_setting(cfg_path, 'SSH_PORT', port)
             set_setting(cfg_path, 'SSH_HONEYPOT', 'on')
             set_setting(cfg_path, 'SSH_FAILSAFE', 'on')
         if cfg.get('SSH_FAILSAFE', 'on').strip().lower() not in ('on', 'yes', '1', 'true'):
             raise ValueError('Enable SSH_FAILSAFE before migrating SSH')
-        if input('Verify console recovery and a new login are available. Type VERIFIED: ') != 'VERIFIED':
-            raise ValueError('SSH recovery was not confirmed')
         backup(cfg_path, directory)
         run(['bash', REPO / 'misc/setup_ssh_honeypot.sh'])
         # The existing installer deliberately leaves its rollback armed.
@@ -481,8 +528,7 @@ def main(argv=None):
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         state = load_state()
         roles = args.roles.split(',') if args.roles else state.get('roles', roles)
-        mode = args.mode or (input('Choose deployment mode [demo/production]: ').strip().lower()
-                             if old_mode == 'unconfigured' else old_mode)
+        mode = args.mode or (choose_mode() if old_mode == 'unconfigured' else old_mode)
         if mode not in ('demo', 'production'): raise ValueError('Choose demo or production explicitly')
         print('Source: ' + str(REPO))
         print('Demo automatically applies none/low/medium risk upgrades; production confirms each upgrade. High/unknown risk always requires confirmation.')
@@ -555,6 +601,9 @@ def main(argv=None):
                     else:
                         result = apply_feature(name, directory / name)
                     record_feature_result(record, name, result, release_info(REPO)['version'], source_revision())
+                except FeaturePostponed as error:
+                    record.update(status='postponed', choice='no')
+                    print(str(error) + '; continuing the remaining upgrade steps.')
                 except (OSError, ValueError, subprocess.CalledProcessError) as error:
                     record['status'] = 'pending_verification' if isinstance(error, PendingVerification) else 'failed'
                     # Do not store command arguments or enrollment output in the audit.

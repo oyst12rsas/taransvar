@@ -232,3 +232,17 @@ under sudo. Private keys and multi-key files are rejected; the displayed
 fingerprint can be compared with `ssh-keygen -lf` on the administrator computer.
 If no key exists, create one on that computer with `ssh-keygen -t ed25519`.
 Adding a public key leaves password policy unchanged; verify a new SSH login.
+
+### Input help and correction
+
+Help is repeated at the actual SSH-window/public-key prompts, after the feature
+approval, so operators do not need to find earlier terminal output. Enter `?` or
+`help` for the instructions again. Verification words are case-insensitive but
+must spell VERIFIED correctly: a typo retries and never counts as confirmation.
+Enter `no`, `skip`, or a blank verification answer to postpone the step and
+continue the remaining upgrades. Mode, username, key-file/key-content and port
+input can be corrected without restarting the whole upgrade. A blank key/account
+answer postpones key installation. Ctrl+C deliberately stops the run.
+
+Verification and key validation happen before changing SSH access or installing
+a key. The honeypot recovery check now also precedes writing its port settings.
