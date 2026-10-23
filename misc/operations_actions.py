@@ -123,10 +123,17 @@ def automatic_log_rotation(policy, evidence, state, now, run, save, record):
     record({'automatic_log_rotation_start': True})
     result = run(['/usr/sbin/logrotate', '/etc/logrotate.conf'], 120)
     after = pressure(config)
+    cache_result = None
+    if after['disk_used_percent'] >= float(config.get('disk_used_percent', 85)):
+        # Package downloads are reproducible; installed packages, databases and
+        # recovery backups are outside this bounded housekeeping operation.
+        cache_result = run(['/usr/bin/apt-get', 'clean'], 120)
+        after = pressure(config)
     state['last_log_rotation'] = {
         'checked_at': now, 'exit_code': result['exit_code'],
         'disk_used_percent_before': evidence['disk_used_percent'],
         'disk_used_percent_after': after['disk_used_percent'],
+        'package_cache_exit_code': cache_result['exit_code'] if cache_result is not None else None,
     }
     state['resource_pressure'] = after
     save()

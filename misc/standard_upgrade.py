@@ -3,6 +3,7 @@
 import argparse
 import datetime
 import fcntl
+import getpass
 import json
 import os
 from pathlib import Path
@@ -434,14 +435,61 @@ def operations_installed():
             and Path('/etc/systemd/system/tarasec-operations-agent.timer').is_file())
 
 
+def configure_operations_model(policy, policy_path, directory, root=Path('/')):
+    """Collect dedicated model settings locally; never print or reuse credentials."""
+    provider = policy.get('model_provider', 'flowise')
+    key_field = 'openai_key_file' if provider == 'openai' else 'model_key_file'
+    key_path = Path(policy.get(key_field, '/etc/tarasec/operations-model.key'))
+    key_ready = key_path.is_file() and bool(key_path.read_text().strip())
+    endpoint_ready = bool(policy.get('openai_model') if provider == 'openai' else policy.get('model_url'))
+    if endpoint_ready and key_ready: return True
+    print('AI agent needs a dedicated model connection. Demo/production mode is already selected.')
+    print('Use your operations Flowise endpoint/key or a direct OpenAI API key. Google sign-in does not provide model access. Model calls may incur provider charges.')
+    if not sys.stdin.isatty():
+        print('Run sudo tarasec upgrade in a terminal to configure the connection. No credentials will be requested unattended.')
+        return False
+    if choice('Configure the AI model connection now') != 'yes': return False
+    while True:
+        selected = input('Model provider [flowise/openai; blank = postpone]: ').strip().lower()
+        if not selected: return False
+        if selected in ('flowise', 'openai'): break
+        print('Enter flowise or openai.')
+    updated = dict(policy, model_provider=selected)
+    if selected == 'flowise':
+        while True:
+            value = input('Dedicated operations Flowise HTTPS prediction URL [blank = postpone]: ').strip()
+            if not value: return False
+            url = urllib.parse.urlsplit(value)
+            if url.scheme == 'https' and url.hostname and not url.username and not url.password and not url.query and not url.fragment: break
+            print('Use an HTTPS prediction URL without embedded credentials, query or fragment.')
+        updated['model_url'] = value
+        field, filename = 'model_key_file', 'operations-model.key'
+    else:
+        value = input('OpenAI model name supported by your account [blank = postpone]: ').strip()
+        if not value: return False
+        updated['openai_model'] = value
+        field, filename = 'openai_key_file', 'operations-openai.key'
+    secret = getpass.getpass('Dedicated model API key (hidden; blank = postpone): ').strip()
+    if not secret: return False
+    destination = root / 'etc/tarasec' / filename
+    backup(policy_path, directory)
+    backup(destination, directory)
+    atomic(destination, secret + '\n')
+    updated[field] = str(destination)
+    atomic(policy_path, json.dumps(updated, indent=2) + '\n')
+    policy.clear(); policy.update(updated)
+    print('Model settings saved privately. Testing the connection before activating the agent.')
+    return True
+
+
 def activate_operations(directory, root=Path('/')):
     policy_path = root / 'etc/tarasec/operations-agent.json'
     policy = json.loads(policy_path.read_text())
     mode = read_mode()
     if mode not in ('demo', 'production'):
         raise ValueError('Select demo or production mode before AI agent activation')
-    if not policy.get('model_url') and policy.get('model_provider', 'flowise') == 'flowise':
-        print('AI agent installed; activation pending: configure model_url in /etc/tarasec/operations-agent.json and its model_key_file, then rerun sudo tarasec upgrade.')
+    if not configure_operations_model(policy, policy_path, directory, root):
+        print('AI agent installed; activation pending model configuration. Rerun sudo tarasec upgrade to resume setup.')
         return {'pending_configuration': True, 'activation': 'pending_model_configuration'}
     # Probe before policy/timer changes. The probe never dispatches returned actions.
     probe = subprocess.run(['python3', '/usr/local/lib/tarasec-operations/operations_model_probe.py', '--connection-check'],
