@@ -1,5 +1,12 @@
 # Standard upgrade
 
+Database upgrades first compare the live schema version with this checkout.
+An already current schema is recorded without another database dump or migration.
+When migration is needed, free space must cover a conservative size estimate and
+a 256 MiB reserve before dumping. A dump is published as taransvar.sql only after
+success; interrupted or failed dumps created by this run are removed. Completed
+recovery backups are preserved. No migration runs after a failed backup.
+
 At model setup, **blank selects the TaraSec system** (including at the Flowise
 prediction URL prompt); **none postpones**. A custom Flowise HTTP(S) prediction
 URL or direct OpenAI configuration remains available. Explicit custom HTTP uses
