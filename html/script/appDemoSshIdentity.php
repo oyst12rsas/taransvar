@@ -1,9 +1,10 @@
 <?php
+declare(strict_types=1);
 require_once __DIR__ . '/../deploymentMode.php';
 tarasecRequireDemo();
 
 // Gateway-observed identity proof. Never accept an app-supplied unit ID/IP.
-declare(strict_types=1);
+
 ini_set('display_errors', '0');
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 require_once __DIR__ . '/../dbfunc.php';
