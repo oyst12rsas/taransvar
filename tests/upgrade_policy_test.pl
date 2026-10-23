@@ -1,0 +1,23 @@
+use strict;
+use warnings;
+use FindBin;
+use lib "$FindBin::Bin/../misc";
+use upgrade_policy qw(requireUpgradeConfirmation);
+use File::Temp qw(tempdir);
+my $dir=tempdir(CLEANUP=>1);
+my $path="$dir/mode";
+sub mode { open(my $fh,'>',$path) or die $!; print $fh $_[0]; close($fh); }
+mode('production');
+my $ok=eval {requireUpgradeConfirmation($path,0,0,sub {die 'must not prompt in background'});1};
+die 'Production background migration bypass' if $ok;
+requireUpgradeConfirmation($path,1,0,sub {die 'already confirmed'});
+my $calls=0;
+requireUpgradeConfirmation($path,0,1,sub {$calls++;1});
+requireUpgradeConfirmation($path,0,1,sub {$calls++;1});
+die 'Production must prompt every time' unless $calls==2;
+mode('demo');
+requireUpgradeConfirmation($path,0,0,sub {die 'demo must not prompt'});
+mode('bad');
+$ok=eval {requireUpgradeConfirmation($path,1,0,sub {1});1};
+die 'Invalid mode must fail closed' if $ok;
+print "Migration confirmation checks passed\n";

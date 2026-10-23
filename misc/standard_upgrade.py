@@ -193,7 +193,7 @@ def apply_feature(name, directory):
         if not dump: raise ValueError('Install mariadb-client before database migration')
         with (directory / 'taransvar.sql').open('wb') as out:
             run([dump, '--single-transaction', '--routines', '--events', '--triggers', 'taransvar'], stdout=out)
-        run(['perl', REPO / 'misc/upgrade_db.pl'])
+        run(['perl', REPO / 'misc/upgrade_db.pl', '--confirmed'])
     elif name == 'runtime':
         target = Path('/root/taransvar/perl')
         backup(target, directory)
@@ -270,6 +270,13 @@ def apply_feature(name, directory):
         run(['bash', REPO / 'misc/setup_ssh_honeypot.sh'])
         # The existing installer deliberately leaves its rollback armed.
         raise PendingVerification('SSH staged with rollback armed. Verify a NEW login and complete the printed recovery checks; upgrade does not cancel rollback')
+
+
+def disable_production_migration_timer():
+    # Older installations have an independent scheduler that must not bypass
+    # the per-upgrade production confirmation required by the standard command.
+    if Path('/etc/systemd/system/tarasec-db-migrate.timer').exists():
+        run(['systemctl', 'disable', '--now', 'tarasec-db-migrate.timer'])
 
 
 def source_revision():
@@ -378,6 +385,8 @@ def main(argv=None):
             atomic(MODE, mode + '\n', 0o644)
             state['mode'] = mode
             state['history'].append({'time': stamp, 'mode': mode, 'previous_mode': old_mode})
+        if mode == 'production':
+            disable_production_migration_timer()
         state['roles'] = roles
         state['mode'] = mode
         save(state)

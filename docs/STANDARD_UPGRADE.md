@@ -61,8 +61,9 @@ revision and whether authorization was demo policy or fresh user confirmation.
 The interactive command coordinates existing reviewed installers. It does not
 run the broad legacy OS installer or experimental kernel compiler automatically.
 Kernel builds and initial hotspot/network provisioning remain separate pending
-safe verified upgrade adapters. Existing database migration timers remain under
-their current owner policy; no/never affects this command, not those timers.
+safe verified upgrade adapters. Production disables the legacy independent DB-migration timer. The standalone
+schema migrator also requires confirmation in Production; unattended timer calls
+cannot bypass it. Other system package-maintenance policies are unchanged.
 
 ## Modes
 
