@@ -211,7 +211,98 @@ def feature_guidance(name, root=Path('/')):
         print('A filename entered here is read ON THIS SERVER, not on your administrator computer.')
         print('If no public key exists, create one on your administrator computer: ssh-keygen -t ed25519')
         print('Keep the matching private key on that computer. Only the .pub public key is installed on this server.')
-        print('Add…1543 tokens truncated… 'html/gatekeeper' / name])
+        print('Adding a key does not disable password authentication. Test a NEW SSH login afterwards.')
+    elif name == 'ssh-window':
+        cfg = settings(root / 'etc/tarasecfw.conf')
+        nickname = cfg.get('AGENT_PUBLIC_NICKNAME', '')
+        if not re.fullmatch(r'[A-Za-z][A-Za-z0-9 _-]{2,31}', nickname): nickname = 'not configured'
+        print('Server nickname on the approvals page: ' + nickname)
+        manager = settings(root / 'etc/tarasec-server-manager.conf')
+        url = manager.get('AGENT_APPROVAL_URL', 'https://tarasec.org/ops/agent/api.php')
+        parsed = urllib.parse.urlsplit(url)
+        if parsed.scheme == 'https' and parsed.hostname and not parsed.username and not parsed.password and not parsed.query and not parsed.fragment:
+            print('Open the approvals page in your browser: ' + urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rsplit('/', 1)[0] + '/', '', '')))
+        else:
+            print('Find your approval service URL in AGENT_APPROVAL_URL in /etc/tarasec-server-manager.conf.')
+        print('Sign in with the enrolled Google account and authenticator (TOTP), then select this nickname and approve a temporary SSH opening.')
+        print('Google sign-in alone does not open SSH. Keep a working VM/hypervisor or physical console open for recovery.')
+        print('A console is independent of SSH: for a VM, open its console in the hypervisor. Keep it open while testing.')
+        print('After enabling, test a NEW SSH connection while closed, after an approved opening, and after expiry.')
+        print('Only type VERIFIED after checking the Google/TOTP flow and console access. Otherwise choose no or press Ctrl+C.')
+    elif name == 'honeypot':
+        print('An existing setup is refreshed without changing administrator SSH ports or firewall rules.')
+        print('Only an actual port migration changes SSH and arms a recovery timer.')
+        print('Keep the VM/physical console open. Afterward, test a NEW SSH login on the displayed administrator port.')
+        print('The rollback timer stays armed until you complete those checks; this upgrader does not cancel it.')
+
+
+def install_key(directory):
+    feature_guidance('ssh-key')
+    print('You can enter ? for help or leave an answer blank to postpone this step.')
+    while True:
+        user = input('Local administrator username ON THIS SERVER [blank = postpone, ? = help]: ').strip()
+        if not user or user.lower() in ('skip', 'no'): raise FeaturePostponed('Public-key installation postponed')
+        if user.lower() in ('?', 'help'):
+            feature_guidance('ssh-key'); continue
+        try:
+            account = pwd.getpwnam(user)
+            break
+        except KeyError:
+            print('That account does not exist on this server. Use its Linux login username (for example the name before @ in your server prompt). Try again or leave blank to postpone.')
+    print('Target account: ' + user + '; server home: ' + account.pw_dir)
+    while True:
+        value = input('Paste administrator PUBLIC key, or enter its path ON THIS SERVER [blank = postpone, ? = help]: ').strip()
+        if not value or value.lower() in ('skip', 'no'): raise FeaturePostponed('Public-key installation postponed')
+        if value.lower() in ('?', 'help'):
+            feature_guidance('ssh-key'); continue
+        try:
+            key = public_key_input(value, account.pw_dir)
+            with tempfile.NamedTemporaryFile(mode='w', prefix='tarasec-public-key-') as public:
+                public.write(key + '\n'); public.flush()
+                run(['ssh-keygen', '-l', '-f', public.name])
+            break
+        except ValueError as error:
+            print(str(error) + ' Try again, enter ? for help, or leave blank to postpone.')
+        except (OSError, UnicodeError):
+            print('Cannot read a public-key file on this server. Paste the complete .pub line from your administrator computer, or enter ? for help.')
+        except subprocess.CalledProcessError:
+            print('OpenSSH could not validate that public key. Paste the complete .pub line again, enter ? for help, or leave blank to postpone.')
+    ssh = Path(account.pw_dir) / '.ssh'
+    target = ssh / 'authorized_keys'
+    if ssh.is_symlink() or target.is_symlink(): raise ValueError('Symlinked SSH key paths require manual review')
+    effective = run(['/usr/sbin/sshd', '-T', '-C', f'user={user},host=localhost,addr=127.0.0.1'],
+                    capture_output=True, text=True).stdout
+    line = next((s for s in effective.splitlines() if s.startswith('authorizedkeysfile ')), '')
+    if '.ssh/authorized_keys' not in line.split()[1:]:
+        raise ValueError('Custom AuthorizedKeysFile policy requires manual review')
+    backup(target, directory)
+    ssh.mkdir(mode=0o700, exist_ok=True)
+    old = target.read_text() if target.exists() else ''
+    if not any(s.split()[:2] == key.split()[:2] for s in old.splitlines()):
+        atomic(target, old.rstrip() + '\n' + key + '\n')
+    os.chown(ssh, account.pw_uid, account.pw_gid)
+    os.chown(target, account.pw_uid, account.pw_gid)
+    os.chmod(ssh, 0o700)
+    print('Public key installed. Verify a NEW login before changing password authentication.')
+
+
+def existing_google_setup(root=Path('/')):
+    # Observe existing local setup without evaluating PHP or reading secrets.
+    return any((root / path).is_file() and (root / path).stat().st_size > 0 for path in (
+        'etc/tarasec/gatekeeper-google.php', 'etc/tarasec/agent-enrollment.json',
+        'etc/tarasec/agent-node.token'))
+
+
+def refresh_google(directory, root=Path('/')):
+    web = root / 'var/www/html/gatekeeper'
+    refreshed = False
+    details = {}
+    if (root / 'etc/tarasec/gatekeeper-google.php').is_file() and web.is_dir():
+        if not (web.parent / 'script/serviceDiscoveryCommon.php').is_file():
+            raise ValueError('Update Gatekeeper before refreshing its Google integration')
+        names = ('google_start.php', 'google_callback.php', 'google_local_managers.php')
+        for name in names:
+            run(['php', '-l', REPO / 'html/gatekeeper' / name])
         for name in names:
             backup(web / name, directory)
             shutil.copy2(REPO / 'html/gatekeeper' / name, web / name)
