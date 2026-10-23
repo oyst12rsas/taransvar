@@ -1213,7 +1213,14 @@ workshopSetup();	#If workshopId is set in dashboard setup, it will register othe
 start_iptables_monitor();	#Check if iptables_log_monitor.pl is already running. If not, starts it
 start_local_iptables_monitor();
 logDmesg();		#Just ensuring that worker_read_dmesg.pl is running
-startTaraSystemsOk();	
+# A standardized service owns both processes, including intentional stops.
+# Do not revive the legacy launcher from cron while systemd is managing them.
+my $systemdTaralink = -e "/etc/tarasec/taralink-managed-by-systemd" ||
+    -f "/etc/systemd/system/taralink.service" ||
+    -f "/run/systemd/system/taralink.service" ||
+    -f "/usr/lib/systemd/system/taralink.service" ||
+    -f "/lib/systemd/system/taralink.service";
+startTaraSystemsOk() unless $systemdTaralink;
 
 print "Starting start_process_dhcpdump()\n";
 if (defined $pSetup->{"internalNic"})		#NOTE! This is not tested!!!
