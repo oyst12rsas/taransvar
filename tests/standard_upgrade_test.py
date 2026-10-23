@@ -95,6 +95,27 @@ class UpgradeTests(unittest.TestCase):
         self.assertIn('addr=100.68.1.2',run.call_args.args[0][-1])
         self.assertIn('lport=5822',run.call_args.args[0][-1])
 
+    def test_activity_setup_starts_only_with_verified_demo_feed(self):
+        config=self.root/'etc/tarasec/operations-activity.json'
+        config.parent.mkdir(parents=True)
+        with patch.object(u,'run') as run, patch('sys.stdout',new=io.StringIO()):
+            self.assertEqual(u.ensure_operations_activity(self.root),'needs_configuration')
+        run.assert_not_called()
+        config.write_text('{"demo_url":"https://example.test/feed","demo_collector":"/collector"}')
+        for complete, expected in [(False,'feed_unavailable'),(True,'active')]:
+            with patch('operations_agent.trusted',return_value=Path('/collector')), patch.object(u,'run',return_value=Mock(stdout=u.json.dumps(dict(complete=complete,active_demo=False,checked_at=u.time.time())))) as run, patch('sys.stdout',new=io.StringIO()):
+                self.assertEqual(u.ensure_operations_activity(self.root),expected)
+            services=[c.args[0] for c in run.call_args_list if c.args[0][0]=='systemctl']
+            self.assertEqual(bool(services),complete)
+
+    def test_activity_repair_is_separate_from_full_upgrade(self):
+        u.MODE.write_text('demo\n')
+        with patch.object(u.sys.stdin,'isatty',return_value=True), patch.object(u,'run') as run, patch.object(u,'backup'), patch.object(u,'ensure_operations_activity',return_value='active') as configure, patch.object(u,'apply_feature') as apply, patch('builtins.input',side_effect=AssertionError('No full-upgrade prompts')), patch('sys.stdout',new=io.StringIO()):
+            self.assertEqual(u.main(['upgrade','--configure-activity','--roles','node']),0)
+        configure.assert_called_once_with(interactive=True)
+        apply.assert_not_called()
+        run.assert_called_once_with(['bash',u.REPO/'misc/install_operations_agent.sh'])
+
     def test_mode_is_explicit(self):
         self.assertEqual(u.read_mode(), 'unconfigured')
         u.MODE.write_text('production\n')

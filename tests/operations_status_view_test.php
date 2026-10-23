@@ -69,3 +69,6 @@ if (strpos($unitSource, "if (isAdmin() && isset(\$status['operationsAgent']))") 
 $upgradeHtml = operationsMaintenanceDetails(['upgrade'=>['status'=>'awaiting_confirmation','reason'=>'Production requires confirmation <now>']]);
 checkOperationsView(strpos($upgradeHtml,'awaiting confirmation') !== false, 'Production upgrade confirmation state missing');
 checkOperationsView(strpos($upgradeHtml,'&lt;now&gt;') !== false, 'Upgrade reason must be escaped');
+
+if (strpos(operationsActivityBlockerLabel('demo_feed_http_403'), 'enrollment') === false) throw new Exception('Feed authentication failure must be actionable');
+if (strpos(operationsActivityBlockerLabel('quiet_period_not_yet_elapsed'), 'accumulating') === false) throw new Exception('Quiet interval must be distinct from missing evidence');

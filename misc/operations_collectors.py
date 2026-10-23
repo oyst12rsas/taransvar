@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import time
 import urllib.request
+import urllib.error
 from operations_agent import run, trusted, save
 
 
@@ -82,7 +83,9 @@ def validate_feed_url(cfg, runner):
 
 def demo():
     cfg=json.loads(trusted('/etc/tarasec/operations-activity.json').read_text())
-    url=cfg['demo_url']
+    url=cfg.get('demo_url', '')
+    if not url:
+        raise ValueError('Demo feed URL not configured')
     validate_feed_url(cfg,run)
     token=trusted(cfg['demo_key_file']).read_text().strip()
     class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -99,10 +102,30 @@ def demo():
     return sample
 
 
+def collector_sample(kind):
+    try:
+        return demo() if kind == 'demo' else traffic()
+    except urllib.error.HTTPError as error:
+        reason = 'demo_feed_http_' + str(error.code)
+    except urllib.error.URLError:
+        reason = 'demo_feed_unreachable'
+    except FileNotFoundError:
+        reason = kind + '_configuration_or_key_missing'
+    except (OSError, ValueError, KeyError) as error:
+        known = {
+            'Demo feed URL not configured': 'demo_feed_url_not_configured',
+            'Incomplete demo feed': 'demo_feed_incomplete_or_stale',
+            'Forward counters unavailable': 'traffic_counters_unavailable',
+            'NetBird feed route not verified': 'demo_feed_netbird_route_unverified',
+            'Loopback feed route not verified': 'demo_feed_loopback_route_unverified',
+        }
+        reason = known.get(str(error), kind + '_collector_unavailable')
+    return {'checked_at': time.time(), 'complete': False, 'reason': reason}
+
+
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('kind',choices=['demo','traffic']);args=parser.parse_args()
-    try:sample=demo() if args.kind=='demo' else traffic()
-    except (OSError,ValueError,KeyError):sample={'checked_at':time.time(),'complete':False}
+    sample=collector_sample(args.kind)
     print(json.dumps({key: value for key, value in sample.items() if key != 'rules'}))
 
 if __name__=='__main__':main()
