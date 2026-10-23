@@ -27,6 +27,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 if $update_only && $enroll; then echo "Update-only cannot enroll managers" >&2; exit 1; fi
+if $update_only; then
+    for policy in /etc/tarasec/access.conf /etc/tarasec-server-manager.conf; do
+        [[ -r $policy ]] || { echo "Existing worker policy is incomplete; update-only stopped before changing services." >&2; exit 1; }
+    done
+fi
 if ! $enroll && ! $skip_enrollment && [[ -t 0 ]]; then
     read -r -p 'Google manager email (Enter to keep current enrollment): ' manager_email
     if [[ -n $manager_email ]]; then enroll=true; enroll_args+=(--email "$manager_email"); fi
