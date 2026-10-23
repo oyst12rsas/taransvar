@@ -18,6 +18,7 @@ use func;	#NOTE! See comment above regarding lib..
 use lib_dhcp;
 use lib_cron;
 use lib_net;
+use upgrade_status qw(softwareForReport upgradeReceipt);
 
 use POSIX qw(setsid);
 use Fcntl qw(:flock);
@@ -241,6 +242,7 @@ sub reportStatus {
 	use JSON;
 
 	my %json;
+	$json{"software"} = softwareForReport();
 
 	my $sthSetup = $dbh->prepare("select adminIP as nAdminIp, LPAD(HEX(adminIP), 8, '0') as adminIP, nettmask as aNettmask, LPAD(HEX(nettmask), 8, '0') as nettmask, secondsSinceBoot, TIMESTAMPDIFF(SECOND, dmesgUpdated, NOW()) AS dmesg, inet_ntoa(globalDb1ip) as Db1, inet_ntoa(globalDb2ip) as Db2, inet_ntoa(globalDb3ip) as Db3, systemError, coalesce(systemErrorSeverity,0) as systemErrorSeverity, TIMESTAMPDIFF(SECOND, systemErrorSet, NOW()) AS systemErrorAge, CAST(isGlobalDbServer AS UNSIGNED) as isGlobalDbServer, CAST(hotspot AS UNSIGNED) as hotspot, coalesce(internalNic,'') as internalNic from setup") or die "prepare statement failed: $dbh->errstr()";
 	$sthSetup->execute() or die "execution failed: $sthSetup->errstr()";
@@ -633,6 +635,7 @@ sub reportStatus {
 					);
 
 				$szReply = $response->decoded_content;
+				upgradeReceipt($response, $i == 1);
 
 				if (!$response->is_success) {
 					my $msg = "Status report failed for DB server $1 ($ip): "

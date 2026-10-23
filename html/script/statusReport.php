@@ -5,6 +5,7 @@ mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 include '../dbfunc.php';
 require_once __DIR__.'/operationsIssues.php';
+require_once __DIR__.'/upgradeNotices.php';
 
 function statusPeerIp()
 {
@@ -71,6 +72,8 @@ try {
     }
 
     if ($partialStatus) {
+        // Only complete minute heartbeats can advance installed software evidence.
+        unset($incoming['software'], $incoming['upgradeNotice']);
         // Subsystem updates (currently mail health) enrich the latest status JSON,
         // but they are not proof that the normal server heartbeat is running.
         $incoming = array_replace_recursive($current, $incoming);
@@ -84,6 +87,8 @@ try {
         }
     }
 
+    // Receiver computes the notice; a unit cannot submit its own upgrade clearance.
+    $incoming['upgradeNotice'] = taraSecUpgradeAssessment($incoming);
     $status = json_encode($incoming, JSON_UNESCAPED_SLASHES);
     if ($status === false) {
         throw new RuntimeException('Unable to encode merged status JSON');
@@ -127,6 +132,7 @@ try {
 
     $conn->commit();
     if ($issueAck) header('X-Tarasec-Issue-Ack: '.json_encode($issueAck));
+    header('X-Tarasec-Upgrade: '.base64_encode(json_encode($incoming['upgradeNotice'], JSON_UNESCAPED_SLASHES)));
     header('Content-Type: text/plain; charset=utf-8');
     echo 'ok';
 

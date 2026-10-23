@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "components": {
+    "node": ["runtime", "taralink", "operations"],
+    "gateway": ["database", "runtime", "taralink", "gatekeeper", "operations"],
+    "database": ["database", "runtime", "gatekeeper", "operations"]
+  }
+}

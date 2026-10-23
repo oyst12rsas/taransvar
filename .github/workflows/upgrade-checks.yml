@@ -1,0 +1,32 @@
+name: Standard upgrade coordination
+on:
+  pull_request:
+    paths:
+      - 'tarasec'
+      - 'release.json'
+      - 'misc/*upgrade*'
+      - 'misc/upgrade_status.pm'
+      - 'misc/crontasks.pl'
+      - 'html/upgrade-notices.json'
+      - 'html/script/upgradeNotices.php'
+      - 'html/script/statusReport.php'
+      - 'html/gatekeeper/ajax/units_partners.php'
+      - 'html/gatekeeper/func/unitsMore.php'
+      - 'tests/*upgrade*'
+      - '.github/workflows/upgrade-checks.yml'
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y libjson-perl
+      - run: python3 tests/standard_upgrade_test.py && sudo python3 tests/upgrade_pull_test.py
+      - run: python3 -m unittest discover -s tests -p 'operations*_test.py'
+      - run: perl tests/upgrade_receipt_test.pl
+      - run: |
+          php -l html/script/statusReport.php
+          php -l html/script/upgradeNotices.php
+          php -l html/gatekeeper/func/unitsMore.php
+          php -l html/gatekeeper/ajax/units_partners.php
+          php tests/upgrade_notices_test.php
+      - run: bash -n tarasec misc/install_operations_agent.sh

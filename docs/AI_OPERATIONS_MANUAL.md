@@ -741,3 +741,16 @@ explicit SSH-opening approval. Missing tools are reported as unavailable.
 Read-only diagnostics may run despite busy traffic, but requesting a model
 decision still consumes the configured model budget. Running the fixed diagnostic
 directly requires no model call and grants no additional mutation authority.
+
+## Coordinated standard upgrades
+
+The typed upgrade-maintenance adapter (`operations_upgrade.py`) consumes fresh
+primary-DB advisory receipts from the minute reporter. Local interactive standard
+upgrade opt-in, maintenance mode, trusted root-owned source/launcher, quiet demo
+and traffic observations, and idle/known interactive sessions are required. It
+runs only the fixed standard-upgrade action for already installed approved
+components, retains retry budgets and private backups, and records an upgrade
+issue until a fresh DB assessment verifies the required deployed release. It
+adds no experimental command permission or SSH bypass. Initial installation is
+still disabled/inspection-only. See [Standard upgrade](STANDARD_UPGRADE.md) for
+notice publishing, bootstrap, transport limitations and per-host verification.

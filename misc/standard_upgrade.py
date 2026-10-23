@@ -13,6 +13,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+from upgrade_release import release_info, deployment_status, automatic_features, AUTOMATIC_FEATURES
 
 REPO = Path(__file__).resolve().parent.parent
 STATE = Path('/var/lib/tarasec/upgrade/state.json')
@@ -24,6 +25,8 @@ FEATURES = (
     ('runtime', 'Update installed Perl runtime (preserves local configuration)', set(ROLES)),
     ('taralink', 'Build and update the installed systemd-managed Taralink service', set(ROLES)),
     ('gatekeeper', 'Back up and update Gatekeeper web files', {'database', 'gateway'}),
+    ('operations', 'Install/update the operations agent (retains existing policy and scheduling)', set(ROLES)),
+    ('auto-upgrades', 'Enable automatic updates of previously approved installed components', set(ROLES)),
     ('google', 'Install/update Google manager sign-in and approval worker', set(ROLES)),
     ('ssh-window', 'Enable/refresh Google-controlled temporary SSH access (requires verified console and MFA)', set(ROLES)),
     ('ssh-key', 'Add an administrator SSH public key (password policy unchanged)', set(ROLES)),
@@ -91,6 +94,8 @@ def load_state():
 
 def save(state):
     atomic(STATE, json.dumps(state, indent=2) + '\n')
+    if state.get('roles'):
+        atomic(STATE.parent / 'software.json', json.dumps(deployment_status(state, release_info(REPO))) + '\n', 0o644)
 
 
 def backup(path, directory):
@@ -194,6 +199,10 @@ def apply_feature(name, directory):
         target = Path('/root/taransvar/perl')
         backup(target, directory)
         copy_tree(REPO / 'misc', target, ('dbfunc.php',))
+        # Runtime replacement must preserve operations reporting/receipt integration.
+        from install_operations_reporter_bridge import patched_source
+        reporter = target / 'crontasks.pl'
+        atomic(reporter, patched_source(reporter.read_text()), 0o644)
     elif name == 'taralink':
         target = Path('/usr/local/sbin/taralink')
         if not target.exists() or subprocess.run(['systemctl', 'cat', '--quiet', 'taralink.service']).returncode:
@@ -218,6 +227,10 @@ def apply_feature(name, directory):
         backup(target, directory)
         copy_tree(REPO / 'html', target, ('dbfunc.php',))
         run(['php', '-l', target / 'deploymentMode.php'])
+    elif name == 'operations':
+        backup(Path('/usr/local/lib/tarasec-operations'), directory)
+        backup(Path('/etc/tarasec/operations-agent.json'), directory)
+        run(['bash', REPO / 'misc/install_operations_agent.sh'])
     elif name == 'google':
         backup(Path('/etc/tarasec'), directory)
         backup(Path('/etc/tarasec-server-manager.conf'), directory)
@@ -260,9 +273,53 @@ def apply_feature(name, directory):
         raise PendingVerification('SSH staged with rollback armed. Verify a NEW login and complete the printed recovery checks; upgrade does not cancel rollback')
 
 
+def source_revision():
+    revision = run(['git', '-C', REPO, 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip()
+    if not re.fullmatch('[a-f0-9]{40}', revision): raise ValueError('Invalid source revision')
+    return revision
+
+
+def automatic_upgrade(args, state, mode):
+    if os.geteuid() != 0: raise ValueError('Automatic upgrade requires root')
+    if args.mode or args.roles or args.review_declined:
+        raise ValueError('Automatic upgrades cannot change mode, roles or feature choices')
+    if mode not in ('demo', 'production') or not state.get('roles'):
+        raise ValueError('Complete interactive setup before automatic upgrades')
+    os.umask(0o077)
+    STATE.parent.mkdir(parents=True, exist_ok=True)
+    with (STATE.parent / 'upgrade.lock').open('w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        state = load_state()
+        names = [name for name, _, roles in FEATURES if set(state['roles']) & roles]
+        selected = automatic_features(state, names)
+        if not selected: raise ValueError('No installed components approved for automatic update')
+        release = release_info(REPO)
+        revision = source_revision()
+        stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
+        directory = STATE.parent / 'backups' / stamp
+        directory.mkdir(parents=True, mode=0o700)
+        for name in selected:
+            record = state['features'][name]
+            record.update(status='running', installed_version=0, backup=str(directory), time=stamp)
+            save(state)
+            try:
+                apply_feature(name, directory / name)
+                record.update(status='completed', installed_once=True, installed_version=release['version'], installed_revision=revision)
+            except (OSError, ValueError, subprocess.CalledProcessError) as error:
+                record.update(status='failed', error=type(error).__name__)
+                state['history'].append({'time': stamp, 'feature': name, 'status': 'failed', 'automatic': True})
+                save(state)
+                raise
+            state['history'].append({'time': stamp, 'feature': name, 'status': 'completed', 'automatic': True})
+            save(state)
+        print('Approved component updates completed; the next heartbeat verifies notice clearance.')
+        return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=('upgrade',))
+    parser.add_argument('--automatic', action='store_true', help='Update only installed components already approved by the owner')
     parser.add_argument('--no-pull', action='store_true', help='Use the current checkout without fetching updates')
     parser.add_argument('--mode', choices=('demo', 'production'))
     parser.add_argument('--roles', help='Comma-separated local roles: database,gateway,node')
@@ -281,6 +338,7 @@ def main(argv=None):
         prior = state['features'].get(name, {})
         print(f"  {name}: {title} [{prior.get('status', 'not recorded')}]")
     if args.status or args.plan: return 0
+    if args.automatic: return automatic_upgrade(args, state, old_mode)
     if os.geteuid() != 0: parser.error('Run with sudo on the intended server')
     if not sys.stdin.isatty(): parser.error('An interactive terminal is required for owner confirmation')
     STATE.parent.mkdir(parents=True, exist_ok=True)
@@ -329,14 +387,25 @@ def main(argv=None):
             answer = choice('Apply ' + name)
             record = dict(prior, choice=answer, time=stamp)
             if answer != 'yes':
+                if name == 'auto-upgrades': state['automatic_enabled'] = False
                 record['status'] = 'declined' if answer == 'never' else 'postponed'
             else:
                 record.update(status='running', backup=str(directory))
                 state['features'][name] = record
                 save(state)
                 try:
-                    apply_feature(name, directory / name)
+                    if name in AUTOMATIC_FEATURES:
+                        record['installed_version'] = 0
+                        save(state)
+                    if name == 'auto-upgrades':
+                        state['automatic_enabled'] = True
+                    else:
+                        apply_feature(name, directory / name)
                     record['status'] = 'completed'
+                    if name in AUTOMATIC_FEATURES:
+                        record['installed_once'] = True
+                        record['installed_version'] = release_info(REPO)['version']
+                        record['installed_revision'] = source_revision()
                 except (OSError, ValueError, subprocess.CalledProcessError) as error:
                     record['status'] = 'pending_verification' if isinstance(error, PendingVerification) else 'failed'
                     # Do not store command arguments or enrollment output in the audit.
