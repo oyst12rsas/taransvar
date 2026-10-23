@@ -14,7 +14,9 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.parse
+import urllib.request
 from upgrade_release import release_info, deployment_status, automatic_features, AUTOMATIC_FEATURES, upgrade_risk, demo_automatic
 
 REPO = Path(__file__).resolve().parent.parent
@@ -435,6 +437,50 @@ def operations_installed():
             and Path('/etc/systemd/system/tarasec-operations-agent.timer').is_file())
 
 
+def enroll_operations_model(policy, policy_path, directory, root=Path('/')):
+    from enroll_google_manager import private_read, NoRedirect, enrollment_url
+    receipt_path = root / 'etc/tarasec/agent-enrollment.json'
+    if not receipt_path.is_file():
+        print('TaraSec AI enrollment pending: complete Google manager enrollment first so the site can identify this node and its authorized managers.')
+        return False
+    receipt = json.loads(private_read(receipt_path))
+    api = receipt['approval_url']
+    enrollment_url(api)  # Strict HTTPS service URL validation.
+    token_path = root / 'etc/tarasec/agent-node.token'
+    token = private_read(token_path).strip()
+    endpoint = api + '?action=operations_model'
+    request = urllib.request.Request(api + '?action=operations_enroll',
+        data=json.dumps({'mode': read_mode()}).encode(),
+        headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token})
+    try:
+        with urllib.request.build_opener(NoRedirect()).open(request, timeout=20) as response:
+            answer = json.loads(response.read(8193))
+    except (OSError, ValueError):
+        print('TaraSec AI enrollment unavailable; deploy the central enrollment update and retry. Local credentials were retained.')
+        return False
+    if answer.get('approved') is not True:
+        print('AI activation awaits confirmation at ' + api.rsplit('/', 1)[0] + '/ for ' + str(receipt.get('nickname', 'this node')) + '.')
+        print('Sign in with Google and approve the AI model request using your authenticator; no prediction URL or provider key is needed.')
+        if sys.stdin.isatty() and answer.get('state') == 'pending':
+            print('Waiting up to 60 seconds for approval. If needed, rerun sudo tarasec upgrade later to resume.')
+            for attempt in range(12):
+                time.sleep(5)
+                try:
+                    with urllib.request.build_opener(NoRedirect()).open(request, timeout=20) as response:
+                        answer = json.loads(response.read(8193))
+                except (OSError, ValueError): return False
+                if answer.get('approved') is True or answer.get('state') == 'rejected': break
+        if answer.get('approved') is not True: return False
+    if answer.get('model_ready') is not True:
+        print('AI activation approved; the central TaraSec model connection still needs configuration by its administrator. Rerun after it is ready.')
+        return False
+    backup(policy_path, directory)
+    policy.update(model_provider='flowise', model_url=endpoint,
+                  model_key_file=str(token_path), model_connection='tarasec')
+    atomic(policy_path, json.dumps(policy, indent=2) + '\n')
+    return True
+
+
 def configure_operations_model(policy, policy_path, directory, root=Path('/')):
     """Collect dedicated model settings locally; never print or reuse credentials."""
     provider = policy.get('model_provider', 'flowise')
@@ -442,27 +488,31 @@ def configure_operations_model(policy, policy_path, directory, root=Path('/')):
     key_path = Path(policy.get(key_field, '/etc/tarasec/operations-model.key'))
     key_ready = key_path.is_file() and bool(key_path.read_text().strip())
     endpoint_ready = bool(policy.get('openai_model') if provider == 'openai' else policy.get('model_url'))
+    if policy.get('model_connection') == 'tarasec':
+        return enroll_operations_model(policy, policy_path, directory, root)
     if endpoint_ready and key_ready: return True
     print('AI agent needs a dedicated model connection. Demo/production mode is already selected.')
-    print('Use your operations Flowise endpoint/key or a direct OpenAI API key. Google sign-in does not provide model access. Model calls may incur provider charges.')
+    print('Blank uses TaraSec enrollment and Google/TOTP approval on the agent page. A custom Flowise URL or OpenAI connection is optional. Model calls may incur provider charges.')
     if not sys.stdin.isatty():
-        print('Run sudo tarasec upgrade in a terminal to configure the connection. No credentials will be requested unattended.')
-        return False
-    if choice('Configure the AI model connection now') != 'yes': return False
+        return enroll_operations_model(policy, policy_path, directory, root)
     while True:
-        selected = input('Model provider [flowise/openai; blank = postpone]: ').strip().lower()
-        if not selected: return False
+        selected = input('Model provider [flowise/openai; blank = TaraSec system, none = postpone]: ').strip().lower()
+        if selected == 'none': return False
+        if not selected: return enroll_operations_model(policy, policy_path, directory, root)
         if selected in ('flowise', 'openai'): break
         print('Enter flowise or openai.')
     updated = dict(policy, model_provider=selected)
     if selected == 'flowise':
         while True:
-            value = input('Dedicated operations Flowise HTTPS prediction URL [blank = postpone]: ').strip()
-            if not value: return False
+            value = input('Flowise prediction URL [blank = TaraSec system, none = postpone]: ').strip()
+            if value.lower() == 'none': return False
+            if not value: return enroll_operations_model(policy, policy_path, directory, root)
             url = urllib.parse.urlsplit(value)
-            if url.scheme == 'https' and url.hostname and not url.username and not url.password and not url.query and not url.fragment: break
-            print('Use an HTTPS prediction URL without embedded credentials, query or fragment.')
+            if url.scheme in ('https', 'http') and url.hostname and not url.username and not url.password and not url.query and not url.fragment: break
+            print('Use an HTTP(S) prediction URL without embedded credentials, query or fragment.')
         updated['model_url'] = value
+        updated['allow_insecure_model_http'] = url.scheme == 'http'
+        if url.scheme == 'http': print('Custom HTTP connection selected: its model key and requests travel without TLS.')
         field, filename = 'model_key_file', 'operations-model.key'
     else:
         value = input('OpenAI model name supported by your account [blank = postpone]: ').strip()

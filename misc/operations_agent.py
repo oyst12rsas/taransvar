@@ -138,7 +138,7 @@ def model(policy, prompt):
         raise ValueError('Unknown model provider')
     url = policy.get('model_url', '')
     parsed = urllib.parse.urlsplit(url)
-    if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password:
+    if (parsed.scheme != 'https' and not (parsed.scheme == 'http' and policy.get('allow_insecure_model_http') is True)) or not parsed.hostname or parsed.username or parsed.password:
         raise ValueError('Configure an HTTPS Flowise agent prediction URL without embedded credentials')
     key = trusted(policy['model_key_file']).read_text().strip()
     request = urllib.request.Request(url, data=json.dumps({'question': prompt}).encode(),

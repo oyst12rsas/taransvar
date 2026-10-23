@@ -104,7 +104,7 @@ class UpgradeTests(unittest.TestCase):
         path=self.root/'etc/tarasec/operations-agent.json'
         path.parent.mkdir(parents=True);path.write_text('{"mode":"inspect"}')
         policy={'mode':'inspect'}
-        with patch.object(u.sys.stdin,'isatty',return_value=True),patch('builtins.input',side_effect=['yes','flowise','http://invalid','https://example.test/prediction/agent']),patch.object(u.getpass,'getpass',return_value='private-test-key'),patch('sys.stdout',new=io.StringIO()) as output:
+        with patch.object(u.sys.stdin,'isatty',return_value=True),patch('builtins.input',side_effect=['flowise','invalid','https://example.test/prediction/agent']),patch.object(u.getpass,'getpass',return_value='private-test-key'),patch('sys.stdout',new=io.StringIO()) as output:
             self.assertTrue(u.configure_operations_model(policy,path,self.root/'backup',root=self.root))
         self.assertNotIn('private-test-key',output.getvalue())
         key=Path(policy['model_key_file'])
@@ -113,6 +113,34 @@ class UpgradeTests(unittest.TestCase):
         self.assertEqual(policy['mode'],'inspect')
         with patch('builtins.input',side_effect=AssertionError('Must reuse configured connection')):
             self.assertTrue(u.configure_operations_model(policy,path,self.root/'backup',root=self.root))
+
+    def test_blank_selects_central_system_and_none_postpones(self):
+        path=self.root/'policy.json'
+        for answers,called in [([''],True),(['flowise',''],True),(['none'],False),(['flowise','none'],False)]:
+            with patch.object(u.sys.stdin,'isatty',return_value=True),patch('builtins.input',side_effect=answers),patch.object(u,'enroll_operations_model',return_value=False) as enroll,patch.object(u.getpass,'getpass') as secret:
+                self.assertFalse(u.configure_operations_model({},path,self.root/'backup',root=self.root))
+            self.assertEqual(enroll.called,called)
+            secret.assert_not_called()
+
+    def test_central_enrollment_installs_only_node_identity_after_approval(self):
+        import contextlib
+        config=self.root/'etc/tarasec';config.mkdir(parents=True)
+        receipt=config/'agent-enrollment.json'
+        receipt.write_text('{"approval_url":"https://tarasec.org/ops/agent/api.php","nickname":"Test node"}')
+        token=config/'agent-node.token';token.write_text('a'*64);token.chmod(0o600);receipt.chmod(0o600)
+        path=config/'operations-agent.json';path.write_text('{}')
+        u.MODE.write_text('demo\n')
+        for approved in (False,True):
+            response=Mock();response.read.return_value=u.json.dumps({'approved':approved,'model_ready':True}).encode()
+            opener=Mock();opener.open.return_value=contextlib.nullcontext(response)
+            with patch('enroll_google_manager.urllib.request.build_opener',return_value=opener):
+                policy={}
+                self.assertEqual(u.enroll_operations_model(policy,path,self.root/'backup',root=self.root),approved)
+            if approved:
+                self.assertEqual(policy['model_connection'],'tarasec')
+                self.assertEqual(policy['model_key_file'],str(token))
+                self.assertTrue(policy['model_url'].endswith('action=operations_model'))
+            else:self.assertEqual(path.read_text(),'{}')
 
     def test_choice_defaults_to_postpone_and_retries_invalid(self):
         with patch('builtins.input', side_effect=['bogus', '']):
