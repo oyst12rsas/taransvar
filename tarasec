@@ -1,4 +1,53 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root="$(cd -- "$(dirname -- "$(readlink -f -- "$0")")" && pwd)"
+
+# Read-only requests never access the network or modify the checkout.
+pull=true
+[[ ${1:-} == upgrade ]] || pull=false
+for arg in "$@"; do
+    case "$arg" in --no-pull|--plan|--status|--help|-h) pull=false ;; esac
+done
+if $pull; then
+    [[ $EUID -eq 0 ]] || { echo 'Run with sudo on the server being upgraded.' >&2; exit 1; }
+    # Git uses the checkout owner's identity, credentials and hooks, not root's.
+    owner=$(stat -c '%U' "$root")
+    git_local() {
+        if [[ $(id -un) == "$owner" ]]; then
+            GIT_TERMINAL_PROMPT=0 git -C "$root" "$@"
+        else
+            runuser -u "$owner" -- env GIT_TERMINAL_PROMPT=0 git -C "$root" "$@"
+        fi
+    }
+    gitdir=$(git_local rev-parse --absolute-git-dir)
+    exec 9>"$gitdir/tarasec-upgrade-source.lock"
+    flock -n 9 || { echo 'Another TaraSec source update is running.' >&2; exit 1; }
+    [[ -z $(git_local status --porcelain) ]] || {
+        echo 'Local changes found. Commit or move them before upgrading, or use --no-pull for this checkout.' >&2
+        exit 1
+    }
+    branch=$(git_local symbolic-ref --quiet --short HEAD) || {
+        echo 'Detached checkout: switch to main or use --no-pull.' >&2; exit 1;
+    }
+    upstream=$(git_local rev-parse --abbrev-ref '@{upstream}' 2>/dev/null || true)
+    [[ $branch == main && $upstream == origin/main ]] || {
+        echo 'Automatic pulling requires main tracking origin/main. Use --no-pull for another reviewed checkout.' >&2
+        exit 1
+    }
+    before=$(git_local rev-parse HEAD)
+    echo 'Fetching TaraSec updates from origin/main...'
+    git_local fetch --no-tags origin main
+    git_local merge-base --is-ancestor HEAD refs/remotes/origin/main || {
+        echo 'Local main has unpublished or divergent commits; automatic upgrade stopped.' >&2; exit 1;
+    }
+    git_local merge --ff-only refs/remotes/origin/main
+    after=$(git_local rev-parse HEAD)
+    echo "TaraSec source: $after"
+    flock -u 9
+    exec 9>&-
+    if [[ $before != "$after" ]]; then
+        # Execute the newly fetched launcher exactly once, before installing features.
+        exec bash "$root/tarasec" "$@" --no-pull
+    fi
+fi
 exec python3 "$root/misc/standard_upgrade.py" "$@"
