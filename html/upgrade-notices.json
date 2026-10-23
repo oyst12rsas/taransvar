@@ -23,6 +23,18 @@
       ],
       "note": "Apply mode-based upgrade approvals: automatic testing through medium risk in demo; confirmation for every production upgrade.",
       "network_impact": "Production units retain explicit upgrade approval. Demo units exercise eligible updates automatically."
+    },
+    {
+      "id": "existing-google-refresh-v3",
+      "minimum_version": 3,
+      "severity": "important",
+      "roles": [
+        "database",
+        "gateway",
+        "node"
+      ],
+      "note": "Recognize existing Google login and refresh it automatically in demo mode without enrolling new managers.",
+      "network_impact": "Existing Google integration can receive routine updates without blocking demo upgrade coordination."
     }
   ]
 }

@@ -5,6 +5,7 @@ root="$(cd "$(dirname "$0")" && pwd)"
 # Enrollment is an owner action; unattended upgrades retain their existing policy.
 enroll=false
 skip_enrollment=false
+update_only=false
 enroll_args=()
 gatekeeper_args=()
 gatekeeper_web_root=/var/www/html
@@ -21,9 +22,16 @@ while [[ $# -gt 0 ]]; do
             enroll=true; enroll_args+=("$1" "$2"); shift 2 ;;
         --sync) enroll=true; enroll_args+=("--sync"); shift ;;
         --no-enrollment) skip_enrollment=true; shift ;;
+        --update-only) update_only=true; skip_enrollment=true; shift ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac
 done
+if $update_only && $enroll; then echo "Update-only cannot enroll managers" >&2; exit 1; fi
+if $update_only; then
+    for policy in /etc/tarasec/access.conf /etc/tarasec-server-manager.conf; do
+        [[ -r $policy ]] || { echo "Existing worker policy is incomplete; update-only stopped before changing services." >&2; exit 1; }
+    done
+fi
 if ! $enroll && ! $skip_enrollment && [[ -t 0 ]]; then
     read -r -p 'Google manager email (Enter to keep current enrollment): ' manager_email
     if [[ -n $manager_email ]]; then enroll=true; enroll_args+=(--email "$manager_email"); fi
@@ -130,6 +138,9 @@ if systemctl is-enabled --quiet tarasec-node-coordinator.service 2>/dev/null; th
     poll_was_active=false
     systemctl disable --now tarasec-ssh-approval-poll.timer 2>/dev/null || true
     echo "Coordinator scheduling retained; standalone approval timer not enabled."
+elif $update_only; then
+    # EXIT trap restores only timers that were active before this update.
+    echo "Existing approval scheduling retained; inactive timers remain inactive."
 else
     systemctl enable --now tarasec-agent-approvals.timer
     systemctl enable --now tarasec-ssh-approval-poll.timer

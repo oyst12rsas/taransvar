@@ -45,7 +45,8 @@ and credential prerequisites.
 
 Built-in minimum risks are low for the Perl runtime/Gatekeeper, medium for
 reviewed additive DB migrations/managed Taralink/operations-worker deployment,
-and high for Google enrollment and SSH keys, closure or port/honeypot changes.
+medium for refreshing existing Google integration, and high for new Google
+enrollment and SSH keys, closure or port/honeypot changes.
 `release.json` may raise a component's risk for a particular release; it cannot
 lower an access control's minimum. Unknown or invalid ratings default to high.
 Security/important/routine **notice severity is urgency**, not deployment risk.
@@ -187,3 +188,17 @@ notices, changed network compatibility and unsupported target releases remain
 visible; operators can inspect `tarasec upgrade --status` and Gatekeeper Issues.
 Backups and results are kept locally; raw upgrade output is not sent to a model.
 A failed/partial upgrade stays red and is retried within the same policy/budget.
+
+### Existing Google login during upgrades
+
+The upgrader detects both legacy Gatekeeper configuration
+(`/etc/tarasec/gatekeeper-google.php`) and existing node enrollment/identity. It
+reports an existing setup as a **refresh**, not a new Google login installation.
+This refresh is medium risk and runs without an upgrade prompt in Demo mode;
+Production still confirms each update. The Google client configuration, manager
+grants, node token and SSH policy are retained. Gatekeeper-only login does not
+enroll the DB server as a node manager. Existing approval workers are refreshed
+with `--no-enrollment --update-only`, preserving active/inactive scheduling.
+If existing configuration disappears before execution, an unattended refresh
+stops rather than falling back to enrollment. A new Google manager enrollment
+remains high risk and requires explicit confirmation and account details.

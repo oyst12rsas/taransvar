@@ -186,7 +186,36 @@ def install_key(directory):
     print('Public key installed. Verify a NEW login before changing password authentication.')
 
 
-def apply_feature(name, directory):
+def existing_google_setup(root=Path('/')):
+    # Observe existing local setup without evaluating PHP or reading secrets.
+    return any((root / path).is_file() and (root / path).stat().st_size > 0 for path in (
+        'etc/tarasec/gatekeeper-google.php', 'etc/tarasec/agent-enrollment.json',
+        'etc/tarasec/agent-node.token'))
+
+
+def refresh_google(directory, root=Path('/')):
+    web = root / 'var/www/html/gatekeeper'
+    refreshed = False
+    if (root / 'etc/tarasec/gatekeeper-google.php').is_file() and web.is_dir():
+        if not (web.parent / 'script/serviceDiscoveryCommon.php').is_file():
+            raise ValueError('Update Gatekeeper before refreshing its Google integration')
+        names = ('google_start.php', 'google_callback.php', 'google_local_managers.php')
+        for name in names:
+            run(['php', '-l', REPO / 'html/gatekeeper' / name])
+        for name in names:
+            backup(web / name, directory)
+            shutil.copy2(REPO / 'html/gatekeeper' / name, web / name)
+        refreshed = True
+        print('Existing Gatekeeper Google login refreshed; client configuration retained.')
+    if (root / 'etc/tarasec/agent-node.token').is_file():
+        run(['bash', REPO / 'misc/install_agent_approvals.sh', '--no-enrollment', '--update-only'])
+        refreshed = True
+    if not refreshed:
+        raise ValueError('Existing enrollment receipt has no deployed Google configuration or worker identity; repair is required')
+    print('Existing Google setup retained. No manager enrollment or SSH policy change requested.')
+
+
+def apply_feature(name, directory, allow_enrollment=False):
     directory.mkdir(parents=True, mode=0o700, exist_ok=True)
     if name == 'database':
         dump = shutil.which('mariadb-dump') or shutil.which('mysqldump')
@@ -233,8 +262,12 @@ def apply_feature(name, directory):
     elif name == 'google':
         backup(Path('/etc/tarasec'), directory)
         backup(Path('/etc/tarasec-server-manager.conf'), directory)
-        flag = '--no-enrollment' if Path('/etc/tarasec/agent-enrollment.json').exists() else '--enroll-google'
-        run(['bash', REPO / 'misc/install_agent_approvals.sh', flag])
+        if existing_google_setup():
+            refresh_google(directory)
+        elif allow_enrollment:
+            run(['bash', REPO / 'misc/install_agent_approvals.sh', '--enroll-google'])
+        else:
+            raise ValueError('New Google enrollment requires explicit confirmation')
         print('Verify Google/TOTP and console recovery before enabling temporary SSH closure; see docs/google-ssh.md.')
     elif name == 'ssh-window':
         if not Path('/etc/tarasec/agent-enrollment.json').exists():
@@ -298,6 +331,7 @@ def automatic_upgrade(args, state, mode):
     with (STATE.parent / 'upgrade.lock').open('w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         state = load_state()
+        state['google_existing'] = existing_google_setup()
         names = [name for name, _, roles in FEATURES if set(state['roles']) & roles]
         # Re-read authoritative policy after acquiring the deployment lock.
         if read_mode() != 'demo': raise ValueError('Node is no longer in demo mode')
@@ -315,7 +349,7 @@ def automatic_upgrade(args, state, mode):
             if record.get('installed_revision') == revision and record.get('installed_version') == release['version']:
                 continue
             record.update(status='running', installed_version=0, backup=str(directory), time=stamp,
-                          approval='demo_policy', risk=upgrade_risk(name, release))
+                          approval='demo_policy', risk=upgrade_risk(name, release, state))
             save(state)
             try:
                 apply_feature(name, directory / name)
@@ -345,13 +379,14 @@ def main(argv=None):
     state = load_state()
     roles = args.roles.split(',') if args.roles else (state.get('roles') or detect_roles())
     if not roles or any(r not in ROLES for r in roles): parser.error('Invalid roles')
+    state['google_existing'] = existing_google_setup()
     old_mode = read_mode()
     print('TaraSec upgrade — host: ' + os.uname().nodename)
     print('Mode: ' + old_mode + '; roles: ' + ', '.join(roles))
     applicable = [f for f in FEATURES if set(roles) & f[2]]
     for name, title, _ in applicable:
         prior = state['features'].get(name, {})
-        print(f"  {name}: {title} [{prior.get('status', 'not recorded')}; risk: {upgrade_risk(name, release_info(REPO))}]")
+        print(f"  {name}: {title} [{prior.get('status', 'not recorded')}; risk: {upgrade_risk(name, release_info(REPO), state)}]")
     if args.status or args.plan: return 0
     if args.automatic: return automatic_upgrade(args, state, old_mode)
     if os.geteuid() != 0: parser.error('Run with sudo on the intended server')
@@ -404,7 +439,10 @@ def main(argv=None):
             print('\n' + title)
             print('Affected configuration is backed up under ' + str(directory))
             release = release_info(REPO)
-            risk = upgrade_risk(name, release)
+            state['google_existing'] = existing_google_setup()
+            if name == 'google' and state['google_existing']:
+                print('Google login already configured: refresh existing integration only.')
+            risk = upgrade_risk(name, release, state)
             # A low-risk dependent still waits for its schema/runtime prerequisites.
             applicable_names = [n for n, _, rs in FEATURES if set(roles) & rs]
             auto = mode == 'demo' and name in automatic_features(state, applicable_names, mode, release)
@@ -426,7 +464,10 @@ def main(argv=None):
                     if name in AUTOMATIC_FEATURES:
                         record['installed_version'] = 0
                         save(state)
-                    apply_feature(name, directory / name)
+                    if name == 'google' and not auto:
+                        apply_feature(name, directory / name, allow_enrollment=True)
+                    else:
+                        apply_feature(name, directory / name)
                     record['status'] = 'completed'
                     if name in AUTOMATIC_FEATURES:
                         record['installed_once'] = True
