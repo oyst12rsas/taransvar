@@ -6,7 +6,7 @@ AUTOMATIC_FEATURES = {'database', 'runtime', 'taralink', 'gatekeeper', 'operatio
 RISK_LEVELS = {'none': 0, 'low': 1, 'medium': 2, 'high': 3}
 FEATURE_RISK = {'database': 'medium', 'runtime': 'low', 'taralink': 'medium',
                 'gatekeeper': 'low', 'operations': 'medium', 'google': 'high',
-                'ssh-window': 'high', 'ssh-key': 'high', 'honeypot': 'high'}
+                'ssh-window': 'high', 'ssh-key': 'high', 'ssh-auth': 'high', 'honeypot': 'high'}
 
 
 def upgrade_risk(name, release=None, context=None):
