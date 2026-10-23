@@ -67,7 +67,13 @@ $cSetup = getSetup();	#Get again in case network setup is changed
 #print "$szNetworkStatus\n";
 #add("Network status: $szNetworkStatus\n");
 
-startTaraSystemsOk();	#Defined in lib_cron.pm
+# Preserve systemd ownership, including intentional service stops.
+my $systemdTaralink = -e "/etc/tarasec/taralink-managed-by-systemd" ||
+    -f "/etc/systemd/system/taralink.service" ||
+    -f "/run/systemd/system/taralink.service" ||
+    -f "/usr/lib/systemd/system/taralink.service" ||
+    -f "/lib/systemd/system/taralink.service";
+startTaraSystemsOk() unless $systemdTaralink;
 
 add("Started taransvar systems");
 checkStartHotspotSystem();	#see lib_net.pm

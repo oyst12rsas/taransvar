@@ -11,6 +11,7 @@ on:
       - 'tests/cron_systemd_ownership_test.py'
       - 'misc/firewall.sh'
       - 'misc/crontasks.pl'
+      - 'misc/startup.pl'
       - 'html/upgrade-notices.json'
       - 'html/script/upgradeNotices.php'
       - 'html/script/statusReport.php'
