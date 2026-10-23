@@ -24,6 +24,45 @@ def file_metadata(path):
         return {'present': None, 'error': 'metadata_unavailable'}
 
 
+def system_cron_reporters(root):
+    """Inspect bounded system cron files without returning commands or secrets."""
+    paths = [root / 'etc/crontab']
+    directory = root / 'etc/cron.d'
+    complete = True
+    try:
+        entries = sorted(directory.iterdir()) if directory.exists() else []
+        if len(entries) > 128: complete = False
+        paths += [p for p in entries[:128] if re.fullmatch(r'[A-Za-z0-9_-]+', p.name)]
+    except OSError:
+        complete = False
+    reporters = []
+    for path in paths:
+        try:
+            info = path.lstat()
+            if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o022:
+                continue
+            # The root override exists for isolated filesystem tests.
+            if root == Path('/') and info.st_uid != 0: continue
+            if info.st_size > 65536:
+                complete = False
+                continue
+            for line in path.read_text(errors='replace').splitlines():
+                if line.lstrip().startswith('#'): continue
+                fields = line.split(None, 6)
+                if (len(fields) != 7 or fields[5] != 'root'
+                        or fields[0] not in ('*', '*/1') or fields[1:5] != ['*'] * 4):
+                    continue
+                for match in re.finditer(r'(?<![\w/])(/(?:root|home)/[A-Za-z0-9_./-]+/crontasks\.pl)(?=\s|$)', fields[6]):
+                    reporter = match.group(1)
+                    if '..' not in Path(reporter).parts and reporter not in reporters:
+                        reporters.append(reporter)
+        except FileNotFoundError:
+            continue
+        except OSError:
+            complete = False
+    return reporters, complete
+
+
 def deployment_inventory(run, root=Path('/'), now=None):
     now = time.time() if now is None else now
     root = Path(root)
@@ -40,6 +79,9 @@ def deployment_inventory(run, root=Path('/'), now=None):
                 if '..' not in Path(path).parts and path not in reporters:
                     reporters.append(path)
     cron_complete = cron['exit_code'] == 0
+    system_reporters, system_cron_complete = system_cron_reporters(root)
+    for path in system_reporters:
+        if path not in reporters: reporters.append(path)
     coordinator_configured = False
     config = local('/etc/tarasec/node-coordinator.json')
     meta = file_metadata(config)
@@ -100,10 +142,9 @@ def deployment_inventory(run, root=Path('/'), now=None):
                       for key, _, value in [line.partition('=')] if key in allowed}
         units[name]['query_exit_code'] = response['exit_code']
     findings = []
-    if not cron_complete:
-        findings.append('minute_reporter_inventory_unknown')
-    elif not reporters:
-        findings.append('minute_reporter_not_found_in_root_cron')
+    if not reporters:
+        findings.append('minute_reporter_not_found_in_cron' if cron_complete and system_cron_complete
+                        else 'minute_reporter_inventory_unknown')
     if any(item.get('security_status_field') is False for item in inventory):
         findings.append('minute_reporter_missing_security_status_field')
     if any(item.get('operations_status_field') is False for item in inventory):
@@ -124,6 +165,7 @@ def deployment_inventory(run, root=Path('/'), now=None):
         elif units[name].get('ActiveState') != 'active':
             findings.append(name + '_not_active')
     return {'checked_at': int(now), 'root_cron_inspected': cron_complete,
+            'system_cron_inspected': system_cron_complete,
             'reporters': inventory, 'components': files, 'units': units, 'findings': findings,
             'source_reference': {key: manifest.get(key) for key in ('revision', 'reference_kind')},
             'limitations': ['Reporter field detection is static; DB receipt is unverified.',

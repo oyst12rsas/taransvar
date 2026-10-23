@@ -5,6 +5,8 @@ on:
       - 'html/script/operationsActivity.php'
       - 'html/gatekeeper/func/operationsStatusView.php'
       - 'tests/operations_status_view_test.php'
+      - 'misc/operations_deployment.py'
+      - 'tests/operations_deployment_test.py'
       - 'misc/operations_policy.py'
       - 'tests/operations_policy_test.py'
       - 'misc/operations_tools.py'
