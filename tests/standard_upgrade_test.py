@@ -36,6 +36,33 @@ class UpgradeTests(unittest.TestCase):
         u.MODE.write_text('invalid')
         with self.assertRaises(ValueError): u.read_mode()
 
+    def test_current_ssh_window_is_checked_without_mutations(self):
+        config=self.root/'etc';config.mkdir()
+        (config/'tarasec-server-manager.conf').write_text('SSH_GOOGLE_REOPEN_ENABLED=yes\n')
+        (config/'tarasecfw.conf').write_text('SSH_PORT=5822\n')
+        (config/'tarasec').mkdir();(config/'tarasec/agent-enrollment.json').write_text('{}')
+        installed=self.root/'usr/local/lib/tarasec';installed.mkdir(parents=True)
+        for name in ('ssh_google_window.py','local_manager_policy.py','agent_approval_worker.py','ssh_approval_poll.py'):
+            (installed/name).write_bytes((u.REPO/'misc'/name).read_bytes())
+        with patch.object(u,'run') as run:
+            self.assertTrue(u.ssh_window_current(self.root))
+        self.assertEqual(run.call_count,4)
+        self.assertTrue(all('-C' in c.args[0] or 'is-active' in c.args[0] for c in run.call_args_list))
+        with patch.object(u,'run',side_effect=u.subprocess.CalledProcessError(1,['iptables'])):
+            self.assertFalse(u.ssh_window_current(self.root))
+        (installed/'ssh_google_window.py').write_text('outdated')
+        with patch.object(u,'run') as run:
+            self.assertFalse(u.ssh_window_current(self.root))
+        run.assert_not_called()
+
+    def test_current_ssh_window_skips_prompt_in_both_modes(self):
+        for mode in ('demo','production'):
+            u.MODE.write_text(mode+'\n')
+            with patch.object(u,'ssh_window_current',return_value=True), patch.object(u,'FEATURES',(('ssh-window','SSH window',{'node'}),)), patch.object(u,'COMMAND',self.root/'tarasec'), patch.object(u.sys.stdin,'isatty',return_value=True), patch('builtins.input',side_effect=['yes']) as prompt, patch.object(u,'apply_feature') as apply, patch('sys.stdout',new=io.StringIO()):
+                self.assertEqual(u.main(['upgrade','--roles','node']),0)
+            self.assertEqual(prompt.call_count,1)
+            apply.assert_not_called()
+
     def test_new_agent_requires_installation_confirmation_in_demo(self):
         u.MODE.write_text('demo\n')
         with patch.object(u, 'operations_installed', return_value=False), patch.object(u, 'FEATURES', (('operations', 'AI agent', {'node'}),)), patch.object(u, 'COMMAND', self.root/'tarasec'), patch.object(u.sys.stdin, 'isatty', return_value=True), patch('builtins.input', side_effect=['yes','no']) as prompt, patch.object(u, 'apply_feature') as apply, patch('sys.stdout', new=io.StringIO()):

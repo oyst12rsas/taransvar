@@ -406,6 +406,29 @@ def existing_honeypot_setup(cfg):
         return False
 
 
+def ssh_window_current(root=Path('/')):
+    """Read-only deployment check; never reconcile or open/close an SSH lease."""
+    policy = settings(root / 'etc/tarasec-server-manager.conf')
+    if policy.get('SSH_GOOGLE_REOPEN_ENABLED', '').lower() not in ('yes', 'on', 'true', '1'):
+        return False
+    if not (root / 'etc/tarasec/agent-enrollment.json').is_file(): return False
+    try:
+        for name in ('ssh_google_window.py', 'local_manager_policy.py', 'agent_approval_worker.py', 'ssh_approval_poll.py'):
+            if (root / 'usr/local/lib/tarasec' / name).read_bytes() != (REPO / 'misc' / name).read_bytes():
+                return False
+        port = settings(root / 'etc/tarasecfw.conf').get('SSH_PORT', '22')
+        if not port.isdigit() or not 1 <= int(port) <= 65535: return False
+        for timer in ('tarasec-agent-approvals.timer', 'tarasec-ssh-approval-poll.timer'):
+            run(['systemctl', 'is-active', '--quiet', timer], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+        for tool in ('iptables', 'ip6tables'):
+            run([tool, '-w', '5', '-C', 'INPUT', '-p', 'tcp', '--dport', port,
+                 '-m', 'conntrack', '--ctstate', 'NEW', '-j', 'TARASEC_SSH_GOOGLE'],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+        return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def operations_installed():
     return (Path('/usr/local/lib/tarasec-operations/operations_agent.py').is_file()
             and Path('/etc/systemd/system/tarasec-operations-agent.timer').is_file())
@@ -677,6 +700,9 @@ def main(argv=None):
             if not set(roles) & feature_roles: continue
             prior = state['features'].get(name, {})
             if prior.get('choice') == 'never' and not args.review_declined: continue
+            if name == 'ssh-window' and ssh_window_current():
+                print('\nSSH window already enabled and current; installed code, polling timers and IPv4/IPv6 firewall hooks checked. No changes made.')
+                continue
             print('\n' + title)
             feature_guidance(name)
             print('Affected configuration is backed up under ' + str(directory))
