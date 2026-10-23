@@ -8,6 +8,8 @@ on:
       - 'misc/upgrade_status.pm'
       - 'misc/setup_ssh_honeypot.sh'
       - 'tests/honeypot_refresh_test.py'
+      - 'tests/cron_systemd_ownership_test.py'
+      - 'misc/firewall.sh'
       - 'misc/crontasks.pl'
       - 'html/upgrade-notices.json'
       - 'html/script/upgradeNotices.php'
@@ -25,6 +27,7 @@ jobs:
       - run: python3 tests/standard_upgrade_test.py && sudo python3 tests/upgrade_pull_test.py
       - run: python3 -m unittest discover -s tests -p 'operations*_test.py'
       - run: python3 tests/honeypot_refresh_test.py
+      - run: python3 tests/cron_systemd_ownership_test.py
       - run: perl tests/upgrade_receipt_test.pl && perl tests/upgrade_policy_test.pl
       - run: |
           php -l html/script/statusReport.php
