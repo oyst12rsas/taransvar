@@ -202,3 +202,14 @@ with `--no-enrollment --update-only`, preserving active/inactive scheduling.
 If existing configuration disappears before execution, an unattended refresh
 stops rather than falling back to enrollment. A new Google manager enrollment
 remains high risk and requires explicit confirmation and account details.
+
+An existing node token alone does not prove the separate approval worker is
+configured. If worker access/manager policy or its public nickname is missing,
+the Google refresh reports the exact missing prerequisites, leaves that worker
+unchanged, and continues other upgrades. A successful Gatekeeper refresh remains
+separate from worker setup. The Google feature is recorded as partial, with its
+worker version unverified; `--status` and the heartbeat retain the warning, and
+Gatekeeper displays a yellow configuration warning after required releases are
+current. It does not infer manager grants, create enrollment, enable a service or
+claim that an incomplete worker was upgraded. Actual installer failures after
+prerequisite validation still stop the upgrade.

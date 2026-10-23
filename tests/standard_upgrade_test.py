@@ -191,10 +191,46 @@ class UpgradeTests(unittest.TestCase):
     def test_existing_node_identity_refresh_uses_update_only(self):
         token = self.root / 'etc/tarasec/agent-node.token'
         token.parent.mkdir(parents=True); token.write_text('existing private identity')
+        (token.parent / 'access.conf').write_text('MANAGER_EMAIL_SHA256=existing')
+        (self.root / 'etc/tarasec-server-manager.conf').write_text('SSH_GOOGLE_REOPEN_ENABLED=no')
+        (self.root / 'etc/tarasecfw.conf').write_text('AGENT_PUBLIC_NICKNAME=ExistingNode')
         with patch.object(u, 'run') as run, patch('sys.stdout', new=io.StringIO()):
             u.refresh_google(self.root / 'backup', root=self.root)
         run.assert_called_once_with(['bash', u.REPO / 'misc/install_agent_approvals.sh', '--no-enrollment', '--update-only'])
         self.assertEqual(token.read_text(), 'existing private identity')
+
+    def test_incomplete_optional_worker_does_not_abort_google_refresh(self):
+        config = self.root / 'etc/tarasec/gatekeeper-google.php'
+        config.parent.mkdir(parents=True); config.write_text('existing client configuration')
+        (config.parent / 'agent-node.token').write_text('existing private token')
+        web = self.root / 'var/www/html/gatekeeper'; web.mkdir(parents=True)
+        common = web.parent / 'script/serviceDiscoveryCommon.php'
+        common.parent.mkdir(); common.write_text('<?php')
+        with patch.object(u, 'run') as run, patch('sys.stdout', new=io.StringIO()):
+            result = u.refresh_google(self.root / 'backup', self.root)
+        self.assertEqual(result['gatekeeper_google'], 'updated')
+        self.assertEqual(result['approval_worker'], 'needs_configuration')
+        self.assertIn('/etc/tarasec/access.conf', result['missing_policy'])
+        self.assertTrue(all(call.args[0][0] == 'php' for call in run.call_args_list))
+        self.assertEqual(config.read_text(), 'existing client configuration')
+        self.assertFalse((config.parent / 'access.conf').exists())
+        record = {}
+        u.record_feature_result(record, 'google', result, 4, 'a' * 40)
+        self.assertEqual(record['status'], 'partial')
+        self.assertEqual(record['installed_version'], 0)
+        u.record_feature_result(record, 'google', {'approval_worker':'updated'}, 4, 'a' * 40)
+        self.assertEqual(record['status'], 'completed')
+        self.assertNotIn('pending_configuration', record['details'])
+
+    def test_partial_google_result_does_not_stop_later_upgrade(self):
+        u.MODE.write_text('demo\n')
+        features=(('google','Google',{'node'}),('operations','Operations',{'node'}))
+        partial={'pending_configuration':True,'approval_worker':'needs_configuration'}
+        with patch.object(u,'existing_google_setup',return_value=True), patch.object(u,'FEATURES',features), patch.object(u,'COMMAND',self.root/'tarasec'), patch.object(u.sys.stdin,'isatty',return_value=True), patch('builtins.input',side_effect=['yes']), patch.object(u,'apply_feature',side_effect=[partial,None]) as apply, patch('sys.stdout',new=io.StringIO()):
+            self.assertEqual(u.main(['upgrade','--roles','node']),0)
+        self.assertEqual(apply.call_count,2)
+        self.assertEqual(u.load_state()['features']['google']['status'],'partial')
+        self.assertEqual(u.load_state()['features']['operations']['status'],'completed')
 
     def test_unattended_google_cannot_fall_back_to_new_enrollment(self):
         with patch.object(u, 'existing_google_setup', return_value=False), patch.object(u, 'backup'), patch.object(u, 'run') as run:
