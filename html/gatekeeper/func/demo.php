@@ -1,4 +1,7 @@
 <?php
+require_once __DIR__ . '/../../deploymentMode.php';
+tarasecRequireDemo();
+
 
 // Demo hub. The original functional browser demo is preserved in
 // demoOriginal.php and exposed through its own entry point.

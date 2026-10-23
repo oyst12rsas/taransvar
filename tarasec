@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root="$(cd -- "$(dirname -- "$(readlink -f -- "$0")")" && pwd)"
+exec python3 "$root/misc/standard_upgrade.py" "$@"

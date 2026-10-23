@@ -151,3 +151,9 @@ esac
 echo "Next: review and verify your node security at https://tarasec.org/safety/#deployment"
 echo "Hardening priorities: https://tarasec.org/safety/#hardening-priorities"
 echo "Ask your AI assistant to check the next missing control, test it and fix in-scope routine failures."
+
+# Keep upgrade orchestration in this checkout; future changes use one command.
+if [[ ! -e /usr/local/sbin/tarasec && ! -L /usr/local/sbin/tarasec ]]; then
+    ln -s "$SCRIPT_DIR/tarasec" /usr/local/sbin/tarasec
+fi
+echo 'Future updates: sudo tarasec upgrade'

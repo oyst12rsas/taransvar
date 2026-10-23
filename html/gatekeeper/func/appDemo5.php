@@ -1,4 +1,7 @@
 <?php
+require_once __DIR__ . '/../../deploymentMode.php';
+tarasecRequireDemo();
+
 function appDemo5() {
     $esc=fn($v)=>htmlspecialchars((string)$v,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
     echo '<h1>Demo 5 — partner loses tagging</h1><p>A connected subnode hits a configured honeypot or reporting firewall rule. Normal receiver reports reach the DB; repeated untagged evidence after partner notification can issue a temporary source restriction.</p><p>Run the exercise in the TaraSec app. The app keeps polling the DB for evidence, notification, tagging status, distribution and receiver acknowledgements.</p><p><a href="https://tarasec.org/demo5/">Full explanation and operator setup</a> · <a href="index.php?f=appDemos">All demos</a></p>';

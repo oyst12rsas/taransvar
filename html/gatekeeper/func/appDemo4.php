@@ -1,4 +1,7 @@
 <?php
+require_once __DIR__ . '/../../deploymentMode.php';
+tarasecRequireDemo();
+
 function appDemo4Esc($value){ return htmlspecialchars((string)$value, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8'); }
 function appDemo4()
 {

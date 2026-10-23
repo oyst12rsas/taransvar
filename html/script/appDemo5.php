@@ -1,5 +1,9 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/../deploymentMode.php';
+tarasecRequireDemo();
+
+
 ini_set('display_errors','0');
 mysqli_report(MYSQLI_REPORT_ERROR|MYSQLI_REPORT_STRICT);
 require_once '../dbfunc.php';

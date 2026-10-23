@@ -1,4 +1,7 @@
 <?php
+require_once __DIR__ . '/deploymentMode.php';
+tarasecRequireDemo();
+
 session_start();
 $nRequiredDbVersion=66;	//NOTE! Make sure this line is always number 3 because that's claimed below.
 

@@ -31,6 +31,8 @@ if ($infectedParam !== '0' && $infectedParam !== '1') {
 
 $wantInfected = $infectedParam === '1';
 $isDemo = ((string)($_POST['demo'] ?? '0') === '1');
+require_once __DIR__ . '/../deploymentMode.php';
+if ($isDemo) tarasecRequireDemo();
 $demoSeverity = null;
 if (isset($_POST['severity'])) {
     if (!$isDemo) {

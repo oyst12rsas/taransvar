@@ -1,4 +1,7 @@
 <?php
+require_once __DIR__ . '/../../deploymentMode.php';
+tarasecRequireDemo();
+
 /*
  * Browser/HTTP view of the coordinated TaraSec app demos.
  *

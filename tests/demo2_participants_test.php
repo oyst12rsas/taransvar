@@ -38,6 +38,7 @@ sql($db,"INSERT INTO demoSshNodeB(name,ip,port,username,passwordPlain,passwordHa
     VALUES('B',INET_ATON('100.68.149.164'),22,'demo','1',SHA2('1',256),SHA2('sensor_token',256),1);
     INSERT INTO demoSshSetup(name,nodeAIp,nodeAPort,demoSshNodeBId) VALUES('class',INET_ATON('100.68.176.110'),22,1);");
 $temp = sys_get_temp_dir().'/tarasec-demo2-api-'.bin2hex(random_bytes(5)); mkdir($temp); mkdir($temp.'/script');
+copy(__DIR__.'/../html/deploymentMode.php', $temp.'/deploymentMode.php');
 file_put_contents($temp.'/dbfunc.php', <<<'PHP'
 <?php
 function getConnection(){return new mysqli('127.0.0.1','root',getenv('DEMO2_TEST_PASSWORD')?:'','tarasec_demo2_test',(int)getenv('DEMO2_TEST_PORT'));}
