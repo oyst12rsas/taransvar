@@ -3,8 +3,13 @@ set -euo pipefail
 
 CONF="/etc/tarasecfw.conf"
 
-if [ "$#" -ne 0 ]; then
-    echo "Usage: sudo bash $0" >&2
+REFRESH_ONLY=false
+UPDATE_ONLY=false
+if [[ ${1:-} == --refresh-only && $# -eq 1 ]]; then
+    REFRESH_ONLY=true
+    UPDATE_ONLY=true
+elif [ "$#" -ne 0 ]; then
+    echo "Usage: sudo bash $0 [--refresh-only]" >&2
     echo "Configuration is always read from $CONF" >&2
     exit 1
 fi
@@ -134,9 +139,49 @@ restart_sshd() {
 }
 is_on() { case "${1,,}" in 1|yes|true|on) return 0 ;; *) return 1 ;; esac; }
 tcp_port_listening() {
-    ss -H -ltn "sport = :$1" 2>/dev/null | grep -q .
+    local listeners
+    listeners=$(ss -H -ltn "sport = :$1" 2>/dev/null) || return 1
+    [[ -n $listeners ]]
 }
 
+wait_for_tcp_port() {
+    local attempt
+    for attempt in {1..50}; do
+        tcp_port_listening "$1" && return 0
+        sleep 0.1
+    done
+    return 1
+}
+sshd_only_admin_port() {
+    local ports
+    ports=$(sshd -T 2>/dev/null | awk '$1 == "port" {print $2}' | sort -u) || return 1
+    [[ $ports == "$SSH_PORT" ]] && tcp_port_listening "$SSH_PORT"
+}
+# Never replace a known-good recovery snapshot with an interrupted migration.
+if systemctl is-active --quiet "$ROLLBACK_TIMER" 2>/dev/null; then
+    echo "An SSH rollback is already armed. Restore/verify that migration from the console before rerunning; its snapshot is preserved." >&2
+    exit 1
+fi
+if sshd_only_admin_port; then
+    REFRESH_ONLY=true
+    echo "Administrator SSH is already configured and listening on TCP/$SSH_PORT; refreshing the honeypot without changing SSH or firewall rules."
+elif $REFRESH_ONLY; then
+    echo "Refresh-only requires sshd's sole effective port and a listener on TCP/$SSH_PORT. No SSH/firewall changes made." >&2
+    exit 1
+fi
+if ! $REFRESH_ONLY && { iptables -S TARASEC_SSH_GOOGLE >/dev/null 2>&1 || ip6tables -S TARASEC_SSH_GOOGLE >/dev/null 2>&1; }; then
+    echo "Existing Google SSH gate detected. Refusing temporary ACCEPT rules that could bypass it; use the console recovery procedure." >&2
+    exit 1
+fi
+if ! $REFRESH_ONLY && [[ -r /etc/tarasec-server-manager.conf ]]; then
+    google_gate=$(sed -nE "s/^[[:space:]]*SSH_GOOGLE_REOPEN_ENABLED[[:space:]]*=[[:space:]]*['\"]?([[:alnum:]]+).*$/\1/p" /etc/tarasec-server-manager.conf | tail -n 1)
+    if is_on "$google_gate"; then
+        echo "Google-controlled SSH is enabled. Refusing port migration that could bypass its temporary opening requirement; use the console recovery procedure." >&2
+        exit 1
+    fi
+fi
+
+if ! $REFRESH_ONLY; then
 mkdir -p "$SSHD_DROPIN_DIR" "$ROLLBACK_DIR" /usr/local/lib/tarasec
 # /run is temporary and /run/sshd may disappear after reboot or rollback.
 # OpenSSH requires this root-owned directory even for configuration tests.
@@ -159,26 +204,6 @@ fi
 if command -v iptables-save >/dev/null 2>&1; then iptables-save > "$ROLLBACK_DIR/iptables.previous"; else rm -f "$ROLLBACK_DIR/iptables.previous"; fi
 if command -v ip6tables-save >/dev/null 2>&1; then ip6tables-save > "$ROLLBACK_DIR/ip6tables.previous"; else rm -f "$ROLLBACK_DIR/ip6tables.previous"; fi
 
-# Keep the proposed administrative port reachable even if a later setup step
-# fails before firewall.sh is run. The rollback snapshot above removes these
-# temporary rules, and firewall.sh replaces them with the final policy.
-temporary_sources="$SSH_ALLOWED_SOURCES,$SSH_RECOVERY_SOURCES"
-temporary_rule_count=0
-IFS=',' read -ra temporary_source_list <<< "$temporary_sources"
-declare -A temporary_source_seen=()
-for source in "${temporary_source_list[@]}"; do
-    source="${source//[[:space:]]/}"
-    [ -z "$source" ] && continue
-    [ -n "${temporary_source_seen[$source]:-}" ] && continue
-    temporary_source_seen[$source]=1
-    iptables -I INPUT 1 -p tcp -s "$source" --dport "$SSH_PORT" -j ACCEPT
-    temporary_rule_count=$((temporary_rule_count + 1))
-done
-if [ "$temporary_rule_count" -eq 0 ]; then
-    iptables -I INPUT 1 -p tcp --dport "$SSH_PORT" -j ACCEPT
-fi
-echo "Temporary firewall access installed for TCP/$SSH_PORT until final firewall policy or rollback."
-
 # A rerun may start while the TaraSec honeypot already owns TCP/22.
 # Snapshot that state and stop it before the temporary two-port sshd phase.
 if systemctl is-active --quiet "$HONEYPOT_SERVICE" 2>/dev/null; then
@@ -186,8 +211,6 @@ if systemctl is-active --quiet "$HONEYPOT_SERVICE" 2>/dev/null; then
 else
     rm -f "$ROLLBACK_DIR/honeypot.was-active"
 fi
-systemctl stop "$HONEYPOT_SERVICE" 2>/dev/null || true
-
 cat > "$ROLLBACK_SCRIPT" <<'EOF'
 #!/bin/bash
 set -e
@@ -235,6 +258,29 @@ WantedBy=timers.target
 EOF
 systemctl daemon-reload
 if is_on "$SSH_FAILSAFE"; then systemctl stop "$ROLLBACK_TIMER" 2>/dev/null || true; systemctl start "$ROLLBACK_TIMER"; echo "Failsafe rollback armed for ${SSH_FAILSAFE_MINUTES} minutes."; fi
+systemctl stop "$HONEYPOT_SERVICE" 2>/dev/null || true
+
+# Keep the proposed administrative port reachable even if a later setup step
+# fails before firewall.sh is run. The rollback snapshot above removes these
+# temporary rules, and firewall.sh replaces them with the final policy.
+temporary_sources="$SSH_ALLOWED_SOURCES,$SSH_RECOVERY_SOURCES"
+temporary_rule_count=0
+IFS=',' read -ra temporary_source_list <<< "$temporary_sources"
+declare -A temporary_source_seen=()
+for source in "${temporary_source_list[@]}"; do
+    source="${source//[[:space:]]/}"
+    [ -z "$source" ] && continue
+    [ -n "${temporary_source_seen[$source]:-}" ] && continue
+    temporary_source_seen[$source]=1
+    iptables -I INPUT 1 -p tcp -s "$source" --dport "$SSH_PORT" -j ACCEPT
+    temporary_rule_count=$((temporary_rule_count + 1))
+done
+if [ "$temporary_rule_count" -eq 0 ]; then
+    iptables -I INPUT 1 -p tcp --dport "$SSH_PORT" -j ACCEPT
+fi
+echo "Temporary firewall access installed for TCP/$SSH_PORT until final firewall policy or rollback."
+
+
 
 cat > "$SSHD_DROPIN" <<EOF
 # Managed by TaraSec. Firewall/SSH policy is in $CONF.
@@ -243,7 +289,10 @@ Port $SSH_PORT
 EOF
 if ! sshd -t; then echo "Two-port sshd configuration test failed; rollback remains armed." >&2; exit 1; fi
 restart_sshd
-if ! ss -ltn | awk '{print $4}' | grep -Eq "[:.]$SSH_PORT$"; then echo "New SSH port $SSH_PORT is not listening; rollback remains armed." >&2; exit 1; fi
+if ! wait_for_tcp_port "$SSH_PORT"; then
+    echo "New SSH port $SSH_PORT is not listening; rollback remains armed. Check sshd -T, ssh.socket ListenStream overrides, and sshd_config Include from the console." >&2
+    exit 1
+fi
 echo "Phase 1 OK: sshd is listening on both TCP/$SSH_HONEYPOT_PORT and TCP/$SSH_PORT."
 
 cat > "$SSHD_DROPIN" <<EOF
@@ -252,9 +301,11 @@ Port $SSH_PORT
 EOF
 if ! sshd -t; then echo "Final sshd configuration test failed; rollback remains armed." >&2; exit 1; fi
 restart_sshd
-if ! ss -ltn | awk '{print $4}' | grep -Eq "[:.]$SSH_PORT$"; then echo "Final SSH port $SSH_PORT is not listening; rollback remains armed." >&2; exit 1; fi
+if ! wait_for_tcp_port "$SSH_PORT" || ! sshd_only_admin_port; then echo "Final SSH port/listener configuration does not match TCP/$SSH_PORT; rollback remains armed." >&2; exit 1; fi
 echo "Real SSH configured for TCP/$SSH_PORT."
+fi # No SSH, firewall, snapshot or rollback changes on refresh-only runs.
 
+install -d -o root -g root -m 0755 /usr/local/lib/tarasec
 if ! python3 -c 'import paramiko' >/dev/null 2>&1; then
     apt-get update
     apt-get install -y python3-paramiko
@@ -279,7 +330,19 @@ EOF
 systemctl daemon-reload
 case "${SSH_HONEYPOT,,}" in
     1|yes|true|on)
-        systemctl enable --now "$HONEYPOT_SERVICE"
+        if $REFRESH_ONLY; then
+            if ! systemctl is-active --quiet "$HONEYPOT_SERVICE"; then
+                if $UPDATE_ONLY; then
+                    echo "Honeypot files updated; existing inactive service remains inactive. SSH/firewall unchanged."
+                    exit 0
+                fi
+                systemctl enable --now "$HONEYPOT_SERVICE"
+            else
+                systemctl restart "$HONEYPOT_SERVICE"
+            fi
+        else
+            systemctl enable --now "$HONEYPOT_SERVICE"
+        fi
         if ! systemctl is-active --quiet "$HONEYPOT_SERVICE"; then
             echo "SSH honeypot service failed to start:" >&2
             journalctl -u "$HONEYPOT_SERVICE" -n 25 --no-pager >&2 || true
@@ -315,7 +378,9 @@ else
     echo "WARNING: DBSERVER is unset; events remain in the local system journal only."
 fi
 
-if is_on "$SSH_FAILSAFE"; then
+if $REFRESH_ONLY; then
+    echo "Honeypot refresh completed. Administrator SSH, firewall and rollback state were unchanged."
+elif is_on "$SSH_FAILSAFE"; then
     echo "IMPORTANT: SSH/firewall rollback is still ARMED."
     echo "Apply the TaraSec firewall, then confirm a NEW SSH connection on TCP/$SSH_PORT."
     echo "Only after successful reconnection cancel rollback with: systemctl stop $ROLLBACK_TIMER"
@@ -324,7 +389,7 @@ else
 fi
 
 echo
-echo "SSH policy staged from $CONF."
+if $REFRESH_ONLY; then echo "Honeypot refreshed from $CONF; administrator SSH policy unchanged."; else echo "SSH policy staged from $CONF."; fi
 echo "  Real SSH: TCP/$SSH_PORT"
 echo "  Honeypot:  $SSH_HONEYPOT on TCP ports $SSH_HONEYPOT_PORTS ($SSH_HONEYPOT_AUTH_MODE)"
 echo "  Rollback:  sshd + IPv4/IPv6 firewall + honeypot state snapshot"

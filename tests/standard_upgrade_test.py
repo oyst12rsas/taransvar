@@ -296,6 +296,13 @@ class UpgradeTests(unittest.TestCase):
         with patch('builtins.input',side_effect=['demoo','demo']),patch('sys.stdout',new=io.StringIO()):
             self.assertEqual(u.choose_mode(),'demo')
 
+    def test_existing_honeypot_uses_refresh_only_without_confirmation_or_policy_write(self):
+        with patch.object(u,'settings',return_value={'SSH_PORT':'5822'}),patch.object(u,'existing_honeypot_setup',return_value=True),patch('builtins.input',side_effect=AssertionError('Refresh must not prompt for migration')),patch.object(u,'run') as run,patch.object(u,'set_setting') as write,patch('sys.stdout',new=io.StringIO()):
+            result=u.apply_feature('honeypot',self.root/'backup')
+        run.assert_called_once_with(['bash',u.REPO/'misc/setup_ssh_honeypot.sh','--refresh-only'])
+        write.assert_not_called()
+        self.assertEqual(result['administrator_ssh'],'unchanged')
+
     def test_shell_settings(self):
         p = self.root / 'config'
         p.write_text('SSH_PORT="5822"\nSSH_FAILSAFE=on\nSSH_HONEYPOT_DEMO_PORT=0\n')

@@ -230,7 +230,8 @@ def feature_guidance(name, root=Path('/')):
         print('After enabling, test a NEW SSH connection while closed, after an approved opening, and after expiry.')
         print('Only type VERIFIED after checking the Google/TOTP flow and console access. Otherwise choose no or press Ctrl+C.')
     elif name == 'honeypot':
-        print('This moves administrator SSH to another port and places the honeypot on its old port.')
+        print('An existing setup is refreshed without changing administrator SSH ports or firewall rules.')
+        print('Only an actual port migration changes SSH and arms a recovery timer.')
         print('Keep the VM/physical console open. Afterward, test a NEW SSH login on the displayed administrator port.')
         print('The rollback timer stays armed until you complete those checks; this upgrader does not cancel it.')
 
@@ -338,6 +339,20 @@ def record_feature_result(record, name, result, version, revision):
         record.update(installed_once=True, installed_version=0 if partial else version, installed_revision=revision)
 
 
+def existing_honeypot_setup(cfg):
+    port = cfg.get('SSH_PORT', '')
+    if not port.isdigit() or not 1 <= int(port) <= 65535: return False
+    if not Path('/etc/systemd/system/tarasec-ssh-honeypot.service').is_file(): return False
+    if not Path('/usr/local/lib/tarasec/tarasec_ssh_honeypot.py').is_file(): return False
+    try:
+        effective = run(['/usr/sbin/sshd', '-T'], capture_output=True, text=True).stdout
+        ports = {line.split()[1] for line in effective.splitlines() if line.startswith('port ')}
+        listeners = run(['ss', '-H', '-ltn', 'sport = :' + port], capture_output=True, text=True).stdout
+        return ports == {port} and bool(listeners.strip())
+    except (OSError, subprocess.CalledProcessError):
+        return False
+
+
 def apply_feature(name, directory, allow_enrollment=False):
     directory.mkdir(parents=True, mode=0o700, exist_ok=True)
     if name == 'database':
@@ -408,6 +423,12 @@ def apply_feature(name, directory, allow_enrollment=False):
     elif name == 'ssh-key':
         install_key(directory)
     elif name == 'honeypot':
+        cfg_path = Path('/etc/tarasecfw.conf')
+        cfg = settings(cfg_path)
+        if existing_honeypot_setup(cfg):
+            print('Existing administrator SSH and honeypot detected; refreshing without port migration.')
+            run(['bash', REPO / 'misc/setup_ssh_honeypot.sh', '--refresh-only'])
+            return {'administrator_ssh': 'unchanged', 'honeypot': 'refreshed'}
         feature_guidance('honeypot')
         confirm_verified('Confirm independent console recovery and ability to test a NEW login', lambda: feature_guidance('honeypot'))
         cfg_path = Path('/etc/tarasecfw.conf')
@@ -428,7 +449,10 @@ def apply_feature(name, directory, allow_enrollment=False):
             raise ValueError('Enable SSH_FAILSAFE before migrating SSH')
         backup(cfg_path, directory)
         run(['bash', REPO / 'misc/setup_ssh_honeypot.sh'])
-        # The existing installer deliberately leaves its rollback armed.
+        # A first honeypot deployment may also find SSH already moved.
+        armed = subprocess.run(['systemctl', 'is-active', '--quiet', 'tarasec-ssh-rollback.timer'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+        if not armed:
+            return {'administrator_ssh': 'unchanged', 'honeypot': 'updated'}
         raise PendingVerification('SSH staged with rollback armed. Verify a NEW login and complete the printed recovery checks; upgrade does not cancel rollback')
 
 
