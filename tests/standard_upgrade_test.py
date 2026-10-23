@@ -122,7 +122,7 @@ class UpgradeTests(unittest.TestCase):
     def test_production_rejects_automatic_even_with_legacy_opt_in(self):
         u.MODE.write_text('production\n')
         u.save({'mode':'production','roles':['node'],'automatic_enabled':True,'features':{},'history':[]})
-        with patch.object(u, 'apply_feature') as apply, patch('sys.stdout', new=io.StringIO()):
+        with patch.object(u, 'detect_roles', side_effect=AssertionError('Saved roles must not inspect the host')), patch.object(u, 'apply_feature') as apply, patch('sys.stdout', new=io.StringIO()):
             with self.assertRaisesRegex(ValueError, 'confirmation for every upgrade'):
                 u.main(['upgrade', '--automatic'])
         apply.assert_not_called()

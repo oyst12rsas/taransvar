@@ -336,7 +336,7 @@ def main(argv=None):
     parser.add_argument('--plan', action='store_true', help='Show applicable features without changing anything')
     args = parser.parse_args(argv)
     state = load_state()
-    roles = args.roles.split(',') if args.roles else state.get('roles', detect_roles())
+    roles = args.roles.split(',') if args.roles else (state.get('roles') or detect_roles())
     if not roles or any(r not in ROLES for r in roles): parser.error('Invalid roles')
     old_mode = read_mode()
     print('TaraSec upgrade — host: ' + os.uname().nodename)
