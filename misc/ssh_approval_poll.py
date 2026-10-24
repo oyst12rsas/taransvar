@@ -21,8 +21,7 @@ def poll_once():
     try:
         success = worker.execute_approved_job(job)
     finally:
-        worker.api("result", {"id": job["id"], "nonce": job["nonce"],
-                             "success": success}, token)
+        worker.report_approved_result(job, success, token)
     print("Approved operation completed" if success else "Approved operation failed")
 
 if __name__ == "__main__":
