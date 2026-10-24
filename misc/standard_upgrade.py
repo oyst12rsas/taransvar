@@ -1080,6 +1080,12 @@ def automatic_upgrade(args, state, mode):
         if read_mode() != 'demo': raise ValueError('Node is no longer in demo mode')
         release = release_info(REPO)
         state['mode'] = 'demo'
+        if isinstance(release.get('managed_tasks'),dict):
+            state['managed_upgrade']={'status':'pending','pending':[],
+                'withheld_tasks':[{'component':'daily-enrollment','state':'requires_manual_installation'}]}
+            save(state)
+            print('Staged release requires one-time daily enrollment: sudo tarasec upgrade --enable-daily. No legacy automatic deployment was run.')
+            return 0
         selected = automatic_features(state, names, 'demo', release)
         if 'operations' in selected and not operations_installed():
             selected.remove('operations')
