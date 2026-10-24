@@ -15,6 +15,14 @@ spec.loader.exec_module(u)
 
 class UpgradeTests(unittest.TestCase):
     def setUp(self):
+        # This suite exercises the legacy manual/demo policy. The staged catalog
+        # has independent coverage in managed_upgrade_test.py.
+        original_release=u.release_info
+        def legacy_release(repo):
+            release=dict(original_release(repo));release.pop('managed_tasks',None);return release
+        self.legacy_release=patch.object(u,'release_info',side_effect=legacy_release)
+        self.legacy_release.start()
+        self.addCleanup(self.legacy_release.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.state = patch.object(u, 'STATE', self.root / 'private/state.json')
@@ -714,4 +722,5 @@ class UpgradeTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
 
