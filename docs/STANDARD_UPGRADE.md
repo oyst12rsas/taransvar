@@ -458,3 +458,24 @@ failed checks. Use the central web page for pause/reset instead of logging into
 individual units. This release has automated regression coverage; live test-unit
 enrollment, complete observation-period promotion and real fleet deployment still
 require deployment verification. No units are enrolled merely by merging code.
+
+
+## Approval-worker updates, including SSH countdown reporting
+
+The standard Google integration step updates the existing approval-worker bundle
+using the maintained installer in update-only mode. The upgrader verifies the
+installed Python files against the assigned release before recording completion.
+This includes the fast poller and the checked SSH expiry reported with execution
+receipts; a separate installer command is not required for enrolled daily nodes.
+
+Google worker maintenance is included for node, gateway and database profiles.
+Daily maintenance checks the installed bundle as well as worker health, so an old
+or changed installed poller cannot be skipped merely because a saved release
+receipt matches. A current, healthy and unchanged bundle is left alone. Existing
+cohort selection, pause, activity checks and the 24-hour promotion gate still apply.
+
+Missing local manager policy remains pending configuration. Automatic maintenance
+never guesses manager addresses or replaces the authorized roster to satisfy this
+prerequisite. Deploy the companion hosted approval API/UI before rolling out the
+immediate SSH countdown worker update. Actual end-to-end timing still needs a live
+opening test after deployment.
