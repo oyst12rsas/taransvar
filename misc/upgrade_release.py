@@ -63,6 +63,8 @@ def automatic_features(state, applicable, mode=None, release=None):
     mode = state.get('mode') if mode is None else mode
     if mode != 'demo':
         raise ValueError('Production upgrades require user confirmation for every upgrade')
+    if isinstance((release or {}).get('managed_tasks'),dict):
+        return []  # Only the staged controller has authoritative cohort/release evidence.
     selected = [name for name in applicable if demo_automatic(name, mode, release, state) and
                 state.get('features', {}).get(name, {}).get('choice') != 'never']
     if release is not None:
