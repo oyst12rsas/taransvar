@@ -525,7 +525,7 @@ def operations_installed():
 
 def wait_operations_approval(request, answer):
     from enroll_google_manager import NoRedirect
-    print('Waiting up to 5 minutes. Press Ctrl+C to skip AI activation for now and continue the remaining upgrades.')
+    print('Waiting up to 5 minutes. Press Ctrl+C to postpone approval for now and continue the remaining upgrades.')
     print('You can approve later and rerun sudo tarasec upgrade to resume.')
     deadline = time.monotonic() + 300
     try:
@@ -535,10 +535,10 @@ def wait_operations_approval(request, answer):
             time.sleep(min(5, remaining))
             remaining = deadline - time.monotonic()
             if remaining <= 0: break
-            with urllib.request.build_opener(NoRedirect()).open(request, timeout=min(20, remaining)) as response:
+            with urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect()).open(request, timeout=min(20, remaining)) as response:
                 answer = json.loads(response.read(8193))
     except KeyboardInterrupt:
-        print('\nAI activation postponed; the approval request remains available. Continuing remaining upgrades.')
+        print('\nApproval postponed; the approval request remains available. Continuing remaining upgrades.')
         return {'approved': False, 'state': 'pending'}
     except (OSError, ValueError):
         print('Approval check unavailable; activation postponed. Rerun sudo tarasec upgrade to resume.')
@@ -639,7 +639,7 @@ def configure_operations_model(policy, policy_path, directory, root=Path('/')):
     return True
 
 
-def enroll_operations_activity_key(url, root=Path('/')):
+def enroll_operations_activity_key(url, root=Path('/'), interactive=False):
     """Register a separate read-only key using the existing HTTPS node identity."""
     from enroll_google_manager import private_read, NoRedirect
     from operations_collectors import validate_feed_url
@@ -679,6 +679,12 @@ def enroll_operations_activity_key(url, root=Path('/')):
             headers={'Content-Type':'application/json', 'Authorization':'Bearer ' + identity})
         with urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect()).open(request, timeout=15) as response:
             answer = json.loads(response.read(8193))
+        if answer.get('approved') is not True:
+            print('Approve "Enable activity monitoring" for this server at https://tarasec.org/ops/agent/ using Google and your authenticator.')
+            if interactive and answer.get('state') == 'pending':
+                answer = wait_operations_approval(request, answer)
+            if answer.get('approved') is not True:
+                return None
         if (answer.get('ok') is not True or answer.get('scope') != 'operations_activity'
                 or answer.get('source_ip') != source):
             raise ValueError('Activity registration incomplete')
@@ -754,7 +760,7 @@ def ensure_operations_activity(root=Path('/'), interactive=False):
             key_path = root / key.lstrip('/')
             print('Activity feed discovered from DBSERVER: ' + url)
             if not key_path.is_file() or key == '/etc/tarasec/operations-central-node.key':
-                key = enroll_operations_activity_key(url, root)
+                key = enroll_operations_activity_key(url, root, interactive=interactive)
                 if not key:
                     return 'needs_configuration'
             try:
