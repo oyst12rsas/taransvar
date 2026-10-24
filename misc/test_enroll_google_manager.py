@@ -32,6 +32,33 @@ class EnrollmentTests(unittest.TestCase):
     def run_enroll(self, emails=None, **kwargs):
         return enroll.enroll(emails or [], root=self.root, opener=self.opener, **kwargs)
 
+
+    def test_generated_names_are_readable_and_stable_across_retry(self):
+        one=self.run_enroll(['owner@example.com'])
+        self.assertRegex(one['nickname'], r'^[A-Z][a-z]+ [A-Z][a-z]+$')
+        self.assertNotRegex(one['nickname'], r'^Node [0-9a-f]{8}$')
+        two=self.run_enroll(['owner@example.com'])
+        self.assertEqual(one['nickname'],two['nickname'])
+        self.assertEqual(one['node_id'],two['node_id'])
+
+    def test_hex_fallback_is_upgraded_without_replacing_identity_or_grants(self):
+        first=self.run_enroll(['one@example.com'],nickname='Node fb0c00c7')
+        token=(self.root/'etc/tarasec/agent-node.token').read_text()
+        with mock.patch.object(enroll.secrets,'choice',side_effect=['Amber','Willow']):
+            second=self.run_enroll(['two@example.com'])
+        self.assertEqual(second['nickname'],'Amber Willow')
+        self.assertEqual(first['node_id'],second['node_id'])
+        self.assertEqual((self.root/'etc/tarasec/agent-node.token').read_text(),token)
+        self.assertEqual(len(json.loads(self.calls[-1].data)['manager_hashes']),2)
+        self.assertIn('Amber Willow',(self.root/'etc/tarasecfw.conf').read_text())
+
+    def test_owner_names_and_explicit_renames_are_preserved(self):
+        one=self.run_enroll(['owner@example.com'],nickname='Silver Cedar')
+        with mock.patch.object(enroll.secrets,'choice',side_effect=AssertionError('Do not rename owner name')):
+            self.assertEqual(self.run_enroll(['owner@example.com'])['nickname'],one['nickname'])
+            self.assertEqual(self.run_enroll(['owner@example.com'],nickname='Workshop Server')['nickname'],'Workshop Server')
+            self.assertEqual(self.run_enroll(['owner@example.com'],nickname='Node abcdef12')['nickname'],'Node abcdef12')
+
     def test_new_node_sends_hashes_only_and_preserves_identity_on_retry(self):
         one = self.run_enroll([' OWNER@example.com '])
         two = self.run_enroll(['owner@example.com'])
