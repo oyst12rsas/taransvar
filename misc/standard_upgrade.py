@@ -79,6 +79,26 @@ def choice(prompt):
         print('Enter yes, no or never. Enter postpones the change.')
 
 
+def confirm_local_roles(roles, root=Path('/')):
+    """Explain observed host roles before confirming upgrade scope."""
+    local_db = (root / 'var/lib/mysql/taransvar').is_dir()
+    gateway = (root / 'etc/tarasecfw.conf').is_file()
+    central = operations_central_database(root) if local_db else None
+    print('\nCurrent server status:')
+    print('  Local TaraSec database: ' + ('present' if local_db else 'not detected'))
+    print('  Central/global DB server: ' + ('yes' if central is True else 'no' if central is False else 'not verified'))
+    print('  TaraSec firewall/gateway configuration: ' + ('present' if gateway else 'not detected'))
+    labels = {'database': 'local database maintenance', 'gateway': 'gateway components', 'node': 'node components'}
+    print('Upgrade scope: ' + ', '.join(labels[role] for role in roles))
+    print('The database role means a local database; it does not make this machine the central DB server.')
+    print("Confirming continues to the individual upgrade steps. It does not change this server's network role.")
+    while True:
+        answer = input('Is this upgrade scope correct? [yes/no; Enter = stop]: ').strip().lower()
+        if answer in ('yes', 'y'): return True
+        if answer in ('no', 'n', ''): return False
+        print('Enter yes to continue or no to stop. Never applies only to individual upgrade steps.')
+
+
 def confirm_verified(prompt, help_callback):
     while True:
         answer = input(prompt + ' [VERIFIED / no / ?]: ').strip()
@@ -1077,7 +1097,7 @@ def main(argv=None):
         if mode not in ('demo', 'production'): raise ValueError('Choose demo or production explicitly')
         print('Source: ' + str(REPO))
         print('Demo automatically applies none/low/medium risk upgrades; production confirms each upgrade. High/unknown risk always requires confirmation.')
-        if choice('Confirm local roles: ' + ', '.join(roles)) != 'yes': return 0
+        if not confirm_local_roles(roles): return 0
         # Backups and audit state are private even when the caller has a permissive umask.
         os.umask(0o077)
         stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
