@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 import stat
 import tempfile
 import urllib.error
@@ -21,11 +22,14 @@ import local_manager_policy
 DEFAULT_URL = 'https://tarasec.org/ops/agent/api.php'
 
 
-def private_read(path):
+def enrollment_read(path, shared_config=False):
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     with os.fdopen(fd, encoding='utf-8') as f:
         info = os.fstat(f.fileno())
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o077:
+        forbidden = 0o022 if shared_config else 0o077
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & forbidden:
+            if shared_config:
+                raise ValueError('Firewall configuration must be root-owned and not group/other writable')
             raise ValueError('Enrollment files must be root-owned regular files, mode 0600 or 0400')
         text = f.read(65537)
     if len(text) > 65536:
@@ -33,12 +37,18 @@ def private_read(path):
     return text
 
 
-def atomic_write(path, text):
+def private_read(path):
+    return enrollment_read(path)
+
+
+def atomic_write(path, text, *, shared_config=False):
     path = Path(path)
     if path.is_symlink():
         raise ValueError('Symlink enrollment files are prohibited')
+    shared_info = None
     if path.exists():
-        old = private_read(path)
+        old = enrollment_read(path, shared_config=shared_config)
+        if shared_config: shared_info = path.stat()
         # Preserve the previous owner file before every explicit enrollment edit.
         backup_fd, backup = tempfile.mkstemp(prefix=path.name + '.before-enrollment-', dir=path.parent)
         with os.fdopen(backup_fd, 'w', encoding='utf-8') as f:
@@ -52,6 +62,13 @@ def atomic_write(path, text):
             f.write(text)
             f.flush()
             os.fsync(f.fileno())
+        if shared_config:
+            if shared_info is not None:
+                os.chown(temporary, 0, shared_info.st_gid)
+                shutil.copystat(path, temporary, follow_symlinks=False)
+                os.utime(temporary, None)
+            else:
+                os.chmod(temporary, 0o644)
         os.replace(temporary, path)
     finally:
         if os.path.exists(temporary): os.unlink(temporary)
@@ -155,7 +172,7 @@ def enroll(emails, sync=False, approval_url=None, nickname=None, root=Path('/'),
     existing = local_manager_policy.manager_hashes(str(access)) if access.exists() else set()
     hashes = existing | new_hashes
     if not hashes and not sync: raise ValueError('Supply a manager Google email, or --sync to publish an empty revocation list')
-    cfg_text = cfg.read_text() if cfg.exists() else ''
+    cfg_text = enrollment_read(cfg, shared_config=True) if cfg.exists() else ''
     nickname = public_nickname(setting(cfg_text, 'AGENT_PUBLIC_NICKNAME'), nickname)
     if not re.fullmatch('[A-Za-z][A-Za-z0-9 _-]{2,31}', nickname): raise ValueError('Invalid public nickname')
     manager_text = private_read(manager) if manager.exists() else ''
@@ -173,7 +190,7 @@ def enroll(emails, sync=False, approval_url=None, nickname=None, root=Path('/'),
     if not cfg.exists() or nickname != setting(cfg_text, 'AGENT_PUBLIC_NICKNAME'):
         # Existing firewall configuration is not rewritten; append/replace only
         # this descriptive field, after validating its ownership and permissions.
-        atomic_write(cfg, set_setting(cfg_text, 'AGENT_PUBLIC_NICKNAME', nickname))
+        atomic_write(cfg, set_setting(cfg_text, 'AGENT_PUBLIC_NICKNAME', nickname), shared_config=True)
     if approval_url:
         atomic_write(manager, set_setting(manager_text, 'AGENT_APPROVAL_URL', api_url))
     answer = register(api_url, token, nickname, hashes, opener)
@@ -204,6 +221,7 @@ def main():
         reasons = {
             'Enrollment was not confirmed by the approval service': 'The approval website returned an unexpected enrollment confirmation.',
             'Enrollment files must be root-owned regular files, mode 0600 or 0400': 'Local enrollment files have incorrect ownership or permissions.',
+            'Firewall configuration must be root-owned and not group/other writable': 'The firewall configuration must be root-owned and not writable by its group or other users.',
             'Enrollment redirects are prohibited': 'The approval website redirected the enrollment request; use its direct HTTPS endpoint.',
             'Malformed node credential; left unchanged': 'The existing local node credential is malformed; it was retained.',
         }

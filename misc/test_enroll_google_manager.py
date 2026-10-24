@@ -33,6 +33,38 @@ class EnrollmentTests(unittest.TestCase):
         return enroll.enroll(emails or [], root=self.root, opener=self.opener, **kwargs)
 
 
+
+    def test_shared_firewall_read_permissions_survive_nickname_update(self):
+        cfg=self.root/'etc/tarasecfw.conf';cfg.parent.mkdir(parents=True)
+        original='SSH_PORT=5822\nAGENT_PUBLIC_NICKNAME="Node fb0c00c7"\n'
+        for mode in (0o644,0o640,0o600):
+            cfg.write_text(original);cfg.chmod(mode)
+            before=cfg.stat()
+            with mock.patch.object(enroll.secrets,'choice',side_effect=['Amber','Willow']):
+                result=self.run_enroll(['owner@example.com'])
+            self.assertEqual(result['nickname'],'Amber Willow')
+            self.assertEqual(cfg.stat().st_mode & 0o777,mode)
+            self.assertEqual(cfg.stat().st_uid,before.st_uid)
+            self.assertEqual(cfg.stat().st_gid,before.st_gid)
+            self.assertIn('SSH_PORT=5822',cfg.read_text())
+        for path in ('etc/tarasec/agent-node.token','etc/tarasec/access.conf','etc/tarasec/agent-enrollment.json'):
+            self.assertEqual((self.root/path).stat().st_mode & 0o777,0o600)
+
+    def test_writable_or_non_root_firewall_stops_before_identity_changes(self):
+        cfg=self.root/'etc/tarasecfw.conf';cfg.parent.mkdir(parents=True)
+        cfg.write_text('SSH_PORT=5822\n');cfg.chmod(0o664)
+        with self.assertRaisesRegex(ValueError,'Firewall configuration'):
+            self.run_enroll(['owner@example.com'])
+        self.opener.open.assert_not_called()
+        self.assertFalse((self.root/'etc/tarasec/agent-node.token').exists())
+        cfg.chmod(0o644)
+        import os
+        metadata=list(cfg.stat());metadata[4]=1000
+        with mock.patch.object(enroll.os,'fstat',return_value=os.stat_result(metadata)):
+            with self.assertRaisesRegex(ValueError,'Firewall configuration'):
+                self.run_enroll(['owner@example.com'])
+        self.assertEqual(cfg.read_text(),'SSH_PORT=5822\n')
+
     def test_generated_names_are_readable_and_stable_across_retry(self):
         one=self.run_enroll(['owner@example.com'])
         self.assertRegex(one['nickname'], r'^[A-Z][a-z]+ [A-Z][a-z]+$')
