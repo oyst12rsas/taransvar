@@ -120,7 +120,7 @@ class ManagedTests(unittest.TestCase):
         import standard_upgrade as u
         policy=self.root/'managed.json';policy.write_text('{}')
         state=dict(roles=['node'],features={},history=[])
-        with patch.object(m,'POLICY',policy),patch.object(u,'load_state',return_value=state),patch.object(u,'read_mode',return_value='demo'),patch.object(u,'existing_google_setup',return_value=True),patch.object(u,'detect_roles',side_effect=AssertionError('Assigned roles are immutable')),patch('builtins.input',side_effect=AssertionError('No recurring questions')),patch.object(u.subprocess,'run',return_value=Mock(returncode=0)) as execute:
+        with patch.object(u.os,'geteuid',return_value=0),patch.object(m,'POLICY',policy),patch.object(u,'load_state',return_value=state),patch.object(u,'read_mode',return_value='demo'),patch.object(u,'existing_google_setup',return_value=True),patch.object(u,'detect_roles',side_effect=AssertionError('Assigned roles are immutable')),patch('builtins.input',side_effect=AssertionError('No recurring questions')),patch.object(u.subprocess,'run',return_value=Mock(returncode=0)) as execute:
             self.assertEqual(u.main(['upgrade']),0)
             execute.assert_called_once_with(['python3','/usr/local/lib/tarasec-upgrade/managed_upgrade.py','daily'])
             with self.assertRaises(SystemExit):u.main(['upgrade','--roles','gateway'])
@@ -143,6 +143,14 @@ class ManagedTests(unittest.TestCase):
                 self.assertEqual(u.main(['upgrade',*flags]),0)
                 self.assertEqual(enroll.call_args.args[1],['database','node'])
                 execute.assert_called_once_with(['python3','/usr/local/lib/tarasec-upgrade/managed_upgrade.py','daily'])
+
+    def test_default_first_run_without_sudo_does_not_enroll_or_execute(self):
+        import standard_upgrade as u
+        state=dict(roles=['node'],features={},history=[])
+        with patch.object(m,'POLICY',self.root/'not-enrolled'),patch.object(m,'enroll') as enroll,patch.object(u,'load_state',return_value=state),patch.object(u,'read_mode',return_value='production'),patch.object(u.os,'geteuid',return_value=1000),patch.object(u.subprocess,'run') as execute:
+            with self.assertRaises(SystemExit):
+                u.main(['upgrade'])
+        enroll.assert_not_called();execute.assert_not_called()
 
     def test_default_first_run_retains_saved_roles(self):
         import standard_upgrade as u
