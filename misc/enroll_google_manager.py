@@ -119,6 +119,34 @@ def register(api_url, token, nickname, hashes, opener=None, gatekeeper=None):
     return answer
 
 
+
+def public_nickname(current, requested=None):
+    """Replace only the generated hex fallback; retain owner-selected names."""
+    if requested:
+        return requested
+    if current and not re.fullmatch(r'Node [a-fA-F0-9]{8}', current):
+        return current
+    qualities = (
+        'Amber', 'Azure', 'Birch', 'Blue', 'Bright', 'Calm', 'Clear', 'Copper',
+        'Coral', 'Crimson', 'Crystal', 'Dawn', 'Deep', 'Emerald', 'Evening', 'Fair',
+        'Golden', 'Green', 'Indigo', 'Ivory', 'Jade', 'Juniper', 'Mellow', 'Misty',
+        'Moonlit', 'Mossy', 'Northern', 'Ocean', 'Olive', 'Pearl', 'Quiet', 'Ruby',
+        'Saffron', 'Sage', 'Scarlet', 'Silver', 'Soft', 'Spring', 'Still', 'Sunny',
+        'Teal', 'Velvet', 'Violet', 'Warm', 'White', 'Wild', 'Winter', 'Woodland',
+    )
+    places = (
+        'Acorn', 'Alder', 'Anchor', 'Aspen', 'Aurora', 'Bay', 'Beacon', 'Birch',
+        'Brook', 'Canyon', 'Cedar', 'Cliff', 'Cloud', 'Cove', 'Creek', 'Dune',
+        'Elm', 'Falcon', 'Fern', 'Field', 'Finch', 'Fjord', 'Forest', 'Garden',
+        'Glen', 'Grove', 'Harbor', 'Haven', 'Heron', 'Hill', 'Horizon', 'Island',
+        'Juniper', 'Lake', 'Lantern', 'Lark', 'Laurel', 'Leaf', 'Linden', 'Maple',
+        'Meadow', 'Moon', 'Oak', 'Orchard', 'Otter', 'Owl', 'Peak', 'Pine',
+        'Reed', 'Ridge', 'River', 'Robin', 'Rowan', 'Shore', 'Sparrow', 'Spruce',
+        'Star', 'Stone', 'Summit', 'Thistle', 'Valley', 'Willow', 'Wind', 'Wren',
+    )
+    return secrets.choice(qualities) + ' ' + secrets.choice(places)
+
+
 def enroll(emails, sync=False, approval_url=None, nickname=None, root=Path('/'), opener=None):
     cfg = root / 'etc/tarasecfw.conf'
     access = root / 'etc/tarasec/access.conf'
@@ -128,7 +156,7 @@ def enroll(emails, sync=False, approval_url=None, nickname=None, root=Path('/'),
     hashes = existing | new_hashes
     if not hashes and not sync: raise ValueError('Supply a manager Google email, or --sync to publish an empty revocation list')
     cfg_text = cfg.read_text() if cfg.exists() else ''
-    nickname = nickname or setting(cfg_text, 'AGENT_PUBLIC_NICKNAME') or 'Node ' + secrets.token_hex(4)
+    nickname = public_nickname(setting(cfg_text, 'AGENT_PUBLIC_NICKNAME'), nickname)
     if not re.fullmatch('[A-Za-z][A-Za-z0-9 _-]{2,31}', nickname): raise ValueError('Invalid public nickname')
     manager_text = private_read(manager) if manager.exists() else ''
     api_url = approval_url or setting(manager_text, 'AGENT_APPROVAL_URL') or DEFAULT_URL
