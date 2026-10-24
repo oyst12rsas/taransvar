@@ -507,3 +507,17 @@ never guesses manager addresses or replaces the authorized roster to satisfy thi
 prerequisite. Deploy the companion hosted approval API/UI before rolling out the
 immediate SSH countdown worker update. Actual end-to-end timing still needs a live
 opening test after deployment.
+
+
+## Central server selected as a test unit
+
+Select the central server using its configured TaraSec adminIP, as shown in
+Gatekeeper, even when its local activity URL uses 127.0.0.1. After authenticating
+the local request, rollout maps loopback to setup.adminIP. Its own health evidence
+comes from setup.networkStatus/networkStatusChecked, rather than a self-entry in
+partnerRouter. Remote nodes retain their authenticated source address. Invalid
+central identity or missing/stale local reports cannot establish test readiness.
+
+Deploy the corrected html/script/upgradeRolloutLib.php on the central server before
+rerunning the blocked local maintenance check. This repairs identity selection;
+it does not change selected test units, pause, failure holds or the observation period.

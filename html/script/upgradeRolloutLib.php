@@ -42,6 +42,24 @@ function upgradeRolloutEvaluate(array $policy, array &$state, array $reports, st
     return array_replace($base,['allowed'=>$target!=='','target_revision'=>$target,
         'cohort'=>$isTest?'canary':'fleet','reason'=>$target!==''?'Eligible pinned release':'Waiting for healthy test machines and observation period']);
 }
+function upgradeRolloutCentralIp(array $row): ?string {
+    $ip=(string)($row['ip']??'');
+    if (empty($row['central']) || !filter_var($ip,FILTER_VALIDATE_IP,FILTER_FLAG_IPV4)
+        || $ip==='0.0.0.0' || str_starts_with($ip,'127.')) return null;
+    return $ip;
+}
+function upgradeRolloutCallerIp(string $peer,array $central): string {
+    // This runs only after the activity endpoint has authenticated the caller.
+    // A local credential identifies this central server, never a selectable remote peer.
+    if (!in_array($peer,['127.0.0.1','::1'],true)) return $peer;
+    $ip=upgradeRolloutCentralIp($central);
+    if ($ip===null) throw new RuntimeException('Central rollout identity is not configured');
+    return $ip;
+}
+function upgradeRolloutReport(array $row): ?array {
+    $status=json_decode((string)($row['status']??''),true);
+    return is_array($status) ? array_replace($status,['received_at'=>(int)($row['received']??0)]) : null;
+}
 function upgradeRolloutFiles(): string { return '/var/lib/tarasec-rollout'; }
 function upgradeRolloutDecision(mysqli $db,string $ip,string $revision,int $version): array {
     $dir=upgradeRolloutFiles();
@@ -50,12 +68,20 @@ function upgradeRolloutDecision(mysqli $db,string $ip,string $revision,int $vers
     try {
         $policy=json_decode(file_get_contents($dir.'/policy.json'),true,512,JSON_THROW_ON_ERROR);
         $state=is_file($dir.'/state.json')?json_decode(file_get_contents($dir.'/state.json'),true,512,JSON_THROW_ON_ERROR):[];
+        $central=$db->query('SELECT CAST(isGlobalDbServer AS UNSIGNED) central,INET_NTOA(adminIP) ip,UNIX_TIMESTAMP(networkStatusChecked) received,networkStatus status FROM setup LIMIT 1')->fetch_assoc()??[];
+        $ip=upgradeRolloutCallerIp($ip,$central);
+        $centralIp=upgradeRolloutCentralIp($central);
         $reports=[];
         foreach ($policy['canaries']??[] as $test) {
             if (!filter_var($test,FILTER_VALIDATE_IP,FILTER_FLAG_IPV4)) throw new RuntimeException('Invalid test address');
-            $q=$db->prepare('SELECT UNIX_TIMESTAMP(partnerStatusReceived) received,status FROM partnerRouter WHERE ip=INET_ATON(?) ORDER BY partnerStatusReceived DESC LIMIT 1');
-            $q->bind_param('s',$test);$q->execute();$row=$q->get_result()->fetch_assoc();$q->close();
-            if ($row) { $status=json_decode((string)$row['status'],true);if(is_array($status))$reports[$test]=array_replace($status,['received_at'=>(int)$row['received']]); }
+            if ($test===$centralIp) {
+                // The central server reports into setup, not its own partnerRouter row.
+                $row=$central;
+            } else {
+                $q=$db->prepare('SELECT UNIX_TIMESTAMP(partnerStatusReceived) received,status FROM partnerRouter WHERE ip=INET_ATON(?) ORDER BY partnerStatusReceived DESC LIMIT 1');
+                $q->bind_param('s',$test);$q->execute();$row=$q->get_result()->fetch_assoc();$q->close();
+            }
+            if ($row && ($report=upgradeRolloutReport($row))!==null) $reports[$test]=$report;
         }
         $answer=upgradeRolloutEvaluate($policy,$state,$reports,$ip,$revision,$version,time());
         $tmp=tempnam($dir,'state-');file_put_contents($tmp,json_encode($state,JSON_THROW_ON_ERROR));chmod($tmp,0660);rename($tmp,$dir.'/state.json');
