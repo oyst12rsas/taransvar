@@ -1,9 +1,10 @@
 {
-  "version": 7,
+  "version": 8,
   "components": {
     "node": [
       "runtime",
       "taralink",
+      "google",
       "operations"
     ],
     "gateway": [
@@ -11,12 +12,14 @@
       "runtime",
       "taralink",
       "gatekeeper",
+      "google",
       "operations"
     ],
     "database": [
       "database",
       "runtime",
       "gatekeeper",
+      "google",
       "operations"
     ]
   },
@@ -25,7 +28,8 @@
     "runtime": "low",
     "taralink": "medium",
     "gatekeeper": "low",
-    "operations": "medium"
+    "operations": "medium",
+    "google": "medium"
   },
   "managed_tasks": {
     "database": "ready",
