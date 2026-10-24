@@ -9,10 +9,12 @@ ipaddress.ip_address(sys.argv[1])
 PY
 [[ -d "$2/script" && -f "$2/dbfunc.php" ]] || { echo 'Invalid TaraSec web root'; exit 1; }
 php -l "$source_dir/../html/script/operationsActivity.php"
+php -l "$source_dir/../html/script/upgradeRolloutLib.php"
 php -l "$source_dir/../html/script/operationsActivityAuth.php"
 install -o root -g root -m 0644 "$source_dir/../html/script/operationsActivityAuth.php" "$2/script/operationsActivityAuth.php"
 install -d -o root -g www-data -m 0750 /etc/tarasec-operations-feed
 install -o root -g root -m 0644 "$source_dir/../html/script/operationsActivity.php" "$2/script/operationsActivity.php"
+install -o root -g root -m 0644 "$source_dir/../html/script/upgradeRolloutLib.php" "$2/script/upgradeRolloutLib.php"
 python3 - "$1" <<'PY'
 from pathlib import Path
 import hashlib,json,os,secrets,sys,grp,fcntl
