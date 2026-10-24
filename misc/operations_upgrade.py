@@ -31,6 +31,9 @@ def read_notice(path, now):
 
 
 def maintain(state, policy, now, run, trusted, quiet, persist, record):
+    if Path('/etc/tarasec/managed-upgrade.json').is_file():
+        state['upgrade'] = {'status': 'managed_daily', 'reason': 'Standing daily policy and central staged rollout control upgrades'}
+        return False
     try:
         pending = read_notice(trusted(NOTICE), now)
     except (OSError, ValueError, TypeError, KeyError):
