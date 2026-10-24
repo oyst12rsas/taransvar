@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Owner-confirmed, resumable upgrades from the current TaraSec checkout."""
+"""Role-aware staged maintenance by default; explicit interactive setup remains available."""
 import argparse
 import datetime
 import fcntl
@@ -177,13 +177,14 @@ def choose_mode():
         print('Enter demo for automatic testing upgrades, or production for confirmation before each upgrade. Ctrl+C cancels.')
 
 
-def detect_roles():
-    roles = set()
-    if Path('/var/lib/mysql/taransvar').is_dir(): roles.add('database')
-    if Path('/etc/tarasecfw.conf').exists(): roles.add('gateway')
-    if not roles: roles.add('node')
+def detect_roles(root=Path('/')):
+    """Infer maintenance scope from installed components and explicit routing policy."""
+    roles = {'node'}
+    if (root / 'var/lib/mysql/taransvar').is_dir(): roles.add('database')
+    cfg = settings(root / 'etc/tarasecfw.conf')
+    if cfg.get('IS_GATEWAY', '').lower() in ('1', 'yes', 'true', 'on'):
+        roles.add('gateway')
     return sorted(roles)
-
 
 def read_mode():
     if not MODE.exists(): return 'unconfigured'
@@ -1143,9 +1144,10 @@ def automatic_upgrade(args, state, mode):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=('upgrade',))
-    parser.add_argument('--enable-daily', action='store_true', help='Enroll once in staged, unattended daily maintenance')
+    parser.add_argument('--enable-daily', action='store_true', help='Configure daily maintenance without running an immediate upgrade')
+    parser.add_argument('--interactive', action='store_true', help='Explicit legacy setup workflow for an unenrolled installation')
     parser.add_argument('--assign-roles', action='store_true', help='Explicitly reassign the roles of an enrolled unit')
-    parser.add_argument('--automatic', action='store_true', help='Demo only: automatically apply upgrades rated none through medium risk')
+    parser.add_argument('--automatic', action='store_true', help='Run staged unattended maintenance (also the default for current releases)')
     parser.add_argument('--no-pull', action='store_true', help='Use the current checkout without fetching updates')
     parser.add_argument('--mode', choices=('demo', 'production'))
     parser.add_argument('--roles', help='Comma-separated local roles: database,gateway,node')
@@ -1172,7 +1174,6 @@ def main(argv=None):
     from managed_upgrade import POLICY as managed_policy
     if args.enable_daily:
         if os.geteuid() != 0: parser.error('Run daily enrollment with sudo')
-        if not state.get('roles') and not args.roles: parser.error('Assign roles once with --roles before enabling daily maintenance')
         from managed_upgrade import enroll
         admin_user = os.environ.get('SUDO_USER') or getpass.getuser()
         # Existing assignment is retained; this is standing authorization for future standard releases.
@@ -1180,7 +1181,20 @@ def main(argv=None):
             parser.error('Roles are fixed; use --assign-roles for an intentional reassignment')
         enroll(REPO, roles, admin_user, reassign=args.assign_roles)
         return 0
+    staged_default = isinstance(release_info(REPO).get('managed_tasks'), dict)
+    if not args.configure_activity and not args.interactive and staged_default and not managed_policy.exists():
+        if os.geteuid() != 0: parser.error('Run automatic maintenance with sudo')
+        if args.mode or args.review_declined:
+            parser.error('Use --interactive for initial mode/access setup before daily enrollment')
+        from managed_upgrade import enroll
+        admin_user = os.environ.get('SUDO_USER') or getpass.getuser()
+        print('Automatic maintenance scope: ' + ', '.join(roles))
+        enroll(REPO, roles, admin_user)
+        return subprocess.run(['python3','/usr/local/lib/tarasec-upgrade/managed_upgrade.py','daily']).returncode
     if managed_policy.exists() and not args.configure_activity:
+        if args.interactive:
+            parser.error('This unit uses staged maintenance; configure prerequisites through their explicit setup commands')
+        if os.geteuid() != 0: parser.error('Run automatic maintenance with sudo')
         if args.roles and roles != state.get('roles'):
             parser.error('Roles are fixed; use --enable-daily --assign-roles for an intentional reassignment')
         if args.mode or args.review_declined:
