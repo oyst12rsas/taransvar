@@ -81,7 +81,9 @@ def choice(prompt):
 
 def core_node_status(root=Path('/')):
     """Presence is inventory evidence, not a claim that a component is healthy."""
-    def present(path): return (root / path).exists()
+    def present(path):
+        try: return (root / path).exists()
+        except OSError: return False
     kernel = present('sys/module/tarakernel')
     return [
         ('tarakernel', 'loaded' if kernel else 'not loaded; installation not verified'),
@@ -96,7 +98,9 @@ def core_node_status(root=Path('/')):
 def optional_node_functions(root=Path('/')):
     central = operations_central_database(root)
     hotspot = gateway = 'not verified'
-    if (root / 'var/lib/mysql/taransvar').is_dir():
+    try: local_db = (root / 'var/lib/mysql/taransvar').is_dir()
+    except OSError: local_db = False
+    if local_db:
         try:
             result = run(['mariadb', '--batch', '--skip-column-names', 'taransvar', '-e',
                           "SELECT CAST(hotspot AS UNSIGNED), IFNULL(internalNic,'') FROM setup LIMIT 1"],
@@ -132,7 +136,11 @@ def confirm_local_roles(roles, root=Path('/')):
 
 def activity_central_host(root=Path('/')):
     """Use the same Global DB 1 setting as Gatekeeper and normal reporting."""
-    if (root / 'var/lib/mysql/taransvar').is_dir():
+    try: local_db = (root / 'var/lib/mysql/taransvar').is_dir()
+    except OSError:
+        print('Activity setup pending: local database presence could not be verified.')
+        return None
+    if local_db:
         try:
             result = run(['mariadb', '--batch', '--skip-column-names', 'taransvar', '-e',
                           'SELECT INET_NTOA(globalDb1ip) FROM setup LIMIT 1'],
@@ -768,8 +776,10 @@ def enroll_operations_activity_key(url, root=Path('/'), interactive=False):
 
 def operations_central_database(root=Path('/')):
     """A node-local database is not evidence that this is the central server."""
-    if not (root / 'var/lib/mysql/taransvar').is_dir():
-        return False
+    try:
+        if not (root / 'var/lib/mysql/taransvar').is_dir(): return False
+    except OSError:
+        return None
     try:
         result = run(['mariadb', '--batch', '--skip-column-names', 'taransvar', '-e',
                       'SELECT CAST(isGlobalDbServer AS UNSIGNED) FROM setup LIMIT 1'],
