@@ -108,6 +108,30 @@ class UpgradeTests(unittest.TestCase):
             services=[c.args[0] for c in run.call_args_list if c.args[0][0]=='systemctl']
             self.assertEqual(bool(services),complete)
 
+    def test_activity_discovers_existing_dbserver_without_url_prompt(self):
+        cfg = self.root/'etc/tarasecfw.conf'
+        cfg.parent.mkdir(parents=True)
+        cfg.write_text('DBSERVER="100.68.126.0"\n')
+        path = self.root/'etc/tarasec/operations-activity.json'
+        path.parent.mkdir()
+        (path.parent/'operations-activity.key').write_text('a'*64)
+        def configure(argv, **kwargs):
+            if argv[0] == 'bash':
+                self.assertEqual(argv[2:], ['http://100.68.126.0/script/operationsActivity.php',
+                                          '/etc/tarasec/operations-activity.key', '--netbird-http'])
+                path.write_text('{"demo_url":"http://100.68.126.0/script/operationsActivity.php"}')
+            return Mock(stdout='{}')
+        with patch.object(u, 'run', side_effect=configure), patch('builtins.input', side_effect=AssertionError('No URL prompt')):
+            self.assertEqual(u.ensure_operations_activity(self.root, interactive=True), 'feed_unavailable')
+
+    def test_activity_missing_key_remains_pending_without_prompt_when_automatic(self):
+        cfg = self.root/'etc/tarasecfw.conf'
+        cfg.parent.mkdir(parents=True)
+        cfg.write_text('DBSERVER=100.68.126.0\n')
+        with patch.object(u, 'run') as run, patch('builtins.input', side_effect=AssertionError('No prompt')):
+            self.assertEqual(u.ensure_operations_activity(self.root), 'needs_configuration')
+            run.assert_not_called()
+
     def test_activity_repair_is_separate_from_full_upgrade(self):
         u.MODE.write_text('demo\n')
         with patch.object(u.sys.stdin,'isatty',return_value=True), patch.object(u,'run') as run, patch.object(u,'backup'), patch.object(u,'ensure_operations_activity',return_value='active') as configure, patch.object(u,'apply_feature') as apply, patch('builtins.input',side_effect=AssertionError('No full-upgrade prompts')), patch('sys.stdout',new=io.StringIO()):
