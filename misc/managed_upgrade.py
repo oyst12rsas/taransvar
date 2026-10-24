@@ -200,7 +200,8 @@ def healthy(name, u, policy):
                 return response.status==200 and b'tarasec-product' in body and not body.lstrip().startswith(b'<?')
         except (OSError,ValueError): return False
     if name == 'google':
-        if not u.existing_google_setup() or not active('tarasec-agent-approvals.timer'): return False
+        if not u.existing_google_setup() or not u.approval_worker_current(): return False
+        if not active('tarasec-agent-approvals.timer'): return False
         try:
             snapshot=json.loads(Path('/var/lib/tarasec/agent-status.json').read_text())
             return 0<=time.time()-snapshot.get('checked_at',0)<=180 and snapshot.get('approval_service') in ('connected','checking')

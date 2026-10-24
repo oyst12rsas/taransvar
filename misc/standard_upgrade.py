@@ -514,6 +514,25 @@ def existing_google_setup(root=Path('/')):
         'etc/tarasec/agent-node.token'))
 
 
+
+APPROVAL_WORKER_FILES = (
+    'agent_approval_worker.py', 'ssh_approval_poll.py', 'ssh_google_window.py',
+    'ssh_security_evidence.py', 'local_manager_policy.py',
+    'enroll_google_manager.py', 'enroll_gatekeeper_google.py',
+)
+
+
+def approval_worker_current(root=Path('/')):
+    """Compare deployed worker code with the assigned release, not an old receipt."""
+    installed = root / 'usr/local/lib/tarasec'
+    try:
+        return all((installed / name).is_file()
+                   and (installed / name).read_bytes() == (REPO / 'misc' / name).read_bytes()
+                   for name in APPROVAL_WORKER_FILES)
+    except OSError:
+        return False
+
+
 def refresh_google(directory, root=Path('/')):
     web = root / 'var/www/html/gatekeeper'
     refreshed = False
@@ -542,6 +561,8 @@ def refresh_google(directory, root=Path('/')):
             print('Worker left unchanged; continuing other upgrades. Existing Google web login is independent.')
         else:
             run(['bash', REPO / 'misc/install_agent_approvals.sh', '--no-enrollment', '--update-only'])
+            if not approval_worker_current(root):
+                raise ValueError('Approval worker update did not install the assigned release; rerun the upgrade')
             refreshed = True
             details['approval_worker'] = 'updated'
     if not refreshed and not details.get('pending_configuration'):

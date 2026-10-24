@@ -20,6 +20,31 @@ class ManagedTests(unittest.TestCase):
         self.release['managed_tasks']['runtime']='ready'
         self.state=dict(roles=['node'],features={},history=[])
     def write_release(self): (self.root/'release.json').write_text(json.dumps(self.release))
+
+    def test_google_health_rejects_old_code_before_accepting_timer_or_receipt(self):
+        u=self.fake_standard()
+        u.existing_google_setup=lambda:True
+        u.approval_worker_current=lambda:False
+        with patch.object(m,'active') as active:
+            self.assertFalse(m.healthy('google',u,self.policy))
+            active.assert_not_called()
+
+    def test_stale_google_bundle_is_repaired_even_when_source_receipt_matches(self):
+        self.release['managed_tasks']['runtime']='requires_manual_installation'
+        self.release['managed_tasks']['google']='ready'
+        self.state['features']['google']={'managed_fingerprint':m.fingerprint(self.root,'google'),
+            'status':'completed','installed_revision':'a'*40}
+        installed=[False];applied=[]
+        def health(name,*args): return name=='google' and installed[0]
+        def apply(name,*args): applied.append(name);installed[0]=True;return {'approval_worker':'updated'}
+        with patch('builtins.input',side_effect=AssertionError('No automatic enrollment prompts')):
+            result=self.execute(health,apply)
+            self.assertEqual(result['status'],'verified')
+            self.assertEqual(applied,['google'])
+            result=self.execute(health,apply)
+        self.assertEqual(result['status'],'verified')
+        self.assertEqual(applied,['google'],'healthy unchanged bundle must not reinstall')
+
     def test_task_states_and_test_machine_restriction(self):
         self.release['managed_tasks'].update(operations='being_tested',tarakernel='requires_local_testing')
         fleet,skipped=m.feature_plan(self.policy,self.release,'fleet')
