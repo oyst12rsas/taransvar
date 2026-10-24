@@ -283,3 +283,22 @@ prerequisite for update-only mode. Older hosted APIs ignore the optional evidenc
 and retain minute-heartbeat behavior. Missing post-execution evidence still permits
 an execution receipt, so a status read failure does not cause a completed job to be
 repeated. SSH-only receipts do not refresh unrelated health-report timestamps.
+
+
+## Add Google login to an existing machine
+
+Run the explicit owner enrollment on that machine from its updated taransvar
+checkout: sudo bash misc/install_agent_approvals.sh --enroll-google. Supply the
+Google manager email when prompted. Existing local manager grants are merged,
+not replaced. The existing node token is retained. Where Gatekeeper is deployed,
+the same installer configures its Google sign-in handoff. Initial web deployment,
+an unambiguous reachable callback URL and central service availability remain
+prerequisites; an agent enrollment alone does not prove the web login works.
+
+Enrollment now generates readable two-word names. On reenrollment, the old
+Node followed by eight hexadecimal characters fallback is replaced, while
+owner-selected names are retained. --nickname can explicitly choose a name.
+Names remain descriptive labels, not unique authentication identities. The saved
+name is reused after retries. Starting tarasec-agent-approvals.service publishes
+the new nickname through the normal status report. Verify Google sign-in for the
+intended manager on each machine before treating deployment as complete.
