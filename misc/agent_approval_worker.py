@@ -3,6 +3,7 @@
 
 import json
 import os
+from pathlib import Path
 import re
 import signal
 import subprocess
@@ -444,6 +445,15 @@ def disable_obsolete_gateway_unit():
     return run("systemctl", "is-enabled", "tarasec-gateway.service").returncode != 0
 
 
+def reported_boot_id():
+    """A worker restart retains this ID; an OS reboot changes it."""
+    try:
+        value = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+        return value if re.fullmatch(r'[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}', value) else None
+    except OSError:
+        return None
+
+
 def main():
     if os.geteuid() != 0:
         raise RuntimeError("Run as root")
@@ -480,6 +490,7 @@ def main():
                           "level": "attention" if needs_attention else "ok",
                           "findings": concerns,
                           "assessment": current_assessment,
+                          "boot_id": reported_boot_id(),
                           "ssh_access": google_ssh_state()}, token)
         remote = "connected"
         print("Agent status: " + ("needs review (" + str(len(concerns)) + " checks)" if concerns else "operating"))
@@ -516,4 +527,5 @@ if __name__ == "__main__":
     except (OSError, ValueError, RuntimeError, urllib.error.URLError) as exc:
         print("Agent unavailable: " + str(exc), file=sys.stderr)
         sys.exit(1)
+
 
