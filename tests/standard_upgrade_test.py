@@ -588,13 +588,56 @@ class UpgradeTests(unittest.TestCase):
         self.assertTrue(all(call.args[0][0] == 'php' for call in run.call_args_list))
         self.assertTrue((web / 'google_callback.php').exists())
 
+
+    def test_approval_bundle_detects_missing_and_stale_installed_code(self):
+        installed=self.root/'usr/local/lib/tarasec';installed.mkdir(parents=True)
+        self.assertFalse(u.approval_worker_current(self.root))
+        for name in u.APPROVAL_WORKER_FILES:
+            (installed/name).write_bytes((u.REPO/'misc'/name).read_bytes())
+        self.assertTrue(u.approval_worker_current(self.root))
+        for name in ('ssh_approval_poll.py','agent_approval_worker.py'):
+            original=(installed/name).read_bytes()
+            (installed/name).write_text('old installed worker')
+            self.assertFalse(u.approval_worker_current(self.root))
+            (installed/name).write_bytes(original)
+        self.assertTrue(u.approval_worker_current(self.root))
+
+    def test_google_refresh_rejects_installer_that_leaves_old_worker(self):
+        token=self.root/'etc/tarasec/agent-node.token'
+        token.parent.mkdir(parents=True);token.write_text('existing identity')
+        (token.parent/'access.conf').write_text('existing manager policy')
+        (self.root/'etc/tarasec-server-manager.conf').write_text('SSH_GOOGLE_REOPEN_ENABLED=yes')
+        (self.root/'etc/tarasecfw.conf').write_text('AGENT_PUBLIC_NICKNAME=ExistingNode')
+        with patch.object(u,'run'),patch('sys.stdout',new=io.StringIO()),patch('builtins.input',side_effect=AssertionError('No enrollment prompts')):
+            with self.assertRaisesRegex(ValueError,'did not install'):
+                u.refresh_google(self.root/'backup',self.root)
+        self.assertEqual(token.read_text(),'existing identity')
+        self.assertEqual((token.parent/'access.conf').read_text(),'existing manager policy')
+
+    def test_google_refresh_installs_and_verifies_bundle_without_reenrollment(self):
+        token=self.root/'etc/tarasec/agent-node.token'
+        token.parent.mkdir(parents=True);token.write_text('existing identity')
+        (token.parent/'access.conf').write_text('existing manager policy')
+        (self.root/'etc/tarasec-server-manager.conf').write_text('SSH_GOOGLE_REOPEN_ENABLED=yes')
+        (self.root/'etc/tarasecfw.conf').write_text('AGENT_PUBLIC_NICKNAME=ExistingNode')
+        def install(argv):
+            self.assertEqual(argv,['bash',u.REPO/'misc/install_agent_approvals.sh','--no-enrollment','--update-only'])
+            installed=self.root/'usr/local/lib/tarasec';installed.mkdir(parents=True)
+            for name in u.APPROVAL_WORKER_FILES:
+                (installed/name).write_bytes((u.REPO/'misc'/name).read_bytes())
+        with patch.object(u,'run',side_effect=install),patch('sys.stdout',new=io.StringIO()),patch('builtins.input',side_effect=AssertionError('No enrollment prompts')):
+            result=u.refresh_google(self.root/'backup',self.root)
+        self.assertEqual(result['approval_worker'],'updated')
+        self.assertEqual(token.read_text(),'existing identity')
+        self.assertEqual((token.parent/'access.conf').read_text(),'existing manager policy')
+
     def test_existing_node_identity_refresh_uses_update_only(self):
         token = self.root / 'etc/tarasec/agent-node.token'
         token.parent.mkdir(parents=True); token.write_text('existing private identity')
         (token.parent / 'access.conf').write_text('MANAGER_EMAIL_SHA256=existing')
         (self.root / 'etc/tarasec-server-manager.conf').write_text('SSH_GOOGLE_REOPEN_ENABLED=no')
         (self.root / 'etc/tarasecfw.conf').write_text('AGENT_PUBLIC_NICKNAME=ExistingNode')
-        with patch.object(u, 'run') as run, patch('sys.stdout', new=io.StringIO()):
+        with patch.object(u, 'run') as run, patch.object(u, 'approval_worker_current', return_value=True), patch('sys.stdout', new=io.StringIO()):
             u.refresh_google(self.root / 'backup', root=self.root)
         run.assert_called_once_with(['bash', u.REPO / 'misc/install_agent_approvals.sh', '--no-enrollment', '--update-only'])
         self.assertEqual(token.read_text(), 'existing private identity')
