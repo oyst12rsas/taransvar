@@ -132,6 +132,33 @@ class UpgradeTests(unittest.TestCase):
             self.assertEqual(u.ensure_operations_activity(self.root), 'needs_configuration')
             run.assert_not_called()
 
+    def test_local_database_does_not_imply_central_role(self):
+        (self.root/'var/lib/mysql/taransvar').mkdir(parents=True)
+        with patch.object(u, 'run', return_value=Mock(stdout='0\n')) as run:
+            self.assertIs(u.operations_central_database(self.root), False)
+            self.assertIn('isGlobalDbServer', run.call_args.args[0][-1])
+        with patch.object(u, 'run', return_value=Mock(stdout='1\n')):
+            self.assertIs(u.operations_central_database(self.root), True)
+        with patch.object(u, 'run', side_effect=OSError):
+            self.assertIsNone(u.operations_central_database(self.root))
+
+    def test_wrong_loopback_enrollment_does_not_reuse_its_key(self):
+        cfg = self.root/'etc/tarasecfw.conf'
+        cfg.parent.mkdir(parents=True)
+        cfg.write_text('DBSERVER=100.68.126.0\n')
+        path = self.root/'etc/tarasec/operations-activity.json'
+        path.parent.mkdir()
+        path.write_text('{"demo_url":"http://127.0.0.1/script/operationsActivity.php"}')
+        (path.parent/'operations-activity.key').write_text('a'*64)
+        with patch.object(u, 'operations_central_database', return_value=False), patch.object(u, 'run') as run:
+            self.assertEqual(u.ensure_operations_activity(self.root), 'needs_configuration')
+            run.assert_not_called()
+
+    def test_unknown_central_role_never_enrolls_local_feed(self):
+        with patch.object(u, 'operations_central_database', return_value=None), patch.object(u, 'run') as run:
+            self.assertEqual(u.ensure_operations_activity(self.root), 'needs_configuration')
+            run.assert_not_called()
+
     def test_activity_repair_is_separate_from_full_upgrade(self):
         u.MODE.write_text('demo\n')
         with patch.object(u.sys.stdin,'isatty',return_value=True), patch.object(u,'run') as run, patch.object(u,'backup'), patch.object(u,'ensure_operations_activity',return_value='active') as configure, patch.object(u,'apply_feature') as apply, patch('builtins.input',side_effect=AssertionError('No full-upgrade prompts')), patch('sys.stdout',new=io.StringIO()):
