@@ -55,6 +55,22 @@ function taraSecUpgradeView(array $status): array
         if ($color === 'green') $color = 'yellow';
         $messages[] = 'Optional approval worker needs local policy configuration; existing Google web login is independent.';
     }
+    $managed=$status['software']['managed_upgrade']??[];
+    if (is_array($managed)&&($managed['status']??'')==='failed') {
+        $color='red';$messages[]='Daily upgrade failed verification; rollout is held for this candidate. See Upgrade rollout on the central server.';
+    } elseif (is_array($managed)&&($managed['status']??'')==='pending') {
+        if ($color==='green')$color='yellow';
+        foreach($managed['pending']??[] as $entry) if(is_array($entry))
+            $messages[]='Daily setup prerequisite: '.substr((string)($entry['component']??''),0,32).': '.substr((string)($entry['reason']??''),0,180);
+    }
+    if (is_array($managed)&&!empty($managed['withheld_tasks'])) {
+        $color='red';
+        foreach($managed['withheld_tasks'] as $task) if(is_array($task))
+            $messages[]='Task skipped: '.substr((string)($task['component']??''),0,40).' — '.substr((string)($task['state']??''),0,40).'.';
+    }
+    if (is_array($managed)&&($managed['scheduler']['status']??'')==='blocked') {
+        $color='red';$messages[]='Daily upgrade scheduler blocked: '.substr((string)($managed['scheduler']['reason']??''),0,160).'.';
+    }
     $version = $assessment['installed_version'];
     if ($version === null && $color === 'green') $color = 'yellow';
     $text = 'Installed TaraSec release: '.($version === null ? 'not reported' : $version).'.';
