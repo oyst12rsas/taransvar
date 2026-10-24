@@ -302,3 +302,15 @@ Names remain descriptive labels, not unique authentication identities. The saved
 name is reused after retries. Starting tarasec-agent-approvals.service publishes
 the new nickname through the normal status report. Verify Google sign-in for the
 intended manager on each machine before treating deployment as complete.
+
+
+## Firewall configuration permissions during enrollment
+
+The shared /etc/tarasecfw.conf must be a root-owned regular file, without group
+or other write permission. Root-owned 0644 or 0640 configurations remain accepted
+because web SSH-control readers may need access. Updating the public nickname
+preserves existing read permissions, group and ACL metadata; it does not convert
+this shared file to a private credential. Existing contents are backed up privately.
+Actual enrollment credentials, manager policies and receipts retain their root-only
+0600/0400 validation. Non-root-owned or writable shared policy is rejected before
+creating or changing identity/grant files; repair ownership deliberately on the node.
