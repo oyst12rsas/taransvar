@@ -45,6 +45,17 @@ class ManagedTests(unittest.TestCase):
         self.assertEqual(result['status'],'verified')
         self.assertEqual(applied,['google'],'healthy unchanged bundle must not reinstall')
 
+    def test_rollout_identity_observes_interfaces_without_using_db_addresses(self):
+        rows=[{'ifname':'lo','addr_info':[{'family':'inet','local':'127.0.0.1'}]},
+              {'ifname':'overlay','addr_info':[{'family':'inet','local':'100.68.126.0'}]},
+              {'ifname':'lan','addr_info':[{'family':'inet','local':'10.10.10.20'}]}]
+        with patch.object(m,'run',return_value=Mock(stdout=json.dumps(rows))) as run:
+            self.assertEqual(m.rollout_local_addresses(),['10.10.10.20','100.68.126.0'])
+        run.assert_called_once_with(['ip','-j','-4','address','show'],capture_output=True)
+        with patch.object(m,'run',return_value=Mock(stdout=json.dumps(rows[:1]))):
+            with self.assertRaisesRegex(ValueError,'No assigned'):
+                m.rollout_local_addresses()
+
     def test_task_states_and_test_machine_restriction(self):
         self.release['managed_tasks'].update(operations='being_tested',tarakernel='requires_local_testing')
         fleet,skipped=m.feature_plan(self.policy,self.release,'fleet')

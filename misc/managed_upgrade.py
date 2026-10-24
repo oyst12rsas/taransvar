@@ -5,6 +5,7 @@ import fcntl
 import fnmatch
 import hashlib
 import io
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -388,6 +389,8 @@ def check_health(policy):
 
 
 def daily(policy):
+    if Path('/etc/tarasec-operations-feed/tokens.json').is_file():
+        refresh_rollout_local_addresses()
     before = json.loads(STATE.read_text()).get('managed_upgrade', {}) if STATE.exists() else {}
     origin=git(policy,'remote','get-url','origin',capture_output=True).stdout.strip()
     if origin not in ('https://github.com/oyst12rsas/taransvar.git','https://github.com/oyst12rsas/taransvar','git@github.com:oyst12rsas/taransvar.git'):
@@ -439,9 +442,36 @@ def daily(policy):
     return 0
 
 
+
+def rollout_local_addresses():
+    """Observe this host's assigned IPv4 addresses; no DB address or VPN assumption."""
+    rows=json.loads(run(['ip','-j','-4','address','show'],capture_output=True).stdout)
+    addresses=set()
+    for row in rows:
+        for entry in row.get('addr_info',[]):
+            if entry.get('family')!='inet': continue
+            address=ipaddress.IPv4Address(entry.get('local',''))
+            if not address.is_loopback and not address.is_unspecified and not address.is_multicast:
+                addresses.add(str(address))
+    if not addresses: raise ValueError('No assigned local IPv4 address for central rollout identity')
+    return sorted(addresses)
+
+
+def refresh_rollout_local_addresses():
+    import grp
+    directory=Path('/etc/tarasec-operations-feed')
+    if directory.is_symlink(): raise ValueError('Symlinked rollout identity directory')
+    addresses=rollout_local_addresses()
+    directory.mkdir(parents=True,exist_ok=True,mode=0o750)
+    os.chown(directory,0,grp.getgrnam('www-data').gr_gid)
+    os.chmod(directory,0o750)
+    atomic(directory/'rollout-local-addresses.json',dict(addresses=addresses),0o644)
+
+
 def prepare_rollout_web(source):
     import standard_upgrade as u
     if u.operations_central_database() is not True: return
+    refresh_rollout_local_addresses()
     import grp
     directory=Path('/var/lib/tarasec-rollout')
     if directory.is_symlink(): raise ValueError('Symlinked rollout storage is not permitted')

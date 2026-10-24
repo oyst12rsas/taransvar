@@ -511,13 +511,19 @@ opening test after deployment.
 
 ## Central server selected as a test unit
 
-Select the central server using its configured TaraSec adminIP, as shown in
-Gatekeeper, even when its local activity URL uses 127.0.0.1. After authenticating
-the local request, rollout maps loopback to setup.adminIP. Its own health evidence
-comes from setup.networkStatus/networkStatusChecked, rather than a self-entry in
-partnerRouter. Remote nodes retain their authenticated source address. Invalid
-central identity or missing/stale local reports cannot establish test readiness.
+The central server uses its local activity endpoint and its own
+setup.networkStatus/networkStatusChecked report; it need not configure a global
+DB destination or report to a partner. Old setup.adminIP/globalDb values are not
+used as its rollout identity.
 
-Deploy the corrected html/script/upgradeRolloutLib.php on the central server before
-rerunning the blocked local maintenance check. This repairs identity selection;
-it does not change selected test units, pause, failure holds or the observation period.
+Central bootstrap and local maintenance observe actual assigned IPv4 interface
+addresses with ip -j -4 address show, and publish a root-owned data-only catalog
+outside the web root. An authenticated loopback caller matches a selected test
+address from that local catalog. If no local address is selected it remains a fleet
+unit. Selecting multiple aliases of this same central server is ambiguous and
+requires choosing one. Remote callers retain their authenticated source address.
+
+Deploy with the maintained central bootstrap (upgrade --enable-daily), then rerun
+upgrade. Missing/untrusted identity metadata and stale health reports cannot establish
+test readiness. No database network configuration, reporting destination, selected
+test units, pause, failure hold or observation-period policy is changed.

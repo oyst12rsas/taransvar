@@ -25,18 +25,21 @@ $view=taraSecUpgradeView(['software'=>['version'=>999,'managed_upgrade'=>['statu
 verify($view['color']==='red'&&str_contains($view['message'],'requires_local_testing'),'Skipped tasks have a red dot');
 
 // Authenticated central-local transport must match the selected server identity.
-$central=['central'=>1,'ip'=>'100.68.126.0','received'=>20000,
+$addresses=['10.10.10.20','100.68.126.0'];$tests=['100.68.126.0'];
+$central=['central'=>1,'ip'=>'10.10.10.10','received'=>20000,
     'status'=>json_encode(['knl'=>'1','lnk'=>'1','software'=>['managed_upgrade'=>[
         'revision'=>$sha,'generation'=>4,'status'=>'verified','health'=>['ok'=>true,'checked_at'=>20000]]]])];
-verify(upgradeRolloutCallerIp('127.0.0.1',$central)==='100.68.126.0','Loopback caller uses configured central identity');
-verify(upgradeRolloutCallerIp('::1',$central)==='100.68.126.0','IPv6 loopback uses same canonical identity');
-verify(upgradeRolloutCallerIp('100.68.176.110',$central)==='100.68.176.110','Remote caller retains its authenticated source');
-foreach ([['central'=>0,'ip'=>'100.68.126.0'],['central'=>1,'ip'=>'127.0.0.1'],['central'=>1,'ip'=>'0.0.0.0'],['central'=>1,'ip'=>'bad']] as $invalid) {
-    $denied=false;try{upgradeRolloutCallerIp('127.0.0.1',$invalid);}catch(RuntimeException $e){$denied=true;}
-    verify($denied,'Missing or invalid local identity cannot impersonate a selected test machine');
-}
+verify(upgradeRolloutCallerIp('127.0.0.1',$central,$addresses,$tests)==='100.68.126.0','Loopback caller uses configured central identity');
+verify(upgradeRolloutCallerIp('::1',$central,$addresses,$tests)==='100.68.126.0','IPv6 loopback uses same canonical identity');
+verify(upgradeRolloutCallerIp('100.68.176.110',$central,$addresses,$tests)==='100.68.176.110','Remote caller retains its authenticated source');
+$denied=false;try{upgradeRolloutCallerIp('127.0.0.1',['central'=>0],$addresses,$tests);}catch(RuntimeException $e){$denied=true;}
+verify($denied,'A non-central service cannot map a local caller');
+verify(upgradeRolloutCallerIp('127.0.0.1',$central,$addresses,['100.68.176.110'])==='127.0.0.1','No selected local address remains fleet');
+verify(upgradeRolloutCallerIp('127.0.0.1',$central,$addresses,['10.10.10.10'])==='127.0.0.1','Stale DB identity is not an assigned local address');
+$denied=false;try{upgradeRolloutCallerIp('127.0.0.1',$central,$addresses,$addresses);}catch(RuntimeException $e){$denied=true;}
+verify($denied,'Multiple selected aliases of this server require one explicit test address');
 $localPolicy=['paused'=>false,'canaries'=>['100.68.126.0'],'generation'=>4,'soak_seconds'=>3600];$localState=[];
-$localIp=upgradeRolloutCallerIp('127.0.0.1',$central);
+$localIp=upgradeRolloutCallerIp('127.0.0.1',$central,$addresses,$tests);
 $decision=upgradeRolloutEvaluate($localPolicy,$localState,[],$localIp,$sha,9,20000);
 verify($decision['allowed']&&$decision['cohort']==='canary','Central server can nominate its candidate over loopback');
 $localReports=[$localIp=>upgradeRolloutReport($central)];
