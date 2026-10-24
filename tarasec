@@ -8,6 +8,10 @@ pull=true
 for arg in "$@"; do
     case "$arg" in --no-pull|--plan|--status|--help|-h) pull=false ;; esac
 done
+# Enrolled maintenance fetches candidate source without executing new main before its rollout gate.
+if [[ -f /etc/tarasec/managed-upgrade.json ]]; then
+    pull=false
+fi
 if $pull; then
     [[ $EUID -eq 0 ]] || { echo 'Run with sudo on the server being upgraded.' >&2; exit 1; }
     # Git uses the checkout owner's identity, credentials and hooks, not root's.
