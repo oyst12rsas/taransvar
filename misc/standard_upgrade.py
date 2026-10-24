@@ -525,7 +525,7 @@ def operations_installed():
 
 def wait_operations_approval(request, answer):
     from enroll_google_manager import NoRedirect
-    print('Waiting up to 5 minutes. Press Ctrl+C to skip AI activation for now and continue the remaining upgrades.')
+    print('Waiting up to 5 minutes. Press Ctrl+C to postpone approval for now and continue the remaining upgrades.')
     print('You can approve later and rerun sudo tarasec upgrade to resume.')
     deadline = time.monotonic() + 300
     try:
@@ -535,10 +535,10 @@ def wait_operations_approval(request, answer):
             time.sleep(min(5, remaining))
             remaining = deadline - time.monotonic()
             if remaining <= 0: break
-            with urllib.request.build_opener(NoRedirect()).open(request, timeout=min(20, remaining)) as response:
+            with urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect()).open(request, timeout=min(20, remaining)) as response:
                 answer = json.loads(response.read(8193))
     except KeyboardInterrupt:
-        print('\nAI activation postponed; the approval request remains available. Continuing remaining upgrades.')
+        print('\nApproval postponed; the approval request remains available. Continuing remaining upgrades.')
         return {'approved': False, 'state': 'pending'}
     except (OSError, ValueError):
         print('Approval check unavailable; activation postponed. Rerun sudo tarasec upgrade to resume.')
@@ -639,6 +639,62 @@ def configure_operations_model(policy, policy_path, directory, root=Path('/')):
     return True
 
 
+def enroll_operations_activity_key(url, root=Path('/'), interactive=False):
+    """Register a separate read-only key using the existing HTTPS node identity."""
+    from enroll_google_manager import private_read, NoRedirect
+    from operations_collectors import validate_feed_url
+    import hashlib
+    import secrets
+    # This automatic path is for the existing NetBird deployment. Never send
+    # identity or credentials over an unverified route, redirect or HTTP service.
+    cfg = dict(demo_url=url, allow_netbird_http=True)
+    def route_run(argv, timeout):
+        result = run(argv, capture_output=True, text=True, timeout=timeout)
+        return dict(exit_code=result.returncode, output=result.stdout)
+    try:
+        validate_feed_url(cfg, route_run)
+        host = urllib.parse.urlsplit(url).hostname
+        route = route_run(['/usr/sbin/ip', '-j', 'route', 'get', host], 3)
+        routes = json.loads(route['output'])
+        if len(routes) != 1 or routes[0].get('dev') != 'wt0':
+            raise ValueError('NetBird route unavailable')
+        source = routes[0].get('prefsrc') or routes[0].get('src')
+        import ipaddress
+        if ipaddress.ip_address(source) not in ipaddress.ip_network('100.64.0.0/10'):
+            raise ValueError('NetBird source unavailable')
+        receipt = json.loads(private_read(root / 'etc/tarasec/agent-enrollment.json'))
+        if receipt.get('approval_url') != 'https://tarasec.org/ops/agent/api.php':
+            raise ValueError('Automatic feed enrollment needs the TaraSec identity service')
+        identity = private_read(root / 'etc/tarasec/agent-node.token').strip()
+        if not re.fullmatch('[a-f0-9]{64}', identity):
+            raise ValueError('Invalid node identity')
+        key = root / 'etc/tarasec/operations-central-node.key'
+        if not key.exists():
+            atomic(key, secrets.token_hex(32) + '\n')
+        token = private_read(key).strip()
+        if not re.fullmatch('[a-f0-9]{64}', token):
+            raise ValueError('Invalid activity credential')
+        request = urllib.request.Request('https://tarasec.org/ops/agent/activity.php?action=register',
+            data=json.dumps(dict(source_ip=source, token_hash=hashlib.sha256(token.encode()).hexdigest())).encode(),
+            headers={'Content-Type':'application/json', 'Authorization':'Bearer ' + identity})
+        with urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect()).open(request, timeout=15) as response:
+            answer = json.loads(response.read(8193))
+        if answer.get('approved') is not True:
+            print('Approve "Enable activity monitoring" for this server at https://tarasec.org/ops/agent/ using Google and your authenticator.')
+            if interactive and answer.get('state') == 'pending':
+                answer = wait_operations_approval(request, answer)
+            if answer.get('approved') is not True:
+                return None
+        if (answer.get('ok') is not True or answer.get('scope') != 'operations_activity'
+                or answer.get('source_ip') != source):
+            raise ValueError('Activity registration incomplete')
+        print('Read-only activity key enrolled automatically using this node identity.')
+        return str(key)
+    except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError):
+        print('Activity enrollment pending: verify NetBird and deploy the activity credential service on tarasec.org. No manual key entry is needed; rerun after updating.')
+        return None
+
+
 def operations_central_database(root=Path('/')):
     """A node-local database is not evidence that this is the central server."""
     if not (root / 'var/lib/mysql/taransvar').is_dir():
@@ -686,7 +742,7 @@ def ensure_operations_activity(root=Path('/'), interactive=False):
                 config = json.loads(path.read_text())
             except (OSError, ValueError, subprocess.SubprocessError):
                 print('Activity observer pending: central loopback feed verification failed.')
-                return 'feed_unavailable' 
+                return 'feed_unavailable'
         elif host:
             try:
                 address = ipaddress.ip_address(host)
@@ -703,16 +759,17 @@ def ensure_operations_activity(root=Path('/'), interactive=False):
             key = config.get('demo_key_file', '/etc/tarasec/operations-activity.key')
             key_path = root / key.lstrip('/')
             print('Activity feed discovered from DBSERVER: ' + url)
-            if not key_path.is_file():
-                print('Activity feed needs node enrollment on the central DB server. Transfer the node key securely; never paste it into chat.')
-                if not interactive:
-                    return 'needs_configuration'
-                key = input('Node feed key file ON THIS SERVER [Enter = postpone]: ').strip()
+            if not key_path.is_file() or key == '/etc/tarasec/operations-central-node.key':
+                key = enroll_operations_activity_key(url, root, interactive=interactive)
                 if not key:
                     return 'needs_configuration'
-            run(['bash', REPO / 'misc/configure_operations_activity.sh', url, key,
-                 *(['--netbird-http'] if netbird else [])])
-            config = json.loads(path.read_text())
+            try:
+                run(['bash', REPO / 'misc/configure_operations_activity.sh', url, key,
+                     *(['--netbird-http'] if netbird else [])])
+                config = json.loads(path.read_text())
+            except (OSError, ValueError, subprocess.SubprocessError):
+                print('Activity feed verification pending: update dbserver1 web files and check the authenticated feed.')
+                return 'feed_unavailable'
     if not config.get('demo_url'):
         print('Activity observer pending: central server unknown. Configure DBSERVER in /etc/tarasecfw.conf and rerun sudo tarasec upgrade.')
         return 'needs_configuration'

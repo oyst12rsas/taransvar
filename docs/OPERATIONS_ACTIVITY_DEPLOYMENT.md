@@ -1,3 +1,31 @@
+# Automatic activity credential enrollment
+
+For existing NetBird nodes enrolled with the TaraSec approval service, the standard
+upgrade now discovers the central feed from DBSERVER, generates a separate root-only
+activity credential and requests registration of its hash over HTTPS using the existing node
+identity. The operator approves "Enable activity monitoring" on the existing Google/TOTP
+web page. Subsequent upgrades reuse that grant. There is no URL or key-file prompt. The kernel-selected wt0 source address
+binds the read-only credential. It cannot be used for SSH approvals or model access.
+
+Deploy the updated `ops/agent/api.php` and new `ops/agent/activity.php` on the existing tarasec.org approval host first.
+Update dbserver1's Gatekeeper web tree next (`sudo tarasec upgrade`, Gatekeeper
+step) to deploy both operationsActivity.php and operationsActivityAuth.php. Then
+rerun `sudo tarasec upgrade --configure-activity` on Roquefort or another node.
+No manually generated feed key or transfer is needed for this path.
+
+The central feed verifies the dedicated credential over HTTPS with the fixed
+TaraSec identity service and the observed REMOTE_ADDR. Proxies and redirects are
+disabled; TLS verification is mandatory. Revoked or rotated node identities invalidate
+the credential. Service errors, failed enrollment, invalid routes, missing demo tables
+and incomplete feed data remain blockers. Approval-service availability is now a
+dependency for nodes using automatic activity credentials; previously enrolled static
+source-bound feed keys continue to work independently.
+
+Automatic enrollment currently supports the TaraSec approval service and the existing
+literal NetBird central address. Custom approval hosts require their own coordinated
+trust configuration; they remain pending rather than sending identity to another host.
+The following manual deployment instructions remain available for other installations.
+
 # Operations activity pilot
 
 The demo pilot authorizes experimental commands through owner policy. Only the

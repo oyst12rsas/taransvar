@@ -128,7 +128,7 @@ class UpgradeTests(unittest.TestCase):
         cfg = self.root/'etc/tarasecfw.conf'
         cfg.parent.mkdir(parents=True)
         cfg.write_text('DBSERVER=100.68.126.0\n')
-        with patch.object(u, 'run') as run, patch('builtins.input', side_effect=AssertionError('No prompt')):
+        with patch.object(u, 'run') as run, patch.object(u, 'enroll_operations_activity_key', return_value=None), patch('builtins.input', side_effect=AssertionError('No prompt')):
             self.assertEqual(u.ensure_operations_activity(self.root), 'needs_configuration')
             run.assert_not_called()
 
@@ -150,7 +150,7 @@ class UpgradeTests(unittest.TestCase):
         path.parent.mkdir()
         path.write_text('{"demo_url":"http://127.0.0.1/script/operationsActivity.php"}')
         (path.parent/'operations-activity.key').write_text('a'*64)
-        with patch.object(u, 'operations_central_database', return_value=False), patch.object(u, 'run') as run:
+        with patch.object(u, 'operations_central_database', return_value=False), patch.object(u, 'enroll_operations_activity_key', return_value=None), patch.object(u, 'run') as run:
             self.assertEqual(u.ensure_operations_activity(self.root), 'needs_configuration')
             run.assert_not_called()
 
@@ -158,6 +158,43 @@ class UpgradeTests(unittest.TestCase):
         with patch.object(u, 'operations_central_database', return_value=None), patch.object(u, 'run') as run:
             self.assertEqual(u.ensure_operations_activity(self.root), 'needs_configuration')
             run.assert_not_called()
+
+    def test_activity_key_registration_uses_separate_key_and_verified_route(self):
+        private = self.root/'etc/tarasec'
+        private.mkdir(parents=True)
+        (private/'agent-enrollment.json').write_text('{"approval_url":"https://tarasec.org/ops/agent/api.php"}')
+        (private/'agent-node.token').write_text('a'*64)
+        for path in private.iterdir(): path.chmod(0o600)
+        source='100.68.176.110'
+        route=Mock(returncode=0, stdout=u.json.dumps([dict(dev='wt0',prefsrc=source)]))
+        response=Mock()
+        response.__enter__=Mock(return_value=response)
+        response.__exit__=Mock(return_value=False)
+        response.read.return_value=u.json.dumps(dict(ok=True,approved=True,scope='operations_activity',source_ip=source)).encode()
+        opener=Mock(); opener.open.return_value=response
+        with patch.object(u, 'run', return_value=route), patch('enroll_google_manager.private_read', side_effect=lambda path: Path(path).read_text()), patch.object(u.urllib.request,'build_opener',return_value=opener):
+            path=u.enroll_operations_activity_key('http://100.68.126.0/script/operationsActivity.php',self.root)
+        self.assertEqual(path,str(private/'operations-central-node.key'))
+        key=Path(path).read_text().strip()
+        self.assertNotEqual(key,'a'*64)
+        request=opener.open.call_args.args[0]
+        self.assertEqual(request.headers['Authorization'],'Bearer '+'a'*64)
+        payload=u.json.loads(request.data)
+        self.assertNotIn(key,request.data.decode())
+        self.assertEqual(payload['token_hash'],__import__('hashlib').sha256(key.encode()).hexdigest())
+        self.assertEqual(payload['source_ip'],source)
+        self.assertEqual(Path(path).stat().st_mode & 0o777,0o600)
+        response.read.return_value=b'{"ok":true,"approved":false,"state":"pending"}'
+        with patch.object(u, 'run', return_value=route), patch('enroll_google_manager.private_read', side_effect=lambda path: Path(path).read_text()), patch.object(u.urllib.request,'build_opener',return_value=opener), patch.object(u,'wait_operations_approval') as wait:
+            self.assertIsNone(u.enroll_operations_activity_key('http://100.68.126.0/script/operationsActivity.php',self.root))
+            wait.assert_not_called()
+        self.assertEqual(Path(path).read_text().strip(),key)
+
+    def test_activity_registration_never_reads_identity_on_wrong_route(self):
+        with patch.object(u,'run',return_value=Mock(returncode=0,stdout='[{"dev":"eth0"}]')), patch('enroll_google_manager.private_read') as read, patch.object(u.urllib.request,'build_opener') as http:
+            self.assertIsNone(u.enroll_operations_activity_key('http://100.68.126.0/script/operationsActivity.php',self.root))
+            read.assert_not_called()
+            http.assert_not_called()
 
     def test_activity_repair_is_separate_from_full_upgrade(self):
         u.MODE.write_text('demo\n')
