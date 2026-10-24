@@ -170,9 +170,9 @@ class UpgradeTests(unittest.TestCase):
         response=Mock()
         response.__enter__=Mock(return_value=response)
         response.__exit__=Mock(return_value=False)
-        response.read.return_value=u.json.dumps(dict(ok=True,scope='operations_activity',source_ip=source)).encode()
+        response.read.return_value=u.json.dumps(dict(ok=True,approved=True,scope='operations_activity',source_ip=source)).encode()
         opener=Mock(); opener.open.return_value=response
-        with patch.object(u, 'run', return_value=route), patch.object(u.urllib.request,'build_opener',return_value=opener):
+        with patch.object(u, 'run', return_value=route), patch('enroll_google_manager.private_read', side_effect=lambda path: Path(path).read_text()), patch.object(u.urllib.request,'build_opener',return_value=opener):
             path=u.enroll_operations_activity_key('http://100.68.126.0/script/operationsActivity.php',self.root)
         self.assertEqual(path,str(private/'operations-central-node.key'))
         key=Path(path).read_text().strip()
@@ -184,6 +184,11 @@ class UpgradeTests(unittest.TestCase):
         self.assertEqual(payload['token_hash'],__import__('hashlib').sha256(key.encode()).hexdigest())
         self.assertEqual(payload['source_ip'],source)
         self.assertEqual(Path(path).stat().st_mode & 0o777,0o600)
+        response.read.return_value=b'{"ok":true,"approved":false,"state":"pending"}'
+        with patch.object(u, 'run', return_value=route), patch('enroll_google_manager.private_read', side_effect=lambda path: Path(path).read_text()), patch.object(u.urllib.request,'build_opener',return_value=opener), patch.object(u,'wait_operations_approval') as wait:
+            self.assertIsNone(u.enroll_operations_activity_key('http://100.68.126.0/script/operationsActivity.php',self.root))
+            wait.assert_not_called()
+        self.assertEqual(Path(path).read_text().strip(),key)
 
     def test_activity_registration_never_reads_identity_on_wrong_route(self):
         with patch.object(u,'run',return_value=Mock(returncode=0,stdout='[{"dev":"eth0"}]')), patch('enroll_google_manager.private_read') as read, patch.object(u.urllib.request,'build_opener') as http:
