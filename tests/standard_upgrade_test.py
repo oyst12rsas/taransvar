@@ -29,6 +29,21 @@ class UpgradeTests(unittest.TestCase):
         self.installed.stop()
         self.uid.stop(); self.mode.stop(); self.state.stop(); self.tmp.cleanup()
 
+    def test_roles_explain_local_database_separately_from_central_server(self):
+        (self.root/'var/lib/mysql/taransvar').mkdir(parents=True)
+        (self.root/'etc').mkdir()
+        (self.root/'etc/tarasecfw.conf').write_text('DBSERVER=100.68.126.0\n')
+        with patch.object(u,'operations_central_database',return_value=False), patch('builtins.input',return_value='yes'), patch('sys.stdout',new=io.StringIO()) as output:
+            self.assertTrue(u.confirm_local_roles(['database','gateway'],self.root))
+        self.assertIn('Local TaraSec database: present',output.getvalue())
+        self.assertIn('Central/global DB server: no',output.getvalue())
+        self.assertIn('local database maintenance',output.getvalue())
+
+    def test_role_confirmation_cannot_persist_never(self):
+        with patch('builtins.input',side_effect=['never','no']) as prompt, patch('sys.stdout',new=io.StringIO()):
+            self.assertFalse(u.confirm_local_roles(['node'],self.root))
+        self.assertEqual(prompt.call_count,2)
+
     def test_ssh_auth_always_requires_confirmation_and_honors_never(self):
         for mode in ('demo', 'production'):
             for answer in ('no', 'never'):
