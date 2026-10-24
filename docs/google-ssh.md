@@ -268,3 +268,18 @@ intentionally does not silently reopen a previously closed firewall.
 Retest the baseline SSH policy from an authorized source. Restore backed-up code
 and policy if needed. Re-enabling requires repeating close/open/expiry checks.
 Live per-node acceptance is separate from the repository's automated tests.
+
+
+## SSH countdown confirmation latency
+
+Successful opening and closure jobs attach bounded, checked SSH state to their
+completion receipt. The hosted dashboard can therefore display the opening expiry
+on its next five-second refresh instead of waiting for the minute health reporter.
+This reports observed enforcement; approval alone never starts a countdown.
+
+Deploy the companion hosted approval API/UI first, then update the node approval
+worker bundle using the maintained installer. Existing local manager policy is a
+prerequisite for update-only mode. Older hosted APIs ignore the optional evidence
+and retain minute-heartbeat behavior. Missing post-execution evidence still permits
+an execution receipt, so a status read failure does not cause a completed job to be
+repeated. SSH-only receipts do not refresh unrelated health-report timestamps.

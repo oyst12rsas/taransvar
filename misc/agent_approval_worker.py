@@ -152,6 +152,18 @@ def execute_approved_job(job):
     raise RuntimeError("Unknown operation; refusing to execute")
 
 
+
+def report_approved_result(job, success, token):
+    """Acknowledge execution and attach bounded SSH evidence without a minute wait."""
+    body = {"id": job["id"], "nonce": job["nonce"], "success": success}
+    if success and job.get("operation") in ("open_ssh_temporarily", "close_ssh_and_disconnect"):
+        try:
+            body["ssh_access"] = google_ssh_state()
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+            # Status collection must not lose the execution receipt or rerun the job.
+            print("SSH status unavailable after execution", file=sys.stderr)
+    return api("result", body, token)
+
 def terminal_state():
     # The owner declares independent recovery access (for example a VM console).
     # Availability is persistent; an unattended VM does not need an operator
@@ -507,7 +519,7 @@ def main():
             success = execute_approved_job(job)
         except Exception as exc:
             print("Approved operation failed: " + str(exc), file=sys.stderr)
-        api("result", {"id": job["id"], "nonce": job["nonce"], "success": success}, token)
+        report_approved_result(job, success, token)
         if not success:
             pending.append("Approved operation failed; operator review needed")
         print("Approved operation " + ("completed" if success else "failed"))
