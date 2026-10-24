@@ -389,7 +389,7 @@ def daily(policy):
     origin=git(policy,'remote','get-url','origin',capture_output=True).stdout.strip()
     if origin not in ('https://github.com/oyst12rsas/taransvar.git','https://github.com/oyst12rsas/taransvar','git@github.com:oyst12rsas/taransvar.git'):
         raise ValueError('Assigned source repository changed')
-    git(policy, 'fetch', '--no-tags', 'origin', 'main', capture_output=True)
+    git(policy, 'fetch', '--no-tags', 'https://github.com/oyst12rsas/taransvar.git', 'main:refs/remotes/origin/main', capture_output=True)
     offered = git(policy, 'rev-parse', 'refs/remotes/origin/main', capture_output=True).stdout.strip()
     if not SHA.fullmatch(offered): raise ValueError('Invalid source revision')
     manifest = json.loads(git(policy, 'show', offered+':release.json', capture_output=True).stdout)
@@ -413,7 +413,7 @@ def daily(policy):
         export_release(policy, target, repo)
         # Recheck pause/generation and activity after download/export, immediately before dispatch.
         latest=gate(policy,offered,manifest['version'])
-        if (latest.get('allowed') is not True or latest.get('target_revision')!=target or latest.get('generation')!=generation or not quiet(policy)):
+        if (latest.get('allowed') is not True or latest.get('target_revision')!=target or latest.get('generation')!=generation or latest.get('cohort')!=decision.get('cohort') or not quiet(policy)):
             scheduler_notice('waiting','Rollout or activity changed before dispatch')
             return 0
         # Execute only a controller from a revision which has passed this unit's central gate.
