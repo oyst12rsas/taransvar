@@ -37,6 +37,16 @@ class UpgradeTests(unittest.TestCase):
         self.installed.stop()
         self.uid.stop(); self.mode.stop(); self.state.stop(); self.tmp.cleanup()
 
+
+    def test_automatic_role_detection_uses_installed_db_and_explicit_gateway_flag(self):
+        config=self.root/'etc/tarasecfw.conf';config.parent.mkdir(parents=True)
+        config.write_text('DBSERVER=100.68.126.0\n')
+        self.assertEqual(u.detect_roles(self.root),['node'])
+        (self.root/'var/lib/mysql/taransvar').mkdir(parents=True)
+        self.assertEqual(u.detect_roles(self.root),['database','node'])
+        config.write_text('IS_GATEWAY=1\n')
+        self.assertEqual(u.detect_roles(self.root),['database','gateway','node'])
+
     def test_roles_explain_local_database_separately_from_central_server(self):
         (self.root/'var/lib/mysql/taransvar').mkdir(parents=True)
         (self.root/'etc').mkdir()
