@@ -106,6 +106,18 @@ class ManagedTests(unittest.TestCase):
             self.assertEqual(u.main(['upgrade','--enable-daily']),0)
             self.assertEqual(enroll.call_args.args[1],['gateway'])
 
+    def test_legacy_automatic_selector_cannot_bypass_staging(self):
+        from upgrade_release import automatic_features
+        release=dict(version=8,managed_tasks={'operations':'being_tested'})
+        self.assertEqual(automatic_features(dict(mode='demo',features={}),['runtime','operations'],'demo',release),[])
+    def test_legacy_automatic_entrypoint_flags_enrollment_without_installing(self):
+        import standard_upgrade as u
+        state=dict(roles=['node'],features={},history=[])
+        with patch.object(u,'STATE',self.root/'upgrade/state.json'),patch.object(u,'load_state',return_value=state),patch.object(u,'read_mode',return_value='demo'),patch.object(u.os,'geteuid',return_value=0),patch.object(u,'existing_google_setup',return_value=True),patch.object(u,'apply_feature') as apply:
+            self.assertEqual(u.main(['upgrade','--automatic']),0)
+            apply.assert_not_called()
+            self.assertEqual(state['managed_upgrade']['withheld_tasks'][0]['state'],'requires_manual_installation')
+
     def test_archive_rejects_unrelated_source_revision(self):
         with patch.object(m,'git',side_effect=RuntimeError('Not an ancestor')):
             with self.assertRaises(RuntimeError):m.export_release(self.policy,'b'*40,self.root)
