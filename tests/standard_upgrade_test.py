@@ -66,6 +66,14 @@ class UpgradeTests(unittest.TestCase):
         names=[name for name,_,_ in u.FEATURES]
         self.assertLess(names.index('google'),names.index('operations'))
 
+    def test_unreadable_inventory_does_not_use_stale_central_address(self):
+        with patch.object(u.Path,'exists',side_effect=PermissionError):
+            self.assertTrue(all(status != 'loaded' for _,status in u.core_node_status(self.root)))
+        with patch.object(u.Path,'is_dir',side_effect=PermissionError), patch.object(u,'settings') as settings:
+            self.assertIsNone(u.activity_central_host(self.root))
+            self.assertIsNone(u.operations_central_database(self.root))
+            settings.assert_not_called()
+
     def test_role_confirmation_cannot_persist_never(self):
         with patch('builtins.input',side_effect=['never','no']) as prompt, patch('sys.stdout',new=io.StringIO()):
             self.assertFalse(u.confirm_local_roles(['node'],self.root))
