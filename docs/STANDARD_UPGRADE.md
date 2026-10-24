@@ -359,3 +359,24 @@ and registered automatically using the existing node identity over HTTPS. No
 key-file prompt or manual transfer is needed. Update the approval host's
 `ops/agent/activity.php` and the central DB web files first; see
 `OPERATIONS_ACTIVITY_DEPLOYMENT.md`. Missing services remain pending.
+
+## Core node and optional functions
+
+The standard TaraSec core consists of tarakernel, taralink, the local MySQL/MariaDB
+database, Gatekeeper and server protection (Google/TOTP administrative access and
+AI maintenance). Gateway/routing, hotspot and central coordination are additional
+functions; application workloads can coexist with the core.
+
+The interactive upgrade inventories core presence and observed optional settings
+before confirmation. Presence does not prove service health, functioning login
+enforcement or verified forwarding. A firewall configuration file alone does not
+establish a gateway role. Existing internal role keys are retained for compatibility.
+This upgrader updates an existing installation; absent components require initial
+setup, and existing workloads are not silently replaced.
+
+Activity discovery reads setup.globalDb1ip, the same Global DB 1 displayed by
+Gatekeeper. On a node with a local database, an unavailable or invalid Global DB 1
+remains pending rather than falling back to stale DBSERVER. Protection-only legacy
+installations without a local database retain their existing DBSERVER fallback.
+Google enrollment precedes AI operations activation, so a new server establishes
+its web identity before requesting model or activity approval.
