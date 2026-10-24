@@ -35,9 +35,36 @@ class UpgradeTests(unittest.TestCase):
         (self.root/'etc/tarasecfw.conf').write_text('DBSERVER=100.68.126.0\n')
         with patch.object(u,'operations_central_database',return_value=False), patch('builtins.input',return_value='yes'), patch('sys.stdout',new=io.StringIO()) as output:
             self.assertTrue(u.confirm_local_roles(['database','gateway'],self.root))
-        self.assertIn('Local TaraSec database: present',output.getvalue())
-        self.assertIn('Central/global DB server: no',output.getvalue())
-        self.assertIn('local database maintenance',output.getvalue())
+        self.assertIn('MySQL/MariaDB TaraSec database: present',output.getvalue())
+        self.assertIn('Central coordination: not configured',output.getvalue())
+        self.assertIn('local TaraSec database is part of the core',output.getvalue())
+
+    def test_global_db_one_overrides_stale_firewall_setting(self):
+        (self.root/'var/lib/mysql/taransvar').mkdir(parents=True)
+        (self.root/'etc').mkdir()
+        (self.root/'etc/tarasecfw.conf').write_text('DBSERVER=100.68.181.35\n')
+        with patch.object(u,'run',return_value=Mock(stdout='100.68.126.0\n')):
+            self.assertEqual(u.activity_central_host(self.root),'100.68.126.0')
+        for reply in ('NULL\n','0.0.0.0\n','not-an-address\n'):
+            with patch.object(u,'run',return_value=Mock(stdout=reply)):
+                self.assertIsNone(u.activity_central_host(self.root))
+        with patch.object(u,'run',side_effect=OSError):
+            self.assertIsNone(u.activity_central_host(self.root))
+
+    def test_core_inventory_does_not_call_firewall_configuration_a_gateway(self):
+        (self.root/'etc').mkdir()
+        (self.root/'etc/tarasecfw.conf').write_text('DBSERVER=100.68.126.0\n')
+        with patch('builtins.input',return_value='yes'), patch('sys.stdout',new=io.StringIO()) as out:
+            self.assertTrue(u.confirm_local_roles(['gateway'],self.root))
+        self.assertIn('tarakernel:',out.getvalue())
+        self.assertIn('taralink:',out.getvalue())
+        self.assertIn('Server protection: Google/TOTP: not enrolled',out.getvalue())
+        self.assertIn('Gateway/routing: not verified',out.getvalue())
+        self.assertNotIn('gateway components',out.getvalue())
+
+    def test_google_enrollment_precedes_operations_activation(self):
+        names=[name for name,_,_ in u.FEATURES]
+        self.assertLess(names.index('google'),names.index('operations'))
 
     def test_role_confirmation_cannot_persist_never(self):
         with patch('builtins.input',side_effect=['never','no']) as prompt, patch('sys.stdout',new=io.StringIO()):
@@ -679,3 +706,4 @@ class UpgradeTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
