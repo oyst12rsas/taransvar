@@ -639,6 +639,20 @@ def configure_operations_model(policy, policy_path, directory, root=Path('/')):
     return True
 
 
+def operations_central_database(root=Path('/')):
+    """A node-local database is not evidence that this is the central server."""
+    if not (root / 'var/lib/mysql/taransvar').is_dir():
+        return False
+    try:
+        result = run(['mariadb', '--batch', '--skip-column-names', 'taransvar', '-e',
+                      'SELECT CAST(isGlobalDbServer AS UNSIGNED) FROM setup LIMIT 1'],
+                     capture_output=True, text=True, timeout=15)
+        value = result.stdout.strip()
+        return True if value == '1' else False if value == '0' else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
 def ensure_operations_activity(root=Path('/'), interactive=False):
     """Resume a configured observer; require real feed enrollment for missing data."""
     path = root / 'etc/tarasec/operations-activity.json'
@@ -647,15 +661,32 @@ def ensure_operations_activity(root=Path('/'), interactive=False):
         if not isinstance(config, dict): config = {}
     except (OSError, ValueError):
         config = {}
+    central = operations_central_database(root)
+    # Repair the loopback setting created by the earlier directory-only role
+    # detection, but only when the DB explicitly confirms a non-central role.
+    if (central is False and
+            config.get('demo_url') == 'http://127.0.0.1/script/operationsActivity.php'):
+        config = dict(config)
+        config.pop('demo_url')
+        # The installed activity.key is a loopback token from this node's own
+        # registry, not an enrollment key for the remote central feed.
+        config['demo_key_file'] = '/etc/tarasec/operations-central-node.key'
+        print('Replacing central-only loopback feed on this non-central node.')
     if not config.get('demo_url'):
         # Reuse the central address already used by TaraSec reporting.
         import ipaddress
         host = settings(root / 'etc/tarasecfw.conf').get('DBSERVER', '').strip()
-        local = (root / 'var/lib/mysql/taransvar').is_dir()
-        if local:
-            run(['bash', REPO / 'misc/configure_operations_local_activity.sh',
-                 root / 'var/www/html'])
-            config = json.loads(path.read_text())
+        if central is None:
+            print('Activity observer pending: could not verify setup.isGlobalDbServer; no local enrollment attempted.')
+            return 'needs_configuration'
+        if central:
+            try:
+                run(['bash', REPO / 'misc/configure_operations_local_activity.sh',
+                     root / 'var/www/html'])
+                config = json.loads(path.read_text())
+            except (OSError, ValueError, subprocess.SubprocessError):
+                print('Activity observer pending: central loopback feed verification failed.')
+                return 'feed_unavailable' 
         elif host:
             try:
                 address = ipaddress.ip_address(host)

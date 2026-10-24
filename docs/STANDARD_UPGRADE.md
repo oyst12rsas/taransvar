@@ -347,3 +347,9 @@ overlay transport with the collector's required wt0 route check; other addresses
 use HTTPS. A local TaraSec database uses the loopback enrollment helper. Missing
 node keys still require secure enrollment; an unknown central address or unavailable
 authenticated feed remains pending and cannot establish inactivity.
+
+Central loopback enrollment requires `setup.isGlobalDbServer = 1`; the presence
+of a local TaraSec database does not establish this role. Unknown role remains
+pending. On confirmed non-central nodes, the mistakenly generated loopback
+setting is replaced using DBSERVER and a separately enrolled central node key;
+the local loopback token is never reused as a remote credential.
