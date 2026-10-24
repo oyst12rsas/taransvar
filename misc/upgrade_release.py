@@ -48,11 +48,12 @@ def deployment_status(state, release):
     versions = [features.get(name, {}).get('installed_version', 0) for name in required]
     if any(type(v) is not int or v < 0 for v in versions):
         raise ValueError('Invalid installed component version')
-    return {'version': min(versions) if versions else 0,
+    managed = state.get('managed_policy', {}).get('enabled') is True
+    return {'managed_policy': state.get('managed_policy', {}), 'managed_upgrade': state.get('managed_upgrade', {}), 'version': min(versions) if versions else 0,
             'available_version': release['version'], 'roles': state.get('roles', []),
             'mode': state.get('mode', 'unconfigured'),
-            'automatic_enabled': state.get('mode') == 'demo',
-            'upgrade_policy': 'automatic_through_medium' if state.get('mode') == 'demo' else 'confirmation_each_upgrade',
+            'automatic_enabled': managed or state.get('mode') == 'demo',
+            'upgrade_policy': 'daily_staged' if managed else 'automatic_through_medium' if state.get('mode') == 'demo' else 'confirmation_each_upgrade',
             'components': {name: {k: v for k, v in record.items() if k in
                           ('installed_version', 'installed_revision', 'status', 'details')}
                            for name, record in features.items() if name in AUTOMATIC_FEATURES}}
