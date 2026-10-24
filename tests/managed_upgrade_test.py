@@ -120,7 +120,7 @@ class ManagedTests(unittest.TestCase):
         import standard_upgrade as u
         policy=self.root/'managed.json';policy.write_text('{}')
         state=dict(roles=['node'],features={},history=[])
-        with patch.object(m,'POLICY',policy),patch.object(u,'load_state',return_value=state),patch.object(u,'read_mode',return_value='demo'),patch.object(u,'existing_google_setup',return_value=True),patch.object(u,'detect_roles',side_effect=AssertionError('Assigned roles are immutable')),patch('builtins.input',side_effect=AssertionError('No recurring questions')),patch.object(u.subprocess,'run',return_value=Mock(returncode=0)) as execute:
+        with patch.object(u.os,'geteuid',return_value=0),patch.object(m,'POLICY',policy),patch.object(u,'load_state',return_value=state),patch.object(u,'read_mode',return_value='demo'),patch.object(u,'existing_google_setup',return_value=True),patch.object(u,'detect_roles',side_effect=AssertionError('Assigned roles are immutable')),patch('builtins.input',side_effect=AssertionError('No recurring questions')),patch.object(u.subprocess,'run',return_value=Mock(returncode=0)) as execute:
             self.assertEqual(u.main(['upgrade']),0)
             execute.assert_called_once_with(['python3','/usr/local/lib/tarasec-upgrade/managed_upgrade.py','daily'])
             with self.assertRaises(SystemExit):u.main(['upgrade','--roles','gateway'])
@@ -135,13 +135,40 @@ class ManagedTests(unittest.TestCase):
         from upgrade_release import automatic_features
         release=dict(version=8,managed_tasks={'operations':'being_tested'})
         self.assertEqual(automatic_features(dict(mode='demo',features={}),['runtime','operations'],'demo',release),[])
-    def test_legacy_automatic_entrypoint_flags_enrollment_without_installing(self):
+    def test_default_first_run_enrolls_and_runs_without_terminal_or_confirmation(self):
+        import standard_upgrade as u
+        for flags in ([], ['--automatic']):
+            state=dict(roles=[],features={},history=[])
+            with patch.object(m,'POLICY',self.root/'not-enrolled'),patch.object(m,'enroll') as enroll,patch.object(u,'load_state',return_value=state),patch.object(u,'read_mode',return_value='production'),patch.object(u.os,'geteuid',return_value=0),patch.object(u,'existing_google_setup',return_value=True),patch.object(u,'detect_roles',return_value=['database','node']),patch.object(u.sys.stdin,'isatty',return_value=False),patch('builtins.input',side_effect=AssertionError('No upgrade prompts')),patch.object(u.subprocess,'run',return_value=Mock(returncode=0)) as execute:
+                self.assertEqual(u.main(['upgrade',*flags]),0)
+                self.assertEqual(enroll.call_args.args[1],['database','node'])
+                execute.assert_called_once_with(['python3','/usr/local/lib/tarasec-upgrade/managed_upgrade.py','daily'])
+
+    def test_default_first_run_without_sudo_does_not_enroll_or_execute(self):
         import standard_upgrade as u
         state=dict(roles=['node'],features={},history=[])
-        with patch.object(u,'STATE',self.root/'upgrade/state.json'),patch.object(u,'load_state',return_value=state),patch.object(u,'read_mode',return_value='demo'),patch.object(u.os,'geteuid',return_value=0),patch.object(u,'existing_google_setup',return_value=True),patch.object(u,'apply_feature') as apply:
-            self.assertEqual(u.main(['upgrade','--automatic']),0)
-            apply.assert_not_called()
-            self.assertEqual(state['managed_upgrade']['withheld_tasks'][0]['state'],'requires_manual_installation')
+        with patch.object(m,'POLICY',self.root/'not-enrolled'),patch.object(m,'enroll') as enroll,patch.object(u,'load_state',return_value=state),patch.object(u,'read_mode',return_value='production'),patch.object(u.os,'geteuid',return_value=1000),patch.object(u.subprocess,'run') as execute:
+            with self.assertRaises(SystemExit):
+                u.main(['upgrade'])
+        enroll.assert_not_called();execute.assert_not_called()
+
+    def test_default_first_run_retains_saved_roles(self):
+        import standard_upgrade as u
+        state=dict(roles=['gateway'],features={},history=[])
+        with patch.object(m,'POLICY',self.root/'not-enrolled'),patch.object(m,'enroll') as enroll,patch.object(u,'load_state',return_value=state),patch.object(u,'read_mode',return_value='demo'),patch.object(u.os,'geteuid',return_value=0),patch.object(u,'detect_roles',side_effect=AssertionError('Do not redetect assigned roles')),patch('builtins.input',side_effect=AssertionError('No prompts')),patch.object(u.subprocess,'run',return_value=Mock(returncode=0)):
+            self.assertEqual(u.main(['upgrade']),0)
+        self.assertEqual(enroll.call_args.args[1],['gateway'])
+
+    def test_role_scope_skips_database_and_web_on_protection_only_node(self):
+        self.release['managed_tasks'].update(database='ready',gatekeeper='ready',google='ready')
+        selected,skipped=m.feature_plan(self.policy,self.release,'canary')
+        self.assertNotIn('database',selected);self.assertNotIn('gatekeeper',selected)
+        self.assertNotIn('database',[task['component'] for task in skipped])
+        self.assertIn('google',selected)
+        self.policy['roles']=['database','node']
+        selected,_=m.feature_plan(self.policy,self.release,'canary')
+        self.assertIn('database',selected);self.assertIn('gatekeeper',selected)
+
 
     def test_archive_rejects_unrelated_source_revision(self):
         with patch.object(m,'git',side_effect=RuntimeError('Not an ancestor')):

@@ -142,6 +142,8 @@ def feature_plan(policy, release, cohort='fleet'):
     selected, skipped = [], []
     for name in CORE:
         if name in policy.get('excluded_features', []): continue
+        if name in ('database', 'gatekeeper') and not set(policy['roles']) & {'database', 'gateway'}:
+            continue
         status = tasks.get(name, 'requires_local_testing')
         if status == 'ready' or (status == 'being_tested' and cohort == 'canary'):
             selected.append(name)
@@ -483,7 +485,9 @@ def enroll_locked(source, roles, admin_user, reassign=False):
     pwd.getpwnam(admin_user)
     source = source.resolve()
     policy = dict(enabled=True, roles=roles, admin_user=admin_user, source_repo=str(source),
-                  excluded_features=[], quiet_seconds=300)
+                  excluded_features=(old.get('excluded_features', []) if old else
+                      sorted(name for name, record in state.get('features', {}).items()
+                             if record.get('choice') == 'never')), quiet_seconds=300)
     url = git(policy, 'remote', 'get-url', 'origin', capture_output=True).stdout.strip()
     if url not in ('https://github.com/oyst12rsas/taransvar.git', 'https://github.com/oyst12rsas/taransvar', 'git@github.com:oyst12rsas/taransvar.git'):
         raise ValueError('Daily source must be the assigned TaraSec repository')

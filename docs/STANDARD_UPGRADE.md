@@ -1,5 +1,34 @@
 # Standard upgrade
 
+The default command runs unattended, role-aware staged maintenance:
+
+```bash
+cd ~/taransvar
+sudo ./tarasec upgrade
+```
+
+On first use it reuses saved maintenance roles, or detects the local database and
+explicit IS_GATEWAY setting, enables the daily 03:00–03:10 Europe/Oslo timer, and
+checks the current rollout immediately. Later invocations run that same check
+without role, mode or per-component prompts. Merely having tarasecfw.conf does
+not identify a gateway. Database/Gatekeeper tasks are omitted on protection-only
+nodes. This maintenance scope does not reconfigure network or central-server roles.
+
+Paused rollouts, test cohorts, the 24-hour promotion gate, active traffic/sessions,
+failed candidates and missing local credentials remain respected. A held check
+reports its reason instead of asking for a terminal decision. Initial secrets,
+manager/key enrollment and experimental kernel testing remain explicit setup.
+
+`--plan`, `--status` and `--help` remain read-only. `--enable-daily` configures
+the same scheduler without an immediate run; `--roles` can set the first scope.
+Saved roles require `--enable-daily --assign-roles --roles ...` to change.
+Existing Never exclusions are retained during initial automatic enrollment.
+
+The older interactive setup workflow is available explicitly with
+`sudo ./tarasec upgrade --interactive` on an unenrolled installation. The
+mode/risk prompts and guided setup described below refer to that workflow.
+
+
 Central AI approval waits for up to five minutes using a monotonic deadline.
 The terminal first shows the browser URL, machine nickname and approval steps.
 Ctrl+C during this wait postpones AI activation and continues the remaining
@@ -54,9 +83,9 @@ cd ~/taransvar
 sudo ./tarasec upgrade
 ```
 
-The first run installs the `tarasec` command, confirms the local roles (database,
-gateway, node; combinations allowed), and requires an explicit demo/production
-choice. Role detection is a suggestion, not authorization. Keep this checkout
+The explicit interactive setup workflow installs the `tarasec` command, confirms
+local roles and requests an initial demo/production choice. The default staged
+maintenance command does not enter these questions. Keep this checkout
 at the same path; the command points to it. Normal upgrades fetch `origin/main` and fast-forward a clean `main` checkout
 before offering feature changes. Local edits, detached checkouts and unpublished
 or divergent commits stop the automatic update. Git runs as the checkout owner
@@ -70,11 +99,11 @@ and `--help` never fetch or modify source.
 sudo tarasec upgrade --no-pull
 sudo tarasec upgrade --plan
 sudo tarasec upgrade --status
-sudo tarasec upgrade --review-declined
-sudo tarasec upgrade --roles database,gateway --mode production
+sudo tarasec upgrade --interactive --review-declined
+sudo tarasec upgrade --interactive --roles database,gateway --mode production
 ```
 
-Upgrade approval follows the selected mode:
+For explicit interactive setup, upgrade approval follows the selected mode:
 
 | Mode | None / low / medium risk | High or unclassified risk |
 |---|---|---|
@@ -384,7 +413,7 @@ its web identity before requesting model or activity approval.
 
 ## Daily desired-state maintenance and staged releases
 
-The opt-in standing daily policy supersedes the old per-step risk prompts on an
+The default standing daily policy supersedes the old per-step risk prompts on an
 enrolled node, in both demo and production. It is separate from model-driven AI
 operations: no model call or model budget is required. It retains assigned roles,
 activity/session checks, backups and existing SSH reopening requirements.
@@ -400,8 +429,7 @@ bootstraps the small management-plane web update and creates a paused rollout
 policy. Open **Setup → Upgrade rollout** in central Gatekeeper as an administrator,
 select test-unit IPv4 addresses, then save/resume. Roquefort can be the first test
 unit; selecting test units is explicit, never inferred from the hostname or demo
-mode. Other nodes use the same one-time enrollment command. Unassigned units must
-first receive an explicit `--roles` assignment. Existing roles are reused; future
+mode. Other nodes use the same one-time enrollment command. Unassigned units reuse detected maintenance scope unless `--roles` is supplied. Existing roles are reused; future
 changes require `--enable-daily --assign-roles --roles ...`.
 
 The daily window is **03:00–03:10 Europe/Oslo**, including daylight-saving changes.
