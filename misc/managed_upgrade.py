@@ -421,7 +421,12 @@ def daily(policy):
             result = run(['python3', repo/'misc/managed_upgrade.py', 'apply', '--revision', target,
                       '--generation', str(generation), '--cohort', decision.get('cohort','fleet')], stdin=subprocess.DEVNULL,
                          timeout=1800, capture_output=True)
-        except (OSError, subprocess.SubprocessError):
+        except (OSError, subprocess.SubprocessError) as error:
+            def diagnostic(value):
+                if isinstance(value,bytes):value=value.decode('utf-8','replace')
+                return str(value or '')[-32768:]
+            atomic(STATE.parent/'last-daily-error.json',dict(error=type(error).__name__,
+                stdout=diagnostic(getattr(error,'stdout','')),stderr=diagnostic(getattr(error,'stderr',''))))
             current=json.loads(STATE.read_text()).get('managed_upgrade',{}) if STATE.exists() else {}
             if current.get('revision')!=target or current.get('generation')!=generation or current.get('status')!='failed':
                 record(dict(status='failed', revision=target, generation=generation, checked_at=time.time(), failed=[{'component':'release','reason':'Execution failed or timed out'}]))
