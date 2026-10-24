@@ -1,0 +1,29 @@
+name: Staged daily maintenance
+on:
+  pull_request:
+    paths:
+      - 'misc/managed_upgrade.py'
+      - 'misc/standard_upgrade.py'
+      - 'misc/operations_upgrade.py'
+      - 'misc/upgrade_release.py'
+      - 'release.json'
+      - 'tarasec'
+      - 'html/script/upgradeRolloutLib.php'
+      - 'html/script/upgradeNotices.php'
+      - 'html/script/operationsActivity.php'
+      - 'html/gatekeeper/func/upgradeRollout.php'
+      - 'tests/managed_upgrade_test.py'
+      - 'tests/upgrade_rollout_test.php'
+      - '.github/workflows/managed-upgrades.yml'
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tests/managed_upgrade_test.py
+      - run: python3 tests/standard_upgrade_test.py
+      - run: python3 -m unittest discover -s tests -p 'operations*_test.py'
+      - run: php -n tests/upgrade_rollout_test.php
+      - run: php -n tests/upgrade_notices_test.php
+      - run: php -l html/script/upgradeRolloutLib.php && php -l html/script/operationsActivity.php && php -l html/gatekeeper/func/upgradeRollout.php && php -l html/gatekeeper/index.php
+      - run: bash -n tarasec misc/install_operations_activity_feed.sh

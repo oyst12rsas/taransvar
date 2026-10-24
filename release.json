@@ -26,5 +26,18 @@
     "taralink": "medium",
     "gatekeeper": "low",
     "operations": "medium"
+  },
+  "managed_tasks": {
+    "database": "ready",
+    "runtime": "ready",
+    "taralink": "ready",
+    "gatekeeper": "ready",
+    "google": "ready",
+    "honeypot": "ready",
+    "operations": "being_tested",
+    "tarakernel": "requires_local_testing",
+    "ssh-key": "requires_manual_installation",
+    "ssh-auth": "requires_local_testing",
+    "ssh-window": "requires_local_testing"
   }
 }

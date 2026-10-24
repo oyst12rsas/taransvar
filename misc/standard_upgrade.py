@@ -973,6 +973,15 @@ def apply_feature(name, directory, allow_enrollment=False, configure_activity=Fa
         backup(target, directory)
         copy_tree(REPO / 'html', target, ('dbfunc.php',))
         run(['php', '-l', target / 'deploymentMode.php'])
+        import grp
+        rollout = Path('/var/lib/tarasec-rollout')
+        if rollout.is_symlink(): raise ValueError('Refusing symlinked rollout storage')
+        rollout.mkdir(mode=0o770, parents=True, exist_ok=True)
+        os.chown(rollout, 0, grp.getgrnam('www-data').gr_gid)
+        os.chmod(rollout, 0o770)
+        if not (rollout / 'policy.json').exists():
+            atomic(rollout / 'policy.json', json.dumps(dict(paused=True, canaries=[], generation=1, soak_seconds=86400))+'\n', 0o660)
+            os.chown(rollout / 'policy.json', 0, grp.getgrnam('www-data').gr_gid)
     elif name == 'operations':
         backup(Path('/usr/local/lib/tarasec-operations'), directory)
         backup(Path('/etc/tarasec/operations-agent.json'), directory)
@@ -1107,6 +1116,8 @@ def automatic_upgrade(args, state, mode):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=('upgrade',))
+    parser.add_argument('--enable-daily', action='store_true', help='Enroll once in staged, unattended daily maintenance')
+    parser.add_argument('--assign-roles', action='store_true', help='Explicitly reassign the roles of an enrolled unit')
     parser.add_argument('--automatic', action='store_true', help='Demo only: automatically apply upgrades rated none through medium risk')
     parser.add_argument('--no-pull', action='store_true', help='Use the current checkout without fetching updates')
     parser.add_argument('--mode', choices=('demo', 'production'))
@@ -1131,6 +1142,23 @@ def main(argv=None):
         if details.get('approval_worker') == 'needs_configuration':
             print('    Optional approval worker needs configuration: ' + ', '.join(details.get('missing_policy', [])))
     if args.status or args.plan: return 0
+    from managed_upgrade import POLICY as managed_policy
+    if args.enable_daily:
+        if os.geteuid() != 0: parser.error('Run daily enrollment with sudo')
+        if not state.get('roles') and not args.roles: parser.error('Assign roles once with --roles before enabling daily maintenance')
+        from managed_upgrade import enroll
+        admin_user = os.environ.get('SUDO_USER') or getpass.getuser()
+        # Existing assignment is retained; this is standing authorization for future standard releases.
+        if state.get('roles') and roles != state['roles'] and not args.assign_roles:
+            parser.error('Roles are fixed; use --assign-roles for an intentional reassignment')
+        enroll(REPO, roles, admin_user, reassign=args.assign_roles)
+        return 0
+    if managed_policy.exists() and not args.configure_activity:
+        if args.roles and roles != state.get('roles'):
+            parser.error('Roles are fixed; use --enable-daily --assign-roles for an intentional reassignment')
+        if args.mode or args.review_declined:
+            parser.error('Daily policy is assigned separately; use --enable-daily to update it')
+        return subprocess.run(['python3','/usr/local/lib/tarasec-upgrade/managed_upgrade.py','daily']).returncode
     if args.configure_activity:
         if args.automatic: parser.error('--configure-activity requires interactive owner configuration')
         if os.geteuid() != 0 or not sys.stdin.isatty(): parser.error('Run with sudo in an interactive terminal')
@@ -1274,4 +1302,3 @@ if __name__ == '__main__':
     except (OSError, ValueError, EOFError, KeyboardInterrupt, subprocess.CalledProcessError) as error:
         print('Upgrade stopped: ' + (str(error) if isinstance(error, ValueError) else type(error).__name__), file=sys.stderr)
         raise SystemExit(1)
-

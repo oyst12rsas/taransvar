@@ -380,3 +380,77 @@ remains pending rather than falling back to stale DBSERVER. Protection-only lega
 installations without a local database retain their existing DBSERVER fallback.
 Google enrollment precedes AI operations activation, so a new server establishes
 its web identity before requesting model or activity approval.
+
+
+## Daily desired-state maintenance and staged releases
+
+The opt-in standing daily policy supersedes the old per-step risk prompts on an
+enrolled node, in both demo and production. It is separate from model-driven AI
+operations: no model call or model budget is required. It retains assigned roles,
+activity/session checks, backups and existing SSH reopening requirements.
+
+Enroll the central DB server once, from the reviewed checkout:
+
+```sh
+sudo tarasec upgrade --enable-daily
+```
+
+This installs the root-owned controller and timers. On the central server it also
+bootstraps the small management-plane web update and creates a paused rollout
+policy. Open **Setup → Upgrade rollout** in central Gatekeeper as an administrator,
+select test-unit IPv4 addresses, then save/resume. Roquefort can be the first test
+unit; selecting test units is explicit, never inferred from the hostname or demo
+mode. Other nodes use the same one-time enrollment command. Unassigned units must
+first receive an explicit `--roles` assignment. Existing roles are reused; future
+changes require `--enable-daily --assign-roles --roles ...`.
+
+The daily window is **03:00–03:10 Europe/Oslo**, including daylight-saving changes.
+Units which were off catch up through the persistent timer. Busy units defer,
+rather than disrupting demos, forwarded traffic or recently active sessions.
+A small root health checker runs every minute, independent of the model, and
+checks eligible services, schema and local Gatekeeper HTTP response. These bounded
+checks do not establish end-to-end tagging correctness or replace local testing.
+
+Release task states live in `release.json.managed_tasks`:
+
+| State | Automatic behavior |
+| --- | --- |
+| `ready` | Eligible for the staged normal routine. Install missing supported components or update changed ones. |
+| `being_tested` | Run only on the centrally designated test computers. Other units skip it and show a red task flag if work is outstanding. |
+| `requires_manual_installation` | Do not run automatically; show outstanding work with a red upgrade dot. |
+| `requires_local_testing` | Do not run automatically; show outstanding local testing with a red upgrade dot. |
+
+An absent or unsupported task is never converted into a command. New task IDs
+need a reviewed typed adapter; unknown IDs are flagged for manual installation.
+An unchanged, verified working component is not reinstalled. The controller uses
+component content fingerprints, recorded source revisions and effective checks;
+a downloaded source revision alone does not count as an installed release.
+A `verified` rollout receipt covers eligible tasks only: withheld tasks remain red.
+Initial database credentials, administrator public keys, recovery verification
+and workload-specific integrations can be real prerequisites. They are flagged
+without terminal prompts. For example, an existing Cowrie listener is not replaced,
+and a ready taralink task cannot silently install an experimental kernel module.
+
+The central service pins exact Git revisions. Only test units may nominate a new
+candidate. Fleet units receive the previous promoted revision until the new one
+has accumulated **24 continuous hours** of fresh, healthy test-unit reports and
+fresh post-deployment health evidence. The next daily fleet window deploys it.
+Pending setup, missing/stale reports, stale health samples or wrong-generation
+receipts cannot promote a candidate. A test failure latches a hold; automatic
+retry cannot clear it. **Discard failed candidate and test latest** explicitly
+resets the generation and starts testing again. **Pause all upgrades** prevents
+subsequent dispatch, but cannot undo an installer already running.
+
+Scheduled fetching does not execute newly fetched `main`. The fixed installed
+controller asks for its gate first and exports only a pinned revision which is an
+ancestor of the assigned repository's fetched main. Archive links/devices are
+rejected. An eligible verified runtime update refreshes the installed controller.
+The older notice-driven automatic adapter is disabled on enrolled units, so it
+cannot bypass daily staging. Old manual behavior remains for unenrolled nodes.
+
+Deployment status is reported through the existing minute report. The TaraSec
+upgrade dot and unit issue details show withheld tasks, pending prerequisites and
+failed checks. Use the central web page for pause/reset instead of logging into
+individual units. This release has automated regression coverage; live test-unit
+enrollment, complete observation-period promotion and real fleet deployment still
+require deployment verification. No units are enrolled merely by merging code.

@@ -46,12 +46,15 @@ try {
     $receipt->close();
     }
     $status=$node ? json_decode((string)$node['status'],true) : null;
+    require_once __DIR__.'/upgradeRolloutLib.php';
+    try {$rollout=upgradeRolloutDecision($db,$ip,(string)($_GET['revision']??''),(int)($_GET['version']??0));}
+    catch(Throwable $e) {$rollout=['allowed'=>false,'reason'=>'Rollout evidence unavailable'];}
     operationsActivityReply(200,['central_received_at'=>$node ? (int)$node['received'] : null,
         'operations_boot_id'=>is_array($status) ? ($status['operationsAgent']['boot_id']??null) : null,
         'kernel_running'=>is_array($status) && (string)($status['knl']??'')==='1',
         'link_running'=>is_array($status) && (string)($status['lnk']??'')==='1',
         'checked_at'=>time(),'complete'=>true,'active_demo'=>$active,
-        'scope'=>'all central demo sessions and active DEMO infections']);
+        'rollout'=>$rollout,'scope'=>'all central demo sessions and active DEMO infections']);
 } catch(Throwable $e) {
     error_log('Operations activity feed unavailable: '.get_class($e));
     operationsActivityReply(503,['complete'=>false]);
