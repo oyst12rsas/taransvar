@@ -30,8 +30,8 @@ FEATURES = (
     ('runtime', 'Update installed Perl runtime (preserves local configuration)', set(ROLES)),
     ('taralink', 'Build and update the installed systemd-managed Taralink service', set(ROLES)),
     ('gatekeeper', 'Back up and update Gatekeeper web files', {'database', 'gateway'}),
-    ('operations', 'Install/update and activate the AI operations agent', set(ROLES)),
     ('google', 'Install/update Google manager sign-in and approval worker', set(ROLES)),
+    ('operations', 'Install/update and activate the AI operations agent', set(ROLES)),
     ('ssh-window', 'Enable/refresh Google-controlled temporary SSH access (requires verified console and MFA)', set(ROLES)),
     ('ssh-key', 'Add an administrator SSH public key (password policy unchanged)', set(ROLES)),
     ('ssh-auth', 'Require both administrator SSH key and account password', set(ROLES)),
@@ -79,24 +79,83 @@ def choice(prompt):
         print('Enter yes, no or never. Enter postpones the change.')
 
 
+def core_node_status(root=Path('/')):
+    """Presence is inventory evidence, not a claim that a component is healthy."""
+    def present(path):
+        try: return (root / path).exists()
+        except OSError: return False
+    kernel = present('sys/module/tarakernel')
+    return [
+        ('tarakernel', 'loaded' if kernel else 'not loaded; installation not verified'),
+        ('taralink', 'installed; service health not verified' if present('usr/local/sbin/taralink') else 'not detected'),
+        ('MySQL/MariaDB TaraSec database', 'present' if present('var/lib/mysql/taransvar') else 'not detected'),
+        ('Gatekeeper', 'installed' if present('var/www/html/gatekeeper/index.php') else 'not detected at /var/www/html'),
+        ('Server protection: AI agent', 'installed; activation not verified' if present('etc/tarasec/operations-agent.json') else 'not configured'),
+        ('Server protection: Google/TOTP', 'enrolled; login enforcement not verified' if present('etc/tarasec/agent-enrollment.json') else 'not enrolled'),
+    ]
+
+
+def optional_node_functions(root=Path('/')):
+    central = operations_central_database(root)
+    hotspot = gateway = 'not verified'
+    try: local_db = (root / 'var/lib/mysql/taransvar').is_dir()
+    except OSError: local_db = False
+    if local_db:
+        try:
+            result = run(['mariadb', '--batch', '--skip-column-names', 'taransvar', '-e',
+                          "SELECT CAST(hotspot AS UNSIGNED), IFNULL(internalNic,'') FROM setup LIMIT 1"],
+                         capture_output=True, text=True, timeout=15)
+            values = result.stdout.rstrip('\n').split('\t')
+            if values[0] in ('0', '1'):
+                hotspot = 'configured' if values[0] == '1' else 'not configured'
+                gateway = 'internal interface configured; forwarding not verified' if len(values) == 2 and values[1].strip() else 'no internal interface configured'
+        except (OSError, ValueError, subprocess.SubprocessError):
+            pass
+    return [('Central coordination', 'configured' if central is True else 'not configured' if central is False else 'not verified'),
+            ('Gateway/routing', gateway), ('Hotspot', hotspot)]
+
+
 def confirm_local_roles(roles, root=Path('/')):
-    """Explain observed host roles before confirming upgrade scope."""
-    local_db = (root / 'var/lib/mysql/taransvar').is_dir()
-    gateway = (root / 'etc/tarasecfw.conf').is_file()
-    central = operations_central_database(root) if local_db else None
-    print('\nCurrent server status:')
-    print('  Local TaraSec database: ' + ('present' if local_db else 'not detected'))
-    print('  Central/global DB server: ' + ('yes' if central is True else 'no' if central is False else 'not verified'))
-    print('  TaraSec firewall/gateway configuration: ' + ('present' if gateway else 'not detected'))
-    labels = {'database': 'local database maintenance', 'gateway': 'gateway components', 'node': 'node components'}
-    print('Upgrade scope: ' + ', '.join(labels[role] for role in roles))
-    print('The database role means a local database; it does not make this machine the central DB server.')
-    print("Confirming continues to the individual upgrade steps. It does not change this server's network role.")
+    """Legacy role keys select compatible adapters; they are not user-facing roles."""
+    print('\nCurrent TaraSec core on this server:')
+    for name, status in core_node_status(root):
+        print('  ' + name + ': ' + status)
+    print('Additional functions (observed settings; this upgrade does not enable them):')
+    for name, status in optional_node_functions(root):
+        print('  ' + name + ': ' + status)
+    print('Every standard TaraSec node has tarakernel, taralink, MySQL/MariaDB, Gatekeeper and server protection.')
+    print('A local TaraSec database is part of the core, not a central-server role.')
+    print('This command updates an existing installation. Missing core components need initial setup; they are not silently installed.')
+    print('Confirming continues to the individual component steps; it does not change gateway, hotspot or central-server settings.')
     while True:
-        answer = input('Is this upgrade scope correct? [yes/no; Enter = stop]: ').strip().lower()
+        answer = input('Continue with the TaraSec core upgrade? [yes/no; Enter = stop]: ').strip().lower()
         if answer in ('yes', 'y'): return True
         if answer in ('no', 'n', ''): return False
-        print('Enter yes to continue or no to stop. Never applies only to individual upgrade steps.')
+        print('Enter yes to continue or no to stop. Never applies only to individual component steps.')
+
+
+def activity_central_host(root=Path('/')):
+    """Use the same Global DB 1 setting as Gatekeeper and normal reporting."""
+    try: local_db = (root / 'var/lib/mysql/taransvar').is_dir()
+    except OSError:
+        print('Activity setup pending: local database presence could not be verified.')
+        return None
+    if local_db:
+        try:
+            result = run(['mariadb', '--batch', '--skip-column-names', 'taransvar', '-e',
+                          'SELECT INET_NTOA(globalDb1ip) FROM setup LIMIT 1'],
+                         capture_output=True, text=True, timeout=15)
+            import ipaddress
+            host = result.stdout.strip()
+            address = ipaddress.ip_address(host)
+            if address.is_unspecified: raise ValueError('Global DB 1 is unset')
+            print('Central activity server from Global DB 1: ' + host)
+            return host
+        except (OSError, ValueError, subprocess.SubprocessError):
+            print('Activity setup pending: Global DB 1 could not be read from the local TaraSec setup. Stale DBSERVER is not used.')
+            return None
+    # Compatibility for an existing protection-only installation without local DB.
+    return settings(root / 'etc/tarasecfw.conf').get('DBSERVER', '').strip() or None
 
 
 def confirm_verified(prompt, help_callback):
@@ -717,8 +776,10 @@ def enroll_operations_activity_key(url, root=Path('/'), interactive=False):
 
 def operations_central_database(root=Path('/')):
     """A node-local database is not evidence that this is the central server."""
-    if not (root / 'var/lib/mysql/taransvar').is_dir():
-        return False
+    try:
+        if not (root / 'var/lib/mysql/taransvar').is_dir(): return False
+    except OSError:
+        return None
     try:
         result = run(['mariadb', '--batch', '--skip-column-names', 'taransvar', '-e',
                       'SELECT CAST(isGlobalDbServer AS UNSIGNED) FROM setup LIMIT 1'],
@@ -751,7 +812,7 @@ def ensure_operations_activity(root=Path('/'), interactive=False):
     if not config.get('demo_url'):
         # Reuse the central address already used by TaraSec reporting.
         import ipaddress
-        host = settings(root / 'etc/tarasecfw.conf').get('DBSERVER', '').strip()
+        host = activity_central_host(root)
         if central is None:
             print('Activity observer pending: could not verify setup.isGlobalDbServer; no local enrollment attempted.')
             return 'needs_configuration'
@@ -778,7 +839,7 @@ def ensure_operations_activity(root=Path('/'), interactive=False):
             url = ('http://' if netbird else 'https://') + authority + '/script/operationsActivity.php'
             key = config.get('demo_key_file', '/etc/tarasec/operations-activity.key')
             key_path = root / key.lstrip('/')
-            print('Activity feed discovered from DBSERVER: ' + url)
+            print('Activity feed selected: ' + url)
             if not key_path.is_file() or key == '/etc/tarasec/operations-central-node.key':
                 key = enroll_operations_activity_key(url, root, interactive=interactive)
                 if not key:
@@ -791,7 +852,7 @@ def ensure_operations_activity(root=Path('/'), interactive=False):
                 print('Activity feed verification pending: update dbserver1 web files and check the authenticated feed.')
                 return 'feed_unavailable'
     if not config.get('demo_url'):
-        print('Activity observer pending: central server unknown. Configure DBSERVER in /etc/tarasecfw.conf and rerun sudo tarasec upgrade.')
+        print('Activity observer pending: central server unknown. Check Global DB 1 in TaraSec Setup and rerun sudo tarasec upgrade.')
         return 'needs_configuration'
     try:
         # Verify the configured collector before claiming activity readiness.
@@ -1061,7 +1122,7 @@ def main(argv=None):
     state['google_existing'] = existing_google_setup()
     old_mode = read_mode()
     print('TaraSec upgrade — host: ' + os.uname().nodename)
-    print('Mode: ' + old_mode + '; roles: ' + ', '.join(roles))
+    print('Mode: ' + old_mode + '; profile: TaraSec core with existing optional functions')
     applicable = [f for f in FEATURES if set(roles) & f[2]]
     for name, title, _ in applicable:
         prior = state['features'].get(name, {})
@@ -1213,3 +1274,4 @@ if __name__ == '__main__':
     except (OSError, ValueError, EOFError, KeyboardInterrupt, subprocess.CalledProcessError) as error:
         print('Upgrade stopped: ' + (str(error) if isinstance(error, ValueError) else type(error).__name__), file=sys.stderr)
         raise SystemExit(1)
+
