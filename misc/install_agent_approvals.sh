@@ -155,3 +155,22 @@ echo "Ask your AI assistant to check the next missing control, test it and fix i
 printf "Program backup: %s\n" "$backup"
 echo "Google SSH remains owner-configured; see docs/google-ssh.md before enabling. Existing enabled policy is retained."
 
+
+# Complete scheduling restoration before the final enrollment summary.
+restore_timer
+trap - EXIT
+if $enroll; then
+    python3 - "$root" <<'NICKNAME'
+import json
+from pathlib import Path
+import re
+import sys
+sys.path.insert(0, sys.argv[1])
+from enroll_google_manager import private_read
+nickname = json.loads(private_read(Path('/etc/tarasec/agent-enrollment.json')))['nickname']
+if not isinstance(nickname, str) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9 _-]{2,31}', nickname):
+    raise SystemExit('Enrollment nickname could not be read')
+print()
+print('MACHINE NICKNAME: ' + nickname)
+NICKNAME
+fi
