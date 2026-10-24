@@ -647,34 +647,43 @@ def ensure_operations_activity(root=Path('/'), interactive=False):
         if not isinstance(config, dict): config = {}
     except (OSError, ValueError):
         config = {}
-    if interactive and not config.get('demo_url'):
-        print('The reboot observer needs the authenticated central demo feed, separately from minute status reports.')
-        print('On the central DB server, enroll this node source IP with misc/install_operations_activity_feed.sh SOURCE_IP WEB_ROOT.')
-        print('Transfer its node key securely to THIS server; never paste a key into chat.')
-        print('Use HTTPS, or explicitly enter the existing NetBird HTTP feed. No missing response is treated as idle.')
-        url = input('Demo feed URL [Enter = keep existing, none = postpone]: ').strip()
-        if url.lower() == 'none':
-            return 'needs_configuration'
-        if url:
-            key = input('Node feed key file ON THIS SERVER [Enter = existing configured path]: ').strip() or config.get('demo_key_file', '/etc/tarasec/operations-activity.key')
-            parsed = urllib.parse.urlsplit(url)
-            flag = []
-            if parsed.scheme == 'http':
-                import ipaddress
-                try:
-                    address = ipaddress.ip_address(parsed.hostname or '')
-                except ValueError:
-                    raise ValueError('HTTP demo feed requires a literal loopback or NetBird address')
-                if address.is_loopback:
-                    flag = ['--loopback-http']
-                elif address.version == 4 and address in ipaddress.ip_network('100.64.0.0/10'):
-                    flag = ['--netbird-http']
-                else:
-                    raise ValueError('HTTP demo feed must use loopback or NetBird; otherwise use HTTPS')
-            run(['bash', REPO / 'misc/configure_operations_activity.sh', url, key, *flag])
+    if not config.get('demo_url'):
+        # Reuse the central address already used by TaraSec reporting.
+        import ipaddress
+        host = settings(root / 'etc/tarasecfw.conf').get('DBSERVER', '').strip()
+        local = (root / 'var/lib/mysql/taransvar').is_dir()
+        if local:
+            run(['bash', REPO / 'misc/configure_operations_local_activity.sh',
+                 root / 'var/www/html'])
+            config = json.loads(path.read_text())
+        elif host:
+            try:
+                address = ipaddress.ip_address(host)
+            except ValueError:
+                address = None
+            netbird = (address is not None and address.version == 4
+                       and address in ipaddress.ip_network('100.64.0.0/10'))
+            # Only the existing literal overlay address selects HTTP. The
+            # collector still verifies the wt0 route before sending a token.
+            if address is None and not re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?', host):
+                raise ValueError('Invalid DBSERVER address; repair /etc/tarasecfw.conf')
+            authority = '[' + host + ']' if address and address.version == 6 else host
+            url = ('http://' if netbird else 'https://') + authority + '/script/operationsActivity.php'
+            key = config.get('demo_key_file', '/etc/tarasec/operations-activity.key')
+            key_path = root / key.lstrip('/')
+            print('Activity feed discovered from DBSERVER: ' + url)
+            if not key_path.is_file():
+                print('Activity feed needs node enrollment on the central DB server. Transfer the node key securely; never paste it into chat.')
+                if not interactive:
+                    return 'needs_configuration'
+                key = input('Node feed key file ON THIS SERVER [Enter = postpone]: ').strip()
+                if not key:
+                    return 'needs_configuration'
+            run(['bash', REPO / 'misc/configure_operations_activity.sh', url, key,
+                 *(['--netbird-http'] if netbird else [])])
             config = json.loads(path.read_text())
     if not config.get('demo_url'):
-        print('Activity observer pending: no demo feed URL configured. Run sudo tarasec upgrade to complete activity enrollment.')
+        print('Activity observer pending: central server unknown. Configure DBSERVER in /etc/tarasecfw.conf and rerun sudo tarasec upgrade.')
         return 'needs_configuration'
     try:
         # Verify the configured collector before claiming activity readiness.

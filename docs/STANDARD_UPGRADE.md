@@ -339,3 +339,11 @@ During every agent cycle, activity readiness is sampled before model budget chec
 For systemd-managed TaraLink installations, the minute reporter skips its legacy combined kernel/link startup call when the management marker or a standard `taralink.service` unit is present. This preserves systemd ownership even during intentional service stops or an upgrade. The repository firewall script is executable so local permission workarounds are unnecessary.
 
 The boot-time `startup.pl` uses the same systemd ownership guard as the minute reporter; neither invokes the legacy combined startup when TaraLink is managed by systemd.
+
+Activity setup now discovers `/script/operationsActivity.php` from the existing
+`DBSERVER` in `/etc/tarasecfw.conf`, without asking for a feed URL. Existing feed
+configuration takes precedence. A literal NetBird address uses the existing HTTP
+overlay transport with the collector's required wt0 route check; other addresses
+use HTTPS. A local TaraSec database uses the loopback enrollment helper. Missing
+node keys still require secure enrollment; an unknown central address or unavailable
+authenticated feed remains pending and cannot establish inactivity.
