@@ -445,8 +445,12 @@ Scheduled fetching does not execute newly fetched `main`. The fixed installed
 controller asks for its gate first and exports only a pinned revision which is an
 ancestor of the assigned repository's fetched main. Archive links/devices are
 rejected. An eligible verified runtime update refreshes the installed controller.
-The older notice-driven automatic adapter is disabled on enrolled units, so it
-cannot bypass daily staging. Old manual behavior remains for unenrolled nodes.
+The older notice-driven automatic adapter is disabled on enrolled units. Releases
+with a managed task catalog also refuse the legacy automatic selector on
+unenrolled units and flag one-time enrollment as required, so no old automatic
+path can bypass staging. Explicit manual behavior remains for unenrolled nodes.
+Failed installer output is retained in a bounded root-only diagnostic file; raw
+output and credentials are not published through the status report.
 
 Deployment status is reported through the existing minute report. The TaraSec
 upgrade dot and unit issue details show withheld tasks, pending prerequisites and
