@@ -169,9 +169,20 @@ def main():
         result = enroll(args.email, args.sync, args.approval_url, args.nickname)
     except urllib.error.HTTPError as e:
         raise SystemExit('Enrollment rejected (HTTP %s); local identity retained. Deploy the central enrollment endpoint, then retry.' % e.code)
-    except (OSError, ValueError, RuntimeError, urllib.error.URLError):
-        # Never print raw responses, keys, tokens or email input on failure.
-        raise SystemExit('Enrollment not confirmed; local identity retained. Check HTTPS connectivity, file permissions and central deployment, then retry.')
+    except urllib.error.URLError:
+        raise SystemExit('Enrollment HTTPS connection failed; local identity retained. Check DNS, TLS certificates and connectivity to the approval website.')
+    except ValueError as error:
+        # Only known static diagnostics may be printed; never raw responses or input.
+        reasons = {
+            'Enrollment was not confirmed by the approval service': 'The approval website returned an unexpected enrollment confirmation.',
+            'Enrollment files must be root-owned regular files, mode 0600 or 0400': 'Local enrollment files have incorrect ownership or permissions.',
+            'Enrollment redirects are prohibited': 'The approval website redirected the enrollment request; use its direct HTTPS endpoint.',
+            'Malformed node credential; left unchanged': 'The existing local node credential is malformed; it was retained.',
+        }
+        reason = reasons.get(str(error), 'Local enrollment configuration or the website response could not be validated.')
+        raise SystemExit(reason + ' Enrollment not confirmed; local identity retained.')
+    except (OSError, RuntimeError):
+        raise SystemExit('Enrollment could not read/write its local configuration or contact the approval website; local identity retained.')
     print('Enrollment confirmed for %s (%d local managers).' % (result['nickname'], result['manager_count']))
     receipt = json.loads(private_read(Path('/etc/tarasec/agent-enrollment.json')))
     print('Google sign-in: ' + receipt['approval_url'].rsplit('/', 1)[0] + '/')
@@ -179,3 +190,4 @@ def main():
 
 
 if __name__ == '__main__': main()
+
