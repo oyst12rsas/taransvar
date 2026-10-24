@@ -10,11 +10,15 @@ function operationsActivityReply(int $code,array $body): never {
 }
 try {
     if (($_SERVER['REQUEST_METHOD']??'')!=='GET') operationsActivityReply(405,['complete'=>false]);
-    $tokens=json_decode(file_get_contents('/etc/tarasec-operations-feed/tokens.json'),true,512,JSON_THROW_ON_ERROR);
+    $registry='/etc/tarasec-operations-feed/tokens.json';
+    $tokens=is_file($registry) ? json_decode(file_get_contents($registry),true,512,JSON_THROW_ON_ERROR) : [];
     $ip=(string)($_SERVER['REMOTE_ADDR']??'');
     $token=(string)($_SERVER['HTTP_X_TARASEC_OPERATIONS_TOKEN']??'');
-    if (strlen($token)!==64 || !isset($tokens[$ip]) ||
-        !hash_equals($tokens[$ip],hash('sha256',$token))) operationsActivityReply(403,['complete'=>false]);
+    $localAuth=strlen($token)===64 && isset($tokens[$ip]) && hash_equals($tokens[$ip],hash('sha256',$token));
+    if (!$localAuth) {
+        require_once __DIR__.'/operationsActivityAuth.php';
+        if (!operationsActivityRemoteAuth($token,$ip)) operationsActivityReply(403,['complete'=>false]);
+    }
     $db=getConnection();
     $role=$db->query('SELECT CAST(isGlobalDbServer AS UNSIGNED) central FROM setup LIMIT 1')->fetch_assoc();
     if (empty($role['central'])) operationsActivityReply(409,['complete'=>false]);

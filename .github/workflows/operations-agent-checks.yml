@@ -2,7 +2,7 @@ name: Operations agent pilot checks
 on:
   pull_request:
     paths:
-      - 'html/script/operationsActivity.php'
+      - 'html/script/operationsActivity*.php'
       - 'html/gatekeeper/func/operationsStatusView.php'
       - 'tests/operations_status_view_test.php'
       - 'misc/operations_deployment.py'
@@ -46,4 +46,5 @@ jobs:
       - run: python3 -m json.tool misc/operations-agent.json.example >/dev/null
       - run: bash -n misc/install_operations_agent.sh misc/configure_operations_activity.sh misc/configure_operations_local_activity.sh
       - run: php tests/operations_status_view_test.php
-      - run: php -l html/script/operationsActivity.php && php -l html/gatekeeper/func/operationsStatusView.php
+      - run: php -n tests/operations_activity_auth_test.php
+      - run: php -l html/script/operationsActivity.php && php -l html/script/operationsActivityAuth.php && php -l html/gatekeeper/func/operationsStatusView.php

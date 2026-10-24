@@ -353,3 +353,9 @@ of a local TaraSec database does not establish this role. Unknown role remains
 pending. On confirmed non-central nodes, the mistakenly generated loopback
 setting is replaced using DBSERVER and a separately enrolled central node key;
 the local loopback token is never reused as a remote credential.
+
+For enrolled NetBird nodes using tarasec.org, activity keys are now generated
+and registered automatically using the existing node identity over HTTPS. No
+key-file prompt or manual transfer is needed. Update the approval host's
+`ops/agent/activity.php` and the central DB web files first; see
+`OPERATIONS_ACTIVITY_DEPLOYMENT.md`. Missing services remain pending.
