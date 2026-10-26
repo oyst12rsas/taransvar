@@ -94,7 +94,7 @@ systemctl stop tarasec-ssh-approval-poll.service 2>/dev/null || true
 systemctl stop tarasec-agent-approvals.timer 2>/dev/null || true
 systemctl stop tarasec-agent-approvals.service 2>/dev/null || true
 install -d -o root -g root -m 0755 /usr/local/lib/tarasec
-install -d -o root -g root -m 0750 /var/log/tarasec
+install -d -o root -g syslog -m 0750 /var/log/tarasec
 install -o root -g root -m 0755 "$root/ssh_security_evidence.py" /usr/local/lib/tarasec/
 install -o root -g root -m 0755 "$root/agent_approval_worker.py" "$root/ssh_google_window.py" "$root/ssh_approval_poll.py" "$root/local_manager_policy.py" "$root/enroll_google_manager.py" "$root/enroll_gatekeeper_google.py" /usr/local/lib/tarasec/
 # Without enrollment, preserve existing grants and never infer a manager roster.
