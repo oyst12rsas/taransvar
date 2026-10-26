@@ -138,7 +138,19 @@ function getTagData()
 	$result->close(); $stmt->close();
 	$retval["infectionSeverity"]=$nInfectionSeverity; $retval["infectionDisabled"]=$nInfectionDisabled;
 
-	$szSQL = "select reportId, severity, infoSharePartners, why, inet_ntoa(partnerIp) as reportedByIp, TIMESTAMPDIFF(SECOND, coalesce(lastSeen, created), NOW()) AS seconds_since from hackReport where ip = inet_aton(?) and (port = 0 || port = ?) order by lastSeen desc limit 1";
+	// Only explicit demo evidence expires (five minutes after its last observation).
+	// Filter before LIMIT so an expired demo cannot hide an older genuine report.
+	// NULL/unknown provenance is treated as non-demo; real reports do not age out.
+	$szSQL = "SELECT reportId, severity, infoSharePartners, why,
+	                 INET_NTOA(partnerIp) AS reportedByIp,
+	                 TIMESTAMPDIFF(SECOND, COALESCE(lastSeen, created), NOW()) AS seconds_since
+	            FROM hackReport
+	           WHERE ip = INET_ATON(?) AND (port = 0 OR port = ?)
+	             AND (
+	                 NOT (COALESCE(hrCategory, '') = 'demo' OR COALESCE(why, '') LIKE 'DEMO:%')
+	                 OR TIMESTAMPDIFF(SECOND, COALESCE(lastSeen, created), NOW()) BETWEEN 0 AND 299
+	             )
+	           ORDER BY COALESCE(lastSeen, created) DESC, reportId DESC LIMIT 1";
 	$stmt=$conn->prepare($szSQL); $stmt->bind_param("si",$szSenderIp,$clientPort); $stmt->execute(); $result=$stmt->get_result();
 	$nHackReportSecondsSince=-1; $nHackSeverity=0;
 	if ($result->num_rows>0 && ($row=$result->fetch_assoc())) { $nHackSeverity=(int)$row["severity"]; $nHackReportSecondsSince=$row["seconds_since"]; }
