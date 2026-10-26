@@ -101,3 +101,23 @@ The intended topology is broad outbound simulated Internet:
   correlation, and subsequent traffic tagging.
 
 Do not use demo selection as a NetBird ACL or firewall allow-list.
+
+## Demo hack-report fallback expiry
+
+`getTagData()` ignores demo hack reports once their latest observation
+(`COALESCE(lastSeen, created)`) is 300 seconds old. Explicit provenance is
+`hrCategory='demo'` or a `DEMO:` prefix in `why`, including forwarded reports.
+The filter runs before selection, so an expired demo report cannot hide an older
+non-demo report. Missing provenance is treated as non-demo. Non-demo reports
+have no age-based expiry in this assessment; this change does not delete history
+or mark reports resolved.
+
+A fresh demo clean notification can supersede earlier demo evidence immediately;
+the five-minute limit bounds residual fallback evidence if propagation is missed.
+This is an assessment fallback limit, not a timer that resets an active gateway
+infection, a kernel rule, or a demo session. Traffic-tag precedence is unchanged.
+
+Validation: `python3 tests/hack_report_expiry_test.py` exercises the actual SELECT
+with SQLite compatibility functions, including the 299/300-second boundary,
+forwarded provenance, NULL fields, timestamp fallback, real-report retention,
+source-port scoping, and clean notifications. PHP syntax is checked in CI.
