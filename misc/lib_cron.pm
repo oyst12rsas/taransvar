@@ -1173,27 +1173,23 @@ sub startTaraKernelOk {
 
 
 sub startTaraLinkOk {
-	#NOTE doesn't work without: sudo apt-get install dbus-x11
-	if (programRunning("taralink")) {
-		my $szMsg = "Taralink seems already to be running (may be wrong, though)";
-		addWarningRecord(0,$szMsg);
-		print "$szMsg\n";
-		return 1;	#Alredy running.
+	# When the service is installed, systemd owns the only taralink instance.
+	# A failed service start must not fall back to a competing background process.
+	if (system("systemctl cat taralink.service >/dev/null 2>&1") == 0) {
+		if (system("systemctl", "start", "taralink.service") != 0) {
+			print "Unable to start taralink.service\n";
+			return 0;
+		}
+		return system("systemctl", "is-active", "--quiet", "taralink.service") == 0;
 	}
-	
-#	my $szPath = getSourceRoot()."taralink/taralink";
+
+	# Older installations without the service still use the legacy binary.
+	if (programRunning("taralink")) {
+		return 1;
+	}
 	my $szPath = "/root/taransvar/taralink";
-
-	#This command launches taralink in separate terminal. Problem is it normally runs when no user is logged in... so it's not working
-	#my $szCmd = 'dbus-launch gnome-terminal -- "'.$szPath.'" &';	#Requires sudo apt-get install dbus-x11 (???)
-
-	#Start taralink as background process
-	my $szCmd = "$szPath &";
-
-	my $szMsg = "Trying to start Taralink: $szCmd\n";
-	addWarningRecord(0,$szMsg);
-	print "$szMsg\n";
-	system($szCmd);
+	print "Trying to start legacy taralink: $szPath\n";
+	system("$szPath &");
 	return programRunning("taralink");
 }
 
