@@ -1,0 +1,19 @@
+name: Hack report expiry
+on:
+  push:
+    paths:
+      - 'html/taraLib.php'
+      - 'tests/hack_report_expiry_test.py'
+      - '.github/workflows/hack-report-expiry.yml'
+  pull_request:
+    paths:
+      - 'html/taraLib.php'
+      - 'tests/hack_report_expiry_test.py'
+      - '.github/workflows/hack-report-expiry.yml'
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: php -l html/taraLib.php
+      - run: python3 tests/hack_report_expiry_test.py
