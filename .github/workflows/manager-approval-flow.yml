@@ -7,6 +7,7 @@ on:
       - 'html/gatekeeper/func/managerApprovals.php'
       - 'misc/test_manager_request_state.php'
       - 'misc/test_manager_ssh_public.php'
+      - 'misc/test_manager_ssh_api.php'
       - 'html/script/managerSsh.php'
       - 'html/script/managerSshCommon.php'
       - '.github/workflows/manager-approval-flow.yml'
@@ -23,3 +24,4 @@ jobs:
           php -l html/script/managerSsh.php
           php -l html/script/managerSshCommon.php
           php misc/test_manager_ssh_public.php
+          php misc/test_manager_ssh_api.php
