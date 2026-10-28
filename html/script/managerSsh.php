@@ -27,6 +27,12 @@ try {
         if (!hash_equals($_SESSION['manager_ssh_csrf'],(string)($_POST['csrf'] ?? ''))) sshReply(403,['ok'=>false,'error'=>'csrf_required']);
         $action=(string)($_POST['action'] ?? ''); $seconds=(int)($_POST['seconds'] ?? 0);
         if (!in_array($action,['open','close'],true) || ($action==='open' && !managerSshDuration($seconds))) sshReply(400,['ok'=>false,'error'=>'invalid_ssh_request']);
+        // Opening requires the Google/TOTP approval service, not only an app session.
+        // Keep close available: ending a legacy temporary allowance grants no access.
+        if ($action==='open') sshReply(403,[
+            'ok'=>false,'error'=>'ssh_mfa_required','mfaRequired'=>true,
+            'approvalUrl'=>'https://tarasec.org/ops/agent/'
+        ]);
         if ($action==='close') $seconds=0;
         // Bound repeated requests; never extend a window merely by polling status.
         $q=$db->prepare("SELECT COUNT(*) n FROM managerSshRequest WHERE managerRequestId=? AND createdAt>DATE_SUB(NOW(),INTERVAL 1 MINUTE)");
@@ -43,6 +49,8 @@ try {
     }
     $remaining=max(0,(int)($state['remainingSeconds'] ?? 0)-max(0,time()-(int)($state['updated'] ?? 0)));
     $db->close();
-    sshReply(200,['ok'=>true,'enabled'=>$enabled,'error'=>$enabled ? null : ($state['error'] ?? 'ssh_disabled_by_owner'),
-        'port'=>$state['port'] ?? null,'sourceIp'=>$source,'remainingSeconds'=>$remaining,'listener'=>$state['listener'] ?? false,'gateEnforced'=>$state['gateEnforced'] ?? false,'latestRequest'=>$latest,'csrf'=>$_SESSION['manager_ssh_csrf']]);
+    $public=managerSshClientState(array_replace($state,['remainingSeconds'=>$remaining]));
+    sshReply(200,array_merge($public,[
+        'ok'=>true,'sourceIp'=>$source,'latestRequest'=>$latest,'csrf'=>$_SESSION['manager_ssh_csrf']
+    ]));
 } catch (Throwable $e) { error_log('Manager SSH API unavailable'); sshReply(503,['ok'=>false,'error'=>'manager_ssh_unavailable']); }
