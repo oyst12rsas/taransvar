@@ -197,7 +197,41 @@ def enroll(emails, sync=False, approval_url=None, nickname=None, root=Path('/'),
     atomic_write(root / 'etc/tarasec/agent-enrollment.json', json.dumps({
         'node_id': answer['node_id'], 'approval_url': api_url, 'nickname': nickname,
         'manager_count': len(hashes)}, indent=2) + '\n')
+    publish_ssh_approval_target({'node_id': answer['node_id'], 'approval_url': api_url}, root)
     return answer
+
+
+def publish_ssh_approval_target(receipt, root=Path('/')):
+    """Publish an opaque node reference and HTTPS service URL, never credentials."""
+    import hashlib
+    node = receipt.get('node_id', '')
+    if not isinstance(node, str) or not re.fullmatch(r'[A-Za-z0-9_. -]{1,128}', node):
+        raise ValueError('Invalid enrollment identity')
+    api = receipt.get('approval_url', '')
+    enrollment_url(api)
+    ref = hashlib.sha256(('agent-dashboard:' + node).encode()).hexdigest()
+    folder = root / 'var/lib/tarasec-ssh-approval'
+    folder.mkdir(mode=0o755, parents=True, exist_ok=True)
+    info = folder.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+        raise ValueError('Unsafe public approval directory')
+    path = folder / 'target.json'
+    if path.is_symlink():
+        raise ValueError('Symlink approval metadata prohibited')
+    payload = json.dumps({'version': 1, 'server_ref': ref,
+        'approval_url': api.rsplit('/', 1)[0] + '/'}, sort_keys=True) + '\n'
+    fd, temporary = tempfile.mkstemp(dir=folder, prefix='.target-')
+    try:
+        with os.fdopen(fd, 'w') as out:
+            out.write(payload)
+            out.flush()
+            os.fsync(out.fileno())
+            os.fchmod(out.fileno(), 0o644)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+    return json.loads(payload)
 
 
 def main():

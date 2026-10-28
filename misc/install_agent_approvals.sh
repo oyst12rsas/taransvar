@@ -97,6 +97,19 @@ install -d -o root -g root -m 0755 /usr/local/lib/tarasec
 install -d -o root -g syslog -m 0750 /var/log/tarasec
 install -o root -g root -m 0755 "$root/ssh_security_evidence.py" /usr/local/lib/tarasec/
 install -o root -g root -m 0755 "$root/agent_approval_worker.py" "$root/ssh_google_window.py" "$root/ssh_approval_poll.py" "$root/local_manager_policy.py" "$root/enroll_google_manager.py" "$root/enroll_gatekeeper_google.py" /usr/local/lib/tarasec/
+# Existing enrolled nodes can publish their exact public approval target on upgrade.
+python3 - <<'PUBLISH_SSH_TARGET'
+import json, sys
+from pathlib import Path
+sys.path.insert(0, '/usr/local/lib/tarasec')
+from enroll_google_manager import private_read, publish_ssh_approval_target
+receipt = Path('/etc/tarasec/agent-enrollment.json')
+if receipt.exists():
+    publish_ssh_approval_target(json.loads(private_read(receipt)))
+else:
+    print('SSH app target unavailable: explicit Google enrollment is required.')
+PUBLISH_SSH_TARGET
+
 # Without enrollment, preserve existing grants and never infer a manager roster.
 # Explicit enrollment publishes hashes only; raw emails remain on the node.
 # /etc/tarasec is shared with Gatekeeper: preserve existing permissions/ACLs.

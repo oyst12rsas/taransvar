@@ -65,6 +65,26 @@ class EnrollmentTests(unittest.TestCase):
                 self.run_enroll(['owner@example.com'])
         self.assertEqual(cfg.read_text(),'SSH_PORT=5822\n')
 
+    def test_ssh_target_is_exact_public_reference_not_private_identity(self):
+        result = self.run_enroll(['owner@example.com'])
+        path = self.root / 'var/lib/tarasec-ssh-approval/target.json'
+        target = json.loads(path.read_text())
+        expected = hashlib.sha256(('agent-dashboard:' + result['node_id']).encode()).hexdigest()
+        self.assertEqual(target['server_ref'], expected)
+        self.assertEqual(target['approval_url'], 'https://tarasec.org/ops/agent/')
+        self.assertEqual(path.stat().st_mode & 0o777, 0o644)
+        self.assertNotIn(result['node_id'], path.read_text())
+        self.assertNotIn('token', path.read_text())
+        self.assertNotIn('port', path.read_text())
+        self.assertNotIn('owner@example.com', path.read_text())
+
+    def test_ssh_target_does_not_follow_local_display_name(self):
+        first = self.run_enroll(['owner@example.com'], nickname='First Name')
+        one = json.loads((self.root / 'var/lib/tarasec-ssh-approval/target.json').read_text())
+        self.run_enroll(['owner@example.com'], nickname='Different Name')
+        two = json.loads((self.root / 'var/lib/tarasec-ssh-approval/target.json').read_text())
+        self.assertEqual(one['server_ref'], two['server_ref'])
+
     def test_generated_names_are_readable_and_stable_across_retry(self):
         one=self.run_enroll(['owner@example.com'])
         self.assertRegex(one['nickname'], r'^[A-Z][a-z]+ [A-Z][a-z]+$')
