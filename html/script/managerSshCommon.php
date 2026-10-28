@@ -51,3 +51,16 @@ function managerSshRemaining(string $saved, int $port): int {
     }
     return 0;
 }
+
+/** Only explicitly public fields may leave the node; never return listener ports. */
+function managerSshClientState(array $state): array {
+    return [
+        'enabled' => ($state['enabled'] ?? false) === true,
+        'error' => $state['error'] ?? null,
+        'remainingSeconds' => max(0, (int)($state['remainingSeconds'] ?? 0)),
+        'listener' => ($state['listener'] ?? false) === true,
+        'gateEnforced' => ($state['gateEnforced'] ?? false) === true,
+        'mfaRequired' => true,
+        'approvalUrl' => 'https://tarasec.org/ops/agent/',
+    ];
+}

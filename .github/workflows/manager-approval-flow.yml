@@ -1,0 +1,25 @@
+name: Manager approval flow
+on:
+  pull_request:
+    paths:
+      - 'html/managerRequestState.php'
+      - 'html/script/managerAuth.php'
+      - 'html/gatekeeper/func/managerApprovals.php'
+      - 'misc/test_manager_request_state.php'
+      - 'misc/test_manager_ssh_public.php'
+      - 'html/script/managerSsh.php'
+      - 'html/script/managerSshCommon.php'
+      - '.github/workflows/manager-approval-flow.yml'
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          php -l html/managerRequestState.php
+          php -l html/script/managerAuth.php
+          php -l html/gatekeeper/func/managerApprovals.php
+          php misc/test_manager_request_state.php
+          php -l html/script/managerSsh.php
+          php -l html/script/managerSshCommon.php
+          php misc/test_manager_ssh_public.php

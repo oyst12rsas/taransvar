@@ -4,6 +4,7 @@ error_reporting(E_ALL);
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 include '../dbfunc.php';
+require_once __DIR__ . '/../managerRequestState.php';
 
 header('Cache-Control: no-store');
 
@@ -53,20 +54,7 @@ function startManagerSession(): void
 
 function requestState(array $row): array
 {
-    $emailVerified = !empty($row['emailVerifiedTime']);
-    $gatewayApproved = !empty($row['gatewayApprovedTime']);
-    $credentialReady = !empty($row['credentialHash']);
-    $rejected = !empty($row['rejectedTime']);
-    $active = !$rejected && $emailVerified && $gatewayApproved && $credentialReady;
-    return [
-        'requestId' => (int)$row['managerRequestId'],
-        'email' => (string)$row['email'],
-        'credentialReady' => $credentialReady,
-        'emailVerified' => $emailVerified,
-        'gatewayApproved' => $gatewayApproved,
-        'rejected' => $rejected,
-        'active' => $active,
-    ];
+    return tarasecManagerRequestState($row);
 }
 
 $action = strtolower(trim((string)($_REQUEST['action'] ?? 'session')));
@@ -133,7 +121,7 @@ try {
             managerReply(400, ['ok' => false, 'error' => 'missing_request']);
         }
         $tokenHash = hash('sha256', $requestToken);
-        $stmt = $conn->prepare("SELECT * FROM managerRequest WHERE managerRequestId=? AND requestTokenHash=? AND (expires IS NULL OR expires>NOW()) LIMIT 1");
+        $stmt = $conn->prepare("SELECT *, (expires IS NOT NULL AND expires<=NOW()) AS requestExpired FROM managerRequest WHERE managerRequestId=? AND requestTokenHash=? LIMIT 1");
         $stmt->bind_param('is', $requestId, $tokenHash);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
@@ -142,7 +130,7 @@ try {
             managerReply(404, ['ok' => false, 'error' => 'request_not_found']);
         }
         $state = requestState($row);
-        if (!empty($row['credentialPlain']) && empty($row['credentialClaimedTime'])) {
+        if ($state['active'] && !empty($row['credentialPlain']) && empty($row['credentialClaimedTime'])) {
             $state['credential'] = (string)$row['credentialPlain'];
         }
         $conn->close();
@@ -185,13 +173,21 @@ try {
             managerReply(400, ['ok' => false, 'error' => 'missing_key']);
         }
         $hash = hash('sha256', $key);
-        $stmt = $conn->prepare("SELECT managerRequestId,email FROM managerRequest WHERE credentialHash=? AND active=b'1' AND rejectedTime IS NULL AND (expires IS NULL OR expires>NOW()) LIMIT 1");
+        $stmt = $conn->prepare("SELECT *, (expires IS NOT NULL AND expires<=NOW()) AS requestExpired FROM managerRequest WHERE credentialHash=? LIMIT 1");
         $stmt->bind_param('s', $hash);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if (!$row) {
-            managerReply(401, ['ok' => false, 'error' => 'manager_not_approved']);
+        $state = $row ? requestState($row) : null;
+        if (!$state || !$state['active']) {
+            // Details require possession of the random management credential.
+            // Never return a credential or request token from a failed login.
+            $conn->close();
+            managerReply(401, [
+                'ok' => false, 'error' => 'manager_not_approved',
+                'state' => $state['state'] ?? 'unknown',
+                'expires' => $state['expires'] ?? null,
+            ]);
         }
         $requestId = (int)$row['managerRequestId'];
         $stmt = $conn->prepare("UPDATE managerRequest SET lastUsedTime=NOW(), credentialClaimedTime=COALESCE(credentialClaimedTime,NOW()), credentialPlain=NULL WHERE managerRequestId=?");
