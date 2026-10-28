@@ -71,6 +71,9 @@ STUB
         if ((int)$actualCode !== $code || !is_array($json) || ($json['error'] ?? null) !== $error) {
             throw new RuntimeException('API case failed: ' . $index . ' ' . $err . ' ' . $out);
         }
+        if ($code===200 && (($json['approvalTarget'] ?? null)!==null || ($json['approvalUrl'] ?? null)!==null)) {
+            throw new RuntimeException('Missing identity must not create a generic approval URL');
+        }
         if (str_contains($body, '5822') || array_key_exists('port', $json)) {
             throw new RuntimeException('SSH port leaked from API');
         }

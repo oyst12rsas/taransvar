@@ -110,6 +110,18 @@ else:
     print('SSH app target unavailable: explicit Google enrollment is required.')
 PUBLISH_SSH_TARGET
 
+# Deploy authenticated target discovery without installing or changing a legacy SSH gate.
+if [[ -d "$gatekeeper_web_root/script" && -f "$root/../html/script/managerSshApprovalTarget.php" ]]; then
+    for name in managerSsh managerSshCommon managerSshApprovalTarget; do
+        php -l "$root/../html/script/$name.php" >/dev/null
+    done
+    for name in managerSsh managerSshCommon managerSshApprovalTarget; do
+        destination="$gatekeeper_web_root/script/$name.php"
+        [[ ! -f "$destination" ]] || cp -a --parents "$destination" "$backup/"
+        install -o root -g root -m 0644 "$root/../html/script/$name.php" "$destination.new"
+        mv -f "$destination.new" "$destination"
+    done
+fi
 # Without enrollment, preserve existing grants and never infer a manager roster.
 # Explicit enrollment publishes hashes only; raw emails remain on the node.
 # /etc/tarasec is shared with Gatekeeper: preserve existing permissions/ACLs.

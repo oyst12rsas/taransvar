@@ -16,7 +16,7 @@ esac
 repo_dir="$(cd "$(dirname "$0")/.." && pwd)"
 for tool in php mysql systemctl ipset iptables ip6tables ss; do command -v "$tool" >/dev/null; done
 [[ -f /etc/tarasecfw.conf && -f /var/www/html/dbfunc.php ]] || { echo 'Existing gateway installation required.' >&2; exit 1; }
-for file in html/script/managerSshCommon.php html/script/managerSsh.php misc/manager_ssh_worker.php; do php -l "$repo_dir/$file"; done
+for file in html/script/managerSshCommon.php html/script/managerSshApprovalTarget.php html/script/managerSsh.php misc/manager_ssh_worker.php; do php -l "$repo_dir/$file"; done
 php "$repo_dir/misc/manager_ssh_worker.php" --check
 if $enforce; then
     # Verify the app-to-worker reopening path before adding a blocking rule.
@@ -25,7 +25,7 @@ if $enforce; then
     /usr/sbin/sshd -T | awk '/^(port|listenaddress|pubkeyauthentication|passwordauthentication|authenticationmethods|authorizedkeysfile) /'
 fi
 backup=$(mktemp -d /var/backups/tarasec-manager-ssh.XXXXXX)
-for file in /var/www/html/script/managerSsh.php /var/www/html/script/managerSshCommon.php /var/www/html/script/managerOverview.php /etc/systemd/system/tarasec-manager-ssh.service /etc/systemd/system/tarasec-manager-ssh.timer; do
+for file in /var/www/html/script/managerSsh.php /var/www/html/script/managerSshCommon.php /var/www/html/script/managerSshApprovalTarget.php /var/www/html/script/managerOverview.php /etc/systemd/system/tarasec-manager-ssh.service /etc/systemd/system/tarasec-manager-ssh.timer; do
     [[ ! -f $file ]] || cp -a --parents "$file" "$backup/"
 done
 [[ ! -d /usr/local/share/tarasec/manager-ssh ]] || cp -a /usr/local/share/tarasec/manager-ssh "$backup/worker"
@@ -34,7 +34,7 @@ systemctl stop tarasec-manager-ssh.service 2>/dev/null || true
 mysql taransvar < "$repo_dir/misc/manager_ssh.sql"
 install -d -m 0755 -o root -g root /usr/local/share/tarasec/manager-ssh/html/script /usr/local/share/tarasec/manager-ssh/misc /run/tarasec-app-ssh
 install -d -m 0700 -o root -g root /etc/tarasec
-for name in managerSsh managerSshCommon managerOverview; do install -m 0644 "$repo_dir/html/script/$name.php" /var/www/html/script/; done
+for name in managerSsh managerSshCommon managerSshApprovalTarget managerOverview; do install -m 0644 "$repo_dir/html/script/$name.php" /var/www/html/script/; done
 install -m 0644 "$repo_dir/html/script/managerSshCommon.php" /usr/local/share/tarasec/manager-ssh/html/script/
 install -m 0600 -o root -g root /var/www/html/dbfunc.php /usr/local/share/tarasec/manager-ssh/html/dbfunc.php
 install -m 0644 "$repo_dir/misc/manager_ssh_worker.php" /usr/local/share/tarasec/manager-ssh/misc/
