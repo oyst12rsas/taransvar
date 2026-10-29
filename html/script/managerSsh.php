@@ -4,6 +4,7 @@ ini_set('display_errors','0');
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 require_once __DIR__.'/../dbfunc.php';
 require_once __DIR__.'/managerSshCommon.php';
+require_once __DIR__.'/managerSshApprovalTarget.php';
 header('Content-Type: application/json');
 header('Cache-Control: no-store');
 function sshReply(int $code, array $data): never { http_response_code($code); echo json_encode($data, JSON_UNESCAPED_SLASHES); exit; }
@@ -18,6 +19,7 @@ try {
     $q->bind_param('is',$id,$email); $q->execute(); $manager=$q->get_result()->fetch_assoc(); $q->close();
     if (!$manager || !managerSshAuthorized($manager)) sshReply(401,['ok'=>false,'error'=>'manager_access_revoked']);
     $source=(string)($_SERVER['REMOTE_ADDR'] ?? '');
+    $target=managerSshApprovalTargetRead();
     $state=managerSshPublic();
     $enabled=($state['enabled'] ?? false)===true;
     if (!isset($_SESSION['manager_ssh_csrf'])) $_SESSION['manager_ssh_csrf']=bin2hex(random_bytes(32));
@@ -31,7 +33,7 @@ try {
         // Keep close available: ending a legacy temporary allowance grants no access.
         if ($action==='open') sshReply(403,[
             'ok'=>false,'error'=>'ssh_mfa_required','mfaRequired'=>true,
-            'approvalUrl'=>'https://tarasec.org/ops/agent/'
+            'approvalUrl'=>$target['approval_url'] ?? null
         ]);
         if ($action==='close') $seconds=0;
         // Bound repeated requests; never extend a window merely by polling status.
@@ -51,6 +53,7 @@ try {
     $db->close();
     $public=managerSshClientState(array_replace($state,['remainingSeconds'=>$remaining]));
     sshReply(200,array_merge($public,[
-        'ok'=>true,'sourceIp'=>$source,'latestRequest'=>$latest,'csrf'=>$_SESSION['manager_ssh_csrf']
+        'ok'=>true,'sourceIp'=>$source,'latestRequest'=>$latest,'csrf'=>$_SESSION['manager_ssh_csrf'],
+        'approvalTarget'=>$target,'approvalUrl'=>$target['approval_url'] ?? null
     ]));
 } catch (Throwable $e) { error_log('Manager SSH API unavailable'); sshReply(503,['ok'=>false,'error'=>'manager_ssh_unavailable']); }

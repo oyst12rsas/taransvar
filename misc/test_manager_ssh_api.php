@@ -6,6 +6,7 @@ mkdir($root . '/html/script', 0700, true);
 mkdir($root . '/sessions', 0700);
 try {
     copy(__DIR__ . '/../html/script/managerSsh.php', $root . '/html/script/managerSsh.php');
+    copy(__DIR__ . '/../html/script/managerSshApprovalTarget.php', $root . '/html/script/managerSshApprovalTarget.php');
     $common = file_get_contents(__DIR__ . '/../html/script/managerSshCommon.php');
     $common = str_replace("'/run/tarasec-app-ssh/status.json'", var_export($root . '/status.json', true), $common);
     file_put_contents($root . '/html/script/managerSshCommon.php', $common);
@@ -69,6 +70,9 @@ STUB
         $json = json_decode($body, true);
         if ((int)$actualCode !== $code || !is_array($json) || ($json['error'] ?? null) !== $error) {
             throw new RuntimeException('API case failed: ' . $index . ' ' . $err . ' ' . $out);
+        }
+        if ($code===200 && (($json['approvalTarget'] ?? null)!==null || ($json['approvalUrl'] ?? null)!==null)) {
+            throw new RuntimeException('Missing identity must not create a generic approval URL');
         }
         if (str_contains($body, '5822') || array_key_exists('port', $json)) {
             throw new RuntimeException('SSH port leaked from API');

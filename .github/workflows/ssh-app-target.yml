@@ -1,0 +1,21 @@
+name: Exact SSH app target
+on:
+  pull_request:
+    paths:
+      - 'misc/enroll_google_manager.py'
+      - 'misc/install_agent_approvals.sh'
+      - 'misc/test_enroll_google_manager.py'
+      - 'html/script/managerSsh*.php'
+      - 'misc/test_ssh_approval_target.php'
+      - '.github/workflows/ssh-app-target.yml'
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          sudo python3 -m unittest discover -s misc -p test_enroll_google_manager.py
+          bash -n misc/install_agent_approvals.sh
+          bash -n misc/setup_manager_ssh.sh
+          php -l html/script/managerSshApprovalTarget.php
+          php misc/test_ssh_approval_target.php
