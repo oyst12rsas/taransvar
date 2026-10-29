@@ -22,7 +22,7 @@ class ActiveConnection {
     public $rows = [];
     public $fail = false;
     function query($sql) {
-        if (strpos($sql, 'FROM unit WHERE lastSeen >= DATE_SUB(NOW(), INTERVAL 15 MINUTE)') === false)
+        if (strpos($sql, 'T.ipFrom = U.ipAddress') === false)
             throw new RuntimeException('Missing observed-unit recency filter');
         if (strpos($sql, 'JOIN dhcp') !== false) throw new RuntimeException('DHCP must not be required');
         return $this->fail ? false : new ActiveRows($this->rows);

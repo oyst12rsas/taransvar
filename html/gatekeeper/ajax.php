@@ -275,13 +275,30 @@ function units()
 
 function activeUnits()
 {
-    // Canonical unit observations include routed WireGuard clients without DHCP.
-    $sql = "SELECT unitId, COALESCE(description, '') AS description,
-        lastSeen, COALESCE(HEX(mac), '') AS mac, COALESCE(vci, '') AS vci,
-        COALESCE(INET_NTOA(ipAddress), '') AS ip, COALESCE(hostname, '') AS hostname,
-        COALESCE(HEX(dhcpClientId), '') AS dhcpClientId
-        FROM unit WHERE lastSeen >= DATE_SUB(NOW(), INTERVAL 15 MINUTE)
-        ORDER BY lastSeen DESC LIMIT 100";
+    // Only known local units qualify. Recent source traffic and NAT assignments
+    // provide activity even when DHCP/unit.lastSeen has not been refreshed.
+    $sql = "SELECT U.unitId, COALESCE(U.description, '') AS description,
+        A.lastSeen, COALESCE(HEX(U.mac), '') AS mac, COALESCE(U.vci, '') AS vci,
+        COALESCE(INET_NTOA(U.ipAddress), '') AS ip, COALESCE(U.hostname, '') AS hostname,
+        COALESCE(HEX(U.dhcpClientId), '') AS dhcpClientId
+        FROM unit U JOIN (
+            SELECT unitId, MAX(seen) AS lastSeen FROM (
+                SELECT unitId, lastSeen AS seen FROM unit
+                WHERE lastSeen >= DATE_SUB(NOW(), INTERVAL 15 MINUTE)
+                UNION ALL
+                SELECT U.unitId, T.seen FROM unit U JOIN (
+                    SELECT ipFrom, lastSeen AS seen FROM traffic
+                    WHERE lastSeen >= DATE_SUB(NOW(), INTERVAL 15 MINUTE)
+                    UNION ALL
+                    SELECT ipFrom, created AS seen FROM traffic
+                    WHERE lastSeen IS NULL AND created >= DATE_SUB(NOW(), INTERVAL 15 MINUTE)
+                ) T ON T.ipFrom = U.ipAddress
+                UNION ALL
+                SELECT unitId, created AS seen FROM unitPort
+                WHERE created >= DATE_SUB(NOW(), INTERVAL 15 MINUTE)
+            ) observations GROUP BY unitId
+        ) A ON A.unitId = U.unitId
+        ORDER BY A.lastSeen DESC, U.unitId DESC LIMIT 100";
     $conn = getConnection();
     $result = $conn->query($sql);
     if (!$result) {

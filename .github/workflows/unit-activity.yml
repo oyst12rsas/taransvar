@@ -4,6 +4,7 @@ on:
     paths:
       - 'tests/unit_activity_ajax.php'
       - 'tests/active_units_ajax.php'
+      - 'tests/active_units_query_test.py'
       - 'html/gatekeeper/ajax.php'
       - 'misc/unit_activity.py'
       - 'misc/test_unit_activity.py'
@@ -29,3 +30,4 @@ jobs:
 
       - run: php tests/unit_activity_ajax.php
       - run: php tests/active_units_ajax.php
+      - run: python3 tests/active_units_query_test.py
