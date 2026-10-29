@@ -100,6 +100,7 @@ try {
         replyJson(503, ['ok'=>false,'error'=>'ai_provider_not_configured']);
     }
 
+    $question .= gatewayAiIdentityConstraint($question);
     $payload = json_encode(['question'=>$question], JSON_UNESCAPED_SLASHES);
     $ch = curl_init($flowiseUrl);
     curl_setopt_array($ch, [
@@ -146,7 +147,9 @@ try {
 
     if (!gatewayAiUnitsSupported($assessment, $question)) {
         $conn->close();
-        replyJson(502, ['ok'=>false,'error'=>'unsupported_ai_unit_identity']);
+        replyJson(502, ['ok'=>false,'error'=>'unsupported_ai_unit_identity',
+            'allowed_unit_pair_count'=>count(gatewayAiAllowedUnits($question)),
+            'returned_unit_count'=>count($assessment['unit_assessments'])]);
     }
 
     $assessmentJson = json_encode($assessment, JSON_UNESCAPED_SLASHES);
