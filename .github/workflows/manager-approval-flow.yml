@@ -26,6 +26,6 @@ jobs:
           php -l html/script/managerSsh.php
           php -l html/script/managerSshCommon.php
           php misc/test_manager_ssh_public.php
-          php misc/test_manager_ssh_api.php
+          sudo php misc/test_manager_ssh_api.php
           php -l html/script/managerGoogleSession.php
-          php misc/test_manager_google_session.php
+          sudo php misc/test_manager_google_session.php
