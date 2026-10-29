@@ -313,9 +313,15 @@ function activeUnits()
         $id = (int)$row['unitId'];
         $mac = $row['mac'];
         if (strlen($mac) > 12 && substr($mac, 12) === '00000000000000000000') $mac = substr($mac, 0, 12);
+        // The generated non-DHCP placeholder is not an owner-assigned nickname.
+        $displayName = trim((string)$row['description']);
+        if ($displayName === '' || strcasecmp($displayName, 'Unknown not via DHCP?') === 0) {
+            $displayName = trim((string)$row['hostname']);
+        }
+        if ($displayName === '') $displayName = (string)$row['ip'];
         $cells = [
             $escape($row['hostname']), $escape($row['dhcpClientId']), $escape($row['vci']),
-            $escape($row['description']).'<a href="index.php?f=edtDesc&amp;id='.$id.'">[Edit]</a>',
+            $escape($displayName).' <a href="index.php?f=edtDesc&amp;id='.$id.'">[Edit]</a>',
             $escape($mac), $escape($row['lastSeen']), $escape($row['ip']),
             '<a href="index.php?f=showPorts&amp;id='.$id.'">[Show]</a>'
         ];
