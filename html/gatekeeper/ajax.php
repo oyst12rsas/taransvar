@@ -268,46 +268,48 @@ function traffic()
 
 function units()
 {
+    include "ajax/units_partners.php";
+    units_partners();
+    activeUnits();
+}
 
-	include "ajax/units_partners.php";
-	units_partners();
-	return;
-
-	//$sql = "select U.unitId, UP.created, mac, vci, inet_ntoa(UP.ipAddress), inet_ntoa(U.ipAddress), hostname from unitPort UP join unit U on U.unitId = UP.unitId where created > DATE_SUB( NOW() , INTERVAL 1 DAY ) order by U.unitId, UP.created desc;";
-
-#	$sql = "select U.unitId, description, greatest(discovered, lastSeen) as discovered, hex(mac) as mac, vci, inet_ntoa(S.ip) as ip, inet_ntoa(U.ipAddress), hostname, hex(dhcpClientId) as dhcpClientId from dhcpSession S join unit U on clientId = unitId where discovered > DATE_SUB( NOW() , INTERVAL 1 DAY ) or lastSeen > DATE_SUB( NOW() , INTERVAL 1 DAY ) order by greatest(discovered, lastSeen) desc;";
-	$sql = "select coalesce(unitId,'') as unitId, coalesce(description, '') as description, coalesce(lastSeen,'') as lastSeen, coalesce(hex(mac),'') as mac, coalesce(vci,'')as vci, coalesce(inet_ntoa(ipAddress),'') as ip, coalesce(hostname,'') as hostname, hex(dhcpClientId) as dhcpClientId from unit where  lastSeen is null or lastSeen > DATE_SUB( NOW() , INTERVAL 1 DAY ) order by lastSeen desc;";
-
-	$conn = getConnection();
-	$result = $conn->query($sql);
-    $nCount = 0;
-    $szRowId = "uninitialized";
-
-	if ($result->num_rows > 0) 
-	{
-		// output data of each row  
-		while($row = $result->fetch_assoc()) 
-		{
-			$szM = (isset($row["mac"])?$row["mac"]:"");
-		    $szMac = (strlen($szM) > 12 && substr($szM, 12) == "00000000000000000000" ? substr($szM, 0,12) : $szM);
-		    $szDescription = $row["description"].'<a href="index.php?f=edtDesc&id='.$row["unitId"].'">[Edit]</a>';
-		       
-		    //Assemble list of last ports used..
-            $szPorts = '<a href="index.php?f=showPorts&id='.$row["unitId"].'">[Show]</a>';
-		       
-	    	//print "<tr><td>".$row["hostname"]."</td><td>".$row["dhcpClientId"]."</td><td>".$row["vci"]."</td><td>".$szDescription."</td><td>".$szMac."</td><td>".$row["lastSeen"]."</td><td>".$row["ip"]."</td><td>".$szPorts."</td></tr>";
-			$nCount++;
-
-            $szRowId = "un".$row["unitId"];
-            $cArr = array($row["hostname"], $row["dhcpClientId"], $row["vci"], $szDescription, $szMac, $row["lastSeen"],$row["ip"],$szPorts);
-            CXmlCommand::addTableRow("unitsTbl", "top", $szRowId, $cArr, "", $szRowId);//$szHTML)
-	  	}
-	} 
-
-    if (!$nCount)
-        CXmlCommand::setInnerHTML("updateTime", "", "No DHCP IP assignments registered. You should make sure misc/crontasks.pl<br>is registered with cron. See the script file for instructions.<br>");//, $cMoreParamsArr = array())
-    else
-        CXmlCommand::setInnerHTML("updateTime", "", "$nCount records read");//, $cMoreParamsArr = array())
+function activeUnits()
+{
+    // Canonical unit observations include routed WireGuard clients without DHCP.
+    $sql = "SELECT unitId, COALESCE(description, '') AS description,
+        lastSeen, COALESCE(HEX(mac), '') AS mac, COALESCE(vci, '') AS vci,
+        COALESCE(INET_NTOA(ipAddress), '') AS ip, COALESCE(hostname, '') AS hostname,
+        COALESCE(HEX(dhcpClientId), '') AS dhcpClientId
+        FROM unit WHERE lastSeen >= DATE_SUB(NOW(), INTERVAL 15 MINUTE)
+        ORDER BY lastSeen DESC LIMIT 100";
+    $conn = getConnection();
+    $result = $conn->query($sql);
+    if (!$result) {
+        CXmlCommand::setInnerHTML("updateTime", "", "Unable to read active units. Please check the server logs.");
+        return;
+    }
+    // Replace the snapshot so clients which age out also disappear.
+    $html = '<tr><th>Hostname</th><th>DHCP Client ID</th><th>Vendor</th><th>Nickname</th><th>Mac</th><th>Last seen</th><th>Last IP</th><th>Ports</th></tr>';
+    $escape = function ($value) { return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8'); };
+    $count = 0;
+    while ($row = $result->fetch_assoc()) {
+        $id = (int)$row['unitId'];
+        $mac = $row['mac'];
+        if (strlen($mac) > 12 && substr($mac, 12) === '00000000000000000000') $mac = substr($mac, 0, 12);
+        $cells = [
+            $escape($row['hostname']), $escape($row['dhcpClientId']), $escape($row['vci']),
+            $escape($row['description']).'<a href="index.php?f=edtDesc&amp;id='.$id.'">[Edit]</a>',
+            $escape($mac), $escape($row['lastSeen']), $escape($row['ip']),
+            '<a href="index.php?f=showPorts&amp;id='.$id.'">[Show]</a>'
+        ];
+        $html .= '<tr id="un'.$id.'"><td>'.implode('</td><td>', $cells).'</td></tr>';
+        $count++;
+    }
+    $result->free();
+    CXmlCommand::setInnerHTML("unitsTbl", "", $html);
+    CXmlCommand::setInnerHTML("updateTime", "", $count
+        ? $count." units observed in the last 15 minutes; updated ".date('Y-m-d H:i:s')
+        : "No units observed in the last 15 minutes. DHCP details may be unavailable for routed WireGuard clients.");
 }
 
 
