@@ -4,6 +4,7 @@ error_reporting(E_ALL);
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 include '../dbfunc.php';
+require_once __DIR__.'/managerGoogleSession.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -30,7 +31,7 @@ function startManagerSessionForAssistance(): void
 }
 
 startManagerSessionForAssistance();
-if (empty($_SESSION['tarasec_manager_authenticated'])) {
+if (!managerGoogleSessionActive()) {
     assistanceReply(401, ['ok' => false, 'error' => 'manager_auth_required']);
 }
 
@@ -38,6 +39,10 @@ $action = strtolower(trim((string)($_REQUEST['action'] ?? 'list')));
 
 try {
     $conn = getConnection();
+    $check=$conn->prepare("SELECT 1 FROM managerRequest WHERE managerRequestId=? AND email=? AND active=b'1' AND rejectedTime IS NULL AND (expires IS NULL OR expires>NOW()) LIMIT 1");
+    $requestId=(int)($_SESSION['tarasec_manager_request_id'] ?? 0);$managerEmail=(string)($_SESSION['tarasec_manager_email'] ?? '');
+    $check->bind_param('is',$requestId,$managerEmail);$check->execute();$active=$check->get_result()->fetch_row();$check->close();
+    if (!$active) assistanceReply(401,['ok'=>false,'error'=>'manager_access_revoked']);
 
     if ($action === 'create') {
         if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {

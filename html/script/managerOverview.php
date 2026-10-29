@@ -4,6 +4,7 @@ error_reporting(E_ALL);
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 include '../dbfunc.php';
+require_once __DIR__.'/managerGoogleSession.php';
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
@@ -36,7 +37,7 @@ function decodeStatus(?string $raw): array
 }
 
 startOverviewManagerSession();
-if (empty($_SESSION['tarasec_manager_authenticated'])) {
+if (!managerGoogleSessionActive()) {
     overviewReply(401, ['ok' => false, 'error' => 'manager_session_required']);
 }
 

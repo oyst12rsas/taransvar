@@ -4,6 +4,7 @@ error_reporting(E_ALL);
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 include '../dbfunc.php';
+require_once __DIR__.'/managerGoogleSession.php';
 
 header('Cache-Control: no-store');
 header('Content-Type: application/json; charset=utf-8');
@@ -34,7 +35,7 @@ function decodeJsonField(?string $value)
 
 try {
     if (session_status() !== PHP_SESSION_ACTIVE) session_start();
-    if (empty($_SESSION['tarasec_manager_authenticated'])) {
+    if (!managerGoogleSessionActive()) {
         aiReply(401, ['ok'=>false,'error'=>'manager_session_required']);
     }
 

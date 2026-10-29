@@ -6,7 +6,10 @@ mkdir($root . '/html/script', 0700, true);
 mkdir($root . '/sessions', 0700);
 try {
     copy(__DIR__ . '/../html/script/managerSsh.php', $root . '/html/script/managerSsh.php');
-    copy(__DIR__ . '/../html/script/managerSshApprovalTarget.php', $root . '/html/script/managerSshApprovalTarget.php');
+    copy(__DIR__ . '/../html/script/managerGoogleSession.php', $root . '/html/script/managerGoogleSession.php');
+    $targetSource=file_get_contents(__DIR__.'/../html/script/managerSshApprovalTarget.php');
+    file_put_contents($root.'/html/script/managerSshApprovalTarget.php',str_replace('/var/lib/tarasec-ssh-approval/target.json',$root.'/target.json',$targetSource));
+    file_put_contents($root.'/target.json',json_encode(['version'=>1,'server_ref'=>str_repeat('a',64),'approval_url'=>'https://example.test/ops/agent/']));
     $common = file_get_contents(__DIR__ . '/../html/script/managerSshCommon.php');
     $common = str_replace("'/run/tarasec-app-ssh/status.json'", var_export($root . '/status.json', true), $common);
     file_put_contents($root . '/html/script/managerSshCommon.php', $common);
@@ -42,6 +45,7 @@ STUB
     );
     $cases = [
         ['GET', false, [], 401, 'manager_login_required'],
+        ['GET', 'legacy', [], 401, 'manager_login_required'],
         ['GET', true, [], 200, null],
         ['POST', true, ['action'=>'open','seconds'=>300,'csrf'=>'wrong'], 403, 'csrf_required'],
         ['POST', true, ['action'=>'open','seconds'=>300,'csrf'=>'test-csrf'], 403, 'ssh_mfa_required'],
@@ -52,7 +56,10 @@ STUB
             . 'session_id(' . var_export('testcase' . $index, true) . ');session_start();'
             . '$_SESSION=' . var_export($authenticated ? [
                 'tarasec_manager_authenticated'=>1,'tarasec_manager_request_id'=>1,
-                'tarasec_manager_email'=>'test@example.invalid','manager_ssh_csrf'=>'test-csrf'
+                'tarasec_manager_email'=>'test@example.invalid','manager_ssh_csrf'=>'test-csrf',
+                'manager_google_email'=>'test@example.invalid',
+                'manager_google_until'=>$authenticated===true?time()+900:0,
+                'manager_google_origin'=>'https://example.test/ops/agent/','manager_google_ref'=>str_repeat('a',64)
             ] : [], true) . ';session_write_close();'
             . '$_SERVER["REQUEST_METHOD"]=' . var_export($method, true) . ';'
             . '$_SERVER["REMOTE_ADDR"]="127.0.0.1";'
@@ -71,8 +78,8 @@ STUB
         if ((int)$actualCode !== $code || !is_array($json) || ($json['error'] ?? null) !== $error) {
             throw new RuntimeException('API case failed: ' . $index . ' ' . $err . ' ' . $out);
         }
-        if ($code===200 && (($json['approvalTarget'] ?? null)!==null || ($json['approvalUrl'] ?? null)!==null)) {
-            throw new RuntimeException('Missing identity must not create a generic approval URL');
+        if ($code===200 && ($json['approvalTarget']['server_ref'] ?? '')!==str_repeat('a',64)) {
+            throw new RuntimeException('Verified exact node identity must be retained');
         }
         if (str_contains($body, '5822') || array_key_exists('port', $json)) {
             throw new RuntimeException('SSH port leaked from API');

@@ -5,6 +5,7 @@ mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 include '../dbfunc.php';
 require_once __DIR__ . '/../managerRequestState.php';
+require_once __DIR__.'/managerGoogleSession.php';
 
 header('Cache-Control: no-store');
 
@@ -61,10 +62,19 @@ $action = strtolower(trim((string)($_REQUEST['action'] ?? 'session')));
 
 if ($action === 'session') {
     startManagerSession();
+    $authenticated=managerGoogleSessionActive();
+    if ($authenticated) {
+        try {
+            $db=getConnection();
+            $id=(int)($_SESSION['tarasec_manager_request_id'] ?? 0);$email=(string)($_SESSION['tarasec_manager_email'] ?? '');
+            $check=$db->prepare("SELECT 1 FROM managerRequest WHERE managerRequestId=? AND email=? AND active=b'1' AND rejectedTime IS NULL AND (expires IS NULL OR expires>NOW()) LIMIT 1");
+            $check->bind_param('is',$id,$email);$check->execute();$authenticated=(bool)$check->get_result()->fetch_row();$check->close();$db->close();
+        } catch (Throwable $e) { $authenticated=false; }
+    }
     managerReply(200, [
         'ok' => true,
-        'authenticated' => !empty($_SESSION['tarasec_manager_authenticated']),
-        'manager' => empty($_SESSION['tarasec_manager_authenticated']) ? null : [
+        'authenticated' => $authenticated,
+        'manager' => !$authenticated ? null : [
             'email' => (string)($_SESSION['tarasec_manager_email'] ?? ''),
             'requestId' => (int)($_SESSION['tarasec_manager_request_id'] ?? 0),
             'authenticated_at' => (string)($_SESSION['tarasec_manager_authenticated_at'] ?? ''),
@@ -190,6 +200,31 @@ try {
             ]);
         }
         $requestId = (int)$row['managerRequestId'];
+        startManagerSession();
+        $target=managerSshApprovalTargetRead();
+        if ($target===null) managerReply(503,['ok'=>false,'error'=>'management_identity_unavailable']);
+        $proofToken=(string)($_POST['google_proof'] ?? '');
+        if ($proofToken==='') {
+            // Each explicit management entry starts a new, server-bound challenge.
+            // The saved credential alone never exposes server status.
+            $_SESSION=[];
+            $_SESSION['manager_google_nonce']=bin2hex(random_bytes(32));
+            $_SESSION['manager_google_pending_id']=$requestId;
+            $_SESSION['manager_google_pending_until']=time()+300;
+            session_regenerate_id(true);
+            managerReply(403,['ok'=>false,'error'=>'manager_google_required',
+                'approvalTarget'=>$target,'binding'=>$_SESSION['manager_google_nonce']]);
+        }
+        if ((int)($_SESSION['manager_google_pending_id'] ?? 0)!==$requestId
+            || (int)($_SESSION['manager_google_pending_until'] ?? 0)<=time())
+            managerReply(403,['ok'=>false,'error'=>'manager_google_expired']);
+        try { $google=managerGoogleRedeem($target,$proofToken,(string)$_SESSION['manager_google_nonce'],strtolower((string)$row['email'])); }
+        catch (Throwable $e) { managerReply(403,['ok'=>false,'error'=>'manager_google_verification_failed']); }
+        unset($_SESSION['manager_google_nonce'],$_SESSION['manager_google_pending_id'],$_SESSION['manager_google_pending_until']);
+        $_SESSION['manager_google_until']=$google['expires_at'];
+        $_SESSION['manager_google_ref']=$google['server_ref'];
+        $_SESSION['manager_google_origin']=$target['approval_url'];
+        $_SESSION['manager_google_email']=$google['email'];
         $stmt = $conn->prepare("UPDATE managerRequest SET lastUsedTime=NOW(), credentialClaimedTime=COALESCE(credentialClaimedTime,NOW()), credentialPlain=NULL WHERE managerRequestId=?");
         $stmt->bind_param('i', $requestId);
         $stmt->execute();
@@ -205,6 +240,8 @@ try {
         managerReply(200, [
             'ok' => true,
             'authenticated' => true,
+            'googleVerifiedUntil'=>$_SESSION['manager_google_until'],
+            'serverRef'=>$_SESSION['manager_google_ref'],
             'manager' => [
                 'email' => (string)$row['email'],
                 'requestId' => $requestId,

@@ -4,13 +4,14 @@ ini_set('display_errors','0');
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 require_once __DIR__.'/../dbfunc.php';
 require_once __DIR__.'/managerSshCommon.php';
+require_once __DIR__.'/managerGoogleSession.php';
 require_once __DIR__.'/managerSshApprovalTarget.php';
 header('Content-Type: application/json');
 header('Cache-Control: no-store');
 function sshReply(int $code, array $data): never { http_response_code($code); echo json_encode($data, JSON_UNESCAPED_SLASHES); exit; }
 session_set_cookie_params(['path'=>'/','secure'=>!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS']!=='off','httponly'=>true,'samesite'=>'Strict']);
 session_start();
-if (empty($_SESSION['tarasec_manager_authenticated'])) sshReply(401,['ok'=>false,'error'=>'manager_login_required']);
+if (!managerGoogleSessionActive()) sshReply(401,['ok'=>false,'error'=>'manager_login_required']);
 try {
     $db=getConnection();
     $id=(int)($_SESSION['tarasec_manager_request_id'] ?? 0);
