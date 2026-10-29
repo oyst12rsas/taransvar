@@ -139,13 +139,36 @@ sub requestAssessment {
 
     add_query_section($dbh, \$logs, 'owner-confirmed exact-unit hack report corroboration',
         'owner_id,unit_id,reports,reporting_networks,distinct_source_ports,max_severity,categories,first_seen,last_seen',
-        "select ipOwnerId owner_id,remoteUnitId unit_id,sum(coalesce(`count`,1)) reports,count(distinct partnerIp) reporting_networks,count(distinct port) distinct_source_ports,max(coalesce(severity,0)) max_severity,group_concat(distinct coalesce(hrCategory,'other') order by hrCategory separator '|') categories,min(created) first_seen,max(coalesce(lastSeen,created)) last_seen from hackReport where unix_timestamp(coalesce(lastSeen,created)) > unix_timestamp(now())-? and ownerConfirmedTime is not null and ipOwnerId is not null and remoteUnitId is not null group by ipOwnerId,remoteUnitId order by reporting_networks desc,reports desc limit $nMaxRowsPerSection",
+        "select ipOwnerId owner_id,remoteUnitId unit_id,sum(coalesce(`count`,1)) reports,count(distinct partnerIp) reporting_networks,count(distinct port) distinct_source_ports,max(coalesce(severity,0)) max_severity,coalesce(hrCategory,'other') categories,min(created) first_seen,max(coalesce(lastSeen,created)) last_seen from hackReport where unix_timestamp(coalesce(lastSeen,created)) > unix_timestamp(now())-? and ownerConfirmedTime is not null and ipOwnerId is not null and remoteUnitId is not null group by ipOwnerId,remoteUnitId,coalesce(hrCategory,'other') order by reporting_networks desc,reports desc limit $nMaxRowsPerSection",
         [$cutoff], qw(owner_id unit_id reports reporting_networks distinct_source_ports max_severity categories first_seen last_seen));
 
     add_query_section($dbh, \$logs, 'unknown IP-only observations (lower-confidence identity evidence)',
         'source_ip,distinct_targets,threat_records,occurrences,max_severity',
         "select inet_ntoa(st.src_ip) source_ip,count(distinct st.dst_ip) distinct_targets,count(*) threat_records,sum(st.`count`) occurrences,max(coalesce(st.severity,0)) max_severity from syslogThreat st left join partnerRouter pr on pr.ip=st.src_ip where unix_timestamp(coalesce(st.lastSeen,st.created)) > unix_timestamp(now())-? and (st.owner_id is null or coalesce(st.confirmed_unit_id,st.unit_id) is null) and pr.ip is null group by st.src_ip having count(distinct st.dst_ip)>=? order by distinct_targets desc limit $nMaxRowsPerSection",
         [$cutoff,$nMinimumIpsVisited], qw(source_ip distinct_targets threat_records occurrences max_severity));
+
+    add_query_section($dbh, \$logs, 'timed observations for demo correlation (bounded sample)',
+        'event_id,owner_id,unit_id,source_ip,dst_ip,dst_port,first_seen,last_seen,occurrences,demo_session_id',
+        "SELECT syslogThreatId event_id,owner_id,COALESCE(confirmed_unit_id,unit_id) unit_id,INET_NTOA(src_ip) source_ip,INET_NTOA(dst_ip) dst_ip,dst_port,created first_seen,COALESCE(lastSeen,created) last_seen,`count` occurrences,demoSshSessionId demo_session_id FROM syslogThreat WHERE unix_timestamp(COALESCE(lastSeen,created))>unix_timestamp(now())-? ORDER BY COALESCE(lastSeen,created) DESC LIMIT $nMaxRowsPerSection",
+        [$cutoff], qw(event_id owner_id unit_id source_ip dst_ip dst_port first_seen last_seen occurrences demo_session_id));
+
+    # Completed sessions still explain observations inside their original window.
+    my $demoTables = $dbh->selectall_arrayref("SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('demoSshSession','demoSshSetup','demoSshNodeB')");
+    if (@$demoTables == 3) {
+        add_query_section($dbh, \$logs, 'registered SSH demo sessions (correlation context, not blanket exemptions)',
+            'session_id,source_ip,unit_id,state,created,expires,completed,node_a,node_a_port,node_b,node_b_port,node_a_evidence_id,node_b_evidence_id',
+            "SELECT s.demoSshSessionId session_id,INET_NTOA(s.sourceIp) source_ip,s.unitId unit_id,s.state,s.created,s.expires,s.completed,INET_NTOA(d.nodeAIp) node_a,d.nodeAPort node_a_port,INET_NTOA(n.ip) node_b,n.port node_b_port,s.nodeAEvidenceId node_a_evidence_id,s.nodeBEvidenceId node_b_evidence_id FROM demoSshSession s JOIN demoSshSetup d ON d.demoSshSetupId=s.demoSshSetupId JOIN demoSshNodeB n ON n.demoSshNodeBId=s.demoSshNodeBId WHERE s.expires>=NOW()-INTERVAL 30 DAY ORDER BY s.created DESC LIMIT $nMaxRowsPerSection",
+            [], qw(session_id source_ip unit_id state created expires completed node_a node_a_port node_b node_b_port node_a_evidence_id node_b_evidence_id));
+    }
+    my $demo5Tables = $dbh->selectall_arrayref("SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='demo5Session'");
+    if (@$demo5Tables) {
+        add_query_section($dbh, \$logs, 'registered Demo 5 sessions (network context, not unit identity)',
+            'session_id,source_ip,receiver_ip,receiver_port,state,created,expires',
+            "SELECT sessionId session_id,INET_NTOA(sourceIp) source_ip,INET_NTOA(receiverIp) receiver_ip,receiverPort receiver_port,state,created,expiresAt expires FROM demo5Session WHERE expiresAt>=NOW()-INTERVAL 30 DAY ORDER BY created DESC LIMIT $nMaxRowsPerSection",
+            [], qw(session_id source_ip receiver_ip receiver_port state created expires));
+    }
+    $logs .= "\nEVIDENCE RULES: Probing alone does not establish malicious intent. Consider authorised scanning and maintenance. Existing severity is not independent proof; demo reports must not corroborate real infection.\n";
+    $logs .= "\nDEMO RULES: Expected probes matching a registered demo's identity, endpoint and time window are test activity, not evidence of compromise. Explain the matching demo/session. A shared source IP or aggregate totals alone cannot establish a match. Preserve unexplained/out-of-window activity and real_infection_detected findings; state uncertainty if exact correlation is missing.\n";
 
     $dbh->disconnect();
 

@@ -4,6 +4,7 @@ error_reporting(E_ALL);
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 include '../dbfunc.php';
+require_once __DIR__.'/gatewayAiValidation.php';
 
 header('Cache-Control: no-store');
 header('Content-Type: application/json; charset=utf-8');
@@ -141,6 +142,11 @@ try {
         if (!isset($assessment[$requiredArray]) || !is_array($assessment[$requiredArray])) {
             $assessment[$requiredArray] = [];
         }
+    }
+
+    if (!gatewayAiUnitsSupported($assessment, $question)) {
+        $conn->close();
+        replyJson(502, ['ok'=>false,'error'=>'unsupported_ai_unit_identity']);
     }
 
     $assessmentJson = json_encode($assessment, JSON_UNESCAPED_SLASHES);

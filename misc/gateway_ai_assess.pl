@@ -64,6 +64,31 @@ sub append_query {
     return $count;
 }
 
+# Defence in depth for mixed-version DB/gateway deployments.
+sub validate_unit_identities {
+    my ($assessment, $question) = @_;
+    my %allowed;
+    my $local = 0;
+    for my $line (split(/\n/, $question)) {
+        if ($line =~ /^RECORDS: (.*)$/) {
+            $local = $1 =~ /^(?:local stable unit summaries|local unit destination fingerprints|owner-confirmed exact-unit reports|local observations for exact demo correlation \(bounded sample, not complete totals\))$/;
+            next;
+        }
+        $local = 0 if $line =~ /^GLOBAL TARASEC CONTEXT/;
+        next unless $local;
+        my $row = eval { decode_json($line) };
+        next unless ref($row) eq 'HASH';
+        my ($owner, $unit) = @$row{qw(owner_id unit_id)};
+        $allowed{"$owner:$unit"} = 1 if defined($owner) && defined($unit) && $owner =~ /^[0-9]+$/ && $unit =~ /^[0-9]+$/;
+    }
+    die "Invalid AI unit_assessments array; assessment not saved.\n" unless ref($assessment->{unit_assessments}) eq 'ARRAY';
+    for my $unit (@{$assessment->{unit_assessments}}) {
+        die "Unsupported AI unit identity; assessment not saved.\n" unless ref($unit) eq 'HASH' &&
+            defined($unit->{owner_id}) && defined($unit->{unit_id}) &&
+            $allowed{"$unit->{owner_id}:$unit->{unit_id}"};
+    }
+}
+
 my $cfg = read_tarasec_config();
 my $dbh = getConnection();
 
@@ -113,11 +138,22 @@ my $question = "TARASEC GATEWAY-LOCAL SECURITY ASSESSMENT\n".
                "- A customer/LAN unit exists only when owner_id + unit_id are both known.\n".
                "- Every row under 'local stable unit summaries' and 'local unit destination fingerprints' describes activity ORIGINATING FROM a unit managed by THIS installation.\n".
                "- Therefore repeated scanning, probing, brute force, exploit attempts or unusual fan-out in those local-unit sections means one of THIS OWNER'S managed units is generating the suspicious traffic; it is not merely an arbitrary external source.\n".
-               "- When that happens, the summary MUST say this explicitly, for example: 'ALERT: a managed local unit on this installation is originating repeated SSH probes and may be compromised.' Do not reduce this to vague wording such as 'the same source'.\n".
+               "- Only when evidence supports suspicious activity after considering demos and other authorised testing, explain the local origin and uncertainty; identify the exact managed unit and supporting observations. Do not assume compromise from the local origin alone.\n".
                "- Treat suspicious outbound behaviour from a stable local unit as materially more important to this gateway owner than the same pattern from an unidentified external IP. Reflect that distinction in event_severity, summary, reasoning and recommended_action.\n".
                "- Never put an IP address in unit_id.\n".
                "- IP-only observations are observations, not units.\n".
                "- Central context is supporting evidence and may describe activity outside this gateway.\n\n";
+
+$question .= "DEMO CORRELATION RULES:\n".
+    "- Registered demo sessions are supplied in global context. Match source identity, destination IP/port and observation time within created..expires (or earlier completion/cancellation). A shared gateway IP alone is insufficient to identify a unit.\n".
+    "- Matched demo SSH probes are expected test activity. Explain which demo/session produced them; do not infer compromise or recommend blocking solely from these probes.\n".
+    "- Assess unmatched events separately. A demo does not excuse unrelated activity, activity outside its scope/window, or state real_infection_detected.\n".
+    "- Aggregated totals may mix demo and real traffic. Do not assume all totals are explained by a session. If exact correlation is unavailable, state uncertainty and request correlation rather than declaring infection.\n";
+
+$question .= "EVIDENCE RULES:\n".
+    "- Probing alone does not establish malicious intent or compromise. Consider authorised scanning and maintenance as well as demos.\n".
+    "- Existing severity is a prior classification, not independent proof. Separate demo and non-demo reports; mixed aggregate maxima cannot corroborate infection.\n".
+    "- Use only exact owner_id/unit_id pairs present in local evidence. Never invent identities or use example placeholders.\n";
 
 my %evidence = (gateway=>($setup->{nickname}//''), window_days=>7);
 $evidence{unit_summary_rows} = append_query($dbh, \$question, 'local stable unit summaries', q{
@@ -157,17 +193,27 @@ $evidence{unknown_ip_rows} = append_query($dbh, \$question, 'local IP-only obser
 $evidence{confirmed_report_rows} = append_query($dbh, \$question, 'owner-confirmed exact-unit reports', q{
     SELECT ipOwnerId owner_id,remoteUnitId unit_id,SUM(COALESCE(`count`,1)) reports,
            COUNT(DISTINCT partnerIp) reporting_networks,MAX(COALESCE(severity,0)) max_severity,
-           GROUP_CONCAT(DISTINCT COALESCE(hrCategory,'other') ORDER BY hrCategory SEPARATOR '|') categories
+           COALESCE(hrCategory,'other') category,
+           MIN(created) first_seen,MAX(COALESCE(lastSeen,created)) last_seen
       FROM hackReport
      WHERE COALESCE(lastSeen,created)>=NOW()-INTERVAL 7 DAY
        AND ownerConfirmedTime IS NOT NULL AND ipOwnerId IS NOT NULL AND remoteUnitId IS NOT NULL
-     GROUP BY ipOwnerId,remoteUnitId ORDER BY reports DESC LIMIT 100
+     GROUP BY ipOwnerId,remoteUnitId,COALESCE(hrCategory,'other') ORDER BY reports DESC LIMIT 100
+});
+
+$evidence{timed_observation_rows} = append_query($dbh, \$question, 'local observations for exact demo correlation (bounded sample, not complete totals)', q{
+    SELECT syslogThreatId,owner_id,COALESCE(confirmed_unit_id,unit_id) unit_id,
+           INET_NTOA(src_ip) source_ip,INET_NTOA(dst_ip) dst_ip,dst_port,
+           created first_seen,COALESCE(lastSeen,created) last_seen,`count` occurrences,
+           demoSshSessionId demo_session_id
+      FROM syslogThreat WHERE COALESCE(lastSeen,created)>=NOW()-INTERVAL 7 DAY
+     ORDER BY COALESCE(lastSeen,created) DESC LIMIT 150
 });
 
 $question .= "\nGLOBAL TARASEC CONTEXT (aggregated; do not reinterpret as local identity):\n".
              encode_json($globalContext)."\n";
 $question .= "\nREQUIRED OUTPUT CONTRACT:\n".
-             "Return JSON only. Include event_severity, category, confidence, summary, signals, reasoning, recommended_action.\n".
+             "Return JSON only. Include event_severity, category, confidence (numeric fraction 0..1), summary, signals, reasoning, recommended_action.\n".
              "Always include arrays unit_assessments, node_assessments, ip_observations, botnet_clusters even when empty.\n".
              "unit_assessments items require owner_id and unit_id and may include confidence,severity,category,summary,evidence.\n".
              "For suspicious local-unit-originated activity, explicitly identify owner_id:unit_id in the relevant unit_assessment and make clear it is a managed unit on THIS installation.\n".
@@ -183,6 +229,7 @@ die "Invalid sponsored AI response JSON: ".response_detail($assessRes)."\n"
     if $@ || ref($reply) ne 'HASH' || !$reply->{ok};
 my $assessment = $reply->{assessment};
 die "Sponsored AI response contained no assessment.\n" unless ref($assessment) eq 'HASH';
+validate_unit_identities($assessment, $question);
 my $elapsed = int(time() - $started + 0.5);
 
 my $localEnvelope = {
