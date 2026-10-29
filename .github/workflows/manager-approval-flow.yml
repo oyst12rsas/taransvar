@@ -4,6 +4,8 @@ on:
     paths:
       - 'html/managerRequestState.php'
       - 'html/script/managerAuth.php'
+      - 'html/script/managerGoogleSession.php'
+      - 'misc/test_manager_google_session.php'
       - 'html/gatekeeper/func/managerApprovals.php'
       - 'misc/test_manager_request_state.php'
       - 'misc/test_manager_ssh_public.php'
@@ -24,4 +26,6 @@ jobs:
           php -l html/script/managerSsh.php
           php -l html/script/managerSshCommon.php
           php misc/test_manager_ssh_public.php
-          php misc/test_manager_ssh_api.php
+          sudo php misc/test_manager_ssh_api.php
+          php -l html/script/managerGoogleSession.php
+          sudo php misc/test_manager_google_session.php
