@@ -87,7 +87,7 @@ function vpn_demo()
 			{
 				print "<b>NOTE</b> ! If you have problems opening these, then check that you VPN setup, Allowed IPs contain 100.68.0.0/16 (add if not)<br>";
 
-				print '<table id ="unitsTbl">';
+				print '<table id ="involvedSitesTbl">';
 				print "<tr><td>Site</td><td>IP</td><td>Status *)</td><td>Gatekeeper</td><td>Sample bank</td><td>Honey</td></tr>";
 				print "<tr><td>Me (".$setupRow["name"].")</td><td>&nbsp;</td></div><td><div id=\"s0\">";
 
@@ -148,7 +148,7 @@ function units()
 		$result->free();
 	}
 
-	print '<h2>Active units (connected clients in sub network):</h2>
+	print '<h2>Active units (observed in the last 15 minutes):</h2>
 	<table id="unitsTbl"><tr><th>Hostname</th><th>DHCP Client ID</th><th>Vendor</th><th>Nickname</th><th>Mac</th><th>Last seen</th><th>Last IP</th><th>Ports</th></tr>';
 	print "</table>";
 	print '<div id="updateTime">Not yet updated</div>';
