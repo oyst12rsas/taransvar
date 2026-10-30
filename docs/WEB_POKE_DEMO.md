@@ -147,8 +147,23 @@ and DNS names need an explicit trusted-origin design.
 7. Once per second, the browser requests combined status through its gateway.
    The DB returns its saved receiver reports. Polling never creates browser
    traffic to receivers and never reads new receiver traffic evidence.
-8. Reset removes only this session's mark, revokes the old central session and
-   requests a new one. Genuine findings and other demo sessions remain active.
+8. Start / Reset requests a fresh DB-authorized session and clears current/earlier
+   `DEMO:WEB_POKE:` marks for the actual local IP and matching unit (also unknown
+   unit IDs from before registration). It works after page reload or session expiry.
+   Other devices, different known unit IDs, other demos and security findings are
+   preserved. Older central capabilities expire normally; a still-open tab can
+   create its own mark again, so use one tab while demonstrating.
+9. Gateway state distinguishes this web demo, other `DEMO:` marks and separate
+   security findings. A separate finding blocks admission, regardless of demo
+   marks; if one appears during a session, the next gateway request closes that
+   central session so receiver capabilities are revoked too. Resolve the finding
+   through normal gateway management before retrying; Reset cannot clear it.
+   An infection tag alone is not proof of actual malware. Receiver cards show
+   observed tags, not independently verified compromises.
+10. Start takes fresh direct Pokes even when another demo keeps the device marked.
+    Mark is enabled only after every observation is clean. After reset, kernel tag
+    propagation may lag the DB; wait and Poke again rather than inventing CLEAN.
+
 
 Messages use per-receiver HMAC-SHA256, 30-second timestamps and replay-protected
 nonces. Keys and DB-control tokens are never sent to the browser. The transport
@@ -162,8 +177,10 @@ Sessions expire after 30 minutes. Start attempts and receiver Pokes are limited;
 private locked session storage is bounded and abandoned records are reclaimed.
 Stopping, closing the page, expiry, or revoking access does **not** promise to
 clear an already-applied kernel mark automatically. Reset while authorized before
-leaving. After revocation/expiry, the gateway owner may need to clear that specific
-`DEMO:WEB_POKE:` finding using management access. Do not clear genuine evidence.
+leaving. After expiry or page reload, Start can recover this device's older
+web-demo marks while authorized. If admission is revoked or a separate security
+finding blocks it, the gateway owner must use management access. Do not clear
+genuine evidence merely to make the demonstration start.
 
 ## Verification and rollback
 

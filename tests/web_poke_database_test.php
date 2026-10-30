@@ -59,5 +59,25 @@ webPokeLocalControl($guest,true); webPokeLocalControl($guest,false);
 check(webPokeLocalState($guestPeer)['state']==='clean','Guest reset still owns its original mark after registration');
 $expired=$session; $expired['expires']=time()-1; webPokeRecord('gateway',$token,fn($row)=>$expired);
 denied(fn()=>webPokeGatewaySession($token,$peer),'Expired session rejected');
+// Restart recovers stale web-demo marks, including before registration, but
+// preserves other devices, other known units, other demos and security findings.
+$db->query("UPDATE internalInfections SET active=b'0'");
+$db->query("INSERT INTO internalInfections(ip,unitId,why,active,severity) VALUES
+    (INET_ATON('$peer'),20,'DEMO:WEB_POKE:expired',b'1',3),
+    (INET_ATON('$peer'),0,'DEMO:WEB_POKE:guest-before-registration',b'1',3),
+    (INET_ATON('$peer'),99,'DEMO:WEB_POKE:another-unit',b'1',3),
+    (INET_ATON('10.100.0.151'),21,'DEMO:WEB_POKE:another-device',b'1',3),
+    (INET_ATON('$peer'),20,'DEMO:other-demo',b'1',3),
+    (INET_ATON('$peer'),20,'Real incident',b'1',8)");
+$before=webPokeLocalState($peer);
+check($before['sources']===['web_poke'=>3,'other_demo'=>1,'security_finding'=>1],'State distinguishes demo marks and security findings');
+check(webPokeNeedsRemediation($before),'A separate security finding blocks participation');
+webPokeRestartDevice($session);
+check((int)$db->query("SELECT COUNT(*) FROM internalInfections WHERE active=b'1'")->fetch_row()[0]===4,'Restart clears only matching device web-demo rows');
+check(webPokeNeedsRemediation(webPokeLocalState($peer)),'Restart cannot bypass a security finding');
+$db->query("UPDATE internalInfections SET active=b'0' WHERE why='Real incident'");
+check(!webPokeNeedsRemediation(webPokeLocalState($peer)),'Demo-only infections do not require remediation');
+$db->query("UPDATE internalInfections SET active=b'0'");
+check(webPokeLocalState($peer)['state']==='clean','No findings means a clean gateway assessment');
 $db->close();
 echo "MariaDB visitor binding and real session-specific mark/reset operations passed.\n";

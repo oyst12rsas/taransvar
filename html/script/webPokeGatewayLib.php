@@ -36,9 +36,28 @@ function webPokeLocalUnit(string $peer): array
 function webPokeLocalState(string $peer): array
 {
     $db = getConnection();
-    $stmt = $db->prepare("SELECT severity FROM internalInfections WHERE ip=INET_ATON(?) AND active=b'1' AND severity>1 LIMIT 1");
-    $stmt->bind_param('s', $peer); $stmt->execute(); $infected = (bool)$stmt->get_result()->fetch_row(); $stmt->close(); $db->close();
-    return ['state'=>$infected ? 'infected':'clean','observed_at'=>gmdate('c'),'message'=>'Current state on this gateway'];
+    $stmt = $db->prepare("SELECT why FROM internalInfections WHERE ip=INET_ATON(?) AND active=b'1' AND severity>1");
+    $stmt->bind_param('s', $peer); $stmt->execute(); $result = $stmt->get_result();
+    $sources = ['web_poke'=>0,'other_demo'=>0,'security_finding'=>0];
+    while ($row = $result->fetch_assoc()) {
+        $why = (string)($row['why'] ?? '');
+        $source = str_starts_with($why, 'DEMO:WEB_POKE:') ? 'web_poke'
+            : (str_starts_with($why, 'DEMO:') ? 'other_demo' : 'security_finding');
+        ++$sources[$source];
+    }
+    $stmt->close(); $db->close();
+    $infected = array_sum($sources) > 0;
+    $reasons = [];
+    if ($sources['web_poke']) $reasons[] = 'this web demo';
+    if ($sources['other_demo']) $reasons[] = 'another demo';
+    if ($sources['security_finding']) $reasons[] = 'a separate security finding';
+    return ['state'=>$infected ? 'infected':'clean','observed_at'=>gmdate('c'),'sources'=>$sources,
+        'message'=>$infected ? 'This device is marked infected by ' . implode(', ', $reasons)
+            : 'This device is currently clean on this gateway'];
+}
+function webPokeNeedsRemediation(array $state): bool
+{
+    return (int)($state['sources']['security_finding'] ?? 0) > 0;
 }
 function webPokeLocalControl(array $session, bool $infected): void
 {
@@ -68,6 +87,17 @@ function webPokeGatewaySession(string $token, string $peer): array
     if ($row['client_ip'] !== $peer)
         throw new DomainException('This demo session belongs to another unit');
     return $row;
+}
+function webPokeRestartDevice(array $session): void
+{
+    // Called only after a new DB-authorized start. Recover this device's web-demo
+    // marks even after reload/expiry, without clearing other demos or findings.
+    $db = getConnection();
+    try {
+        $stmt = $db->prepare("UPDATE internalInfections SET active=b'0',handled=b'0',lastSeen=NOW() WHERE ip=INET_ATON(?) AND (unitId=? OR unitId=0 OR unitId IS NULL) AND LEFT(why,14)='DEMO:WEB_POKE:' AND active=b'1'");
+        $stmt->bind_param('si', $session['client_ip'], $session['unit_id']);
+        $stmt->execute(); $stmt->close();
+    } finally { $db->close(); }
 }
 function webPokeDbCall(array $session, string $action): array
 {
