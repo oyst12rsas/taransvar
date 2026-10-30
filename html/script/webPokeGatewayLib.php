@@ -90,7 +90,7 @@ function webPokeGatewaySession(string $token, string $peer): array
 }
 function webPokeRestartDevice(array $session): int
 {
-    // Called only after a new DB-authorized start. Recover this device's demo-only
+    // Called only after a DB-authorized start or clean request. Recover this device's demo-only
     // marks even after reload/expiry, without clearing security findings.
     $db = getConnection();
     try {

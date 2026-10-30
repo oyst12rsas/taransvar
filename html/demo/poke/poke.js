@@ -25,7 +25,8 @@ function render(id, result) {
 }
 function buttons() {
   $('start').disabled = busy;
-  $('mark').disabled = !running || busy || !baseline || gatewayState !== 'clean';
+  $('mark').disabled = !running || busy;
+  $('clean').disabled = !running || busy;
   $('stop').disabled = !running || busy;
   Object.keys(nodes).forEach(id => $(id).querySelector('button').disabled = !running || busy);
 }
@@ -74,10 +75,9 @@ async function pokeNode(id) {
   if (version === generation) render(id, receivers[id]);
 }
 function confirmBaseline() {
-  if (!baseline && gatewayState === 'clean' && Object.keys(nodes).length > 0 && Object.keys(nodes).every(id => receivers[id]?.state === 'clean')) {
-    baseline = true;
-    $('message').textContent = 'All ' + (Object.keys(nodes).length + 1) + ' observations confirmed clean. Mark this device infected, then Poke the receivers one at a time.';
-  }
+  // Informational only: receiver observations never gate the state controls.
+  baseline = gatewayState === 'clean' && Object.keys(nodes).length > 0
+    && Object.keys(nodes).every(id => receivers[id]?.state === 'clean');
 }
 async function poll(version) {
   if (!running || busy || version !== generation) return;
@@ -123,20 +123,25 @@ $('start').onclick = () => action(async () => {
   if (gatewayState === 'infected') {
     $('message').textContent = (data.gateway.message || 'A demo infection mark remains') + '. Reset could not match every mark to this device. Ask the gateway operator to review the device records before demonstrating a clean starting state.';
   } else if (gatewayState === 'clean') {
-    $('message').textContent = 'Previous demos reset for this device. Checking receivers with fresh Pokes. If they still report INFECTED, wait for the tag update and Poke again; Mark becomes available when every observation is clean.';
+    $('message').textContent = 'Previous demos reset for this device. Checking receivers with fresh Pokes. If they still report INFECTED, wait for the tag update and Poke again. You can mark this device infected or clean at any time during the session.';
   } else {
     $('message').textContent = 'Gateway state is unknown. Poke receivers to collect observations; no clean starting state has been confirmed.';
   }
   await Promise.all(Object.keys(nodes).map(pokeNode));
 });
 $('mark').onclick = () => action(async () => {
-  if (!running || !baseline || gatewayState !== 'clean') return;
+  if (!running) return;
   const data = await gatewayCall('mark'); gatewayResult(data.gateway);
   $('message').textContent = 'Gateway marked. Then Poke each receiver to ask whether it sees your device as infected or clean.';
 });
+$('clean').onclick = () => action(async () => {
+  if (!running) return;
+  const data = await gatewayCall('reset'); gatewayResult(data.gateway);
+  $('message').textContent = 'Device demo marks cleared. Receiver cards keep their last observation. Poke each receiver to ask whether it sees your device as infected or clean.';
+});
 $('stop').onclick = () => {
   running = false; clearTimeout(timer); ++generation; buttons();
-  $('message').textContent = 'Stopped observing. Use Reset before leaving to clear this session’s demo mark.';
+  $('message').textContent = 'Stopped observing. Start / Reset my demos to clear this device’s demo marks before leaving.';
   $('freshness').textContent = 'Stopped · observations no longer refreshed';
 };
 $('copy').onclick = async () => {
