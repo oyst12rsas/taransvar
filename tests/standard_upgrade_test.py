@@ -774,6 +774,86 @@ class UpgradeTests(unittest.TestCase):
             self.assertLess(text.index('tarasecRequireDemo();'), text.find("include '../dbfunc.php'") if "include '../dbfunc.php'" in text else len(text))
 
 
+class OperationsRecoveryTests(unittest.TestCase):
+    setUp = UpgradeTests.setUp
+    tearDown = UpgradeTests.tearDown
+    def prepare_recovery(self):
+        u.MODE.write_text('demo\n')
+        state={'roles':['database','node'],'features':{
+            'runtime':{'status':'completed','installed_version':7,'installed_revision':'b'*40},
+            'operations':{'status':'partial','installed_version':0,'installed_revision':'a'*40,
+                'details':{'activation':'pending_model_configuration'}}},'history':[]}
+        u.save(state)
+        return state
+
+    def test_activation_recovery_only_touches_operations_and_uses_deployed_revision(self):
+        before=self.prepare_recovery()
+        with patch.object(u,'OPERATIONS_LOCK',self.root/'worker.lock'),patch.object(u.sys.stdin,'isatty',return_value=True),patch.object(u,'activate_operations',return_value={'activation':'active'}) as activate,patch.object(u,'run',return_value=Mock(stdout='{"version":5}')) as run,patch.object(u,'apply_feature') as install,patch('sys.stdout',new=io.StringIO()):
+            self.assertEqual(u.main(['upgrade','--configure-operations']),0)
+        after=u.load_state()
+        self.assertEqual(after['features']['runtime'],before['features']['runtime'])
+        self.assertEqual(after['features']['operations']['installed_version'],5)
+        self.assertEqual(after['features']['operations']['installed_revision'],'a'*40)
+        self.assertEqual(after['roles'],before['roles'])
+        self.assertEqual(after['features']['operations']['status'],'completed')
+        self.assertEqual(activate.call_args.kwargs,{'interactive':True})
+        self.assertEqual(run.call_args.args[0][-1],'a'*40+':release.json')
+        install.assert_not_called()
+
+    def test_activation_recovery_keeps_incomplete_setup_partial(self):
+        self.prepare_recovery()
+        with patch.object(u,'OPERATIONS_LOCK',self.root/'worker.lock'),patch.object(u,'activate_operations',return_value={'pending_configuration':True,'activation':'pending_model_connection'}),patch.object(u,'run',return_value=Mock(stdout='{"version":5}')),patch('sys.stdout',new=io.StringIO()):
+            self.assertEqual(u.resume_operations(u.load_state()),1)
+        record=u.load_state()['features']['operations']
+        self.assertEqual(record['status'],'partial')
+        self.assertEqual(record['installed_version'],0)
+
+    def test_activation_recovery_does_not_guess_version_from_new_checkout(self):
+        self.prepare_recovery()
+        with patch.object(u,'OPERATIONS_LOCK',self.root/'worker.lock'),patch.object(u,'activate_operations',return_value={'activation':'active'}),patch.object(u,'run',side_effect=OSError('Old revision unavailable')),patch('sys.stdout',new=io.StringIO()):
+            self.assertEqual(u.resume_operations(u.load_state()),0)
+        self.assertEqual(u.load_state()['features']['operations']['installed_version'],0)
+
+    def test_failed_installation_cannot_be_relabelled_as_activation_only(self):
+        self.prepare_recovery()
+        state=u.load_state();state['features']['operations']['status']='failed';u.save(state)
+        with patch.object(u,'OPERATIONS_LOCK',self.root/'worker.lock'),patch.object(u,'activate_operations') as activate:
+            with self.assertRaisesRegex(ValueError,'finish the staged installation'):
+                u.resume_operations(u.load_state())
+        activate.assert_not_called()
+
+    def test_running_worker_blocks_configuration(self):
+        self.prepare_recovery()
+        lock_path=self.root/'worker.lock'
+        import fcntl
+        with lock_path.open('a') as lock,patch.object(u,'OPERATIONS_LOCK',lock_path),patch.object(u,'activate_operations') as activate:
+            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            with self.assertRaisesRegex(ValueError,'assessment is running'):
+                u.resume_operations(u.load_state())
+        activate.assert_not_called()
+
+    def test_production_activation_needs_fresh_confirmation(self):
+        self.prepare_recovery();u.MODE.write_text('production\n')
+        with patch.object(u,'choice',return_value='no') as confirm,patch.object(u,'activate_operations') as activate:
+            self.assertEqual(u.resume_operations(u.load_state()),0)
+        confirm.assert_called_once();activate.assert_not_called()
+
+    def test_status_explains_activation_without_changing_state(self):
+        self.prepare_recovery();before=u.STATE.read_bytes()
+        with patch('sys.stdout',new=io.StringIO()) as output:
+            u.print_upgrade_details(u.load_state())
+        self.assertIn('Model configuration or approval is pending',output.getvalue())
+        self.assertIn('--configure-operations',output.getvalue())
+        self.assertEqual(u.STATE.read_bytes(),before)
+
+    def test_targeted_setup_requires_terminal_and_rejects_mode_changes(self):
+        self.prepare_recovery()
+        with patch.object(u.sys.stdin,'isatty',return_value=False),patch.object(u,'resume_operations') as resume,patch('sys.stdout',new=io.StringIO()),patch('sys.stderr',new=io.StringIO()):
+            with self.assertRaises(SystemExit):u.main(['upgrade','--configure-operations'])
+            with self.assertRaises(SystemExit):u.main(['upgrade','--configure-operations','--mode','production'])
+        resume.assert_not_called()
+
+
 if __name__ == '__main__': unittest.main()
 
 

@@ -527,3 +527,37 @@ Deploy with the maintained central bootstrap (upgrade --enable-daily), then reru
 upgrade. Missing/untrusted identity metadata and stale health reports cannot establish
 test readiness. No database network configuration, reporting destination, selected
 test units, pause, failure hold or observation-period policy is changed.
+
+## Resume operations activation without repeating the upgrade
+
+If status shows `operations: partial`, run on that same server:
+
+```bash
+clear
+# Machine: the server whose operations activation is partial (for example dbserver1)
+cd ~/taransvar
+sudo ./tarasec upgrade --configure-operations
+```
+
+This command resumes the existing model/activity configuration and probes the
+model before enabling the agent timer. It does not reinstall code, change host
+mode/roles, or modify SSH policy. It requires root and an interactive terminal,
+respects a permanent decline, and refuses to run while an upgrade or worker
+assessment holds its lock. Production activation requires fresh confirmation.
+Existing complete model settings are reused; missing credentials/approval remain
+pending rather than becoming successful activation.
+
+A configuration-only recovery preserves the recorded installed revision. For an
+older partial receipt it recovers the version from that exact commit's release
+manifest; an unavailable manifest leaves the version unknown (zero), never the
+version from newly fetched source. Run normal staged maintenance afterwards to
+refresh candidate verification and scheduler status. A pending activation can
+hold the composite release at zero even when other components are completed;
+this does not mean those components are missing.
+
+The daily scheduler now identifies failure stages (source fetch, release lookup,
+central rollout evidence, activity evidence, or pinned release execution) and
+reports an exit code when available. Published diagnostics omit command arguments
+and output. Detailed execution output remains in the existing private local error
+file. Installing the updated controller still requires daily enrollment from the
+updated checkout; pulling source alone does not replace installed worker files.
