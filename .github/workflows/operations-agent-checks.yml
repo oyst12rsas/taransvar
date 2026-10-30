@@ -26,6 +26,7 @@ on:
       - 'misc/operations_actions.py'
       - 'misc/operations_prompt.py'
       - 'misc/operations_model_probe.py'
+      - 'misc/operations_model_errors.py'
       - 'misc/operations-activity.json.example'
       - 'misc/install_operations_agent.sh'
       - 'misc/operations-agent.json.example'

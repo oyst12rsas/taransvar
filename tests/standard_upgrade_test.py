@@ -356,6 +356,16 @@ class UpgradeTests(unittest.TestCase):
         self.assertNotIn('private-secret',output.getvalue());self.assertEqual(result['connection_check'],'authentication_failed')
         self.assertIn('--deployed-runtime',probe.call_args.args[0]);run.assert_not_called()
 
+    def test_quota_diagnostic_reaches_cli_and_partial_receipt_without_schema_speculation(self):
+        path=self.root/'etc/tarasec/operations-agent.json';path.parent.mkdir(parents=True);path.write_text('{"mode":"inspect","model_connection":"local-flowise"}')
+        u.MODE.write_text('demo\n')
+        report={'code':'provider_quota_exhausted','stage':'model_request','http_status':500,'message':'private-secret'}
+        with patch.object(u,'configure_operations_model',return_value=True),patch.object(u,'ensure_operations_activity',return_value='active'),patch.object(u.subprocess,'run',return_value=Mock(returncode=1,stdout=u.json.dumps(report))),patch.object(u,'run') as run,patch('sys.stdout',new=io.StringIO()) as output:
+            result=u.activate_operations(self.root/'backup',root=self.root)
+        self.assertIn('credits/quota exhausted',output.getvalue())
+        self.assertNotIn('chatflow may',output.getvalue());self.assertNotIn('private-secret',output.getvalue())
+        self.assertEqual(result['connection_check'],'provider_quota_exhausted');run.assert_not_called()
+
     def test_invalid_probe_output_is_not_published_or_trusted(self):
         path=self.root/'etc/tarasec/operations-agent.json';path.parent.mkdir(parents=True);path.write_text('{"mode":"inspect"}')
         u.MODE.write_text('demo\n')

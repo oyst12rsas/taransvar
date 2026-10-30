@@ -4,6 +4,8 @@ import json
 import sys
 import time
 import urllib.error
+# Import the updated diagnostic classifier before selecting the deployed runtime.
+from operations_model_errors import read_model_http_error
 if '--deployed-runtime' in sys.argv:
     sys.path.insert(0, '/usr/local/lib/tarasec-operations')
 from operations_agent import model, trusted, diagnostic_feedback
@@ -30,14 +32,7 @@ def connection_check():
         return dict(ok=True, stage=stage, code='verified',
             message='Model connection and operations decision protocol verified; no action executed.')
     except urllib.error.HTTPError as error:
-        status = error.code
-        error.close()
-        message = ('Model endpoint rejected authentication or access.' if status in (401,403) else
-            'Model endpoint rate limited the request.' if status == 429 else
-            'Model endpoint returned HTTP ' + str(status) + '; inspect the model service logs.')
-        return dict(ok=False, stage=stage,
-            code='authentication_failed' if status in (401,403) else 'rate_limited' if status==429 else 'model_http_error',
-            http_status=status, message=message)
+        return dict(ok=False, stage=stage, **read_model_http_error(error))
     except (TimeoutError, urllib.error.URLError):
         return dict(ok=False, stage=stage, code='model_unreachable',
             message='Model endpoint timed out or could not be reached; inspect routing, TLS and the model service.')

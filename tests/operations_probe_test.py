@@ -83,6 +83,21 @@ class ConnectionCheckTest(unittest.TestCase):
         self.assertEqual(result['code'],'authentication_failed');self.assertEqual(result['http_status'],401)
         self.assertNotIn('private-secret',json.dumps(result));self.assertNotIn('private-body',json.dumps(result))
 
+    def test_wrapped_provider_quota_reaches_the_probe_without_raw_details(self):
+        import urllib.error
+        error=urllib.error.HTTPError('https://private.invalid/token',500,'private-secret',{},io.BytesIO(b'{"message":"429 You have no credits remaining. private-secret"}'))
+        result=self.run_check(error=error)
+        self.assertEqual(result['code'],'provider_quota_exhausted')
+        self.assertEqual(result['http_status'],500)
+        self.assertIn('credits/quota exhausted',result['message'])
+        self.assertNotIn('private-secret',json.dumps(result))
+
+    def test_rate_limit_is_not_reported_as_exhausted_credits(self):
+        import urllib.error
+        error=urllib.error.HTTPError('https://private.invalid',429,'private',{},io.BytesIO(b'{"error":{"code":"rate_limit_exceeded"}}'))
+        result=self.run_check(error=error)
+        self.assertEqual(result['code'],'rate_limited')
+
     def test_timeout_and_arbitrary_failure_are_safe(self):
         result=self.run_check(error=TimeoutError('private-endpoint'))
         self.assertEqual(result['code'],'model_unreachable')

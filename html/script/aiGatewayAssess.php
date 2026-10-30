@@ -5,6 +5,7 @@ mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 include '../dbfunc.php';
 require_once __DIR__.'/gatewayAiValidation.php';
+require_once __DIR__.'/modelProviderError.php';
 
 header('Cache-Control: no-store');
 header('Content-Type: application/json; charset=utf-8');
@@ -120,9 +121,10 @@ try {
     curl_close($ch);
 
     if ($raw === false || $http < 200 || $http >= 300) {
-        error_log("aiGatewayAssess: Flowise failed for $ip HTTP $http $err");
+        $failure = taraSecModelProviderFailure($http, is_string($raw) ? $raw : '');
+        error_log('aiGatewayAssess: '.$failure['error'].'; '.$failure['message']);
         $conn->close();
-        replyJson(502, ['ok'=>false,'error'=>'ai_provider_unavailable']);
+        replyJson(502, ['ok'=>false]+$failure);
     }
 
     $outer = json_decode($raw, true);

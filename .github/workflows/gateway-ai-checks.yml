@@ -4,6 +4,8 @@ on:
     paths:
       - 'html/script/gatewayAiContext.php'
       - 'html/script/aiGatewayAssess.php'
+      - 'html/script/modelProviderError.php'
+      - 'tests/model_provider_error_test.php'
       - 'html/script/gatewayAiValidation.php'
       - 'tests/gateway_ai_validation_test.php'
       - 'tests/gateway_ai_identity_test.pl'
@@ -27,6 +29,8 @@ jobs:
           php -l html/script/aiGatewayAssess.php
           php -l html/script/gatewayAiValidation.php
           php tests/gateway_ai_validation_test.php
+          php -l html/script/modelProviderError.php
+          php tests/model_provider_error_test.php
       - name: Check Perl syntax
         run: |
           sudo apt-get update

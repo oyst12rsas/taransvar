@@ -598,3 +598,23 @@ status/authentication, connectivity/timeouts, invalid JSON, a gateway-assessment
 response and an invalid operations decision. Activation prints only the fixed
 code/stage and HTTP status, and stays pending on failure. No dependency deployment
 or reinstallation is required to run this diagnostic against the installed agent.
+
+### Propagate sanitized provider failures downstream
+
+The operations worker and activation probe share a bounded HTTP error classifier.
+When Flowise wraps an upstream error in HTTP 500, a forwarded credits/quota error
+becomes `provider_quota_exhausted`; rejected provider keys, endpoint access denial
+and transient rate limits have separate fixed codes. The actual endpoint HTTP
+status is retained. No raw response, URL, key, stack trace or submitted prompt is
+published. If Flowise omits the upstream reason entirely, downstream reporting
+retains an unknown HTTP error rather than inventing a diagnosis.
+
+Activation prints the cause, stores its fixed code in the partial receipt, and
+includes it in CLI status and the existing software heartbeat for Gatekeeper
+Issues. The gateway assessment API also sends the sanitized error code/message
+and upstream HTTP status to its caller and PHP error log instead of discarding
+it behind `ai_provider_unavailable`. Its callers keep their existing error path;
+no failed request becomes an assessment or action. The bounded daily-enrollment
+web bootstrap installs the classifier before its assessment endpoint, preserving
+local DB credentials. Updating the source diagnostic requires no worker restart;
+normal worker deployment includes its shared classifier module.
