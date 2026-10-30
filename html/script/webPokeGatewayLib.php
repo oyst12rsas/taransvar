@@ -7,8 +7,23 @@ function webPokeGatewayDb(): string
     if (!webPokeIp($ip)) throw new RuntimeException('Configure the demo DB NetBird address');
     return $ip;
 }
+function webPokeLocalSubnet(): array
+{
+    $db = getConnection();
+    try {
+        $result = $db->query('SELECT INET_NTOA(internalIP) address,INET_NTOA(nettmask) mask FROM setup LIMIT 1');
+        return $result->fetch_assoc() ?: [];
+    } finally { $db->close(); }
+}
+function webPokeRequireLocal(string $peer): void
+{
+    $subnet = webPokeLocalSubnet();
+    if (!webPokeIsLocal($peer, (string)($subnet['address'] ?? ''), (string)($subnet['mask'] ?? '')))
+        throw new DomainException('This unit is outside the local subnet; use its own gateway to start the demo');
+}
 function webPokeLocalUnit(string $peer): array
 {
+    webPokeRequireLocal($peer);
     if (!filter_var($peer, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) throw new DomainException('IPv4 local unit required');
     $db = getConnection();
     $stmt = $db->prepare('SELECT unitId,ownerId FROM unit WHERE ipAddress=INET_ATON(?) ORDER BY lastSeen DESC,unitId DESC LIMIT 1');

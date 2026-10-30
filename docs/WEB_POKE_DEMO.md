@@ -40,83 +40,85 @@ admission, not a guarantee that infection information cannot be inferred from
 ordinary firewall/network behavior or obtained through separately authorized
 management/reporting interfaces.
 
-## Fixed receivers, dynamic gateways
+## Automatic roles and participant list
 
-Only the DB coordinator uses `webPokeNodes()` for participant selection:
+A node has no exclusive gateway/receiver role. Every installed node serves local
+subnet clients as their gateway and authorized connections from another gateway
+as a receiver. The single DB server additionally runs the coordinator.
 
-| Receiver | NetBird address |
+The installer reads `setup.isGlobalDbServer`, `setup.globalDb1ip` and the machine's
+NetBird interface addresses. Runtime classification uses the actual socket peer
+and `setup.internalIP` / `setup.nettmask`. Only peers inside that local subnet may
+request gateway sessions or use local-unit identity; a unit-table row alone does
+not make an external source local. Nonlocal Pokes still need DB authorization,
+a receiver-scoped token, matching gateway address and browser origin. Invalid or
+missing subnet configuration cannot grant gateway access.
+
+The DB coordinator's fixed participant list is:
+
+| Node | NetBird address |
 |---|---|
+| Standard gateway | 100.68.165.190 |
 | Roquefort | 100.68.176.110 |
 | Camembert | 100.68.149.164 |
 | dbserver1 | 100.68.126.0 |
 | Gouda | 100.68.51.247 |
 
-Squash, Tomato, Audi and Porsche are excluded. Each receiver has an independent
-256-bit authentication key, generated on the DB server, and a pinned DB address.
-A new gateway cannot choose arbitrary destinations or claim another gateway IP.
+The participant's own gateway is removed from its receiver list. A Standard
+session therefore has the familiar four receivers; a Roquefort session instead
+includes Standard as a receiver. A registered gateway outside the participant
+list may serve its own units, but does not automatically gain receiver credentials.
+Squash, Tomato, Audi and Porsche remain excluded. Adding a new receiver is an
+explicit DB participant-list change, independent of allowing a gateway to join.
 
-## Deployment
+## Deployment: the same command on every computer
 
-Deploy the DB and all receivers before using the upgraded browser. The previous
-unauthenticated `webPokeStatus.php` route now returns 410. Use the targeted
-installer, or ensure a full recursive web deployment also installs the role
-configuration and matching receiver keys. No DB migration or new daemon is needed.
-All nodes need PHP 8.3-compatible PHP, mysqli/curl and existing TaraSec tables;
-receivers need working tarakernel/taralink reporting. Production-mode hosts refuse
-installation and the new APIs. No firewall or routing policy is modified.
-
-On **dbserver1**, after pulling the merged change:
+Run on **dbserver1 first**, then on **wt-gw1, Roquefort, Camembert and Gouda**:
 
 ```sh
 clear
-# Machine: dbserver1
+# Machine: dbserver1 first; then wt-gw1 / Roquefort / Camembert / Gouda
 cd ~/taransvar
 git pull --ff-only
-sudo bash misc/install_web_poke_demo.sh --db
-sudoedit /etc/tarasec-web-poke-db.conf
+sudo bash misc/install_web_poke_demo.sh
 ```
 
-The DB installer also enrolls dbserver1 as a receiver. It generates individual
-root-only receiver files under `/etc/tarasec-web-poke-enrollment/`:
-`roquefort.conf`, `camembert.conf`, `dbserver1.conf`, `gouda.conf`. Transfer each
-file through your existing authorized administrative channel to **only its
-matching receiver**. Do not paste their keys into chat, commit them or publish
-them. Keep the transferred file readable only by its administrator.
+No role argument or credential-file transfer is needed. Old `--db`, `--gateway`
+and `--receiver` arguments remain accepted, but configuration determines the
+installed roles. A listed receiver without matching credentials automatically
+enrolls after its root installer proves that enrollment is running locally.
+Existing matching credentials are retained; reinstallation preserves DB policy
+and keys. The DB installer generates any newly required participant key, including
+Standard's receiver key. It must run first after this upgrade.
 
-On **each matching receiver**, with its securely transferred file:
+During automatic enrollment, the root installer creates an ephemeral encryption
+key in memory and a 120-second root-owned, read-only-for-Apache bootstrap file.
+The DB calls back the actual approved receiver peer with an unguessable proof,
+obtains the local administrator's public key, and seals that receiver's credentials
+to it with libsodium. Only the installer process can decrypt the result. The
+bootstrap is removed when the attempt finishes, including failures. A browser
+cannot substitute its own public key, request another node's credentials, or
+turn an unlisted gateway into a receiver. No key is printed or placed in a URL.
 
-```sh
-clear
-# Machine: Roquefort / Camembert / Gouda — run on each with its own file
-cd ~/taransvar
-git pull --ff-only
-sudo bash misc/install_web_poke_demo.sh --receiver /secure/path/this-receiver.conf
-```
+The installer copies the demo, menu links and API files to `/var/www/html`,
+preserving deployed DB credentials. Gateway/receiver configuration is installed
+on every applicable node; DB-only policy stays on the coordinator. Generated
+root-only files in `/etc/tarasec-web-poke-enrollment/` are retained for administrative
+recovery, not routine manual distribution.
 
-On **wt-gw1 or a new participating gateway**:
+A first enrollment requires DB-to-node HTTP callback access on the registered
+NetBird address. Enrollment fails closed if the DB has not been upgraded, the
+callback is unavailable, the peer is unlisted, or the credential reply cannot be
+decrypted. Apache and CLI PHP need mysqli, curl and sodium. Existing TaraSec tables
+and working tarakernel/taralink traffic reporting remain required. No DB migration,
+new daemon, firewall change or route change is introduced. Production mode blocks
+installation and the APIs. For a different DB address, configure `globalDb1ip`;
+`WEB_POKE_DB_IP` remains an explicit installer override.
 
-```sh
-clear
-# Machine: wt-gw1 / new gateway
-cd ~/taransvar
-git pull --ff-only
-sudo bash misc/install_web_poke_demo.sh --gateway
-```
-
-`WEB_POKE_DB_IP` may be explicitly supplied to the installer when the DB overlay
-address differs from 100.68.126.0. Gateway configuration is in
-`/etc/tarasec-web-poke-gateway.conf`; the callback must be reachable at the
-registered overlay address on HTTP port 80. A gateway must have a central
-`partnerRouter` row, and the caller must resolve to local `unit.ownerId` +
-`unit.unitId`. Missing ownership produces an actionable refusal, not an IP-only
-identity. Receivers must see the participant's NAT source as that gateway's
-registered NetBird address. Gateway page URLs currently use literal IPv4 addresses;
-reverse proxies, IPv6 and DNS names need an explicit trusted-origin design.
-
-Configuration files are root-owned and readable by www-data, never writable by
-the web application. Apache's account must be able to create a private temporary
-session directory. Keys are preserved across reinstalls. Rotating a receiver key
-requires distributing its matching file and ends outstanding signed requests.
+Configuration files are root-owned, readable by www-data and not writable by the
+web application. Session storage needs a private temporary directory writable by
+Apache. These URLs currently use literal IPv4 addresses; reverse proxies, IPv6
+and DNS names need an explicit trusted-origin design.
 
 ## Protocol and observation isolation
 
@@ -125,14 +127,14 @@ requires distributing its matching file and ends outstanding signed requests.
 2. The DB checks current policy and central gateway registration **before** any
    identity callback or state disclosure. It redeems the proof by calling that
    literal gateway peer; arbitrary URLs, proxies and redirects are not accepted.
-3. The DB sends authenticated registrations to all four receivers, with the
+3. The DB sends authenticated registrations to the selected receivers, with the
    actual gateway address, browser origin, session expiry and a distinct Poke
    capability for each receiver. All must acknowledge before admission succeeds.
 4. The gateway receives a private DB-control token, kept server-side. The browser
    gets a separate device-bound gateway token and receiver-scoped Poke tokens.
    A browser token cannot be used directly as a DB control token. A different
    local unit or changed ownership cannot reuse the gateway session.
-5. The browser takes direct baseline Pokes. All five must confirm clean before
+5. The browser takes direct baseline Pokes. All participating computers must confirm clean before
    the Mark button is enabled. Mark uses an independently authorized DB request
    and creates only a `DEMO:WEB_POKE:<session>` infection row on the gateway.
 6. A direct Poke validates its scoped capability, real socket peer and stored
@@ -162,7 +164,7 @@ leaving. After revocation/expiry, the gateway owner may need to clear that speci
 
 ## Verification and rollback
 
-Automated checks cover YES/NO admission, default-deny behavior, new gateways,
+Automated checks cover YES/NO admission, default-deny behavior, new gateways, automatic dual roles, local-subnet isolation, encrypted root enrollment,
 registration, one-time authentication, replay/tamper/stale messages, immediate
 revocation, other-gateway tokens, receiver isolation, expired sessions, real
 session-scoped mutation SQL, MariaDB unit ownership and mark/reset, and the browser

@@ -3,6 +3,7 @@ require_once __DIR__ . '/webPokeLib.php';
 function webPokeCoordinator(array $config, string $peer, array $input, callable $rpc, callable $registered): array
 {
     $action = (string)($input['action'] ?? '');
+    if ($action === 'enroll') return webPokeEnrollReceiver($config, $peer, $input, $rpc);
     if ($action === 'receiver') {
         $nodeId = (string)($input['node_id'] ?? ''); $nodes = webPokeNodes();
         if (!isset($nodes[$nodeId]) || $nodes[$nodeId]['address'] !== $peer) throw new DomainException('Receiver authentication required');
@@ -43,7 +44,7 @@ function webPokeCoordinator(array $config, string $peer, array $input, callable 
         $id = bin2hex(random_bytes(32)); $control = bin2hex(random_bytes(32));
         $session = ['expires'=>time()+WEB_POKE_TTL, 'gateway_ip'=>$peer, 'owner_id'=>(int)$identity['owner_id'],
             'unit_id'=>(int)$identity['unit_id'], 'control_hash'=>hash('sha256', $control), 'receivers'=>[]];
-        foreach (webPokeNodes() as $nodeId => $node) {
+        foreach (webPokeReceiversFor($peer) as $nodeId => $node) {
             $key = (string)($config['KEY_' . strtoupper($nodeId)] ?? '');
             $poke = bin2hex(random_bytes(32));
             $registration = ['action'=>'register','node_id'=>$nodeId,'session_id'=>$id,'poke_hash'=>hash('sha256', $poke),

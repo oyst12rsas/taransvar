@@ -4,4 +4,4 @@
 ; Missing/invalid policy or unavailable DB denies access. No wildcard/subnet matching.
 ALLOW_ANY_GATEWAY=YES
 ALLOWED_GATEWAYS=100.68.165.190
-; KEY_ROQUEFORT, KEY_CAMEMBERT, KEY_DBSERVER1 and KEY_GOUDA are generated locally.
+; KEY_STANDARD, KEY_ROQUEFORT, KEY_CAMEMBERT, KEY_DBSERVER1 and KEY_GOUDA are generated locally.

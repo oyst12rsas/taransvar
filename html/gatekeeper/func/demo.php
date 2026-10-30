@@ -44,7 +44,7 @@ function demo()
 <div class="demo-hub-grid">
     <div class="demo-hub-card">
         <h2>Who knows you’re infected? (browser)</h2>
-        <p>Start clean, mark this device infected, then Poke Roquefort, Camembert, dbserver1 and Gouda one at a time. View the page here; run it on your participating gateway.</p>
+        <p>Start clean, mark this device infected, then Poke the other participating computers one at a time. View the page here; run it on your participating gateway.</p>
         <a class="demo-button" href="/demo/poke/">Open browser Poke demo</a>
     </div>
     <div class="demo-hub-card"><h2>Live presentation</h2><p>Show this computer, its gateway and two receivers together, with synchronized observations and guided Demo 1 controls.</p><a class="demo-button" href="/demo/live/">Open live presentation</a></div>

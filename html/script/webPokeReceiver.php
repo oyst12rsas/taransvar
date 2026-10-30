@@ -23,6 +23,11 @@ try {
     if (!webPokeToken($poke) || !hash_equals($session['poke_hash'], hash('sha256', $poke))
         || $peer !== $session['gateway_ip'] || ($_SERVER['HTTP_ORIGIN'] ?? '') !== $session['origin'])
         throw new DomainException('Authorized gateway session required');
+    require_once __DIR__ . '/webPokeGatewayLib.php';
+    require_once __DIR__ . '/../dbfunc.php';
+    $subnet = webPokeLocalSubnet();
+    if (webPokeIsLocal($peer, (string)($subnet['address'] ?? ''), (string)($subnet['mask'] ?? '')))
+        throw new DomainException('Local units must use this node as their gateway');
     header('Access-Control-Allow-Origin: ' . $session['origin']); header('Vary: Origin');
     webPokeRate('poke', $id, 30, 60);
     $callDb = function(string $action, array $extra=[]) use ($dbIp,$key,$nodeId,$id): array {

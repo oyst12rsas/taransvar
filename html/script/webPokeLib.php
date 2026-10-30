@@ -4,6 +4,7 @@ function webPokeNodes(): array
 {
     // Receiver selection belongs to the DB coordinator, never to a browser.
     return [
+        'standard' => ['name'=>'Standard gateway', 'address'=>'100.68.165.190'],
         'roquefort' => ['name'=>'Roquefort', 'address'=>'100.68.176.110'],
         'camembert' => ['name'=>'Camembert', 'address'=>'100.68.149.164'],
         'dbserver1' => ['name'=>'dbserver1', 'address'=>'100.68.126.0'],
@@ -113,7 +114,7 @@ function webPokeVerify(array $packet, string $key, bool $consumeNonce = true): a
 }
 function webPokeHttp(string $ip, string $endpoint, array $body): array
 {
-    if (!webPokeIp($ip) || !in_array($endpoint, ['webPokeCoordinator.php','webPokeGateway.php','webPokeReceiver.php'], true))
+    if (!webPokeIp($ip) || !in_array($endpoint, ['webPokeCoordinator.php','webPokeGateway.php','webPokeReceiver.php','webPokeEnrollment.php'], true))
         throw new InvalidArgumentException('Invalid demo destination');
     $ch = curl_init('http://' . $ip . '/script/' . $endpoint);
     curl_setopt_array($ch, [CURLOPT_POST=>true, CURLOPT_POSTFIELDS=>json_encode($body, JSON_THROW_ON_ERROR),
@@ -142,4 +143,55 @@ function webPokeError(Throwable $e): never
     if ($e instanceof DomainException) webPokeReply(403, ['ok'=>false,'error'=>$e->getMessage()]);
     if ($e instanceof InvalidArgumentException) webPokeReply(400, ['ok'=>false,'error'=>$e->getMessage()]);
     error_log('Web Poke: ' . $e->getMessage()); webPokeReply(503, ['ok'=>false,'error'=>'Demo service unavailable; check node setup']);
+}
+
+function webPokeIsLocal(string $peer, string $address, string $mask): bool
+{
+    $ip = ip2long($peer); $network = ip2long($address); $bits = ip2long($mask);
+    if ($ip === false || $network === false || $bits === false || $bits === 0) return false;
+    $inverse = (~$bits) & 0xffffffff;
+    if (($inverse & ($inverse + 1)) !== 0) return false; // Reject non-contiguous masks.
+    return ($ip & $bits) === ($network & $bits);
+}
+function webPokeReceiversFor(string $gateway): array
+{
+    return array_filter(webPokeNodes(), fn($node) => $node['address'] !== $gateway);
+}
+function webPokeBootstrapProof(array $pending, string $peer, string $proof): array
+{
+    if ($peer !== ($pending['db_ip'] ?? '') || !webPokeToken($proof)
+        || !hash_equals((string)($pending['proof_hash'] ?? ''), hash('sha256', $proof))
+        || (int)($pending['expires'] ?? 0) <= time() || !webPokeToken((string)($pending['public_key'] ?? '')))
+        throw new DomainException('No matching local administrator enrollment');
+    return ['ok'=>true,'public_key'=>$pending['public_key']];
+}
+function webPokeEnrollReceiver(array $config, string $peer, array $input, callable $rpc): array
+{
+    $matches = array_filter(webPokeNodes(), fn($node) => $node['address'] === $peer);
+    if (!$matches) throw new DomainException('Receiver is not in the DB participant list');
+    $id = array_key_first($matches); $proof = (string)($input['proof'] ?? '');
+    if (!webPokeToken($proof)) throw new DomainException('Local administrator enrollment required');
+    webPokeRate('enroll', $peer, 5, 60);
+    // Never accept the encryption key from the initiating request. Fetch it from
+    // a root-created, short-lived bootstrap on the node at the actual socket peer.
+    $identity = $rpc($peer, 'webPokeEnrollment.php', ['proof'=>$proof]);
+    if (!webPokeToken((string)($identity['public_key'] ?? ''))) throw new DomainException('Invalid administrator enrollment key');
+    $key = (string)($config['KEY_'.strtoupper($id)] ?? '');
+    if (!webPokeToken($key)) throw new RuntimeException('Update the DB demo setup first');
+    $payload = json_encode(['NODE_ID'=>$id,'AUTH_KEY'=>$key], JSON_THROW_ON_ERROR);
+    return ['ok'=>true,'sealed_config'=>base64_encode(sodium_crypto_box_seal($payload, hex2bin($identity['public_key'])))];
+}
+function webPokeDetectNode(array $setup, array $addresses): array
+{
+    $isDb = (int)($setup['is_db'] ?? 0) === 1;
+    $dbIp = (string)($setup['db_ip'] ?? '');
+    $nodeId = '';
+    foreach (webPokeNodes() as $id=>$node) if (in_array($node['address'], $addresses, true)) $nodeId=$id;
+    if (!webPokeIp($dbIp) && $isDb && $nodeId !== '') $dbIp=webPokeNodes()[$nodeId]['address'];
+    if (!webPokeIp($dbIp)) throw new RuntimeException('No valid global DB address is configured in setup');
+    if ($isDb) {
+        foreach (webPokeNodes() as $id=>$node) if ($node['address']===$dbIp) $nodeId=$id;
+        if ($nodeId==='' || webPokeNodes()[$nodeId]['address']!==$dbIp) throw new RuntimeException('The DB server is missing from the approved participant list');
+    }
+    return ['is_db'=>$isDb,'db_ip'=>$dbIp,'node_id'=>$nodeId];
 }

@@ -11,10 +11,14 @@ $bootstrap->query('CREATE DATABASE IF NOT EXISTS tarasec_web_poke_test'); $boots
 $db=getConnection();
 function check($ok,$message) { if(!$ok) throw new RuntimeException($message); }
 function denied(callable $f,$message) { try { $f(); } catch(DomainException $e) {return;} throw new RuntimeException($message); }
+$db->query('DROP TABLE IF EXISTS setup');
+$db->query('CREATE TABLE setup(internalIP INT UNSIGNED,nettmask INT UNSIGNED)');
+$db->query("INSERT INTO setup VALUES(INET_ATON('10.100.0.1'),INET_ATON('255.255.255.0'))");
 $db->query('DROP TABLE IF EXISTS internalInfections'); $db->query('DROP TABLE IF EXISTS unit');
 $db->query("CREATE TABLE internalInfections(infectionId INT PRIMARY KEY AUTO_INCREMENT,ip INT UNSIGNED,nettmask INT UNSIGNED,unitId INT,status VARCHAR(20),handled BIT,active BIT,lastSeen DATETIME,severity INT,why VARCHAR(255)) ENGINE=InnoDB");
 $db->query('CREATE TABLE unit(unitId INT PRIMARY KEY,ownerId INT,ipAddress INT UNSIGNED,lastSeen DATETIME) ENGINE=InnoDB');
 $db->query("INSERT INTO unit VALUES(20,17,INET_ATON('10.100.0.150'),NOW()),(21,17,INET_ATON('10.100.0.151'),NOW())");
+denied(fn()=>webPokeLocalUnit('100.68.165.190'),'Remote gateway cannot claim local-unit role');
 $peer='10.100.0.150'; $id=bin2hex(random_bytes(32)); $token=bin2hex(random_bytes(32));
 $session=['owner_id'=>17,'unit_id'=>20,'client_ip'=>$peer,'session_id'=>$id,'expires'=>time()+1800];
 webPokeRecord('gateway',$token,fn($row)=>$session);
