@@ -4,7 +4,7 @@ The DB server controls admission and the participating receiver list. Open
 `http://<your-gateway-IP>/demo/poke/` on the phone/laptop connected through that
 gateway. No Standard-gateway address is compiled into the browser or receiver
 admission logic. New gateways need the gateway installer, a central partnerRouter
-registration and local unit ownership, but do not require editing receiver code.
+registration, but do not require editing receiver code.
 
 ## DB admission policy
 
@@ -19,7 +19,7 @@ The first DB installation explicitly writes **YES**, as requested for initial
 testing. Reinstallation preserves the existing choice and authentication keys.
 
 - **YES:** any registered NetBird gateway may request sessions. The DB verifies
-  gateway-observed owner/unit identity through a one-use callback proof.
+  gateway-confirmed local visitor and origin through a one-use callback proof.
 - **NO:** only registered gateways whose exact overlay address appears in
   `ALLOWED_GATEWAYS` may join or use existing sessions. Comma-separated IPv4
   addresses are accepted; there are no wildcards or subnet matches.
@@ -48,9 +48,9 @@ as a receiver. The single DB server additionally runs the coordinator.
 
 The installer reads `setup.isGlobalDbServer`, `setup.globalDb1ip` and the machine's
 NetBird interface addresses. Runtime classification uses the actual socket peer
-and `setup.internalIP` / `setup.nettmask`. Only peers inside that local subnet may
-request gateway sessions or use local-unit identity; a unit-table row alone does
-not make an external source local. Nonlocal Pokes still need DB authorization,
+and `setup.internalIP` / `setup.nettmask`. Device and owner registration is
+optional. Only peers inside that local subnet may request gateway sessions; a
+unit-table row alone does not make an external source local. Nonlocal Pokes still need DB authorization,
 a receiver-scoped token, matching gateway address and browser origin. Invalid or
 missing subnet configuration cannot grant gateway access.
 
@@ -122,7 +122,7 @@ and DNS names need an explicit trusted-origin design.
 
 ## Protocol and observation isolation
 
-1. The gateway identifies the calling socket's current local owner/unit, creates
+1. The gateway verifies the calling socket is local, looks up optional owner/unit IDs, creates
    a 60-second single-use identity proof and asks the DB to start a session.
 2. The DB checks current policy and central gateway registration **before** any
    identity callback or state disclosure. It redeems the proof by calling that
@@ -133,7 +133,10 @@ and DNS names need an explicit trusted-origin design.
 4. The gateway receives a private DB-control token, kept server-side. The browser
    gets a separate device-bound gateway token and receiver-scoped Poke tokens.
    A browser token cannot be used directly as a DB control token. A different
-   local unit or changed ownership cannot reuse the gateway session.
+   socket peer cannot reuse the gateway session. Registration changes during the
+   demo do not invalidate an existing visitor capability. Unknown
+   owner/unit IDs are zero; no account or device registration is created. Guest
+   marks target only the observed local IP and their exact demo session.
 5. The browser takes direct baseline Pokes. All participating computers must confirm clean before
    the Mark button is enabled. Mark uses an independently authorized DB request
    and creates only a `DEMO:WEB_POKE:<session>` infection row on the gateway.
@@ -167,7 +170,7 @@ leaving. After revocation/expiry, the gateway owner may need to clear that speci
 Automated checks cover YES/NO admission, default-deny behavior, new gateways, automatic dual roles, local-subnet isolation, encrypted root enrollment,
 registration, one-time authentication, replay/tamper/stale messages, immediate
 revocation, other-gateway tokens, receiver isolation, expired sessions, real
-session-scoped mutation SQL, MariaDB unit ownership and mark/reset, and the browser
+session-scoped mutation SQL, MariaDB registered and unregistered visitor binding and mark/reset, and the browser
 flow on a non-Standard gateway. Browser network calls are mocked; they cannot
 establish live routing or kernel-tag correctness. The phone layout was inspected.
 
