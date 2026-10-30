@@ -571,4 +571,18 @@ missing, empty or unreadable credential file remains selected and reports that
 specific prerequisite; it is not treated as a brand-new setup and is not silently
 replaced with TaraSec enrollment. Incomplete hosted enrollment resumes its existing
 approval flow. The provider picker is reserved for an unconfigured connection.
-Keys from gateway AI assessments or another application are not imported.
+For an unconfigured agent, an existing root-trusted `/etc/tarasec.conf` Flowise
+connection is discovered before the provider picker. It reads `TARASEC_FLOWISE_URL`
+and `TARASEC_FLOWISE_API_KEY` (or the existing `FLOWISE_*` aliases) using the same
+INI parser as the assessment endpoint. The existing source file is unchanged;
+the agent gets a private 0600 credential file and connection settings, retaining
+its mode until its existing no-action model/protocol probe passes. Existing agent
+connections take priority. Incomplete/untrusted shared settings remain pending
+without silently choosing another provider. URL/key values are not printed or
+included in command arguments or reported status.
+
+This reuses the owner's configured local connection, not arbitrary credentials
+from other applications. The inherited HTTP/HTTPS transport is retained. A Flowise
+chatflow that only returns gateway assessments may not satisfy the operations
+decision protocol; that failed probe leaves activation pending. No returned model
+action is executed by the probe.
