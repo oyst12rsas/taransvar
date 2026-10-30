@@ -690,8 +690,53 @@ def enroll_operations_model(policy, policy_path, directory, root=Path('/')):
     return True
 
 
+def reuse_local_flowise(policy, policy_path, directory, root=Path('/')):
+    """Reuse the owner's local TaraSec connection only for an unconfigured agent."""
+    source = root / 'etc/tarasec.conf'
+    if not source.exists(): return None
+    try:
+        from operations_agent import trusted
+        trusted(source)
+        # Use the same INI parser as the existing PHP assessment endpoint. Values
+        # stay in captured memory, never argv, logs, JSON status or terminal output.
+        raw = run(['php', '-r', '$c=parse_ini_file($argv[1],false,INI_SCANNER_RAW); if(!is_array($c)) exit(1); echo json_encode($c,JSON_THROW_ON_ERROR);', source],
+                  capture_output=True, text=True, timeout=10).stdout
+        cfg = json.loads(raw)
+        if cfg == []: return None
+        if not isinstance(cfg, dict): raise ValueError('Invalid shared Flowise configuration')
+        url = cfg.get('TARASEC_FLOWISE_URL', cfg.get('FLOWISE_URL', ''))
+        key = cfg.get('TARASEC_FLOWISE_API_KEY', cfg.get('FLOWISE_API_KEY', ''))
+        if not url and not key: return None
+        if not isinstance(url, str) or not isinstance(key, str) or not url.strip() or not key.strip():
+            print('Existing TaraSec Flowise settings are incomplete. Settings retained; repair the existing URL/key instead of choosing another provider.')
+            return False
+        url = url.strip(); key = key.strip()
+        parsed = urllib.parse.urlsplit(url)
+        if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+            print('Existing TaraSec Flowise URL is unsupported for the operations agent. Settings retained; no alternate provider selected.')
+            return False
+        trusted(policy_path.parent)
+        destination = root / 'etc/tarasec/operations-model.key'
+        if destination.is_symlink() or (destination.is_file() and destination.read_text().strip() not in ('', key)):
+            print('An existing operations credential was retained. Configure its matching endpoint instead of replacing it with another connection.')
+            return False
+        backup(policy_path, directory)
+        backup(destination, directory)
+        atomic(destination, key + '\n')
+        updated = dict(policy, model_provider='flowise', model_url=url,
+                       model_key_file=str(destination), model_connection='local-flowise',
+                       allow_insecure_model_http=parsed.scheme == 'http')
+        atomic(policy_path, json.dumps(updated, indent=2) + '\n')
+        policy.clear(); policy.update(updated)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        print('Existing TaraSec Flowise settings could not be reused securely. No provider selection was opened; inspect the local configuration and permissions.')
+        return False
+    print('Reusing the Flowise connection from /etc/tarasec.conf. Credentials saved privately for this agent; testing its operations response format before activation.')
+    return True
+
+
 def configure_operations_model(policy, policy_path, directory, root=Path('/')):
-    """Collect dedicated model settings locally; never print or reuse credentials."""
+    """Reuse configured connections, or collect first-time settings without printing credentials."""
     provider = policy.get('model_provider', 'flowise')
     endpoint_field = 'openai_model' if provider == 'openai' else 'model_url'
     key_field = 'openai_key_file' if provider == 'openai' else 'model_key_file'
@@ -730,6 +775,8 @@ def configure_operations_model(policy, policy_path, directory, root=Path('/')):
         if not key_ready: missing.append(key_problem)
         print('Existing ' + provider + ' model connection retained: ' + '; '.join(missing) + '. Repair that connection and rerun --configure-operations. Provider selection was not reopened.')
         return False
+    reused = reuse_local_flowise(policy, policy_path, directory, root)
+    if reused is not None: return reused
     print('AI agent needs a dedicated model connection. Demo/production mode is already selected.')
     print('Blank uses TaraSec enrollment and Google/TOTP approval on the agent page. A custom Flowise URL or OpenAI connection is optional. Model calls may incur provider charges.')
     if not sys.stdin.isatty():
@@ -946,6 +993,8 @@ def activate_operations(directory, root=Path('/'), interactive=False):
     probe = subprocess.run(['python3', '/usr/local/lib/tarasec-operations/operations_model_probe.py', '--connection-check'],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=240)
     if probe.returncode:
+        if policy.get('model_connection') == 'local-flowise':
+            print('The existing local Flowise connection did not pass the operations response check. Its chatflow may be intended for gateway assessments. No returned action was executed.')
         print('AI agent activation pending: model connection/protocol check failed. Check the endpoint, credentials and model configuration; run sudo ./tarasec upgrade --configure-operations.')
         return {'pending_configuration': True, 'activation': 'pending_model_connection'}
     backup(policy_path, directory)

@@ -411,6 +411,71 @@ class UpgradeTests(unittest.TestCase):
             self.assertFalse(u.configure_operations_model({'model_provider':'custom'},self.root/'policy.json',self.root/'backup'))
         self.assertIn('unsupported',output.getvalue())
 
+    def local_flowise_fixture(self):
+        source=self.root/'etc/tarasec.conf';source.parent.mkdir(parents=True,exist_ok=True)
+        source.write_text('existing INI settings with a private key')
+        policy_path=source.parent/'tarasec/operations-agent.json'
+        policy_path.parent.mkdir();policy_path.write_text('{"mode":"inspect","model_url":""}')
+        cfg={'TARASEC_FLOWISE_URL':'https://example.test/prediction/existing','TARASEC_FLOWISE_API_KEY':'private-existing-key'}
+        return source,policy_path,cfg
+
+    def test_unconfigured_agent_reuses_existing_local_flowise_without_prompts(self):
+        source,path,cfg=self.local_flowise_fixture();before=source.read_bytes();policy=u.json.loads(path.read_text())
+        with patch('operations_agent.trusted',side_effect=lambda p:Path(p)),patch.object(u,'run',return_value=Mock(stdout=u.json.dumps(cfg))) as run,patch('builtins.input',side_effect=AssertionError('Reuse the configured provider')),patch.object(u.getpass,'getpass',side_effect=AssertionError('Do not ask for an existing key')),patch('sys.stdout',new=io.StringIO()) as output:
+            self.assertTrue(u.configure_operations_model(policy,path,self.root/'backup',self.root))
+        self.assertEqual(policy['model_connection'],'local-flowise')
+        self.assertEqual(policy['model_url'],cfg['TARASEC_FLOWISE_URL'])
+        self.assertEqual(Path(policy['model_key_file']).read_text().strip(),cfg['TARASEC_FLOWISE_API_KEY'])
+        self.assertEqual(Path(policy['model_key_file']).stat().st_mode & 0o777,0o600)
+        self.assertEqual(path.stat().st_mode & 0o777,0o600)
+        self.assertEqual(policy['mode'],'inspect');self.assertEqual(source.read_bytes(),before)
+        self.assertNotIn('private-existing-key',output.getvalue())
+        self.assertNotIn('private-existing-key',str(run.call_args))
+        self.assertNotIn('private-existing-key',path.read_text())
+
+    def test_interrupted_matching_credential_import_can_resume(self):
+        source,path,cfg=self.local_flowise_fixture()
+        (path.parent/'operations-model.key').write_text(cfg['TARASEC_FLOWISE_API_KEY'])
+        with patch('operations_agent.trusted',side_effect=lambda p:Path(p)),patch.object(u,'run',return_value=Mock(stdout=u.json.dumps(cfg))),patch('builtins.input',side_effect=AssertionError('No provider prompt')),patch('sys.stdout',new=io.StringIO()):
+            self.assertTrue(u.configure_operations_model({},path,self.root/'backup',self.root))
+
+    def test_shared_settings_never_replace_a_different_existing_agent_key(self):
+        source,path,cfg=self.local_flowise_fixture();key=path.parent/'operations-model.key';key.write_text('different-owner-key')
+        before=path.read_bytes()
+        with patch('operations_agent.trusted',side_effect=lambda p:Path(p)),patch.object(u,'run',return_value=Mock(stdout=u.json.dumps(cfg))),patch('sys.stdout',new=io.StringIO()):
+            self.assertFalse(u.configure_operations_model({},path,self.root/'backup',self.root))
+        self.assertEqual(key.read_text(),'different-owner-key');self.assertEqual(path.read_bytes(),before)
+
+    def test_existing_agent_connection_takes_priority_over_shared_flowise(self):
+        source,path,cfg=self.local_flowise_fixture();key=self.root/'own.key';key.write_text('own-key')
+        policy={'model_provider':'openai','openai_model':'existing-model','openai_key_file':str(key)}
+        with patch.object(u,'reuse_local_flowise',side_effect=AssertionError('Do not replace existing agent settings')),patch('sys.stdout',new=io.StringIO()):
+            self.assertTrue(u.configure_operations_model(policy,path,self.root/'backup',self.root))
+        self.assertEqual(policy['model_provider'],'openai')
+
+    def test_invalid_or_incomplete_shared_connection_does_not_open_provider_picker(self):
+        source,path,cfg=self.local_flowise_fixture();before=path.read_bytes()
+        for settings in [dict(cfg,TARASEC_FLOWISE_API_KEY=''),dict(cfg,TARASEC_FLOWISE_URL='https://user:secret@example.test/prediction')]:
+            policy=u.json.loads(before)
+            with patch('operations_agent.trusted',side_effect=lambda p:Path(p)),patch.object(u,'run',return_value=Mock(stdout=u.json.dumps(settings))),patch('builtins.input',side_effect=AssertionError('No alternate provider')),patch('sys.stdout',new=io.StringIO()):
+                self.assertFalse(u.configure_operations_model(policy,path,self.root/'backup',self.root))
+            self.assertEqual(path.read_bytes(),before)
+            self.assertFalse((path.parent/'operations-model.key').exists())
+
+    def test_untrusted_shared_connection_is_not_imported(self):
+        source,path,cfg=self.local_flowise_fixture();before=path.read_bytes()
+        with patch('operations_agent.trusted',side_effect=ValueError('unsafe')),patch.object(u,'run') as run,patch('builtins.input',side_effect=AssertionError('No provider picker')),patch('sys.stdout',new=io.StringIO()):
+            self.assertFalse(u.configure_operations_model({},path,self.root/'backup',self.root))
+        run.assert_not_called();self.assertEqual(path.read_bytes(),before)
+
+    def test_reused_flowise_cannot_activate_on_failed_operations_protocol_probe(self):
+        source,path,cfg=self.local_flowise_fixture();u.MODE.write_text('demo\n')
+        with patch('operations_agent.trusted',side_effect=lambda p:Path(p)),patch.object(u,'ensure_operations_activity',return_value='active'),patch.object(u,'run',return_value=Mock(stdout=u.json.dumps(cfg))) as run,patch.object(u.subprocess,'run',return_value=Mock(returncode=1)),patch('builtins.input',side_effect=AssertionError('No provider picker')),patch('sys.stdout',new=io.StringIO()):
+            result=u.activate_operations(self.root/'backup',self.root,interactive=True)
+        self.assertTrue(result['pending_configuration'])
+        self.assertEqual(u.json.loads(path.read_text())['mode'],'inspect')
+        self.assertTrue(all(call.args[0][0]=='php' for call in run.call_args_list),'No timer enabled before the response protocol passes')
+
     def test_blank_selects_central_system_and_none_postpones(self):
         path=self.root/'policy.json'
         for answers,called in [([''],True),(['flowise',''],True),(['none'],False),(['flowise','none'],False)]:
