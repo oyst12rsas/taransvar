@@ -28,11 +28,11 @@ print('Session-only mark/reset SQL passed; genuine findings, other sessions and 
 # Execute the actual restart query: exact prefix, observed IP and optional unit.
 restart=source.split('function webPokeRestartDevice',1)[1].split('function webPokeDbCall',1)[0]
 restart_sql=re.findall(r'prepare\("(.*?)"\)',restart,re.S)[0]
-restart_sql=compatible(restart_sql).replace("LEFT(why,14)","substr(why,1,14)")
+restart_sql=compatible(restart_sql).replace("LEFT(why,5)","substr(why,1,5)")
 db.execute('INSERT INTO internalInfections(ip,unitId,why,active,severity) VALUES(INET_ATON(?),0,?,1,3)',(ip,'DEMO:WEB_POKE:oldguest'))
 db.execute('INSERT INTO internalInfections(ip,unitId,why,active,severity) VALUES(INET_ATON(?),20,?,1,3)',(ip,'DEMO:other-demo'))
 db.execute('INSERT INTO internalInfections(ip,unitId,why,active,severity) VALUES(INET_ATON(?),20,?,1,3)',('10.100.0.151','DEMO:WEB_POKE:other-device'))
 db.execute(restart_sql,(ip,unit))
 remaining={row[0] for row in db.execute('SELECT why FROM internalInfections WHERE active=1')}
-assert remaining=={'Real incident',why,'DEMO:other-demo','DEMO:WEB_POKE:other-device'},remaining
-print('Restart clears old web-demo marks for this device; other devices, units, demos and findings remain.')
+assert remaining=={'Real incident',why,'DEMO:WEB_POKE:other-device'},remaining
+print('Restart clears all old demo marks for this device; other devices, units and findings remain.')

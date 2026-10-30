@@ -16,7 +16,7 @@ $registered=fn($ip)=>in_array($ip,[$gateway,$newGateway],true);
 $registrations=[]; $calls=0; $visitor=['owner_id'=>17,'unit_id'=>20];
 $rpc=function($ip,$endpoint,$input) use (&$registrations,&$calls,&$visitor,$config) {
     ++$calls;
-    if($endpoint==='webPokeGateway.php') return ['ok'=>true,'origin'=>'http://10.100.0.1'] + $visitor;
+    if($endpoint==='webPokeGateway.php') return ['ok'=>true,'origin'=>'http://10.100.0.1','device_key'=>hash('sha256','10.100.0.150')] + $visitor;
     $nodeId=array_search($ip,array_column(webPokeNodes(),'address','name'),true);
     $id=array_keys(array_filter(webPokeNodes(),fn($node)=>$node['address']===$ip))[0];
     $message=webPokeVerify($input,$config['KEY_'.strtoupper($id)]);
@@ -113,3 +113,26 @@ foreach ([['owner_id'=>0,'unit_id'=>0], ['owner_id'=>0,'unit_id'=>20]] as $visit
     denied(fn()=>webPokeCoordinator($closed,$newGateway,['action'=>'start','proof'=>$proof],$rpc,$registered),'NO still denies unlisted guest gateways');
 }
 echo "Unregistered visitors admitted under YES; NO policy still enforced.\n";
+
+// One active web demonstration per gateway-observed device, including guests.
+$visitor=['owner_id'=>0,'unit_id'=>0];
+$first=webPokeCoordinator($config,$newGateway,['action'=>'start','proof'=>$proof],$rpc,$registered);
+$activate=fn($s)=>['action'=>'replace','session_id'=>$s['session_id'],'control_token'=>$s['control_token']];
+$firstStatus=['action'=>'status','session_id'=>$first['session_id'],'control_token'=>$first['control_token']];
+webPokeCoordinator($config,$newGateway,$activate($first),$rpc,$registered);
+$second=webPokeCoordinator($config,$newGateway,['action'=>'start','proof'=>$proof],$rpc,$registered);
+$closedDevices=[];
+$closeOwn=function($gateway,$unit) use (&$closedDevices) { $closedDevices[]=[$gateway,$unit]; return 0; };
+webPokeCoordinator($config,$newGateway,$activate($second),$rpc,$registered,$closeOwn);
+check($closedDevices===[[$newGateway,0]],'Device replacement uses gateway-verified identity');
+denied(fn()=>webPokeCoordinator($config,$newGateway,$firstStatus,$rpc,$registered),'Older guest web session revoked');
+$oldReceiver=['action'=>'receiver','node_id'=>$nodeId]+webPokeSeal(['action'=>'validate','node_id'=>$nodeId,'session_id'=>$first['session_id']],$key);
+denied(fn()=>webPokeCoordinator($config,$node['address'],$oldReceiver,$rpc,$registered),'Older Poke capability revoked at receiver validation');
+denied(fn()=>webPokeCoordinator($config,$newGateway,$activate($first),$rpc,$registered),'Replaced session cannot take over again');
+$secondStatus=['action'=>'status','session_id'=>$second['session_id'],'control_token'=>$second['control_token']];
+check(webPokeCoordinator($config,$newGateway,$secondStatus,$rpc,$registered)['ok'],'Replacement remains active');
+$visitor=['owner_id'=>0,'unit_id'=>99];
+$other=webPokeCoordinator($config,$newGateway,['action'=>'start','proof'=>$proof],$rpc,$registered);
+webPokeCoordinator($config,$newGateway,$activate($other),$rpc,$registered);
+check(webPokeCoordinator($config,$newGateway,$secondStatus,$rpc,$registered)['ok'],'Another unit on the same gateway is unaffected');
+echo "Device replacement revokes older status/controls/Pokes while preserving other units.\n";

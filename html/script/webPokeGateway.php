@@ -23,7 +23,7 @@ try {
         $unit = webPokeLocalUnit($peer);
         webPokeRate('gatewaystart', $peer, 5, 60);
         $proof = bin2hex(random_bytes(32));
-        webPokeRecord('proof', $proof, fn($row) => $unit + ['client_ip'=>$peer,'origin'=>webPokeOrigin(),'expires'=>time()+60]);
+        webPokeRecord('proof', $proof, fn($row) => $unit + ['client_ip'=>$peer,'device_key'=>hash('sha256', $peer),'origin'=>webPokeOrigin(),'expires'=>time()+60]);
         $central = webPokeHttp(webPokeGatewayDb(), 'webPokeCoordinator.php', ['action'=>'start','proof'=>$proof]);
         if ($central['unit_id'] !== $unit['unit_id'] || $central['owner_id'] !== $unit['owner_id']) throw new DomainException('DB identity mismatch');
         $state = webPokeLocalState($peer);
@@ -35,10 +35,12 @@ try {
         $token = bin2hex(random_bytes(32));
         $session = $central + $unit + ['client_ip'=>$peer];
         webPokeRecord('gateway', $token, fn($row) => $session);
-        webPokeRestartDevice($session);
+        $replacement = webPokeDbCall($session, 'replace');
+        $cleared = webPokeRestartDevice($session);
         $nodes = [];
         foreach ($central['receivers'] as $id => $node) $nodes[$id] = ['name'=>$node['name'],'address'=>$node['address'],'poke_token'=>$node['poke_token']];
         webPokeReply(200, ['ok'=>true,'token'=>$token,'session_id'=>$central['session_id'],'expires'=>$central['expires'],
+            'reset'=>['demo_marks_cleared'=>$cleared,'ssh_sessions_closed'=>$replacement['ssh_sessions_closed'] ?? 0],
             'gateway_ip'=>$central['gateway_ip'],'gateway_name'=>gethostname() ?: 'Gateway','nodes'=>$nodes,'gateway'=>webPokeLocalState($peer)]);
     }
     $session = webPokeGatewaySession((string)($input['token'] ?? ''), $peer);

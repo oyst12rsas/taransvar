@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/webPokeLib.php';
-function webPokeCoordinator(array $config, string $peer, array $input, callable $rpc, callable $registered): array
+function webPokeCoordinator(array $config, string $peer, array $input, callable $rpc, callable $registered, ?callable $closeSsh = null): array
 {
     $action = (string)($input['action'] ?? '');
     if ($action === 'enroll') return webPokeEnrollReceiver($config, $peer, $input, $rpc);
@@ -16,7 +16,7 @@ function webPokeCoordinator(array $config, string $peer, array $input, callable 
             return ['ok'=>true];
         }
         $id = (string)($message['session_id'] ?? '');
-        $session = webPokeRecord('central', $id); webPokeActive($session);
+        $session = webPokeRecord('central', $id); webPokeActive($session); webPokeRequireCurrent($session, $id);
         webPokeRequireAllowed($config, $session['gateway_ip']);
         if (!$registered($session['gateway_ip'])) throw new DomainException('Registered gateway required');
         if (!isset($session['receivers'][$nodeId])) throw new DomainException('Receiver not in session');
@@ -44,7 +44,7 @@ function webPokeCoordinator(array $config, string $peer, array $input, callable 
             throw new DomainException('Gateway must confirm a local demo visitor and browser origin');
         $id = bin2hex(random_bytes(32)); $control = bin2hex(random_bytes(32));
         $session = ['expires'=>time()+WEB_POKE_TTL, 'gateway_ip'=>$peer, 'owner_id'=>(int)$identity['owner_id'],
-            'unit_id'=>(int)$identity['unit_id'], 'control_hash'=>hash('sha256', $control), 'receivers'=>[]];
+            'unit_id'=>(int)$identity['unit_id'], 'device_key'=>(string)($identity['device_key'] ?? ''), 'control_hash'=>hash('sha256', $control), 'receivers'=>[]];
         foreach (webPokeReceiversFor($peer) as $nodeId => $node) {
             $key = (string)($config['KEY_' . strtoupper($nodeId)] ?? '');
             $poke = bin2hex(random_bytes(32));
@@ -62,9 +62,49 @@ function webPokeCoordinator(array $config, string $peer, array $input, callable 
     $session = webPokeRecord('central', $id); webPokeActive($session);
     if (!webPokeToken($control) || !hash_equals($session['control_hash'], hash('sha256', $control)) || $session['gateway_ip'] !== $peer)
         throw new DomainException('Gateway session authorization required');
+    if ($action === 'replace') {
+        $leaseKey = webPokeLeaseKey($session);
+        if ($leaseKey === null) throw new DomainException('Update the gateway to identify this demo device');
+        if ($session['replaced'] ?? false) webPokeRequireCurrent($session, $id);
+        $closed = $closeSsh ? $closeSsh($peer, (int)$session['unit_id']) : 0;
+        webPokeRecord('lease', $leaseKey, fn($row) => ['session_id'=>$id,'expires'=>$session['expires']]);
+        webPokeRecord('central', $id, function($row) { $row['replaced']=true; return $row; });
+        return ['ok'=>true,'ssh_sessions_closed'=>$closed];
+    }
+    if ($action !== 'close') webPokeRequireCurrent($session, $id);
     if (!in_array($action, ['status','authorize','close'], true)) throw new InvalidArgumentException('Unsupported demo action');
     if ($action === 'close') webPokeRecord('central', $id, function($row) { $row['revoked']=true; return $row; });
     $observations = [];
     foreach ($session['receivers'] as $nodeId => $node) $observations[$nodeId] = $node['observation'];
     return ['ok'=>true,'receivers'=>$observations,'expires'=>$session['expires']];
+}
+
+function webPokeLeaseKey(array $session): ?string
+{
+    $unit = (int)($session['unit_id'] ?? 0);
+    $identity = $unit > 0 ? 'unit:' . $unit : 'device:' . ($session['device_key'] ?? '');
+    if ($unit < 1 && !webPokeToken((string)($session['device_key'] ?? ''))) return null;
+    return hash('sha256', $session['gateway_ip'] . ':' . $identity);
+}
+function webPokeRequireCurrent(array $session, string $id): void
+{
+    $key = webPokeLeaseKey($session);
+    if ($key === null) return; // Old anonymous sessions cannot be correlated safely.
+    try { $lease = webPokeRecord('lease', $key); }
+    catch (DomainException $e) { return; } // No replacement has been started yet.
+    if (($lease['session_id'] ?? '') !== $id)
+        throw new DomainException('Another demo was started on this device. Start again to replace it.');
+}
+function webPokeCloseSshDemos(string $gateway, int $unit): int
+{
+    // A shared gateway address alone never establishes ownership of an SSH demo.
+    if ($unit < 1) return 0;
+    $db = getConnection();
+    try {
+        $exists = $db->query("SHOW TABLES LIKE 'demoSshSession'");
+        if (!$exists->fetch_row()) return 0;
+        $q = $db->prepare("UPDATE demoSshSession SET state='cancelled',completed=NOW(),expires=NOW(),lastSeen=NOW() WHERE sourceIp=INET_ATON(?) AND unitId=? AND gatewayVerified=b'1' AND state IN ('awaiting_node_a','demo_infected','awaiting_node_b','owner_clear_required')");
+        $q->bind_param('si', $gateway, $unit); $q->execute();
+        $changed = $q->affected_rows; $q->close(); return $changed;
+    } finally { $db->close(); }
 }

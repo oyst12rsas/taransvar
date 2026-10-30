@@ -148,11 +148,17 @@ and DNS names need an explicit trusted-origin design.
    The DB returns its saved receiver reports. Polling never creates browser
    traffic to receivers and never reads new receiver traffic evidence.
 8. Start / Reset requests a fresh DB-authorized session and clears current/earlier
-   `DEMO:WEB_POKE:` marks for the actual local IP and matching unit (also unknown
+   `DEMO:` marks for the actual local IP and matching unit (also unknown
    unit IDs from before registration). It works after page reload or session expiry.
-   Other devices, different known unit IDs, other demos and security findings are
-   preserved. Older central capabilities expire normally; a still-open tab can
-   create its own mark again, so use one tab while demonstrating.
+   Other devices, different known unit IDs and security findings are preserved.
+   The coordinator replaces older web-demo access for this gateway/device, so old
+   status, controls and Poke capabilities stop working. It also cancels nonterminal
+   verified SSH demo sessions matching the exact gateway and unit. Unknown units
+   cannot close SSH sessions using a shared gateway IP. Group demos, router-wide
+   demos and unverified SSH sessions lack device ownership and are not cancelled.
+   A legacy anonymous web session with no device identity cannot be correlated
+   centrally and expires normally. A device starting a new demo intentionally
+   replaces the current one; old native toggles have no cancellable session.
 9. Gateway state distinguishes this web demo, other `DEMO:` marks and separate
    security findings. A separate finding blocks admission, regardless of demo
    marks; if one appears during a session, the next gateway request closes that
@@ -160,7 +166,7 @@ and DNS names need an explicit trusted-origin design.
    through normal gateway management before retrying; Reset cannot clear it.
    An infection tag alone is not proof of actual malware. Receiver cards show
    observed tags, not independently verified compromises.
-10. Start takes fresh direct Pokes even when another demo keeps the device marked.
+10. Start takes fresh direct Pokes after clearing earlier demo marks.
     Mark is enabled only after every observation is clean. After reset, kernel tag
     propagation may lag the DB; wait and Poke again rather than inventing CLEAN.
 
@@ -178,7 +184,7 @@ private locked session storage is bounded and abandoned records are reclaimed.
 Stopping, closing the page, expiry, or revoking access does **not** promise to
 clear an already-applied kernel mark automatically. Reset while authorized before
 leaving. After expiry or page reload, Start can recover this device's older
-web-demo marks while authorized. If admission is revoked or a separate security
+demo-only marks while authorized. If admission is revoked or a separate security
 finding blocks it, the gateway owner must use management access. Do not clear
 genuine evidence merely to make the demonstration start.
 
@@ -222,3 +228,11 @@ only role configuration makes legacy APIs revert to their old behavior, so do
 not treat configuration deletion as an access-revocation mechanism. Production
 hosts keep their deployment-mode gate. For deployment/hardening context see
 https://tarasec.org/safety/#deployment and https://tarasec.org/safety/#hardening-priorities.
+
+### Device replacement feedback
+
+The button is labelled **Start / Reset my demos**. Start returns counts of cleared
+local demo marks and cancelled verified SSH sessions in `reset`, included in copied
+debug evidence. If a demo mark remains under a different known unit ID, the page
+asks the gateway operator to review device records rather than silently claiming
+CLEAN. Non-demo security findings continue to block participation.

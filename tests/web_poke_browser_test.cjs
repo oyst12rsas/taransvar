@@ -27,7 +27,7 @@ const root = path.join(__dirname, '..');
         const action=input.get('action');
         if(action==='start') {
           if (independent) return reply(409,{ok:false,remediation_required:true,gateway:gatewayState(),error:'A separate security finding is active. Resolve it on the gateway before joining the demo.'});
-          infected=false; currentId='session'+(++serial); observations=unknown();
+          infected=false; otherDemo=false; currentId='session'+(++serial); observations=unknown();
           data={ok:true,token:'browser'+serial,session_id:currentId,expires:Math.floor(Date.now()/1000)+1800,gateway_name:'New gateway',gateway_ip:gateway,nodes,gateway:gatewayState()};
         } else {
           assert.equal(input.get('token'),'browser'+serial,'Server-issued device token sent');
@@ -73,11 +73,10 @@ const root = path.join(__dirname, '..');
     assert.ok(await page.locator('#mark').isDisabled() && await page.locator('#roquefort button').isDisabled(),'Policy change disables running session');
     const stopped=statusCalls; await page.waitForTimeout(1200); assert.equal(statusCalls,stopped,'Denial stops polling');
     allowed=true; otherDemo=true;
-    await page.click('#start'); await page.waitForFunction(()=>document.getElementById('message').textContent.includes('Other demo marks'));
+    await page.click('#start'); await page.waitForFunction(()=>!document.getElementById('mark').disabled);
     await page.waitForFunction(()=>!document.querySelector('#roquefort button').disabled);
-    assert.equal(await page.locator('article.infected').count(),5,'Existing demo state is collected by direct Pokes');
-    assert.ok((await page.locator('#gateway .state').textContent()).includes('(DEMO)'));
-    assert.ok(await page.locator('#mark').isDisabled()); assert.equal(marks,1);
+    assert.equal(await page.locator('article.clean').count(),5,'Older app/demo marks are reset automatically');
+    assert.ok(!await page.locator('#mark').isDisabled()); assert.equal(marks,1);
     otherDemo=false; independent=true;
     const priorPokes=pokes.length;
     await page.click('#start'); await page.waitForFunction(()=>document.getElementById('message').textContent.includes('before joining'));
