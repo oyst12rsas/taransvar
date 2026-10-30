@@ -137,8 +137,8 @@ and DNS names need an explicit trusted-origin design.
    demo do not invalidate an existing visitor capability. Unknown
    owner/unit IDs are zero; no account or device registration is created. Guest
    marks target only the observed local IP and their exact demo session.
-5. The browser takes direct baseline Pokes. All participating computers must confirm clean before
-   the Mark button is enabled. Mark uses an independently authorized DB request
+5. The browser takes direct baseline Pokes. Baseline status is informational;
+   the infected and clean controls are available throughout an authorized session. Mark uses an independently authorized DB request
    and creates only a `DEMO:WEB_POKE:<session>` infection row on the gateway.
 6. A direct Poke validates its scoped capability, real socket peer and stored
    browser origin. The receiver checks current DB authorization **before**
@@ -167,8 +167,10 @@ and DNS names need an explicit trusted-origin design.
    An infection tag alone is not proof of actual malware. Receiver cards show
    observed tags, not independently verified compromises.
 10. Start takes fresh direct Pokes after clearing earlier demo marks.
-    Mark is enabled only after every observation is clean. After reset, kernel tag
-    propagation may lag the DB; wait and Poke again rather than inventing CLEAN.
+    The user may mark the device infected or clean regardless of receiver colors. After reset, kernel tag
+    propagation may lag the DB; wait and Poke again rather than inventing CLEAN. Changing the device state does not Poke receivers
+    or overwrite their saved observations. The clean button clears this device's
+    demo-only marks within the same session, preserving separate security findings.
 
 
 Messages use per-receiver HMAC-SHA256, 30-second timestamps and replay-protected

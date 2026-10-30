@@ -53,7 +53,7 @@ try {
             'error'=>'A separate security finding is active. Resolve it before continuing the demo.']);
     }
     if ($action === 'mark') webPokeLocalControl($session, true);
-    elseif ($action === 'reset') webPokeLocalControl($session, false);
+    elseif ($action === 'reset') webPokeRestartDevice($session);
     elseif ($action !== 'status') throw new InvalidArgumentException('Unsupported demo action');
     $state = webPokeLocalState($peer);
     webPokeReply(200, ['ok'=>true,'gateway'=>$state,'receivers'=>$central['receivers'],'expires'=>$session['expires'],

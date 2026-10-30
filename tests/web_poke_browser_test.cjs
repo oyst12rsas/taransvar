@@ -9,7 +9,7 @@ const root = path.join(__dirname, '..');
     // Deliberately not Standard gateway: receivers and URLs come only from the DB session.
     const gateway = '100.100.10.20';
     const page = await browser.newPage({viewport: {width: 390, height: 844}});
-    let infected = false, otherDemo = false, independent = false, unavailable = false, allowed = true, statusCalls = 0, marks = 0;
+    let missingTags = true, infected = false, otherDemo = false, independent = false, unavailable = false, allowed = true, statusCalls = 0, marks = 0;
     let serial = 0, currentId = '', observations = {}, pokes = [];
     const nodes = {roquefort:{name:'Roquefort',address:'100.68.176.110',poke_token:'r'},camembert:{name:'Camembert',address:'100.68.149.164',poke_token:'c'},dbserver1:{name:'dbserver1',address:'100.68.126.0',poke_token:'d'},gouda:{name:'Gouda',address:'100.68.51.247',poke_token:'g'}};
     const unknown = () => Object.fromEntries(Object.keys(nodes).map(id=>[id,{state:'unknown',message:'Not yet poked'}]));
@@ -33,13 +33,14 @@ const root = path.join(__dirname, '..');
           assert.equal(input.get('token'),'browser'+serial,'Server-issued device token sent');
           if(action==='status') { ++statusCalls; if(unavailable) return reply(503,{ok:false,error:'DB unavailable'}); }
           else if(action==='mark') { infected=true; ++marks; }
+          else if(action==='reset') { infected=false; otherDemo=false; }
           else assert.fail('Unexpected gateway action');
           data={ok:true,gateway:gatewayState(),receivers:observations,remediation_required:independent};
         }
       } else if(url.pathname.endsWith('/webPokeReceiver.php')) {
         const id=Object.keys(nodes).find(id=>nodes[id].address===url.hostname); assert.ok(id);
         assert.equal(input.get('session_id'),currentId); assert.equal(input.get('poke_token'),nodes[id].poke_token);
-        pokes.push(id); data={ok:true,observation:{state:infected||otherDemo?'infected':'clean',message:'Test traffic observation',observed_at:new Date().toISOString()}};
+        pokes.push(id); data={ok:true,observation:{state:missingTags?'unknown':infected||otherDemo?'infected':'clean',message:'Test traffic observation',observed_at:new Date().toISOString()}};
         observations[id]=data.observation;
       } else assert.fail('Legacy or unintended endpoint called: '+url.pathname);
       return reply(200,data);
@@ -47,17 +48,34 @@ const root = path.join(__dirname, '..');
     const errors=[]; page.on('pageerror',e=>errors.push(e.message));
     await page.goto('http://'+gateway+'/demo/poke/');
     await page.click('#start'); await page.waitForFunction(()=>!document.getElementById('mark').disabled);
-    assert.equal(await page.locator('article.clean').count(),5); assert.equal(pokes.length,4);
+    assert.equal(await page.locator('article.unknown').count(),4,'Missing baseline does not disable controls');
+    assert.ok(!await page.locator('#clean').isDisabled());
+    await page.click('#mark'); await page.waitForFunction(()=>!document.getElementById('clean').disabled);
+    assert.equal(await page.locator('article.infected').count(),1,'Can mark infected before any receiver is green');
+    await page.click('#clean'); await page.waitForFunction(()=>!document.getElementById('mark').disabled);
+    assert.equal(await page.locator('article.clean').count(),1,'Can mark clean before any receiver is green');
+    assert.equal(pokes.length,4,'State changes do not send receiver Pokes');
+    missingTags=false;
+    await page.click('#start'); await page.waitForFunction(()=>!document.getElementById('mark').disabled);
+    assert.equal(await page.locator('article.clean').count(),5);
+    const baselinePokes=pokes.length;
     assert.equal(await page.locator('#gateway h2').textContent(),'New gateway');
     await page.click('#mark'); await page.waitForFunction(()=>document.querySelector('#gateway .state').textContent.includes('INFECTED'));
     await page.waitForFunction(()=>!document.querySelector('#roquefort button').disabled);
     await page.waitForTimeout(2200);
-    assert.equal(await page.locator('article.infected').count(),1); assert.equal(pokes.length,4,'Polling never pokes receivers'); assert.ok(statusCalls>=2);
+    assert.equal(await page.locator('article.infected').count(),1); assert.equal(pokes.length,baselinePokes,'Polling never pokes receivers'); assert.ok(statusCalls>=2);
     for(const id of Object.keys(nodes)) {
       await page.click('#'+id+' button'); await page.waitForFunction(id=>document.querySelector('#'+id+' .state').textContent.includes('INFECTED'),id);
       await page.waitForFunction(id=>!document.querySelector('#'+id+' button').disabled,id);
     }
     assert.equal(await page.locator('article.infected').count(),5);
+    const beforeClean=pokes.length;
+    await page.click('#clean'); await page.waitForFunction(()=>!document.getElementById('mark').disabled);
+    assert.equal(await page.locator('article.clean').count(),1,'Clean changes only the gateway assessment');
+    assert.equal(await page.locator('article.infected').count(),4,'Receivers retain their previous infected observation');
+    assert.equal(pokes.length,beforeClean,'Clean does not Poke receivers or falsify their state');
+    await page.click('#mark'); await page.waitForFunction(()=>!document.getElementById('clean').disabled);
+    assert.equal(await page.locator('article.infected').count(),5,'Can mark infected while receiver cards are red');
     unavailable=true; await page.waitForFunction(()=>document.querySelector('#roquefort .state').textContent.includes('UNKNOWN'));
     assert.equal(await page.locator('article.unknown').count(),5,'DB outage never leaves old green status');
     unavailable=false;
@@ -70,18 +88,18 @@ const root = path.join(__dirname, '..');
     allowed=false;
     await page.waitForFunction(()=>document.getElementById('message').textContent.includes('not permitted'));
     assert.equal(await page.locator('article.unknown').count(),5);
-    assert.ok(await page.locator('#mark').isDisabled() && await page.locator('#roquefort button').isDisabled(),'Policy change disables running session');
+    assert.ok(await page.locator('#mark').isDisabled() && await page.locator('#clean').isDisabled() && await page.locator('#roquefort button').isDisabled(),'Policy change disables running session');
     const stopped=statusCalls; await page.waitForTimeout(1200); assert.equal(statusCalls,stopped,'Denial stops polling');
     allowed=true; otherDemo=true;
     await page.click('#start'); await page.waitForFunction(()=>!document.getElementById('mark').disabled);
     await page.waitForFunction(()=>!document.querySelector('#roquefort button').disabled);
     assert.equal(await page.locator('article.clean').count(),5,'Older app/demo marks are reset automatically');
-    assert.ok(!await page.locator('#mark').isDisabled()); assert.equal(marks,1);
+    assert.ok(!await page.locator('#mark').isDisabled()); assert.equal(marks,3);
     otherDemo=false; independent=true;
     const priorPokes=pokes.length;
     await page.click('#start'); await page.waitForFunction(()=>document.getElementById('message').textContent.includes('before joining'));
     assert.ok((await page.locator('#gateway .state').textContent()).includes('(SECURITY FINDING)'));
-    assert.ok(await page.locator('#mark').isDisabled() && await page.locator('#roquefort button').isDisabled());
+    assert.ok(await page.locator('#mark').isDisabled() && await page.locator('#clean').isDisabled() && await page.locator('#roquefort button').isDisabled());
     assert.equal(pokes.length,priorPokes,'Non-demo finding prevents participant Pokes');
     independent=false;
     await page.click('#start'); await page.waitForFunction(()=>!document.getElementById('mark').disabled);
