@@ -34,6 +34,11 @@ function appDemos()
 <p><a href="/demo/live/">Open the desktop live presentation · Demo 1</a></p>
 <div class="http-demo-grid">
  <div class="http-demo-card">
+  <h2>Poke demo (browser)</h2>
+  <p>See which computers know this device is infected. Open the page here, or run it on your DB-authorized gateway.</p>
+  <a href="/demo/poke/">Open browser Poke demo</a>
+ </div>
+ <div class="http-demo-card">
   <h2>Demo 1</h2>
   <p>Browser traffic attribution, suspicious reports, tagging and threat assessment.</p>
   <?php if ($demo1Url !== '') { ?><a href="<?php print htmlspecialchars($demo1Url, ENT_QUOTES, 'UTF-8'); ?>">Open Demo 1</a><?php } else { ?><p class="http-demo-error">Unavailable: no valid Demo 1 receiving/target host is configured.</p><?php } ?>
