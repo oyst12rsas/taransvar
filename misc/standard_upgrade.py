@@ -999,7 +999,7 @@ def activate_operations(directory, root=Path('/'), interactive=False):
             diagnostic = json.loads(probe.stdout) if isinstance(probe.stdout, str) else {}
         except (ValueError, TypeError): diagnostic = {}
         allowed_codes = {'gateway_assessment_response','authentication_failed','rate_limited',
-            'model_http_error','model_unreachable','invalid_json','configuration_unavailable',
+            'model_http_error','provider_quota_exhausted','provider_credential_rejected','model_unreachable','invalid_json','configuration_unavailable',
             'response_schema_error','configuration_or_response_error','probe_error'}
         code = diagnostic.get('code') if isinstance(diagnostic,dict) else None
         if not isinstance(code,str): code = None
@@ -1007,11 +1007,14 @@ def activate_operations(directory, root=Path('/'), interactive=False):
             print('Model check: ' + code + ' at ' + str(diagnostic.get('stage') if diagnostic.get('stage') in ('configuration','model_request','response_validation') else 'unknown'))
             http = diagnostic.get('http_status')
             if type(http) is int and 100 <= http <= 599: print('Model HTTP status: ' + str(http))
-            if code == 'gateway_assessment_response': print('The Flowise chatflow returned a gateway assessment instead of an operations decision.')
+            if code == 'provider_quota_exhausted': print('Model provider credits/quota exhausted. Restore billing for the credential used by Flowise; existing model settings are retained.')
+            elif code == 'provider_credential_rejected': print('The model provider rejected the API credential used by this flow.')
+            elif code == 'rate_limited': print('Model requests are rate limited; retry after the provider cooldown.')
+            elif code == 'gateway_assessment_response': print('The Flowise chatflow returned a gateway assessment instead of an operations decision.')
             elif code == 'invalid_json': print('The deployed runtime could not parse the response as JSON; check the response format, including Markdown wrappers.')
             elif code == 'authentication_failed': print('The model endpoint rejected authentication or access.')
             elif code == 'model_unreachable': print('The model endpoint timed out or could not be reached.')
-        if policy.get('model_connection') == 'local-flowise':
+        if policy.get('model_connection') == 'local-flowise' and code in (None,'gateway_assessment_response','response_schema_error','invalid_json'):
             print('The existing local Flowise connection did not pass the operations response check. Its chatflow may be intended for gateway assessments. No returned action was executed.')
         print('AI agent activation pending: model connection/protocol check failed. Check the endpoint, credentials and model configuration; run sudo ./tarasec upgrade --configure-operations.')
         return {'pending_configuration': True, 'activation': 'pending_model_connection',
@@ -1308,6 +1311,10 @@ def print_upgrade_details(state):
         if name == 'operations' and record.get('status') == 'partial':
             activation = record.get('details', {}).get('activation')
             print('  Operations: ' + explanations.get(activation, 'Installation is partial; activation is not verified.'))
+            check = record.get('details', {}).get('connection_check')
+            if check == 'provider_quota_exhausted': print('  Model provider credits/quota exhausted; restore billing for the configured credential.')
+            elif check == 'provider_credential_rejected': print('  Model provider rejected the configured API credential.')
+            elif check == 'rate_limited': print('  Model request rate limited; retry after the provider cooldown.')
             print('  Resume only this setup: sudo ./tarasec upgrade --configure-operations')
     managed = state.get('managed_upgrade', {})
     if isinstance(managed, dict):

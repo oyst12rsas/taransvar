@@ -79,6 +79,10 @@ function taraSecUpgradeView(array $status): array
         if (!is_array($component) || ($component['status'] ?? '') !== 'partial') continue;
         if ($name === 'operations') {
             $partial[] = 'operations agent activation';
+            $check = $component['details']['connection_check'] ?? '';
+            if ($check === 'provider_quota_exhausted') $text .= ' Model provider credits/quota exhausted; restore billing for the credential used by Flowise.';
+            elseif ($check === 'provider_credential_rejected') $text .= ' Model provider API credential rejected; repair the credential used by the configured flow.';
+            elseif ($check === 'rate_limited') $text .= ' Model request rate limited; retry after the provider cooldown.';
             $text .= ' Resume the installed operations agent on this server with sudo ./tarasec upgrade --configure-operations.';
         } elseif (in_array($name, ['google','runtime','database','gatekeeper','taralink'], true)) $partial[] = $name;
     }

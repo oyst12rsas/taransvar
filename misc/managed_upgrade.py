@@ -497,7 +497,7 @@ def prepare_rollout_web(source):
     web=Path('/var/www/html')
     if not (web/'dbfunc.php').is_file(): raise ValueError('Central Gatekeeper web root is not configured')
     backup=STATE.parent/'backups'/('daily-bootstrap-'+str(int(time.time())))
-    for relative in ('script/operationsActivity.php','script/operationsActivityAuth.php','script/upgradeRolloutLib.php','script/upgradeNotices.php','gatekeeper/func/upgradeRollout.php'):
+    for relative in ('script/modelProviderError.php','script/aiGatewayAssess.php','script/operationsActivity.php','script/operationsActivityAuth.php','script/upgradeRolloutLib.php','script/upgradeNotices.php','gatekeeper/func/upgradeRollout.php'):
         src=source/'html'/relative;dst=web/relative
         run(['php','-l',src],capture_output=True)
         u.backup(dst,backup)

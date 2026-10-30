@@ -30,3 +30,7 @@ $partial=taraSecUpgradeView(['software'=>['version'=>0,'components'=>[
 ensure(str_contains($partial['message'],'operations agent activation'),'Explain incomplete composite release');
 ensure(str_contains($partial['message'],'--configure-operations'),'Targeted activation recovery command missing');
 ensure($partial['color']==='red','Partial deployment must not pretend the release is current');
+
+$quota=taraSecUpgradeView(['software'=>['version'=>0,'components'=>['operations'=>[
+ 'status'=>'partial','details'=>['connection_check'=>'provider_quota_exhausted']]]]]);
+ensure(str_contains($quota['message'],'credits/quota exhausted'),'Provider quota failure must reach Issues');
