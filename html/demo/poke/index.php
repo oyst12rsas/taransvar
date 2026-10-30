@@ -5,13 +5,13 @@
 <header><a href="/demo/">TARASEC / LIVE TESTBED</a><span>Browser demonstration</span></header>
 <h1>Who knows<br>you’re infected?</h1>
 <p class="lead">The gateway knows first. Poke each computer to see what your next connection tells it.</p>
-<p>Connect this phone or computer through <strong>Standard gateway</strong>. This browser is the test device.</p>
+<p>Open this page on <strong>your TaraSec gateway</strong>. The DB server must authorize the gateway before this browser can join.</p>
 <section class="controls" aria-label="Demo controls"><button id="start">Start clean / Reset</button><button id="mark" disabled>Mark this device infected</button><button id="stop" disabled>Stop</button></section>
-<p id="message" role="status" aria-live="polite">Start to clear this device’s demo mark and collect a real clean baseline from all four receivers.</p>
-<div id="open" hidden><a href="http://100.68.165.190/demo/poke/">Open on Standard gateway</a></div>
+<p id="message" role="status" aria-live="polite">Start to request a DB-authorized session and collect a clean baseline from the approved receivers.</p>
+
 <section id="cards" aria-label="Computer observations"></section>
 <p class="muted" id="freshness">Not started</p>
-<section class="explanation"><h2>Knowledge travels with the next connection.</h2><ol><li>Start clean: all five computers must confirm clean before marking is enabled.</li><li>Mark infected: Standard gateway turns red. Receivers keep their last observed state.</li><li>Poke a receiver: a direct connection carries the current traffic tag through Standard gateway.</li></ol><p>Receiver cards show the state <strong>Last observed</strong> on a direct Poke. Status is checked once a second by the gateway; these checks do not send phone traffic to the receivers. Other traffic from this device may still reach them.</p><p>Reset clears demo evidence only. Independent security findings remain active. A session lasts 30 minutes. Stopping or closing the page does not clear the gateway’s demo mark; use Reset before leaving.</p></section>
+<section class="explanation"><h2>Knowledge travels with the next connection.</h2><ol><li>Start clean: all five computers must confirm clean before marking is enabled.</li><li>Mark infected: Your gateway turns red. Receivers keep their last observed state.</li><li>Poke a receiver: a direct connection carries the current traffic tag through your gateway.</li></ol><p>Receiver cards show the state <strong>Last observed</strong> on a direct Poke. The gateway checks combined DB status once a second; these checks do not send phone traffic to the receivers. Other traffic from this device may still reach them.</p><p>Reset clears only this session’s demo evidence. Independent security findings remain active. A session lasts 30 minutes. Stopping or closing the page does not clear the gateway’s demo mark; use Reset before leaving.</p></section>
 <details><summary>Debug evidence</summary><button id="copy">Copy debug</button><pre id="debug">No evidence yet.</pre></details>
-<footer>Research prototype · Real traffic observations · Standard gateway, Roquefort, Camembert, dbserver1 and Gouda</footer>
+<footer>Research prototype · Real traffic observations · DB-authorized gateways · Roquefort, Camembert, dbserver1 and Gouda</footer>
 </main><script src="poke.js"></script></body></html>

@@ -1,48 +1,75 @@
 <?php
-require_once __DIR__ . '/../html/script/webPokeLib.php';
-function check($condition, $message) { if (!$condition) throw new RuntimeException($message); }
-check(!webPokeToken('../escape'), 'Reject traversal');
-check(!webPokeToken(str_repeat('a', 64) . "\n"), 'Reject trailing data');
-$token = bin2hex(random_bytes(32));
-check(webPokeToken($token), 'Accept random session');
-$dir = webPokeDirectory();
-$path = $dir . '/' . $token . '.json';
-try {
-    check(webPokeSnapshot($token)['state'] === 'unknown' && !file_exists($path), 'Polling never creates evidence');
-    $data = ['senderIp' => WEB_POKE_GATEWAY, 'trafficSeverity' => 0, 'trafficSecondsSince' => 0];
-    $clean = webPokeEvidence($data, WEB_POKE_GATEWAY);
-    check($clean['state'] === 'clean', 'Real clean tag');
-    check(webPokeEvidence(['senderIp'=>WEB_POKE_GATEWAY,'trafficSecondsSince'=>0], WEB_POKE_GATEWAY)['state'] === 'unknown', 'Missing severity cannot become clean');
-    webPokeSnapshot($token, $clean);
-    // Exercise the actual GET endpoint without mysqli: read-only snapshots must
-    // work without loading the traffic/database implementation at all.
-    $endpoint = realpath(__DIR__ . '/../html/script/webPokeReceiver.php');
-    $script = '$_SERVER["REQUEST_METHOD"]="GET"; $_SERVER["REMOTE_ADDR"]="' . WEB_POKE_GATEWAY . '"; $_GET["token"]="' . $token . '"; include ' . var_export($endpoint, true) . ';';
-    $output = shell_exec(escapeshellarg(PHP_BINARY) . ' -n -r ' . escapeshellarg($script));
-    check((json_decode($output, true)['observation']['state'] ?? '') === 'clean', 'GET endpoint needs no traffic/database code');
-    $script = '$_SERVER["REQUEST_METHOD"]="POST"; $_SERVER["REMOTE_ADDR"]="127.0.0.1"; $_SERVER["HTTP_CLIENT_IP"]="' . WEB_POKE_GATEWAY . '"; $_POST["token"]="' . $token . '"; include ' . var_export($endpoint, true) . ';';
-    $output = shell_exec(escapeshellarg(PHP_BINARY) . ' -n -r ' . escapeshellarg($script));
-    check((json_decode($output, true)['ok'] ?? true) === false, 'Spoofed Client-IP does not authorize Poke');
-    $bytes = file_get_contents($path);
-    // A gateway change alone cannot alter the frozen receiver observation.
-    $data['trafficSeverity'] = 3;
-    check(webPokeSnapshot($token)['state'] === 'clean', 'Polling retains clean before Poke');
-    check(file_get_contents($path) === $bytes, 'Read-only polling leaves file untouched');
-    $infected = webPokeEvidence($data, WEB_POKE_GATEWAY);
-    webPokeSnapshot($token, $infected);
-    check(webPokeSnapshot($token)['state'] === 'infected', 'Only next Poke records infected');
-    foreach ([-1, 3, 100] as $age) {
-        $data['trafficSecondsSince'] = $age;
-        check(webPokeEvidence($data, WEB_POKE_GATEWAY)['state'] === 'unknown', 'Missing/stale evidence is unknown');
-    }
-    $data['trafficSecondsSince'] = 0;
-    check(webPokeEvidence($data, '100.68.22.33')['state'] === 'unknown', 'Wrong route cannot pass');
-    $expired = webPokeSnapshot($token);
-    $expired['created'] = time() - WEB_POKE_TTL;
-    file_put_contents($path, json_encode($expired));
-    check(webPokeSnapshot($token)['state'] === 'unknown', 'Expired session cannot show green');
-    check(webPokeSnapshot($token, $clean)['state'] === 'unknown', 'Poke cannot revive expired session');
-    check(count(webPokeNodes()) === 4, 'Four receivers');
-    check(!array_intersect(['tomato','squash','audi','porsche'], array_keys(webPokeNodes())), 'Exclude other topology');
-    echo "Web Poke evidence, polling, route and expiry checks passed.\n";
-} finally { @unlink($path); }
+require_once __DIR__ . '/../html/script/webPokeCoordinatorLib.php';
+function check($ok, $message) { if (!$ok) throw new RuntimeException($message); }
+function denied(callable $call, string $label) { try { $call(); } catch (DomainException $e) { return; } throw new RuntimeException($label); }
+$gateway='100.68.165.190'; $newGateway='100.100.10.20';
+$config=['ALLOW_ANY_GATEWAY'=>'YES','ALLOWED_GATEWAYS'=>$gateway];
+foreach(webPokeNodes() as $id=>$node) $config['KEY_'.strtoupper($id)]=bin2hex(random_bytes(32));
+check(webPokeAllowed($config,$newGateway), 'YES admits a new overlay gateway');
+$closed=$config; $closed['ALLOW_ANY_GATEWAY']='NO';
+check(!webPokeAllowed($closed,$newGateway) && webPokeAllowed($closed,$gateway), 'NO admits only exact listed gateway');
+check(!webPokeAllowed(['ALLOW_ANY_GATEWAY'=>'yes','ALLOWED_GATEWAYS'=>$gateway],$gateway), 'Invalid policy fails closed');
+check(!webPokeAllowed([], $gateway), 'Missing policy fails closed');
+check(!webPokeAllowed($config, '127.0.0.1') && !webPokeAllowed($config,'example.com'), 'Only literal NetBird peer permitted');
+check(!webPokeToken('../escape') && !webPokeToken(str_repeat('a',64)."\n"), 'Session format rejects traversal/trailing data');
+$registered=fn($ip)=>in_array($ip,[$gateway,$newGateway],true);
+$registrations=[]; $calls=0;
+$rpc=function($ip,$endpoint,$input) use (&$registrations,&$calls,$config) {
+    ++$calls;
+    if($endpoint==='webPokeGateway.php') return ['ok'=>true,'owner_id'=>17,'unit_id'=>20,'origin'=>'http://10.100.0.1'];
+    $nodeId=array_search($ip,array_column(webPokeNodes(),'address','name'),true);
+    $id=array_keys(array_filter(webPokeNodes(),fn($node)=>$node['address']===$ip))[0];
+    $message=webPokeVerify($input,$config['KEY_'.strtoupper($id)]);
+    check($message['action']==='register' && $message['node_id']===$id, 'DB registers the selected receiver');
+    $registrations[$id]=$message;
+    return ['ok'=>true];
+};
+$proof=bin2hex(random_bytes(32));
+denied(fn()=>webPokeCoordinator($closed,$newGateway,['action'=>'start','proof'=>$proof],$rpc,$registered),'Unapproved gateway must be denied');
+check($calls===0, 'Deny precedes callback or state lookup');
+$session=webPokeCoordinator($config,$newGateway,['action'=>'start','proof'=>$proof],$rpc,$registered);
+check(count($registrations)===4 && $session['gateway_ip']===$newGateway && $session['unit_id']===20 && $session['owner_id']===17,'Dynamic gateway and stable unit registered centrally');
+foreach($registrations as $registration) check($registration['gateway_ip']===$newGateway && $registration['origin']==='http://10.100.0.1','Receiver has dynamic route/origin');
+$id=$session['session_id']; $control=$session['control_token'];
+$status=['action'=>'status','session_id'=>$id,'control_token'=>$control];
+$before=webPokeRecord('central',$id);
+$result=webPokeCoordinator($config,$newGateway,$status,$rpc,$registered);
+check($result['receivers']['roquefort']['state']==='unknown', 'No invented clean baseline');
+check(webPokeRecord('central',$id)===$before,'Status polling never changes receiver observations');
+denied(fn()=>webPokeCoordinator($config,$gateway,$status,$rpc,$registered),'Cannot use another gateway session');
+$bad=$status; $bad['control_token']=bin2hex(random_bytes(32));
+denied(fn()=>webPokeCoordinator($config,$newGateway,$bad,$rpc,$registered),'Guessed control capability cannot read state');
+$nodeId='roquefort'; $node=webPokeNodes()[$nodeId]; $key=$config['KEY_ROQUEFORT'];
+$receiverMessage=function($action,$extra=[]) use ($key,$id,$nodeId) {
+    return ['action'=>'receiver','node_id'=>$nodeId]+webPokeSeal(['action'=>$action,'node_id'=>$nodeId,'session_id'=>$id]+$extra,$key);
+};
+$clean=webPokeEvidence(['senderIp'=>$newGateway,'trafficSeverity'=>0,'trafficSecondsSince'=>0],$newGateway,$newGateway);
+$red=webPokeEvidence(['senderIp'=>$newGateway,'trafficSeverity'=>3,'trafficSecondsSince'=>0],$newGateway,$newGateway);
+webPokeCoordinator($config,$node['address'],$receiverMessage('report',['observation'=>$clean]),$rpc,$registered);
+$read=webPokeCoordinator($config,$newGateway,$status,$rpc,$registered);
+check($read['receivers']['roquefort']['state']==='clean','Receiver report records actual clean observation');
+webPokeCoordinator($config,$node['address'],$receiverMessage('report',['observation'=>$red]),$rpc,$registered);
+$read=webPokeCoordinator($config,$newGateway,$status,$rpc,$registered);
+check($read['receivers']['roquefort']['state']==='infected' && $read['receivers']['camembert']['state']==='unknown','Only reporting receiver changes');
+denied(fn()=>webPokeCoordinator($closed,$newGateway,$status,$rpc,$registered),'NO revokes existing gateway status');
+denied(fn()=>webPokeCoordinator($closed,$newGateway,['action'=>'authorize','session_id'=>$id,'control_token'=>$control],$rpc,$registered),'NO revokes controls');
+denied(fn()=>webPokeCoordinator($closed,$node['address'],$receiverMessage('validate'),$rpc,$registered),'NO revokes existing direct Pokes');
+denied(fn()=>webPokeCoordinator($closed,$node['address'],$receiverMessage('report',['observation'=>$clean]),$rpc,$registered),'NO rejects reports arriving after policy switch');
+$access=['action'=>'receiver','node_id'=>$nodeId]+webPokeSeal(['action'=>'access','node_id'=>$nodeId,'gateway_ip'=>$newGateway],$key);
+denied(fn()=>webPokeCoordinator($closed,$node['address'],$access,$rpc,$registered),'NO also closes old anonymous status API paths');
+denied(fn()=>webPokeCoordinator($config,$newGateway,['action'=>'start','proof'=>$proof],$rpc,fn($ip)=>false),'YES still requires a registered gateway');
+$packet=webPokeSeal(['action'=>'test'],$key); webPokeVerify($packet,$key);
+denied(fn()=>webPokeVerify($packet,$key),'Signed replay is rejected');
+$packet=webPokeSeal(['action'=>'test'],$key); $packet['payload'].='x';
+denied(fn()=>webPokeVerify($packet,$key),'Tampered DB message rejected');
+denied(fn()=>webPokeVerify(webPokeSeal(['action'=>'test'],$key),bin2hex(random_bytes(32))),'Wrong receiver key rejected');
+$stale=['action'=>'test','issued_at'=>time()-60,'nonce'=>bin2hex(random_bytes(32))];
+$payload=base64_encode(json_encode($stale));
+denied(fn()=>webPokeVerify(['payload'=>$payload,'signature'=>hash_hmac('sha256',$payload,$key)],$key),'Stale signed message rejected');
+foreach([-1,3,100] as $age) check(webPokeEvidence(['senderIp'=>$newGateway,'trafficSeverity'=>3,'trafficSecondsSince'=>$age],$newGateway,$newGateway)['state']==='unknown','Stale/missing tag stays unknown');
+check(webPokeEvidence(['senderIp'=>$gateway,'trafficSeverity'=>3,'trafficSecondsSince'=>0],$gateway,$newGateway)['state']==='unknown','Wrong route cannot pass');
+check(webPokeEvidence(['senderIp'=>$newGateway,'trafficSecondsSince'=>0],$newGateway,$newGateway)['state']==='unknown','Missing severity cannot become green');
+webPokeRecord('central',$id,function($row){$row['expires']=time()-1;return $row;});
+denied(fn()=>webPokeCoordinator($config,$newGateway,$status,$rpc,$registered),'Expired sessions cannot disclose state');
+check(!array_intersect(['tomato','squash','audi','porsche'],array_keys(webPokeNodes())),'Excluded topology');
+echo "DB policy, registered gateways, dynamic receiver enrollment, session isolation, legacy policy, signed messages, revocation, traffic evidence and expiry passed.\n";

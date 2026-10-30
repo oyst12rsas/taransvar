@@ -1,12 +1,21 @@
 name: Web Poke demo
 on:
   pull_request:
-    paths: ['html/demo/**', 'html/script/webPoke*.php', 'tests/web_poke*', '.github/workflows/web-poke-demo.yml']
+    paths: ['html/demo/**', 'html/script/webPoke*.php', 'html/script/appInfection*.php', 'html/script/appLocalInfection.php', 'html/taraLib.php', 'misc/*web_poke*', 'misc/web-poke*', 'tests/web_poke*', '.github/workflows/web-poke-demo.yml']
   push:
-    paths: ['html/demo/**', 'html/script/webPoke*.php', 'tests/web_poke*', '.github/workflows/web-poke-demo.yml']
+    paths: ['html/demo/**', 'html/script/webPoke*.php', 'html/script/appInfection*.php', 'html/script/appLocalInfection.php', 'html/taraLib.php', 'misc/*web_poke*', 'misc/web-poke*', 'tests/web_poke*', '.github/workflows/web-poke-demo.yml']
 jobs:
   checks:
     runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: web-poke-ci-only
+        ports: ['3307:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=10
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -18,7 +27,13 @@ jobs:
           node-version: '22'
       - run: find html/demo/poke html/script -maxdepth 1 -name 'webPoke*.php' -o -path 'html/demo/poke/index.php' | xargs -n1 php -l
       - run: php -l html/demo/index.php && bash -n misc/install_web_poke_demo.sh
+      - run: php -l html/taraLib.php && php -l html/script/appLocalInfection.php && php -l html/script/appInfectionControl.php && php -l misc/setup_web_poke.php
       - run: php tests/web_poke_test.php
+      - run: python3 tests/web_poke_control_test.py && python3 tests/hack_report_expiry_test.py
+      - run: php tests/web_poke_database_test.php
+        env:
+          WEB_POKE_TEST_PORT: '3307'
+          WEB_POKE_TEST_PASSWORD: web-poke-ci-only
       - run: node --check html/demo/poke/poke.js
       - run: npm install --no-save playwright && npx playwright install --with-deps chromium
       - run: node tests/web_poke_browser_test.cjs

@@ -1,0 +1,7 @@
+; DB-server-only demo admission policy. Installer creates independent receiver keys.
+; YES: any registered gateway with a verifiable local owner/unit may participate.
+; NO: only registered gateways whose exact NetBird address is in ALLOWED_GATEWAYS.
+; Missing/invalid policy or unavailable DB denies access. No wildcard/subnet matching.
+ALLOW_ANY_GATEWAY=YES
+ALLOWED_GATEWAYS=100.68.165.190
+; KEY_ROQUEFORT, KEY_CAMEMBERT, KEY_DBSERVER1 and KEY_GOUDA are generated locally.

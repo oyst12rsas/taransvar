@@ -26,7 +26,7 @@
     <p class="lead">See TaraSec detect an apparently infected unit, carry elaborated threat information across the network, attribute a second connection through conntrack, and correct only the evidence created by the active demonstration.</p>
 
     <div class="card"><strong>Presenting on a computer?</strong> <a href="/demo/live/">Open the live Demo 1 network view</a> to show gateway state and two receivers together.</div>
-    <div class="card"><strong>Who knows you’re infected?</strong> <a href="http://100.68.165.190/demo/poke/">Open the new browser Poke demo</a>: start clean, mark this device infected, then Poke Roquefort, Camembert, dbserver1 and Gouda one at a time.</div>
+    <div class="card"><strong>Who knows you’re infected?</strong> <a href="/demo/poke/">Open the DB-authorized browser Poke demo</a>: start clean, mark this device infected, then Poke Roquefort, Camembert, dbserver1 and Gouda one at a time.</div>
     <h2>What the demo shows</h2>
     <div class="flow">
         <div><strong>Unit</strong><br>Phone or laptop making the SSH connections</div>
