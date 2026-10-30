@@ -1,0 +1,24 @@
+name: Web Poke demo
+on:
+  pull_request:
+    paths: ['html/demo/**', 'html/script/webPoke*.php', 'tests/web_poke*', '.github/workflows/web-poke-demo.yml']
+  push:
+    paths: ['html/demo/**', 'html/script/webPoke*.php', 'tests/web_poke*', '.github/workflows/web-poke-demo.yml']
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mysqli, curl
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: find html/demo/poke html/script -maxdepth 1 -name 'webPoke*.php' -o -path 'html/demo/poke/index.php' | xargs -n1 php -l
+      - run: php -l html/demo/index.php && bash -n misc/install_web_poke_demo.sh
+      - run: php tests/web_poke_test.php
+      - run: node --check html/demo/poke/poke.js
+      - run: npm install --no-save playwright && npx playwright install --with-deps chromium
+      - run: node tests/web_poke_browser_test.cjs
