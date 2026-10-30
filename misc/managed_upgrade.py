@@ -388,18 +388,32 @@ def check_health(policy):
         return 1 if failed else 0
 
 
+class DailyBlocked(ValueError):
+    def __init__(self, stage, error):
+        code = getattr(error, 'returncode', None)
+        suffix = '; exit ' + str(code) if type(code) is int else ''
+        super().__init__(stage + ' failed (' + type(error).__name__ + suffix + ')')
+
+
+def daily_step(stage, action, *args, **kwargs):
+    try: return action(*args, **kwargs)
+    except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
+        # Fixed stage labels and exception classes only, never argv or provider output.
+        raise DailyBlocked(stage, error) from None
+
+
 def daily(policy):
     if Path('/etc/tarasec-operations-feed/tokens.json').is_file():
-        refresh_rollout_local_addresses()
+        daily_step('Central local identity refresh',refresh_rollout_local_addresses)
     before = json.loads(STATE.read_text()).get('managed_upgrade', {}) if STATE.exists() else {}
-    origin=git(policy,'remote','get-url','origin',capture_output=True).stdout.strip()
+    origin=daily_step('Source repository lookup',git,policy,'remote','get-url','origin',capture_output=True).stdout.strip()
     if origin not in ('https://github.com/oyst12rsas/taransvar.git','https://github.com/oyst12rsas/taransvar','git@github.com:oyst12rsas/taransvar.git'):
         raise ValueError('Assigned source repository changed')
-    git(policy, 'fetch', '--no-tags', 'https://github.com/oyst12rsas/taransvar.git', 'main:refs/remotes/origin/main', capture_output=True)
-    offered = git(policy, 'rev-parse', 'refs/remotes/origin/main', capture_output=True).stdout.strip()
+    daily_step('Source fetch',git,policy, 'fetch', '--no-tags', 'https://github.com/oyst12rsas/taransvar.git', 'main:refs/remotes/origin/main', capture_output=True)
+    offered = daily_step('Release revision lookup',git,policy, 'rev-parse', 'refs/remotes/origin/main', capture_output=True).stdout.strip()
     if not SHA.fullmatch(offered): raise ValueError('Invalid source revision')
-    manifest = json.loads(git(policy, 'show', offered+':release.json', capture_output=True).stdout)
-    decision = gate(policy, offered, manifest['version'])
+    manifest = json.loads(daily_step('Release manifest lookup',git,policy, 'show', offered+':release.json', capture_output=True).stdout)
+    decision = daily_step('Central rollout evidence',gate,policy, offered, manifest['version'])
     target = decision.get('target_revision')
     generation = decision.get('generation', 0)
     if decision.get('allowed') is not True or not isinstance(target, str) or not SHA.fullmatch(target):
@@ -410,16 +424,16 @@ def daily(policy):
     if before.get('revision') == target and before.get('generation') == generation and before.get('status') == 'failed':
         print('Daily upgrade held after failure; use central rollout reset before retrying.')
         return 0
-    if not quiet(policy):
+    if not daily_step('Local activity evidence',quiet,policy):
         scheduler_notice('waiting','Waiting for quiet activity and inactive sessions')
         print('Daily upgrade waiting for quiet activity and inactive sessions.')
         return 0
     with tempfile.TemporaryDirectory(prefix='tarasec-release-') as tmp:
         repo = Path(tmp)
-        export_release(policy, target, repo)
+        daily_step('Release archive',export_release,policy, target, repo)
         # Recheck pause/generation and activity after download/export, immediately before dispatch.
-        latest=gate(policy,offered,manifest['version'])
-        if (latest.get('allowed') is not True or latest.get('target_revision')!=target or latest.get('generation')!=generation or latest.get('cohort')!=decision.get('cohort') or not quiet(policy)):
+        latest=daily_step('Central rollout recheck',gate,policy,offered,manifest['version'])
+        if (latest.get('allowed') is not True or latest.get('target_revision')!=target or latest.get('generation')!=generation or latest.get('cohort')!=decision.get('cohort') or not daily_step('Local activity recheck',quiet,policy)):
             scheduler_notice('waiting','Rollout or activity changed before dispatch')
             return 0
         # Execute only a controller from a revision which has passed this unit's central gate.
@@ -436,7 +450,7 @@ def daily(policy):
             current=json.loads(STATE.read_text()).get('managed_upgrade',{}) if STATE.exists() else {}
             if current.get('revision')!=target or current.get('generation')!=generation or current.get('status')!='failed':
                 record(dict(status='failed', revision=target, generation=generation, checked_at=time.time(), failed=[{'component':'release','reason':'Execution failed or timed out'}]))
-            raise
+            raise DailyBlocked('Pinned release execution',error) from None
         print(result.stdout)
         if result.stderr: print('See component service journals for additional diagnostics.')
     return 0
@@ -562,8 +576,9 @@ def main(argv=None):
         try: return daily(policy)
         except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
             # No credential-bearing command output is published.
-            scheduler_notice('blocked',type(error).__name__+'; local setup or central evidence unavailable')
-            print('Daily maintenance blocked: '+type(error).__name__)
+            reason=str(error) if isinstance(error,DailyBlocked) else type(error).__name__+'; local setup or central evidence unavailable'
+            scheduler_notice('blocked',reason)
+            print('Daily maintenance blocked: '+reason)
             return 1
 
 if __name__=='__main__': raise SystemExit(main())

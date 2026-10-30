@@ -196,4 +196,21 @@ class ManagedTests(unittest.TestCase):
         with patch.object(m,'STATE',self.root/'none.json'),patch.object(m,'git',side_effect=[Mock(stdout='https://github.com/oyst12rsas/taransvar.git'),Mock(),Mock(stdout='a'*40),Mock(stdout='{"version":8}')]),patch.object(m,'gate',return_value=dict(allowed=False,reason='Paused')),patch.object(m,'scheduler_notice') as notice,patch.object(m,'export_release') as export:
             self.assertEqual(m.daily(self.policy),0);notice.assert_called_once_with('waiting','Paused');export.assert_not_called()
 
+class SchedulerDiagnosticTests(unittest.TestCase):
+    def test_failed_command_reports_stage_and_exit_code_without_argv_or_output(self):
+        import subprocess
+        error=subprocess.CalledProcessError(128,['git','credential=private-secret'],output='Bearer private-secret',stderr='private-secret')
+        with self.assertRaises(m.DailyBlocked) as caught:
+            m.daily_step('Source fetch',Mock(side_effect=error))
+        self.assertEqual(str(caught.exception),'Source fetch failed (CalledProcessError; exit 128)')
+        self.assertNotIn('private-secret',str(caught.exception))
+
+    def test_activity_error_is_distinct_from_source_error(self):
+        with self.assertRaisesRegex(m.DailyBlocked,'Local activity evidence failed'):
+            m.daily_step('Local activity evidence',Mock(side_effect=OSError('private-path')))
+
+    def test_successful_stage_preserves_result(self):
+        self.assertEqual(m.daily_step('Central rollout evidence',lambda:{'allowed':False}),{'allowed':False})
+
+
 if __name__=='__main__':unittest.main()

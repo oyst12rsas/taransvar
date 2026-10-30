@@ -23,3 +23,10 @@ $view=taraSecUpgradeView(['role'=>'node','software'=>['version'=>999,'components
 ensure($view['color']==='yellow','Optional worker setup must remain visible');
 ensure(str_contains($view['message'],'existing Google web login is independent'),'Explain separate login/worker state');
 echo "Upgrade notice checks passed\n";
+
+$partial=taraSecUpgradeView(['software'=>['version'=>0,'components'=>[
+ 'runtime'=>['status'=>'completed','installed_version'=>9],
+ 'operations'=>['status'=>'partial','installed_version'=>0,'details'=>['activation'=>'pending_model_configuration']]]]]);
+ensure(str_contains($partial['message'],'operations agent activation'),'Explain incomplete composite release');
+ensure(str_contains($partial['message'],'--configure-operations'),'Targeted activation recovery command missing');
+ensure($partial['color']==='red','Partial deployment must not pretend the release is current');

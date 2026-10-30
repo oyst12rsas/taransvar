@@ -74,6 +74,16 @@ function taraSecUpgradeView(array $status): array
     $version = $assessment['installed_version'];
     if ($version === null && $color === 'green') $color = 'yellow';
     $text = 'Installed TaraSec release: '.($version === null ? 'not reported' : $version).'.';
+    $partial = [];
+    foreach (($status['software']['components'] ?? []) as $name=>$component) {
+        if (!is_array($component) || ($component['status'] ?? '') !== 'partial') continue;
+        if ($name === 'operations') {
+            $partial[] = 'operations agent activation';
+            $text .= ' Resume the installed operations agent on this server with sudo ./tarasec upgrade --configure-operations.';
+        } elseif (in_array($name, ['google','runtime','database','gatekeeper','taralink'], true)) $partial[] = $name;
+    }
+    if ($partial) $text .= ' Combined release is incomplete because of '.implode(', ', $partial).'; this does not mean completed components are missing.';
+
     if ($assessment['catalog_status'] !== 'ok') $text .= ' Upgrade notice catalog unavailable.';
     if ($messages) $text .= ' '.implode(' ', $messages);
     return ['color'=>$color, 'message'=>$text, 'assessment'=>$assessment];

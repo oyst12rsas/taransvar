@@ -23,6 +23,7 @@ REPO = Path(__file__).resolve().parent.parent
 STATE = Path('/var/lib/tarasec/upgrade/state.json')
 MODE = Path('/etc/tarasec-deployment-mode')
 COMMAND = Path('/usr/local/sbin/tarasec')
+OPERATIONS_LOCK = Path('/var/lib/tarasec-operations/lock')
 SSH_AUTH_TARGET = Path('/etc/ssh/sshd_config.d/00-tarasec-key-password.conf')
 ROLES = ('database', 'gateway', 'node')
 FEATURES = (
@@ -874,7 +875,7 @@ def ensure_operations_activity(root=Path('/'), interactive=False):
                 print('Activity feed verification pending: update dbserver1 web files and check the authenticated feed.')
                 return 'feed_unavailable'
     if not config.get('demo_url'):
-        print('Activity observer pending: central server unknown. Check Global DB 1 in TaraSec Setup and rerun sudo tarasec upgrade.')
+        print('Activity observer pending: central server unknown. Check Global DB 1 in TaraSec Setup and run sudo ./tarasec upgrade --configure-activity.')
         return 'needs_configuration'
     try:
         # Verify the configured collector before claiming activity readiness.
@@ -909,13 +910,13 @@ def activate_operations(directory, root=Path('/'), interactive=False):
     backup(root / 'etc/tarasec/operations-activity.key', directory)
     activity = ensure_operations_activity(root, interactive=interactive)
     if not configure_operations_model(policy, policy_path, directory, root):
-        print('AI agent installed; activation pending model configuration. Rerun sudo tarasec upgrade to resume setup.')
+        print('AI agent installed; activation pending model configuration. Run sudo ./tarasec upgrade --configure-operations to resume setup.')
         return {'pending_configuration': True, 'activation': 'pending_model_configuration'}
     # Probe before policy/timer changes. The probe never dispatches returned actions.
     probe = subprocess.run(['python3', '/usr/local/lib/tarasec-operations/operations_model_probe.py', '--connection-check'],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=240)
     if probe.returncode:
-        print('AI agent activation pending: model connection/protocol check failed. Check the endpoint, credentials and model configuration; rerun sudo tarasec upgrade.')
+        print('AI agent activation pending: model connection/protocol check failed. Check the endpoint, credentials and model configuration; run sudo ./tarasec upgrade --configure-operations.')
         return {'pending_configuration': True, 'activation': 'pending_model_connection'}
     backup(policy_path, directory)
     policy['mode'] = mode
@@ -1141,6 +1142,84 @@ def automatic_upgrade(args, state, mode):
         return 0
 
 
+def resume_operations(state):
+    """Configure the existing deployment; never advance versions to fetched source."""
+    if read_mode() not in ('demo', 'production'):
+        raise ValueError('Select the host deployment mode before configuring operations')
+    if not operations_installed():
+        raise ValueError('Operations agent is not installed; complete its staged installation first')
+    if state.get('features', {}).get('operations', {}).get('choice') == 'never':
+        raise ValueError('Operations was declined permanently; review that choice before activation')
+    if read_mode() == 'production' and choice('Activate the existing operations agent in production mode') != 'yes':
+        return 0
+    STATE.parent.mkdir(parents=True, exist_ok=True)
+    with (STATE.parent / 'upgrade.lock').open('w') as upgrade_lock, OPERATIONS_LOCK.open('a') as worker_lock:
+        try:
+            fcntl.flock(upgrade_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(worker_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise ValueError('An upgrade or operations assessment is running; retry after it finishes') from None
+        state = load_state()
+        record = state.setdefault('features', {}).setdefault('operations', {})
+        if record.get('status') not in ('partial', 'completed'):
+            raise ValueError('No completed operations installation receipt; finish the staged installation before activation')
+        revision = record.get('installed_revision', '')
+        version = record.get('installed_version', 0)
+        if type(version) is not int or version < 0:
+            raise ValueError('Invalid operations version receipt; inspect upgrade state before configuring')
+        if record.get('choice') == 'never':
+            raise ValueError('Operations was declined permanently; review that choice before activation')
+        # Partial receipts store version zero. Recover the attempted release from
+        # that exact recorded revision, never from the currently fetched checkout.
+        if (not version and record.get('status') == 'partial'
+                and record.get('details', {}).get('activation') in ('pending_model_configuration', 'pending_model_connection')
+                and re.fullmatch('[a-f0-9]{40}', str(revision))):
+            try:
+                manifest = json.loads(run(['git', '-C', REPO, 'show', revision + ':release.json'],
+                                          capture_output=True, text=True).stdout)
+                candidate = manifest.get('version')
+                if type(candidate) is int and candidate > 0: version = candidate
+            except (OSError, ValueError, subprocess.SubprocessError): pass
+        stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
+        directory = STATE.parent / 'backups' / ('operations-setup-' + stamp)
+        directory.mkdir(parents=True, mode=0o700)
+        backup(Path('/etc/tarasec/operations-agent.json'), directory)
+        result = activate_operations(directory, interactive=True)
+        record_feature_result(record, 'operations', result, version, revision)
+        state.setdefault('history', []).append({'time':stamp,'feature':'operations',
+            'status':record['status'],'configuration_only':True})
+        save(state)
+        if record['status'] != 'completed':
+            print('Operations activation is still pending; run sudo ./tarasec upgrade --configure-operations to resume.')
+            return 1
+        print('Operations activation completed. Other components and SSH policy were not changed.')
+        if not version: print('Deployed operations version is unknown; the next staged upgrade must verify it.')
+        print('Run the standard upgrade again to refresh staged verification and scheduler status.')
+        return 0
+
+
+def print_upgrade_details(state):
+    explanations = {
+        'pending_model_configuration':'Model configuration or approval is pending.',
+        'pending_model_connection':'The configured model failed its connection/protocol check.',
+    }
+    for name, record in state.get('features', {}).items():
+        if name not in {entry[0] for entry in FEATURES}: continue
+        version = record.get('installed_version')
+        if type(version) is int: print('  Recorded ' + name + ' deployed release: ' + str(version))
+        if name == 'operations' and record.get('status') == 'partial':
+            activation = record.get('details', {}).get('activation')
+            print('  Operations: ' + explanations.get(activation, 'Installation is partial; activation is not verified.'))
+            print('  Resume only this setup: sudo ./tarasec upgrade --configure-operations')
+    managed = state.get('managed_upgrade', {})
+    if isinstance(managed, dict):
+        scheduler = managed.get('scheduler', {})
+        if isinstance(scheduler, dict) and scheduler.get('status'):
+            print('  Daily scheduler status: ' + str(scheduler['status']))
+    if read_mode() == 'unconfigured':
+        print('Host mode is not configured; finish explicit mode setup before enabling automatic maintenance.')
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=('upgrade',))
@@ -1152,6 +1231,7 @@ def main(argv=None):
     parser.add_argument('--mode', choices=('demo', 'production'))
     parser.add_argument('--roles', help='Comma-separated local roles: database,gateway,node')
     parser.add_argument('--review-declined', action='store_true')
+    parser.add_argument('--configure-operations', action='store_true', help='Resume model/activity setup and activation of the existing operations agent only')
     parser.add_argument('--configure-activity', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--status', action='store_true', help='Read status without changing anything')
     parser.add_argument('--plan', action='store_true', help='Show applicable features without changing anything')
@@ -1170,7 +1250,14 @@ def main(argv=None):
         details = prior.get('details', {})
         if details.get('approval_worker') == 'needs_configuration':
             print('    Optional approval worker needs configuration: ' + ', '.join(details.get('missing_policy', [])))
+    print_upgrade_details(state)
     if args.status or args.plan: return 0
+    if args.configure_operations:
+        if args.automatic or args.configure_activity or args.enable_daily or args.assign_roles or args.mode or args.roles or args.review_declined:
+            parser.error('--configure-operations cannot change roles, mode, or other components')
+        if os.geteuid() != 0 or not sys.stdin.isatty():
+            parser.error('Run --configure-operations with sudo in an interactive terminal')
+        return resume_operations(state)
     from managed_upgrade import POLICY as managed_policy
     if args.enable_daily:
         if os.geteuid() != 0: parser.error('Run daily enrollment with sudo')
