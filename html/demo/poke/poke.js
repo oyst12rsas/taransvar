@@ -64,7 +64,7 @@ async function pokeNode(id) {
 function confirmBaseline() {
   if (!baseline && gatewayState === 'clean' && Object.keys(nodes).length > 0 && Object.keys(nodes).every(id => receivers[id]?.state === 'clean')) {
     baseline = true;
-    $('message').textContent = 'All five confirmed clean. Mark this device infected, then Poke the receivers one at a time.';
+    $('message').textContent = 'All ' + (Object.keys(nodes).length + 1) + ' computers confirmed clean. Mark this device infected, then Poke the receivers one at a time.';
   }
 }
 async function poll(version) {

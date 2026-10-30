@@ -21,13 +21,13 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
-          extensions: mysqli, curl
+          extensions: mysqli, curl, sodium
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - run: find html/demo/poke html/script -maxdepth 1 -name 'webPoke*.php' -o -path 'html/demo/poke/index.php' | xargs -n1 php -l
       - run: php -l html/demo/index.php && bash -n misc/install_web_poke_demo.sh
-      - run: php -l html/taraLib.php && php -l html/script/appLocalInfection.php && php -l html/script/appInfectionControl.php && php -l misc/setup_web_poke.php
+      - run: php -l html/taraLib.php && php -l html/script/appLocalInfection.php && php -l html/script/appInfectionControl.php && php -l misc/setup_web_poke.php && php -l misc/detect_web_poke.php && php -l misc/enroll_web_poke.php
       - run: php tests/web_poke_test.php
       - run: python3 tests/web_poke_control_test.py && python3 tests/hack_report_expiry_test.py
       - run: php tests/web_poke_database_test.php
