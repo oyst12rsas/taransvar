@@ -29,10 +29,11 @@ else
     php "$root/misc/setup_web_poke.php" gateway "$db_ip"
     chown root:www-data /etc/tarasec-web-poke-gateway.conf
 fi
-install -d -m 0755 "$web/demo/poke" "$web/script"
+install -d -m 0755 "$web/demo/poke" "$web/script" "$web/gatekeeper/func"
 install -m 0644 "$root"/html/script/webPoke*.php "$web/script/"
 install -m 0644 "$root"/html/demo/poke/* "$web/demo/poke/"
 install -m 0644 "$root/html/demo/index.php" "$web/demo/index.php"
+install -m 0644 "$root/html/gatekeeper/func/demo.php" "$root/html/gatekeeper/func/appDemos.php" "$web/gatekeeper/func/"
 # Carry the policy checks to existing infection APIs, preserving deployed DB credentials.
 install -m 0644 "$root/html/taraLib.php" "$web/taraLib.php"
 install -m 0644 "$root/html/script/appLocalInfection.php" "$root/html/script/appInfectionControl.php" "$web/script/"
