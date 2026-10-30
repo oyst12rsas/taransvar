@@ -132,7 +132,7 @@ $('start').onclick = () => action(async () => {
 $('mark').onclick = () => action(async () => {
   if (!running || !baseline || gatewayState !== 'clean') return;
   const data = await gatewayCall('mark'); gatewayResult(data.gateway);
-  $('message').textContent = 'Gateway marked. Poke each receiver to send a new tagged connection.';
+  $('message').textContent = 'Gateway marked. Then Poke each receiver to ask whether it sees your device as infected or clean.';
 });
 $('stop').onclick = () => {
   running = false; clearTimeout(timer); ++generation; buttons();
