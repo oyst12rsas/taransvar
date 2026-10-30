@@ -3,20 +3,72 @@
 import json
 import sys
 import time
+import urllib.error
+if '--deployed-runtime' in sys.argv:
+    sys.path.insert(0, '/usr/local/lib/tarasec-operations')
 from operations_agent import model, trusted, diagnostic_feedback
 from operations_prompt import build_prompt, validate_decision, progress_feedback
 from operations_tools import gateway_tools, resolve_tool
 
 
-def main():
-    policy = json.loads(trusted('/etc/tarasec/operations-agent.json').read_text())
-    if '--connection-check' in sys.argv:
+def connection_check():
+    """Return only bounded diagnostic labels, never model text or credentials."""
+    stage = 'configuration'
+    try:
+        policy = json.loads(trusted('/etc/tarasec/operations-agent.json').read_text())
         policy = dict(policy, mode='inspect', task='Connection test only. Return a valid inspect decision; no action will execute.')
         manual = trusted('/usr/local/lib/tarasec-operations/AI_OPERATIONS_MANUAL.md').read_text()
-        validate_decision(model(policy, build_prompt(manual, policy,
-            {'integration_test_only': True}, {}, {}, {}, {})))
-        print('Model connection and decision protocol verified; no action executed.')
+        stage = 'model_request'
+        decision = model(policy, build_prompt(manual, policy,
+            {'integration_test_only': True}, {}, {}, {}, {}))
+        stage = 'response_validation'
+        if isinstance(decision, dict) and 'action' not in decision and (
+                'event_severity' in decision or 'recommended_action' in decision):
+            return dict(ok=False, stage=stage, code='gateway_assessment_response',
+                message='Flowise returned a gateway security assessment, not an operations decision. Use an operations-capable chatflow with the existing provider.')
+        validate_decision(decision)
+        return dict(ok=True, stage=stage, code='verified',
+            message='Model connection and operations decision protocol verified; no action executed.')
+    except urllib.error.HTTPError as error:
+        status = error.code
+        error.close()
+        message = ('Model endpoint rejected authentication or access.' if status in (401,403) else
+            'Model endpoint rate limited the request.' if status == 429 else
+            'Model endpoint returned HTTP ' + str(status) + '; inspect the model service logs.')
+        return dict(ok=False, stage=stage,
+            code='authentication_failed' if status in (401,403) else 'rate_limited' if status==429 else 'model_http_error',
+            http_status=status, message=message)
+    except (TimeoutError, urllib.error.URLError):
+        return dict(ok=False, stage=stage, code='model_unreachable',
+            message='Model endpoint timed out or could not be reached; inspect routing, TLS and the model service.')
+    except json.JSONDecodeError:
+        return dict(ok=False, stage=stage, code='invalid_json',
+            message='Configuration or model response could not be parsed as JSON. If the deployed worker rejects Markdown-wrapped JSON, the response parser needs updating.')
+    except (OSError, KeyError):
+        return dict(ok=False, stage=stage, code='configuration_unavailable',
+            message='A required policy, credential, manual or model response field is unavailable. Inspect the local configuration without sharing keys.')
+    except ValueError as error:
+        known = {'Decision must contain a supported action', 'Decision requires a nonempty reason',
+            'task_state must be an object', 'task_state verified, pending and blockers must be lists of strings',
+            'task_state goal and next_check must be strings', 'Command requires argv array',
+            'Command requires expected_result and recovery_plan', 'Nested command must be an object',
+            'Conflicting command layouts', 'Policy/procedure path must be root owned and not group/world writable',
+            'Configure an HTTPS Flowise agent prediction URL without embedded credentials',
+            'Configure the direct OpenAI model name', 'Model must return one JSON decision', 'Unknown model provider'}
+        message = str(error) if str(error) in known else 'Model configuration or operations response validation failed; details withheld.'
+        return dict(ok=False, stage=stage, code='response_schema_error' if stage=='response_validation' else 'configuration_or_response_error',message=message)
+    except Exception:
+        return dict(ok=False, stage=stage, code='probe_error',
+            message='Unexpected failure in the connection test; inspect the deployed probe and runtime versions.')
+
+
+def main():
+    if '--connection-check' in sys.argv:
+        result = connection_check()
+        print(json.dumps(result) if '--json' in sys.argv else result['message'])
+        if not result['ok']: raise SystemExit(1)
         return
+    policy = json.loads(trusted('/etc/tarasec/operations-agent.json').read_text())
     if '--direct' in sys.argv:
         policy = json.loads(trusted('/etc/tarasec/operations-direct.json').read_text())
         if policy.get('model_provider') != 'openai':

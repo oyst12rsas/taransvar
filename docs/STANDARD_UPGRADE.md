@@ -586,3 +586,15 @@ from other applications. The inherited HTTP/HTTPS transport is retained. A Flowi
 chatflow that only returns gateway assessments may not satisfy the operations
 decision protocol; that failed probe leaves activation pending. No returned model
 action is executed by the probe.
+
+### Diagnose an activation connection check
+
+Run `sudo python3 misc/operations_model_probe.py --connection-check --deployed-runtime --json`
+from the updated checkout to test the actual installed runtime without activating
+it. This reads the existing policy and makes one model request with synthetic
+inspection-only evidence. It never dispatches a returned action or prints model
+text, endpoint URLs, keys or raw exception details. Reports distinguish HTTP
+status/authentication, connectivity/timeouts, invalid JSON, a gateway-assessment
+response and an invalid operations decision. Activation prints only the fixed
+code/stage and HTTP status, and stays pending on failure. No dependency deployment
+or reinstallation is required to run this diagnostic against the installed agent.

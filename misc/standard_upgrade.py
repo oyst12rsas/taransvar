@@ -990,13 +990,32 @@ def activate_operations(directory, root=Path('/'), interactive=False):
         print('AI agent installed; activation pending model configuration. Run sudo ./tarasec upgrade --configure-operations to resume setup.')
         return {'pending_configuration': True, 'activation': 'pending_model_configuration'}
     # Probe before policy/timer changes. The probe never dispatches returned actions.
-    probe = subprocess.run(['python3', '/usr/local/lib/tarasec-operations/operations_model_probe.py', '--connection-check'],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=240)
+    probe = subprocess.run(['python3', REPO / 'misc/operations_model_probe.py', '--connection-check', '--deployed-runtime', '--json'],
+                           capture_output=True, text=True, timeout=240)
     if probe.returncode:
+        # The probe emits a fixed diagnostic vocabulary. Never publish arbitrary
+        # output from a subprocess, provider, model response or exception.
+        try:
+            diagnostic = json.loads(probe.stdout) if isinstance(probe.stdout, str) else {}
+        except (ValueError, TypeError): diagnostic = {}
+        allowed_codes = {'gateway_assessment_response','authentication_failed','rate_limited',
+            'model_http_error','model_unreachable','invalid_json','configuration_unavailable',
+            'response_schema_error','configuration_or_response_error','probe_error'}
+        code = diagnostic.get('code') if isinstance(diagnostic,dict) else None
+        if not isinstance(code,str): code = None
+        if code in allowed_codes:
+            print('Model check: ' + code + ' at ' + str(diagnostic.get('stage') if diagnostic.get('stage') in ('configuration','model_request','response_validation') else 'unknown'))
+            http = diagnostic.get('http_status')
+            if type(http) is int and 100 <= http <= 599: print('Model HTTP status: ' + str(http))
+            if code == 'gateway_assessment_response': print('The Flowise chatflow returned a gateway assessment instead of an operations decision.')
+            elif code == 'invalid_json': print('The deployed runtime could not parse the response as JSON; check the response format, including Markdown wrappers.')
+            elif code == 'authentication_failed': print('The model endpoint rejected authentication or access.')
+            elif code == 'model_unreachable': print('The model endpoint timed out or could not be reached.')
         if policy.get('model_connection') == 'local-flowise':
             print('The existing local Flowise connection did not pass the operations response check. Its chatflow may be intended for gateway assessments. No returned action was executed.')
         print('AI agent activation pending: model connection/protocol check failed. Check the endpoint, credentials and model configuration; run sudo ./tarasec upgrade --configure-operations.')
-        return {'pending_configuration': True, 'activation': 'pending_model_connection'}
+        return {'pending_configuration': True, 'activation': 'pending_model_connection',
+                **({'connection_check':code} if code in allowed_codes else {})}
     backup(policy_path, directory)
     policy['mode'] = mode
     atomic(policy_path, json.dumps(policy, indent=2) + '\n')
