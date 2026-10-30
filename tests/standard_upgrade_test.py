@@ -346,6 +346,23 @@ class UpgradeTests(unittest.TestCase):
             self.assertEqual(u.json.loads(path.read_text())['quiet_seconds'],300)
             run.assert_any_call(['systemctl','enable','--now','tarasec-operations-agent.timer'])
 
+    def test_failed_model_probe_shows_only_allowlisted_diagnostics(self):
+        path=self.root/'etc/tarasec/operations-agent.json';path.parent.mkdir(parents=True);path.write_text('{"mode":"inspect"}')
+        u.MODE.write_text('demo\n')
+        report={'code':'authentication_failed','stage':'model_request','http_status':401,'message':'private-secret'}
+        with patch.object(u,'configure_operations_model',return_value=True),patch.object(u,'ensure_operations_activity',return_value='active'),patch.object(u.subprocess,'run',return_value=Mock(returncode=1,stdout=u.json.dumps(report))) as probe,patch.object(u,'run') as run,patch('sys.stdout',new=io.StringIO()) as output:
+            result=u.activate_operations(self.root/'backup',root=self.root)
+        self.assertIn('authentication_failed',output.getvalue());self.assertIn('401',output.getvalue())
+        self.assertNotIn('private-secret',output.getvalue());self.assertEqual(result['connection_check'],'authentication_failed')
+        self.assertIn('--deployed-runtime',probe.call_args.args[0]);run.assert_not_called()
+
+    def test_invalid_probe_output_is_not_published_or_trusted(self):
+        path=self.root/'etc/tarasec/operations-agent.json';path.parent.mkdir(parents=True);path.write_text('{"mode":"inspect"}')
+        u.MODE.write_text('demo\n')
+        with patch.object(u,'configure_operations_model',return_value=True),patch.object(u,'ensure_operations_activity',return_value='active'),patch.object(u.subprocess,'run',return_value=Mock(returncode=1,stdout='{"code":["private-secret"]}')),patch.object(u,'run'),patch('sys.stdout',new=io.StringIO()) as output:
+            self.assertTrue(u.activate_operations(self.root/'backup',root=self.root)['pending_configuration'])
+        self.assertNotIn('private-secret',output.getvalue())
+
     def test_missing_model_configuration_is_pending_not_completed(self):
         path=self.root/'etc/tarasec/operations-agent.json'
         path.parent.mkdir(parents=True);path.write_text('{"mode":"inspect","model_url":""}')

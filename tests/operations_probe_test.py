@@ -1,11 +1,12 @@
 import sys
+import json
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1] / 'misc'))
 import unittest
 from unittest.mock import patch, Mock
 import io
 from contextlib import redirect_stdout
-from operations_model_probe import progression_probe
+from operations_model_probe import progression_probe, connection_check
 
 class ProbeTest(unittest.TestCase):
     def valid(self):
@@ -52,5 +53,42 @@ class ProbeTest(unittest.TestCase):
         self.assertEqual(model.call_count,2)
         self.assertIn('Diagnostic already completed',model.call_args.args[1])
         self.assertIn('PASS:',output.getvalue())
+
+class ConnectionCheckTest(unittest.TestCase):
+    def run_check(self, result=None, error=None):
+        def read(path): return Mock(read_text=lambda:'{}' if str(path).endswith('.json') else 'manual')
+        with patch('operations_model_probe.trusted',side_effect=read),patch('operations_model_probe.model',return_value=result,side_effect=error):
+            return connection_check()
+
+    def test_gateway_assessment_is_identified_without_returning_model_text(self):
+        result=self.run_check({'event_severity':3,'recommended_action':'watch','summary':'private-response'})
+        self.assertEqual(result['code'],'gateway_assessment_response')
+        self.assertNotIn('private-response',json.dumps(result))
+
+    def test_valid_operations_response_passes_without_dispatching_it(self):
+        result=self.run_check(dict(action='report',reason='private-reason',task_state=dict(goal='check',verified=[],pending=[],blockers=[],next_check='done')))
+        self.assertTrue(result['ok']);self.assertNotIn('private-reason',json.dumps(result))
+
+    def test_invalid_json_and_unknown_schema_are_distinct(self):
+        import json
+        bad=self.run_check(error=json.JSONDecodeError('private-message','private-body',0))
+        self.assertEqual(bad['code'],'invalid_json')
+        schema=self.run_check({'action':'private-action'})
+        self.assertEqual(schema['code'],'response_schema_error')
+        self.assertNotIn('private-action',json.dumps(schema))
+
+    def test_http_credentials_and_error_details_are_not_printed(self):
+        import urllib.error
+        result=self.run_check(error=urllib.error.HTTPError('https://private.invalid/token',401,'private-secret',{},io.BytesIO(b'private-body')))
+        self.assertEqual(result['code'],'authentication_failed');self.assertEqual(result['http_status'],401)
+        self.assertNotIn('private-secret',json.dumps(result));self.assertNotIn('private-body',json.dumps(result))
+
+    def test_timeout_and_arbitrary_failure_are_safe(self):
+        result=self.run_check(error=TimeoutError('private-endpoint'))
+        self.assertEqual(result['code'],'model_unreachable')
+        result=self.run_check(error=RuntimeError('private-secret'))
+        self.assertEqual(result['code'],'probe_error')
+        self.assertNotIn('private-secret',json.dumps(result))
+
 
 if __name__ == '__main__':unittest.main()
