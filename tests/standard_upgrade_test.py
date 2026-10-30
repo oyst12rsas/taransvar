@@ -371,6 +371,46 @@ class UpgradeTests(unittest.TestCase):
         with patch('builtins.input',side_effect=AssertionError('Must reuse configured connection')):
             self.assertTrue(u.configure_operations_model(policy,path,self.root/'backup',root=self.root))
 
+    def test_existing_openai_and_flowise_connections_are_reused_without_prompts(self):
+        key=self.root/'model.key';key.write_text('private-test-key')
+        for provider,fields in [('flowise',{'model_url':'https://example.test/prediction','model_key_file':str(key)}),
+                                ('openai',{'openai_model':'test-model','openai_key_file':str(key)})]:
+            policy={'model_provider':provider,**fields};before=dict(policy)
+            with patch('builtins.input',side_effect=AssertionError('Existing provider must not prompt')),patch.object(u.getpass,'getpass',side_effect=AssertionError('Do not ask for an existing key')),patch.object(u,'enroll_operations_model') as enroll,patch('sys.stdout',new=io.StringIO()) as output:
+                self.assertTrue(u.configure_operations_model(policy,self.root/'policy.json',self.root/'backup'))
+            self.assertEqual(policy,before);enroll.assert_not_called()
+            self.assertNotIn('private-test-key',output.getvalue())
+
+    def test_complete_hosted_connection_is_reused_without_reenrollment(self):
+        key=self.root/'node.token';key.write_text('private-node-token')
+        policy={'model_provider':'flowise','model_connection':'tarasec','model_url':'https://example.test/model','model_key_file':str(key)}
+        with patch.object(u,'enroll_operations_model',side_effect=AssertionError('No repeat enrollment')),patch('builtins.input',side_effect=AssertionError('No provider prompt')),patch('sys.stdout',new=io.StringIO()):
+            self.assertTrue(u.configure_operations_model(policy,self.root/'policy.json',self.root/'backup'))
+
+    def test_incomplete_existing_connection_is_retained_without_provider_or_key_prompt(self):
+        for fields in [dict(model_provider='flowise',model_url='https://example.test/prediction',model_key_file=str(self.root/'missing.key')),
+                       dict(model_provider='openai',openai_model='test-model',openai_key_file=str(self.root/'empty.key')),
+                       dict(model_provider='openai',openai_key_file=str(self.root/'missing.key'))]:
+            (self.root/'empty.key').write_text('')
+            path=self.root/'policy.json';path.write_text(u.json.dumps(fields));before=path.read_bytes()
+            with patch('builtins.input',side_effect=AssertionError('Do not reset an existing provider')),patch.object(u.getpass,'getpass',side_effect=AssertionError('Do not request replacement credentials')),patch.object(u,'enroll_operations_model') as enroll,patch('sys.stdout',new=io.StringIO()) as output:
+                self.assertFalse(u.configure_operations_model(fields,path,self.root/'backup'))
+            self.assertEqual(path.read_bytes(),before);enroll.assert_not_called()
+            self.assertIn('connection retained',output.getvalue())
+
+    def test_unreadable_existing_key_reports_prerequisite_without_reconfiguration(self):
+        key=self.root/'model.key';key.write_text('private-test-key')
+        policy={'model_provider':'flowise','model_url':'https://example.test/prediction','model_key_file':str(key)}
+        with patch.object(Path,'read_text',side_effect=PermissionError('private-detail')),patch('builtins.input',side_effect=AssertionError('No provider prompt')),patch('sys.stdout',new=io.StringIO()) as output:
+            self.assertFalse(u.configure_operations_model(policy,self.root/'policy.json',self.root/'backup'))
+        self.assertIn('credential file is unreadable',output.getvalue())
+        self.assertNotIn('private-detail',output.getvalue())
+
+    def test_unsupported_existing_provider_does_not_fall_back_to_new_setup(self):
+        with patch('builtins.input',side_effect=AssertionError('Do not reset unknown configuration')),patch('sys.stdout',new=io.StringIO()) as output:
+            self.assertFalse(u.configure_operations_model({'model_provider':'custom'},self.root/'policy.json',self.root/'backup'))
+        self.assertIn('unsupported',output.getvalue())
+
     def test_blank_selects_central_system_and_none_postpones(self):
         path=self.root/'policy.json'
         for answers,called in [([''],True),(['flowise',''],True),(['none'],False),(['flowise','none'],False)]:

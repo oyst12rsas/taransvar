@@ -693,13 +693,43 @@ def enroll_operations_model(policy, policy_path, directory, root=Path('/')):
 def configure_operations_model(policy, policy_path, directory, root=Path('/')):
     """Collect dedicated model settings locally; never print or reuse credentials."""
     provider = policy.get('model_provider', 'flowise')
+    endpoint_field = 'openai_model' if provider == 'openai' else 'model_url'
     key_field = 'openai_key_file' if provider == 'openai' else 'model_key_file'
-    key_path = Path(policy.get(key_field, '/etc/tarasec/operations-model.key'))
-    key_ready = key_path.is_file() and bool(key_path.read_text().strip())
-    endpoint_ready = bool(policy.get('openai_model') if provider == 'openai' else policy.get('model_url'))
+    default_key = '/etc/tarasec/operations-openai.key' if provider == 'openai' else '/etc/tarasec/operations-model.key'
+    key_value = policy.get(key_field, default_key)
+    key_path = Path(key_value) if isinstance(key_value, str) and key_value else None
+    key_problem = 'credential file is missing'
+    key_ready = False
+    if key_path is not None:
+        try:
+            key_ready = key_path.is_file() and bool(key_path.read_text().strip())
+            if key_path.is_file() and not key_ready: key_problem = 'credential file is empty'
+        except OSError:
+            key_problem = 'credential file is unreadable'
+    endpoint = policy.get(endpoint_field)
+    endpoint_ready = isinstance(endpoint, str) and bool(endpoint.strip())
+    configured = endpoint_ready or 'model_provider' in policy or bool(policy.get('model_connection'))
+    if provider not in ('flowise', 'openai'):
+        print('Existing model provider is unsupported. Settings retained; correct the operations-agent policy instead of enrolling another connection.')
+        return False
+    if endpoint_ready and key_ready:
+        # Supply only the dedicated provider default when an older policy omitted
+        # its path. Do not discover/copy keys from another application or provider.
+        if key_field not in policy:
+            backup(policy_path, directory)
+            policy[key_field] = str(key_path)
+            atomic(policy_path, json.dumps(policy, indent=2) + '\n')
+        print('Reusing the existing ' + ('TaraSec' if policy.get('model_connection') == 'tarasec' else provider) + ' model connection; testing it before activation.')
+        return True
     if policy.get('model_connection') == 'tarasec':
+        # Resume a previously selected hosted enrollment only when incomplete.
         return enroll_operations_model(policy, policy_path, directory, root)
-    if endpoint_ready and key_ready: return True
+    if configured:
+        missing = []
+        if not endpoint_ready: missing.append('OpenAI model name is missing' if provider == 'openai' else 'Flowise endpoint is missing')
+        if not key_ready: missing.append(key_problem)
+        print('Existing ' + provider + ' model connection retained: ' + '; '.join(missing) + '. Repair that connection and rerun --configure-operations. Provider selection was not reopened.')
+        return False
     print('AI agent needs a dedicated model connection. Demo/production mode is already selected.')
     print('Blank uses TaraSec enrollment and Google/TOTP approval on the agent page. A custom Flowise URL or OpenAI connection is optional. Model calls may incur provider charges.')
     if not sys.stdin.isatty():

@@ -561,3 +561,14 @@ reports an exit code when available. Published diagnostics omit command argument
 and output. Detailed execution output remains in the existing private local error
 file. Installing the updated controller still requires daily enrollment from the
 updated checkout; pulling source alone does not replace installed worker files.
+
+### Retain existing model connections during activation recovery
+
+A complete Flowise, direct OpenAI or hosted TaraSec model connection is reused
+and connection-tested without provider/credential questions. Complete hosted
+connections do not repeat model enrollment. A custom endpoint/provider with a
+missing, empty or unreadable credential file remains selected and reports that
+specific prerequisite; it is not treated as a brand-new setup and is not silently
+replaced with TaraSec enrollment. Incomplete hosted enrollment resumes its existing
+approval flow. The provider picker is reserved for an unconfigured connection.
+Keys from gateway AI assessments or another application are not imported.
