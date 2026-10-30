@@ -13,10 +13,10 @@ check(!webPokeAllowed([], $gateway), 'Missing policy fails closed');
 check(!webPokeAllowed($config, '127.0.0.1') && !webPokeAllowed($config,'example.com'), 'Only literal NetBird peer permitted');
 check(!webPokeToken('../escape') && !webPokeToken(str_repeat('a',64)."\n"), 'Session format rejects traversal/trailing data');
 $registered=fn($ip)=>in_array($ip,[$gateway,$newGateway],true);
-$registrations=[]; $calls=0;
-$rpc=function($ip,$endpoint,$input) use (&$registrations,&$calls,$config) {
+$registrations=[]; $calls=0; $visitor=['owner_id'=>17,'unit_id'=>20];
+$rpc=function($ip,$endpoint,$input) use (&$registrations,&$calls,&$visitor,$config) {
     ++$calls;
-    if($endpoint==='webPokeGateway.php') return ['ok'=>true,'owner_id'=>17,'unit_id'=>20,'origin'=>'http://10.100.0.1'];
+    if($endpoint==='webPokeGateway.php') return ['ok'=>true,'origin'=>'http://10.100.0.1'] + $visitor;
     $nodeId=array_search($ip,array_column(webPokeNodes(),'address','name'),true);
     $id=array_keys(array_filter(webPokeNodes(),fn($node)=>$node['address']===$ip))[0];
     $message=webPokeVerify($input,$config['KEY_'.strtoupper($id)]);
@@ -102,3 +102,14 @@ if (function_exists('sodium_crypto_box_keypair')) {
     denied(fn()=>webPokeEnrollReceiver($config,$newGateway,['proof'=>$proof],$enrollRpc),'Unlisted gateway cannot enroll as receiver');
 }
 echo "Automatic role detection, subnet routing, dynamic receiver lists and encrypted administrator enrollment passed.\n";
+
+// Gateway policy governs admission; missing visitor registration must not block it.
+foreach ([['owner_id'=>0,'unit_id'=>0], ['owner_id'=>0,'unit_id'=>20]] as $visitor) {
+    $guest=webPokeCoordinator($config,$newGateway,['action'=>'start','proof'=>$proof],$rpc,$registered);
+    check($guest['owner_id']===$visitor['owner_id'] && $guest['unit_id']===$visitor['unit_id'], 'Visitor without owner/device registration admitted');
+    $guestStatus=['action'=>'status','session_id'=>$guest['session_id'],'control_token'=>$guest['control_token']];
+    check(webPokeCoordinator($config,$newGateway,$guestStatus,$rpc,$registered)['ok'], 'Guest session can read authorized status');
+    denied(fn()=>webPokeCoordinator($closed,$newGateway,$guestStatus,$rpc,$registered),'NO still revokes guest sessions');
+    denied(fn()=>webPokeCoordinator($closed,$newGateway,['action'=>'start','proof'=>$proof],$rpc,$registered),'NO still denies unlisted guest gateways');
+}
+echo "Unregistered visitors admitted under YES; NO policy still enforced.\n";

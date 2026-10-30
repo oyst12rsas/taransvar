@@ -28,8 +28,10 @@ function webPokeLocalUnit(string $peer): array
     $db = getConnection();
     $stmt = $db->prepare('SELECT unitId,ownerId FROM unit WHERE ipAddress=INET_ATON(?) ORDER BY lastSeen DESC,unitId DESC LIMIT 1');
     $stmt->bind_param('s', $peer); $stmt->execute(); $unit = $stmt->get_result()->fetch_assoc(); $stmt->close(); $db->close();
-    if (!$unit || (int)$unit['unitId'] < 1 || (int)$unit['ownerId'] < 1) throw new DomainException('Register this device and its owner on the gateway before using the demo');
-    return ['owner_id'=>(int)$unit['ownerId'],'unit_id'=>(int)$unit['unitId']];
+    // Registration is optional for demo visitors. Zero means unknown, never a new owner/unit.
+    // The browser capability, actual socket peer and local subnet still bind the session.
+    return ['owner_id'=>max(0, (int)($unit['ownerId'] ?? 0)),
+        'unit_id'=>max(0, (int)($unit['unitId'] ?? 0))];
 }
 function webPokeLocalState(string $peer): array
 {
@@ -62,8 +64,8 @@ function webPokeLocalControl(array $session, bool $infected): void
 function webPokeGatewaySession(string $token, string $peer): array
 {
     $row = webPokeRecord('gateway', $token); webPokeActive($row);
-    $unit = webPokeLocalUnit($peer);
-    if ($row['client_ip'] !== $peer || $row['unit_id'] !== $unit['unit_id'] || $row['owner_id'] !== $unit['owner_id'])
+    webPokeRequireLocal($peer);
+    if ($row['client_ip'] !== $peer)
         throw new DomainException('This demo session belongs to another unit');
     return $row;
 }

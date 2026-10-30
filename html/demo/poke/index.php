@@ -5,7 +5,7 @@
 <header><a href="/demo/">TARASEC / LIVE TESTBED</a><span>Browser demonstration</span></header>
 <h1>Who knows<br>you’re infected?</h1>
 <p class="lead">The gateway knows first. Poke each computer to see what your next connection tells it.</p>
-<p>Open this page on <strong>your TaraSec gateway</strong>. The DB server must authorize the gateway before this browser can join.</p>
+<p>Open this page on <strong>your TaraSec gateway</strong>. Anyone connected through an allowed gateway can join; no device or owner registration is needed. The DB server authorizes the gateway.</p>
 <section class="controls" aria-label="Demo controls"><button id="start">Start clean / Reset</button><button id="mark" disabled>Mark this device infected</button><button id="stop" disabled>Stop</button></section>
 <p id="message" role="status" aria-live="polite">Start to request a DB-authorized session and collect a clean baseline from the approved receivers.</p>
 

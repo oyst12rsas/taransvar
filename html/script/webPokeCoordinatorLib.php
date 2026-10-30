@@ -38,9 +38,10 @@ function webPokeCoordinator(array $config, string $peer, array $input, callable 
         $proof = (string)($input['proof'] ?? '');
         if (!webPokeToken($proof)) throw new DomainException('Gateway identity proof required');
         $identity = $rpc($peer, 'webPokeGateway.php', ['action'=>'resolve','proof'=>$proof]);
-        if ((int)($identity['owner_id'] ?? 0) < 1 || (int)($identity['unit_id'] ?? 0) < 1
+        if (!is_int($identity['owner_id'] ?? null) || $identity['owner_id'] < 0
+            || !is_int($identity['unit_id'] ?? null) || $identity['unit_id'] < 0
             || !preg_match('~\Ahttps?://(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?\z~D', (string)($identity['origin'] ?? '')))
-            throw new DomainException('Gateway must identify the local owner and unit');
+            throw new DomainException('Gateway must confirm a local demo visitor and browser origin');
         $id = bin2hex(random_bytes(32)); $control = bin2hex(random_bytes(32));
         $session = ['expires'=>time()+WEB_POKE_TTL, 'gateway_ip'=>$peer, 'owner_id'=>(int)$identity['owner_id'],
             'unit_id'=>(int)$identity['unit_id'], 'control_hash'=>hash('sha256', $control), 'receivers'=>[]];

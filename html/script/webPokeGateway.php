@@ -19,8 +19,8 @@ try {
     if (($_SERVER['HTTP_ORIGIN'] ?? '') !== webPokeOrigin()) throw new DomainException('Use this gateway’s demo page');
     mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
     require_once __DIR__ . '/../dbfunc.php';
-    $unit = webPokeLocalUnit($peer);
     if ($action === 'start') {
+        $unit = webPokeLocalUnit($peer);
         webPokeRate('gatewaystart', $peer, 5, 60);
         // Close/reset the previous session only with its own device-bound token.
         if (!empty($input['token'])) {
