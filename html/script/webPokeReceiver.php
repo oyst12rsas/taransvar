@@ -1,59 +1,46 @@
 <?php
-require_once __DIR__ . '/../deploymentMode.php';
-tarasecRequireDemo();
+require_once __DIR__ . '/../deploymentMode.php'; tarasecRequireDemo();
 require_once __DIR__ . '/webPokeLib.php';
 ini_set('display_errors', '0');
-header('Content-Type: application/json; charset=utf-8');
-header('Cache-Control: no-store');
-header('Access-Control-Allow-Origin: http://' . WEB_POKE_GATEWAY);
-header('Vary: Origin');
-header('Referrer-Policy: no-referrer');
-header('Connection: close');
+header('Connection: close'); header('Referrer-Policy: no-referrer');
 try {
-    $method = $_SERVER['REQUEST_METHOD'] ?? '';
-    $token = (string)($method === 'POST' ? ($_POST['token'] ?? '') : ($_GET['token'] ?? ''));
-    if (!webPokeToken($token)) throw new InvalidArgumentException('Invalid demo session');
-    if ($method === 'GET') {
-        // Only gateway-to-receiver polling. Never read current traffic here.
-        if (($_SERVER['REMOTE_ADDR'] ?? '') !== WEB_POKE_GATEWAY) {
-            http_response_code(403);
-            echo json_encode(['ok' => false, 'error' => 'Status must be requested through Standard gateway']);
-            exit;
-        }
-        echo json_encode(['ok' => true, 'observation' => webPokeSnapshot($token)]);
-        exit;
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') throw new InvalidArgumentException('POST required');
+    $config = webPokeConfig('node'); $nodeId = (string)($config['NODE_ID'] ?? '');
+    $key = (string)($config['AUTH_KEY'] ?? ''); $dbIp = (string)($config['DB_IP'] ?? '');
+    $peer = (string)($_SERVER['REMOTE_ADDR'] ?? ''); $input = webPokeInput();
+    if (isset($input['signature'])) {
+        if ($peer !== $dbIp) throw new DomainException('DB registration required');
+        $message = webPokeVerify($input, $key);
+        if (($message['action'] ?? '') !== 'register' || ($message['node_id'] ?? '') !== $nodeId
+            || !webPokeIp((string)($message['gateway_ip'] ?? '')) || (int)($message['expires'] ?? 0) > time()+WEB_POKE_TTL
+            || !webPokeToken((string)($message['poke_hash'] ?? ''))) throw new DomainException('Invalid DB registration');
+        webPokeActive($message);
+        webPokeRecord('receiver', (string)($message['session_id'] ?? ''), fn($row) => $message);
+        webPokeReply(200, ['ok'=>true]);
     }
-    if ($method !== 'POST') {
-        http_response_code(405);
-        header('Allow: GET, POST');
-        echo json_encode(['ok' => false, 'error' => 'GET or POST required']);
-        exit;
-    }
-    if (($_SERVER['REMOTE_ADDR'] ?? '') !== WEB_POKE_GATEWAY
-        || ($_SERVER['HTTP_ORIGIN'] ?? '') !== 'http://' . WEB_POKE_GATEWAY) {
-        http_response_code(403);
-        echo json_encode(['ok' => false, 'error' => 'Open this demo on Standard gateway and connect through it']);
-        exit;
-    }
-    // The real socket peer is authoritative; the legacy helper accepts Client-IP.
+    $id = (string)($input['session_id'] ?? ''); $poke = (string)($input['poke_token'] ?? '');
+    $session = webPokeRecord('receiver', $id); webPokeActive($session);
+    if (!webPokeToken($poke) || !hash_equals($session['poke_hash'], hash('sha256', $poke))
+        || $peer !== $session['gateway_ip'] || ($_SERVER['HTTP_ORIGIN'] ?? '') !== $session['origin'])
+        throw new DomainException('Authorized gateway session required');
+    header('Access-Control-Allow-Origin: ' . $session['origin']); header('Vary: Origin');
+    webPokeRate('poke', $id, 30, 60);
+    $callDb = function(string $action, array $extra=[]) use ($dbIp,$key,$nodeId,$id): array {
+        $packet = webPokeSeal(['action'=>$action,'node_id'=>$nodeId,'session_id'=>$id]+$extra, $key);
+        return webPokeHttp($dbIp, 'webPokeCoordinator.php', ['action'=>'receiver','node_id'=>$nodeId]+$packet);
+    };
+    // Fail closed on policy changes or DB loss, before reading any traffic state.
+    $callDb('validate');
     unset($_SERVER['HTTP_CLIENT_IP']);
     mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-    chdir(__DIR__);
-    require_once __DIR__ . '/../dbfunc.php';
-    require_once __DIR__ . '/../taraLib.php';
-    $deadline = microtime(true) + 1.5;
+    chdir(__DIR__); require_once __DIR__ . '/../dbfunc.php'; require_once __DIR__ . '/../taraLib.php';
+    $deadline = microtime(true)+1.5;
     do {
-        $data = getTagData();
-        if ((int)($data['trafficSecondsSince'] ?? -1) === 0) break;
+        $data=getTagData();
+        if ((int)($data['trafficSecondsSince'] ?? -1)===0) break;
         usleep(100000);
-    } while (microtime(true) < $deadline);
-    $observation = webPokeEvidence($data, $_SERVER['REMOTE_ADDR']);
-    echo json_encode(['ok' => true, 'observation' => webPokeSnapshot($token, $observation)]);
-} catch (InvalidArgumentException $e) {
-    http_response_code(400);
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
-} catch (Throwable $e) {
-    error_log('webPokeReceiver: ' . $e->getMessage());
-    http_response_code(503);
-    echo json_encode(['ok' => false, 'error' => 'Receiver observation unavailable']);
-}
+    } while (microtime(true)<$deadline);
+    $observation = webPokeEvidence($data, $peer, $session['gateway_ip']);
+    $callDb('report', ['observation'=>$observation]);
+    webPokeReply(200, ['ok'=>true,'observation'=>$observation]);
+} catch (Throwable $e) { webPokeError($e); }

@@ -129,6 +129,8 @@ function taraSecRegisteredPartner($conn, $ip)
 
 function getTagData()
 {
+    require_once __DIR__ . '/script/webPokeLegacyGuard.php';
+    webPokeLegacyAccess();
 	$szSenderIp = getSenderIp();
 	$clientPort = $_SERVER['REMOTE_PORT']+0;
 	$szSQL = "select infectionId, lastSeen, infoSharePartners, severity, CAST(active AS UNSIGNED) as active from internalInfections where ip = inet_aton(?) order by infectionId desc limit 1";

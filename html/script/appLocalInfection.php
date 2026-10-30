@@ -5,6 +5,8 @@ mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 include '../dbfunc.php';
 include '../taraLib.php';
+require_once __DIR__ . '/webPokeLegacyGuard.php';
+webPokeLegacyAccess();
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');

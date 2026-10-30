@@ -1,120 +1,202 @@
-# Browser Poke demo
+# DB-authorized browser Poke demo
 
-Open **http://100.68.165.190/demo/poke/** on the phone/laptop connected through
-Standard gateway. The browser is the participant; no Android update is needed.
-The page is linked from `/demo/`. On other hosts it offers the Standard gateway link.
+The DB server controls admission and the participating receiver list. Open
+`http://<your-gateway-IP>/demo/poke/` on the phone/laptop connected through that
+gateway. No Standard-gateway address is compiled into the browser or receiver
+admission logic. New gateways need the gateway installer, a central partnerRouter
+registration and local unit ownership, but do not require editing receiver code.
 
-The fixed topology is:
+## DB admission policy
 
-| Role | Host | NetBird address |
-|---|---|---|
-| Gateway | wt-gw1 / Standard gateway | 100.68.165.190 |
-| Receiver | Roquefort | 100.68.176.110 |
-| Receiver | Camembert | 100.68.149.164 |
-| Receiver | dbserver1 | 100.68.126.0 |
-| Receiver | Gouda | 100.68.51.247 |
+The DB-only file `/etc/tarasec-web-poke-db.conf` contains:
 
-Squash, Tomato, Audi and Porsche are excluded. Gouda's address matches the
-existing `html/gatekeeper/func/liveAudit.php` topology.
+```ini
+ALLOW_ANY_GATEWAY=YES
+ALLOWED_GATEWAYS=100.68.165.190
+```
 
-## Installation
+The first DB installation explicitly writes **YES**, as requested for initial
+testing. Reinstallation preserves the existing choice and authentication keys.
 
-On **each of wt-gw1, Roquefort, Camembert, dbserver1 and Gouda**, after this
-change is merged:
+- **YES:** any registered NetBird gateway may request sessions. The DB verifies
+  gateway-observed owner/unit identity through a one-use callback proof.
+- **NO:** only registered gateways whose exact overlay address appears in
+  `ALLOWED_GATEWAYS` may join or use existing sessions. Comma-separated IPv4
+  addresses are accepted; there are no wildcards or subnet matches.
+- Missing/unreadable config, invalid flag, failed identity verification or DB
+  outage fails closed. A missing flag acts as NO, not YES.
+
+Edit this file on **dbserver1** with `sudoedit`. Changes apply on the next request
+without restarting PHP. A switch to NO immediately blocks the unlisted gateways'
+status, controls, Pokes and reports; it is not merely a new-signup restriction.
+Authenticated messages from receivers also recheck the current registration.
+
+The same policy is applied to older `appInfection.php`, `appLocalInfection.php`,
+`appInfectionControl.php` and canonical `getTagData()` callers on enrolled nodes.
+This closes the old anonymous status route as an alternate way around NO. These
+legacy clients still work for permitted gateways. With NO, old app/browser demos
+from an unlisted gateway deliberately stop working. This switch is demo/API
+admission, not a guarantee that infection information cannot be inferred from
+ordinary firewall/network behavior or obtained through separately authorized
+management/reporting interfaces.
+
+## Fixed receivers, dynamic gateways
+
+Only the DB coordinator uses `webPokeNodes()` for participant selection:
+
+| Receiver | NetBird address |
+|---|---|
+| Roquefort | 100.68.176.110 |
+| Camembert | 100.68.149.164 |
+| dbserver1 | 100.68.126.0 |
+| Gouda | 100.68.51.247 |
+
+Squash, Tomato, Audi and Porsche are excluded. Each receiver has an independent
+256-bit authentication key, generated on the DB server, and a pinned DB address.
+A new gateway cannot choose arbitrary destinations or claim another gateway IP.
+
+## Deployment
+
+Deploy the DB and all receivers before using the upgraded browser. The previous
+unauthenticated `webPokeStatus.php` route now returns 410. Use the targeted
+installer, or ensure a full recursive web deployment also installs the role
+configuration and matching receiver keys. No DB migration or new daemon is needed.
+All nodes need PHP 8.3-compatible PHP, mysqli/curl and existing TaraSec tables;
+receivers need working tarakernel/taralink reporting. Production-mode hosts refuse
+installation and the new APIs. No firewall or routing policy is modified.
+
+On **dbserver1**, after pulling the merged change:
 
 ```sh
 clear
-# Machine: wt-gw1 / Roquefort / Camembert / dbserver1 / Gouda — run on each
+# Machine: dbserver1
 cd ~/taransvar
 git pull --ff-only
-sudo bash misc/install_web_poke_demo.sh
+sudo bash misc/install_web_poke_demo.sh --db
+sudoedit /etc/tarasec-web-poke-db.conf
 ```
 
-The installer deploys the new demo and its navigation link; it preserves deployed
-DB credentials, existing APIs, firewall, routing and infection state. A normal
-recursive web deployment also includes these files.
-It needs existing TaraSec PHP endpoints and PHP mysqli/curl in CLI and Apache.
-Production mode blocks all new demo endpoints. Existing unconfigured legacy demo
-hosts retain the repository's deployment-mode behavior.
+The DB installer also enrolls dbserver1 as a receiver. It generates individual
+root-only receiver files under `/etc/tarasec-web-poke-enrollment/`:
+`roquefort.conf`, `camembert.conf`, `dbserver1.conf`, `gouda.conf`. Transfer each
+file through your existing authorized administrative channel to **only its
+matching receiver**. Do not paste their keys into chat, commit them or publish
+them. Keep the transferred file readable only by its administrator.
 
-Standard gateway must NAT the participant's receiver-bound HTTP connections to
-100.68.165.190, as in the existing browser demo. The participant needs HTTP access
-to all four receivers; the gateway also needs HTTP access for observation polling.
-Receivers need working tarakernel/taralink traffic reporting, plus Standard gateway
-registered as a partner or the existing explicit `DEMO_NODE=1` configuration.
-Missing routing, stale reports or a wrong route appear as UNKNOWN; no state is fabricated.
+On **each matching receiver**, with its securely transferred file:
 
-No DB migration or new service is required. Receiver snapshots are private files in
-PHP's system temporary directory, capped at 2,048 sessions per node. Sessions expire
-30 minutes after the first Poke. New sessions reclaim abandoned snapshots. The
-web service account needs permission to create its private temporary directory.
+```sh
+clear
+# Machine: Roquefort / Camembert / Gouda — run on each with its own file
+cd ~/taransvar
+git pull --ff-only
+sudo bash misc/install_web_poke_demo.sh --receiver /secure/path/this-receiver.conf
+```
 
-## Sequence and polling isolation
+On **wt-gw1 or a new participating gateway**:
 
-1. **Start clean / Reset** clears only this participant's demo infection rows on
-   the gateway using `appInfectionControl.php`. It checks local state and refuses
-   to start if independent findings remain active.
-2. The browser sends one baseline Poke directly to each receiver. Each captures
-   fresh traffic evidence from `getTagData()`, matched to the actual TCP peer and
-   source port. All five must confirm clean before marking is enabled. If a prior
-   kernel mark is still being removed, wait briefly and repeat the affected Poke.
-3. **Mark this device infected** invokes the existing gateway demo control.
-   The gateway card follows `appLocalInfection.php`, not the command acknowledgement.
-4. Once a second the browser asks **only the gateway** for local state and the
-   saved receiver observations. `webPokeStatus.php` fetches the four snapshots in
-   parallel, with an 800 ms deadline. Snapshot reads never call `getTagData()`.
-   There is no background browser traffic to receivers.
-5. A receiver's **Poke** button sends a direct browser POST through Standard gateway
-   to `webPokeReceiver.php`. Only this operation replaces that receiver's saved
-   observation. Fresh severity >1 yields INFECTED; severity <=1 yields CLEAN.
-   Missing evidence, an unavailable service or a wrong route yields UNKNOWN.
-6. **Reset** obtains a new random 256-bit observation token and fresh clean
-   baselines. It never deletes genuine findings or historical traffic. **Stop**
-   stops polling; it does not clear a gateway mark. Use Reset before leaving.
+```sh
+clear
+# Machine: wt-gw1 / new gateway
+cd ~/taransvar
+git pull --ff-only
+sudo bash misc/install_web_poke_demo.sh --gateway
+```
 
-The screen says **Last observed**, because its green cards represent previous
-connections. Other real traffic can still reach a receiver and affect the wider
-TaraSec system. This demo freezes its own explicit Poke observations, not the
-underlying kernel or threat database. A red gateway does not guarantee that a
-Poke made before the kernel applies the mark will already be red; repeat it after
-propagation. Browser background timer throttling may reduce refresh frequency.
+`WEB_POKE_DB_IP` may be explicitly supplied to the installer when the DB overlay
+address differs from 100.68.126.0. Gateway configuration is in
+`/etc/tarasec-web-poke-gateway.conf`; the callback must be reachable at the
+registered overlay address on HTTP port 80. A gateway must have a central
+`partnerRouter` row, and the caller must resolve to local `unit.ownerId` +
+`unit.unitId`. Missing ownership produces an actionable refusal, not an IP-only
+identity. Receivers must see the participant's NAT source as that gateway's
+registered NetBird address. Gateway page URLs currently use literal IPv4 addresses;
+reverse proxies, IPv6 and DNS names need an explicit trusted-origin design.
 
-The 30-minute observation expiry does **not** automatically clear a gateway mark.
-Closing the page likewise leaves the mark active, matching the existing demo
-control behavior. Return and use Reset to remove this device's demo evidence.
+Configuration files are root-owned and readable by www-data, never writable by
+the web application. Apache's account must be able to create a private temporary
+session directory. Keys are preserved across reinstalls. Rotating a receiver key
+requires distributing its matching file and ends outstanding signed requests.
 
-The snapshot token is a temporary bearer capability, omitted from copied debug
-reports. Poke POSTs require the real socket peer to be Standard gateway and the
-browser Origin to be the gateway page. Snapshot GETs also require Standard gateway.
-Client-IP headers are ignored when recording observations. The gateway collector
-uses fixed destinations, disables proxies and redirects, and accepts no user URL.
+## Protocol and observation isolation
 
-## Verification and live acceptance
+1. The gateway identifies the calling socket's current local owner/unit, creates
+   a 60-second single-use identity proof and asks the DB to start a session.
+2. The DB checks current policy and central gateway registration **before** any
+   identity callback or state disclosure. It redeems the proof by calling that
+   literal gateway peer; arbitrary URLs, proxies and redirects are not accepted.
+3. The DB sends authenticated registrations to all four receivers, with the
+   actual gateway address, browser origin, session expiry and a distinct Poke
+   capability for each receiver. All must acknowledge before admission succeeds.
+4. The gateway receives a private DB-control token, kept server-side. The browser
+   gets a separate device-bound gateway token and receiver-scoped Poke tokens.
+   A browser token cannot be used directly as a DB control token. A different
+   local unit or changed ownership cannot reuse the gateway session.
+5. The browser takes direct baseline Pokes. All five must confirm clean before
+   the Mark button is enabled. Mark uses an independently authorized DB request
+   and creates only a `DEMO:WEB_POKE:<session>` infection row on the gateway.
+6. A direct Poke validates its scoped capability, real socket peer and stored
+   browser origin. The receiver checks current DB authorization **before**
+   reading traffic, matches fresh evidence to that TCP connection, and sends an
+   authenticated report to the DB. Unknown/missing/stale tags stay UNKNOWN.
+7. Once per second, the browser requests combined status through its gateway.
+   The DB returns its saved receiver reports. Polling never creates browser
+   traffic to receivers and never reads new receiver traffic evidence.
+8. Reset removes only this session's mark, revokes the old central session and
+   requests a new one. Genuine findings and other demo sessions remain active.
 
-Automated checks:
+Messages use per-receiver HMAC-SHA256, 30-second timestamps and replay-protected
+nonces. Keys and DB-control tokens are never sent to the browser. The transport
+is HTTP **inside the encrypted NetBird overlay**; do not publish these RPCs on
+plain public HTTP. The browser's local HTTP origin is retained for the existing
+traffic-tagging testbed; use only trusted test networks. Public browser access
+requires a separate HTTPS deployment design; this change does not claim to have
+implemented public invitations or Google presenter authorization.
+
+Sessions expire after 30 minutes. Start attempts and receiver Pokes are limited;
+private locked session storage is bounded and abandoned records are reclaimed.
+Stopping, closing the page, expiry, or revoking access does **not** promise to
+clear an already-applied kernel mark automatically. Reset while authorized before
+leaving. After revocation/expiry, the gateway owner may need to clear that specific
+`DEMO:WEB_POKE:` finding using management access. Do not clear genuine evidence.
+
+## Verification and rollback
+
+Automated checks cover YES/NO admission, default-deny behavior, new gateways,
+registration, one-time authentication, replay/tamper/stale messages, immediate
+revocation, other-gateway tokens, receiver isolation, expired sessions, real
+session-scoped mutation SQL, MariaDB unit ownership and mark/reset, and the browser
+flow on a non-Standard gateway. Browser network calls are mocked; they cannot
+establish live routing or kernel-tag correctness. The phone layout was inspected.
 
 ```sh
 clear
 # Machine: development host / CI
 php tests/web_poke_test.php
+python3 tests/web_poke_control_test.py
+python3 tests/hack_report_expiry_test.py
 node --check html/demo/poke/poke.js
-# With Playwright and its Chromium installed:
+# With Playwright/Chromium:
 node tests/web_poke_browser_test.cjs
+# Disposable MariaDB only; set its WEB_POKE_TEST_PORT and password:
+php tests/web_poke_database_test.php
 ```
 
-PHP checks exercise the real evidence/snapshot code: read-only status, fresh tags,
-wrong routes, missing/stale evidence, expiration and isolated topology. The browser
-check uses mocked network APIs to exercise all five cards, mark/Poke sequencing,
-no receiver requests during polling, unavailable services, reset, stop, independent
-findings and phone-width layout. CI repeats syntax, PHP and browser checks.
+After deployment: confirm all five clean, mark and wait without Poking (only
+gateway red), Poke each receiver independently, reset, then set NO and verify an
+unlisted gateway receives no status through either the new or old APIs. Confirm
+Standard gateway remains usable when explicitly listed. Test DB unavailability
+and ensure the UI shows UNKNOWN. Finally restore the operator's chosen policy.
 
-Live multi-node acceptance remains necessary after deployment: verify all five
-clean, mark and wait without poking (only gateway red), Poke each receiver (only
-that card changes), reset to clean, and verify failures remain UNKNOWN. Confirm
-actual kernel tags and receiver traffic in Debug evidence if a Poke stays unknown.
-This development environment has no access to the demo nodes; local tests do not
-establish their current routing, reporting or live deployment state.
+This development session could not connect to dbserver1: SSH to
+100.68.126.0:4810 returned **Network is unreachable**. Merge is not evidence of
+installation. Live deployment and these multi-node acceptance checks remain
+pending until run from a machine with the authorized overlay/admin connection.
 
-Rollback: remove `/demo/poke/` and the three `script/webPoke*.php` files from the
-web root, and remove the added `/demo/` link if deployed. Reset this participant's
-demo mark before removing the UI. Existing Demos 1–5 and APIs are unchanged.
+Rollback: stop new sessions, reset their marks while authorized, then restore the
+previous web files together on all nodes and remove the role configuration files.
+Retain private DB/enrollment keys securely for recovery, or revoke them. Removing
+only role configuration makes legacy APIs revert to their old behavior, so do
+not treat configuration deletion as an access-revocation mechanism. Production
+hosts keep their deployment-mode gate. For deployment/hardening context see
+https://tarasec.org/safety/#deployment and https://tarasec.org/safety/#hardening-priorities.

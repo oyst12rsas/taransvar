@@ -1,75 +1,145 @@
 <?php
-// This demo deliberately has a fixed topology. Never accept a URL from a request.
-const WEB_POKE_GATEWAY = '100.68.165.190';
 const WEB_POKE_TTL = 1800;
 function webPokeNodes(): array
 {
+    // Receiver selection belongs to the DB coordinator, never to a browser.
     return [
-        'roquefort' => ['name' => 'Roquefort', 'address' => '100.68.176.110'],
-        'camembert' => ['name' => 'Camembert', 'address' => '100.68.149.164'],
-        'dbserver1' => ['name' => 'dbserver1', 'address' => '100.68.126.0'],
-        'gouda' => ['name' => 'Gouda', 'address' => '100.68.51.247'],
+        'roquefort' => ['name'=>'Roquefort', 'address'=>'100.68.176.110'],
+        'camembert' => ['name'=>'Camembert', 'address'=>'100.68.149.164'],
+        'dbserver1' => ['name'=>'dbserver1', 'address'=>'100.68.126.0'],
+        'gouda' => ['name'=>'Gouda', 'address'=>'100.68.51.247'],
     ];
 }
-function webPokeToken(string $token): bool
+function webPokeToken(string $token): bool { return preg_match('/\A[a-f0-9]{64}\z/D', $token) === 1; }
+function webPokeIp(string $ip): bool
 {
-    return preg_match('/\A[a-f0-9]{64}\z/D', $token) === 1;
+    $n = ip2long($ip);
+    return $n !== false && ($n & 0xffc00000) === ip2long('100.64.0.0');
 }
-function webPokeEvidence(array $data, string $peer): array
+function webPokeConfig(string $role): array
+{
+    $path = '/etc/tarasec-web-poke-' . $role . '.conf';
+    $config = is_readable($path) ? parse_ini_file($path, false, INI_SCANNER_RAW) : false;
+    if (!is_array($config)) throw new RuntimeException('Web demo setup is missing on this node');
+    return $config;
+}
+function webPokeAllowed(array $config, string $gateway): bool
+{
+    if (!webPokeIp($gateway)) return false;
+    // Missing/invalid values fail closed; YES is an explicit installation choice.
+    if (!in_array($config['ALLOW_ANY_GATEWAY'] ?? 'NO', ['YES','NO'], true)) return false;
+    $allowed = array_filter(array_map('trim', explode(',', (string)($config['ALLOWED_GATEWAYS'] ?? ''))));
+    return ($config['ALLOW_ANY_GATEWAY'] ?? 'NO') === 'YES' || in_array($gateway, $allowed, true);
+}
+function webPokeRequireAllowed(array $config, string $gateway): void
+{
+    if (!webPokeAllowed($config, $gateway)) throw new DomainException('This gateway is not permitted to use the demo');
+}
+function webPokeEvidence(array $data, string $peer, string $expectedGateway): array
 {
     $age = (int)($data['trafficSecondsSince'] ?? -1);
-    $valid = $peer === WEB_POKE_GATEWAY
-        && ($data['senderIp'] ?? '') === $peer && $age >= 0 && $age <= 2
+    $valid = $peer === $expectedGateway && ($data['senderIp'] ?? '') === $peer && $age >= 0 && $age <= 2
         && isset($data['trafficSeverity']) && is_numeric($data['trafficSeverity'])
         && (int)$data['trafficSeverity'] >= 0 && (int)$data['trafficSeverity'] <= 15;
-    return [
-        'state' => $valid ? ((int)$data['trafficSeverity'] > 1 ? 'infected' : 'clean') : 'unknown',
-        'severity' => $valid ? (int)$data['trafficSeverity'] : null,
-        'observed_at' => gmdate('c'),
-        'source' => $valid ? 'traffic' : 'unverified',
-        'message' => $valid ? 'Last direct Poke through Standard gateway'
-            : ($peer !== WEB_POKE_GATEWAY ? 'This connection did not arrive through Standard gateway' : 'No fresh traffic tag for this connection; retry Poke'),
-    ];
+    return ['state'=>$valid ? ((int)$data['trafficSeverity'] > 1 ? 'infected' : 'clean') : 'unknown',
+        'severity'=>$valid ? (int)$data['trafficSeverity'] : null, 'observed_at'=>gmdate('c'),
+        'source'=>$valid ? 'traffic' : 'unverified',
+        'message'=>$valid ? 'Last direct Poke through your gateway' : 'No fresh traffic tag for this authorized connection; retry Poke'];
 }
 function webPokeDirectory(): string
 {
-    $dir = sys_get_temp_dir() . '/tarasec-web-poke';
-    if (!is_dir($dir) && !@mkdir($dir, 0700) && !is_dir($dir)) {
-        throw new RuntimeException('Unable to create demo observation directory');
-    }
+    $dir = sys_get_temp_dir() . '/tarasec-web-poke-v2';
+    if (!is_dir($dir) && !@mkdir($dir, 0700) && !is_dir($dir)) throw new RuntimeException('Demo storage unavailable');
     return $dir;
 }
-function webPokeSnapshot(string $token, ?array $observation = null): array
+// Private, bounded session storage; all read/modify/write operations are locked.
+function webPokeRecord(string $kind, string $token, ?callable $update = null): array
 {
-    if (!webPokeToken($token)) throw new InvalidArgumentException('Invalid demo session');
-    $dir = webPokeDirectory();
-    $path = $dir . '/' . $token . '.json';
-    if ($observation === null && !is_file($path)) return ['state' => 'unknown', 'message' => 'Not yet poked'];
-    if ($observation !== null && !is_file($path)) {
-        // Bound storage and reclaim abandoned sessions, without touching security records.
+    if (!preg_match('/\A[a-z]+\z/D', $kind) || !webPokeToken($token)) throw new InvalidArgumentException('Invalid demo session');
+    $dir = webPokeDirectory(); $path = $dir . '/' . $kind . '-' . hash('sha256', $token) . '.json';
+    if (!is_file($path) && $update === null) throw new DomainException('Demo session unavailable or expired');
+    if (!is_file($path) && $update !== null) {
         $files = glob($dir . '/*.json') ?: [];
-        foreach ($files as $file) {
-            if (filemtime($file) < time() - WEB_POKE_TTL) @unlink($file);
-        }
-        if (count(glob($dir . '/*.json') ?: []) >= 2048) throw new RuntimeException('Demo observation capacity reached');
+        foreach ($files as $file) if (@filemtime($file) < time() - WEB_POKE_TTL - 60) @unlink($file);
+        if (count(glob($dir . '/*.json') ?: []) > 8192) throw new RuntimeException('Demo session capacity reached');
     }
-    $fp = fopen($path, $observation === null ? 'r' : 'c+');
-    if (!$fp) throw new RuntimeException('Unable to open demo observation');
+    $fp = fopen($path, $update ? 'c+' : 'r');
+    if (!$fp) throw new RuntimeException('Demo storage unavailable');
     try {
-        if (!flock($fp, $observation === null ? LOCK_SH : LOCK_EX)) throw new RuntimeException('Unable to lock demo observation');
-        $previous = json_decode(stream_get_contents($fp), true) ?: [];
-        $created = (int)($previous['created'] ?? time());
-        if ($created + WEB_POKE_TTL <= time()) return ['state' => 'unknown', 'message' => 'Session expired; start again'];
-        if ($observation === null) return $previous;
-        $observation['created'] = $created;
-        $observation['expires_at'] = $created + WEB_POKE_TTL;
-        rewind($fp);
-        if (!ftruncate($fp, 0) || fwrite($fp, json_encode($observation, JSON_THROW_ON_ERROR)) === false) {
-            throw new RuntimeException('Unable to save demo observation');
+        if (!flock($fp, $update ? LOCK_EX : LOCK_SH)) throw new RuntimeException('Demo lock unavailable');
+        $row = json_decode(stream_get_contents($fp), true) ?: [];
+        if ($update) {
+            $row = $update($row);
+            $json = json_encode($row, JSON_THROW_ON_ERROR);
+            rewind($fp);
+            if (!ftruncate($fp, 0) || fwrite($fp, $json) !== strlen($json)) throw new RuntimeException('Demo storage failed');
+            fflush($fp);
         }
-        return $observation;
-    } finally {
-        flock($fp, LOCK_UN);
-        fclose($fp);
-    }
+        return $row;
+    } finally { flock($fp, LOCK_UN); fclose($fp); }
+}
+function webPokeActive(array $session): void
+{
+    if ((int)($session['expires'] ?? 0) <= time() || ($session['revoked'] ?? false)) throw new DomainException('Demo session unavailable or expired');
+}
+function webPokeRate(string $scope, string $peer, int $maximum, int $seconds): void
+{
+    webPokeRecord('rate', hash('sha256', $scope . $peer), function ($row) use ($maximum, $seconds) {
+        if ((int)($row['until'] ?? 0) <= time()) $row = ['count'=>0,'until'=>time()+$seconds];
+        if ((int)$row['count'] >= $maximum) throw new DomainException('Demo request limit reached; try again later');
+        ++$row['count']; return $row;
+    });
+}
+function webPokeSeal(array $data, string $key): array
+{
+    if (!webPokeToken($key)) throw new RuntimeException('Demo authentication is not configured');
+    $data['issued_at'] = time(); $data['nonce'] = bin2hex(random_bytes(32));
+    $payload = base64_encode(json_encode($data, JSON_THROW_ON_ERROR));
+    return ['payload'=>$payload, 'signature'=>hash_hmac('sha256', $payload, $key)];
+}
+function webPokeVerify(array $packet, string $key, bool $consumeNonce = true): array
+{
+    $payload = (string)($packet['payload'] ?? ''); $signature = (string)($packet['signature'] ?? '');
+    if (!webPokeToken($key) || !webPokeToken($signature) || strlen($payload) > 32768
+        || !hash_equals(hash_hmac('sha256', $payload, $key), $signature)) throw new DomainException('Unauthenticated demo message');
+    $data = json_decode((string)base64_decode($payload, true), true);
+    if (!is_array($data) || abs(time() - (int)($data['issued_at'] ?? 0)) > 30 || !webPokeToken((string)($data['nonce'] ?? '')))
+        throw new DomainException('Expired demo message');
+    if ($consumeNonce) webPokeRecord('nonce', hash('sha256', $key . $data['nonce']), function ($row) {
+        if ($row) throw new DomainException('Replayed demo message');
+        return ['seen'=>time()];
+    });
+    return $data;
+}
+function webPokeHttp(string $ip, string $endpoint, array $body): array
+{
+    if (!webPokeIp($ip) || !in_array($endpoint, ['webPokeCoordinator.php','webPokeGateway.php','webPokeReceiver.php'], true))
+        throw new InvalidArgumentException('Invalid demo destination');
+    $ch = curl_init('http://' . $ip . '/script/' . $endpoint);
+    curl_setopt_array($ch, [CURLOPT_POST=>true, CURLOPT_POSTFIELDS=>json_encode($body, JSON_THROW_ON_ERROR),
+        CURLOPT_HTTPHEADER=>['Content-Type: application/json'], CURLOPT_RETURNTRANSFER=>true, CURLOPT_PROXY=>'',
+        CURLOPT_FOLLOWLOCATION=>false, CURLOPT_PROTOCOLS=>CURLPROTO_HTTP, CURLOPT_CONNECTTIMEOUT=>2, CURLOPT_TIMEOUT=>8]);
+    $raw = curl_exec($ch); $status = curl_getinfo($ch, CURLINFO_RESPONSE_CODE); curl_close($ch);
+    $data = is_string($raw) ? json_decode($raw, true) : null;
+    if ($status === 403) throw new DomainException('Demo access denied by the DB server');
+    if ($status < 200 || $status >= 300 || !is_array($data) || ($data['ok'] ?? false) !== true)
+        throw new RuntimeException('Demo service unavailable');
+    return $data;
+}
+function webPokeInput(): array
+{
+    if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 32768) throw new InvalidArgumentException('Request too large');
+    return str_starts_with((string)($_SERVER['CONTENT_TYPE'] ?? ''), 'application/json')
+        ? (json_decode((string)file_get_contents('php://input', false, null, 0, 32769), true) ?: []) : $_POST;
+}
+function webPokeReply(int $status, array $body): never
+{
+    http_response_code($status); header('Content-Type: application/json; charset=utf-8'); header('Cache-Control: no-store');
+    echo json_encode($body, JSON_UNESCAPED_SLASHES); exit;
+}
+function webPokeError(Throwable $e): never
+{
+    if ($e instanceof DomainException) webPokeReply(403, ['ok'=>false,'error'=>$e->getMessage()]);
+    if ($e instanceof InvalidArgumentException) webPokeReply(400, ['ok'=>false,'error'=>$e->getMessage()]);
+    error_log('Web Poke: ' . $e->getMessage()); webPokeReply(503, ['ok'=>false,'error'=>'Demo service unavailable; check node setup']);
 }
