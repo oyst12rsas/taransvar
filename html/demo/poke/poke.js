@@ -2,7 +2,7 @@
 const $ = id => document.getElementById(id);
 let nodes = {}, token = '', sessionId = '', expires = 0;
 let running = false, busy = false, generation = 0, timer, started = 0;
-let baseline = false, gatewayState = 'unknown', gatewayEvidence = {}, receivers = {}, debug = {};
+let baseline = false, gatewayState = 'unknown', gatewayEvidence = {}, resetSummary = {}, receivers = {}, debug = {};
 function card(id, name, role, poke) {
   const article = document.createElement('article'); article.id = id;
   const small = document.createElement('small'); small.textContent = role;
@@ -30,7 +30,7 @@ function buttons() {
   Object.keys(nodes).forEach(id => $(id).querySelector('button').disabled = !running || busy);
 }
 function publish() {
-  debug = {generated_at: new Date().toISOString(), demo: 'db-authorized-web-poke', gateway: gatewayState, gateway_evidence: gatewayEvidence, message: $('message').textContent, receivers,
+  debug = {generated_at: new Date().toISOString(), demo: 'db-authorized-web-poke', gateway: gatewayState, gateway_evidence: gatewayEvidence, reset: resetSummary, message: $('message').textContent, receivers,
     baseline_confirmed: baseline, session_age_seconds: started ? Math.floor((Date.now() - started) / 1000) : 0,
     note: 'Session and Poke tokens omitted. Receiver observations change only on direct Poke.'};
   $('debug').textContent = JSON.stringify(debug, null, 2); buttons();
@@ -114,15 +114,16 @@ $('start').onclick = () => action(async () => {
   Object.keys(nodes).forEach(id => render(id, {state: 'unknown', message: 'Awaiting DB authorization'}));
   $('message').textContent = 'Asking the DB server to authorize this gateway and register the receivers…';
   const data = await gatewayCall('start');
+  resetSummary = data.reset || {};
   token = data.token; sessionId = data.session_id; expires = data.expires; started = Date.now();
   nodes = data.nodes; receivers = {};
   $('cards').replaceChildren(); card('gateway', data.gateway_name, 'This device · current gateway assessment', false);
   Object.entries(nodes).forEach(([id, node]) => card(id, node.name, 'Last observed', true));
   gatewayResult(data.gateway); running = true;
   if (gatewayState === 'infected') {
-    $('message').textContent = (data.gateway.message || 'This device already has a demo infection mark') + '. Restart clears only this device’s web-demo marks. Other demo marks remain active. Poke receivers to see the existing demo tag; a clean-to-infected demonstration needs those other demo marks reset first.';
+    $('message').textContent = (data.gateway.message || 'A demo infection mark remains') + '. Reset could not match every mark to this device. Ask the gateway operator to review the device records before demonstrating a clean starting state.';
   } else if (gatewayState === 'clean') {
-    $('message').textContent = 'Web-demo marks reset. Checking receivers with fresh Pokes. If they still report INFECTED, wait for the tag update and Poke again; Mark becomes available when every observation is clean.';
+    $('message').textContent = 'Previous demos reset for this device. Checking receivers with fresh Pokes. If they still report INFECTED, wait for the tag update and Poke again; Mark becomes available when every observation is clean.';
   } else {
     $('message').textContent = 'Gateway state is unknown. Poke receivers to collect observations; no clean starting state has been confirmed.';
   }

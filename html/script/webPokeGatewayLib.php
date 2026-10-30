@@ -88,15 +88,16 @@ function webPokeGatewaySession(string $token, string $peer): array
         throw new DomainException('This demo session belongs to another unit');
     return $row;
 }
-function webPokeRestartDevice(array $session): void
+function webPokeRestartDevice(array $session): int
 {
-    // Called only after a new DB-authorized start. Recover this device's web-demo
-    // marks even after reload/expiry, without clearing other demos or findings.
+    // Called only after a new DB-authorized start. Recover this device's demo-only
+    // marks even after reload/expiry, without clearing security findings.
     $db = getConnection();
     try {
-        $stmt = $db->prepare("UPDATE internalInfections SET active=b'0',handled=b'0',lastSeen=NOW() WHERE ip=INET_ATON(?) AND (unitId=? OR unitId=0 OR unitId IS NULL) AND LEFT(why,14)='DEMO:WEB_POKE:' AND active=b'1'");
+        $stmt = $db->prepare("UPDATE internalInfections SET active=b'0',handled=b'0',lastSeen=NOW() WHERE ip=INET_ATON(?) AND (unitId=? OR unitId=0 OR unitId IS NULL) AND LEFT(why,5)='DEMO:' AND active=b'1'");
         $stmt->bind_param('si', $session['client_ip'], $session['unit_id']);
-        $stmt->execute(); $stmt->close();
+        $stmt->execute(); $changed = $stmt->affected_rows; $stmt->close();
+        return $changed;
     } finally { $db->close(); }
 }
 function webPokeDbCall(array $session, string $action): array

@@ -60,7 +60,7 @@ check(webPokeLocalState($guestPeer)['state']==='clean','Guest reset still owns i
 $expired=$session; $expired['expires']=time()-1; webPokeRecord('gateway',$token,fn($row)=>$expired);
 denied(fn()=>webPokeGatewaySession($token,$peer),'Expired session rejected');
 // Restart recovers stale web-demo marks, including before registration, but
-// preserves other devices, other known units, other demos and security findings.
+// preserves other devices, other known units and security findings.
 $db->query("UPDATE internalInfections SET active=b'0'");
 $db->query("INSERT INTO internalInfections(ip,unitId,why,active,severity) VALUES
     (INET_ATON('$peer'),20,'DEMO:WEB_POKE:expired',b'1',3),
@@ -73,11 +73,26 @@ $before=webPokeLocalState($peer);
 check($before['sources']===['web_poke'=>3,'other_demo'=>1,'security_finding'=>1],'State distinguishes demo marks and security findings');
 check(webPokeNeedsRemediation($before),'A separate security finding blocks participation');
 webPokeRestartDevice($session);
-check((int)$db->query("SELECT COUNT(*) FROM internalInfections WHERE active=b'1'")->fetch_row()[0]===4,'Restart clears only matching device web-demo rows');
+check((int)$db->query("SELECT COUNT(*) FROM internalInfections WHERE active=b'1'")->fetch_row()[0]===3,'Restart clears matching device demo rows, including older app/demo marks');
 check(webPokeNeedsRemediation(webPokeLocalState($peer)),'Restart cannot bypass a security finding');
 $db->query("UPDATE internalInfections SET active=b'0' WHERE why='Real incident'");
 check(!webPokeNeedsRemediation(webPokeLocalState($peer)),'Demo-only infections do not require remediation');
 $db->query("UPDATE internalInfections SET active=b'0'");
 check(webPokeLocalState($peer)['state']==='clean','No findings means a clean gateway assessment');
+// Only verified SSH sessions for this exact gateway/unit can be closed.
+require_once __DIR__ . '/../html/script/webPokeCoordinatorLib.php';
+$db->query('DROP TABLE IF EXISTS demoSshSession');
+check(webPokeCloseSshDemos('100.68.165.190',20)===0,'Optional absent SSH demo schema is supported');
+$db->query("CREATE TABLE demoSshSession(id INT PRIMARY KEY,sourceIp INT UNSIGNED,unitId INT,gatewayVerified BIT,state VARCHAR(40),completed DATETIME,expires DATETIME,lastSeen DATETIME)");
+$db->query("INSERT INTO demoSshSession(id,sourceIp,unitId,gatewayVerified,state,expires) VALUES
+ (1,INET_ATON('100.68.165.190'),20,b'1','awaiting_node_a',NOW()+INTERVAL 1 HOUR),
+ (2,INET_ATON('100.68.165.190'),21,b'1','demo_infected',NOW()+INTERVAL 1 HOUR),
+ (3,INET_ATON('100.68.165.190'),20,b'0','awaiting_node_a',NOW()+INTERVAL 1 HOUR),
+ (4,INET_ATON('100.68.176.110'),20,b'1','awaiting_node_b',NOW()+INTERVAL 1 HOUR),
+ (5,INET_ATON('100.68.165.190'),20,b'1','cleared',NOW()+INTERVAL 1 HOUR)");
+check(webPokeCloseSshDemos('100.68.165.190',0)===0,'Anonymous visitors cannot close shared-address SSH sessions');
+check(webPokeCloseSshDemos('100.68.165.190',20)===1,'Only exact verified gateway/unit SSH session cancelled');
+check($db->query('SELECT state FROM demoSshSession WHERE id=1')->fetch_row()[0]==='cancelled','Previous SSH demo is terminal');
+check((int)$db->query("SELECT COUNT(*) FROM demoSshSession WHERE state='cancelled'")->fetch_row()[0]===1,'Other devices and unverified sessions preserved');
 $db->close();
 echo "MariaDB visitor binding and real session-specific mark/reset operations passed.\n";

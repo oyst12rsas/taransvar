@@ -13,5 +13,5 @@ try {
         $stmt->bind_param('s', $ip); $stmt->execute(); $found = (bool)$stmt->get_result()->fetch_row();
         $stmt->close(); $db->close(); return $found;
     };
-    webPokeReply(200, webPokeCoordinator($config, (string)($_SERVER['REMOTE_ADDR'] ?? ''), webPokeInput(), 'webPokeHttp', $registered));
+    webPokeReply(200, webPokeCoordinator($config, (string)($_SERVER['REMOTE_ADDR'] ?? ''), webPokeInput(), 'webPokeHttp', $registered, 'webPokeCloseSshDemos'));
 } catch (Throwable $e) { webPokeError($e); }
