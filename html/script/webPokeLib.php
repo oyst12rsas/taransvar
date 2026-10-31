@@ -112,14 +112,14 @@ function webPokeVerify(array $packet, string $key, bool $consumeNonce = true): a
     });
     return $data;
 }
-function webPokeHttp(string $ip, string $endpoint, array $body): array
+function webPokeHttp(string $ip, string $endpoint, array $body, int $timeoutMs = 8000): array
 {
     if (!webPokeIp($ip) || !in_array($endpoint, ['webPokeCoordinator.php','webPokeGateway.php','webPokeReceiver.php','webPokeEnrollment.php'], true))
         throw new InvalidArgumentException('Invalid demo destination');
     $ch = curl_init('http://' . $ip . '/script/' . $endpoint);
     curl_setopt_array($ch, [CURLOPT_POST=>true, CURLOPT_POSTFIELDS=>json_encode($body, JSON_THROW_ON_ERROR),
         CURLOPT_HTTPHEADER=>['Content-Type: application/json'], CURLOPT_RETURNTRANSFER=>true, CURLOPT_PROXY=>'',
-        CURLOPT_FOLLOWLOCATION=>false, CURLOPT_PROTOCOLS=>CURLPROTO_HTTP, CURLOPT_CONNECTTIMEOUT=>2, CURLOPT_TIMEOUT=>8]);
+        CURLOPT_FOLLOWLOCATION=>false, CURLOPT_PROTOCOLS=>CURLPROTO_HTTP, CURLOPT_CONNECTTIMEOUT_MS=>min(2000, $timeoutMs), CURLOPT_TIMEOUT_MS=>$timeoutMs]);
     $raw = curl_exec($ch); $status = curl_getinfo($ch, CURLINFO_RESPONSE_CODE); curl_close($ch);
     $data = is_string($raw) ? json_decode($raw, true) : null;
     if ($status === 403) throw new DomainException('Demo access denied by the DB server');

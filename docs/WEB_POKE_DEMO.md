@@ -238,3 +238,23 @@ local demo marks and cancelled verified SSH sessions in `reset`, included in cop
 debug evidence. If a demo mark remains under a different known unit ID, the page
 asks the gateway operator to review device records rather than silently claiming
 CLEAN. Non-demo security findings continue to block participation.
+
+### Compatibility with installed app versions
+
+The legacy app endpoints retain their existing request/response format. Their DB
+policy lookup has a one-second HTTP budget (older apps allow five seconds for a
+status response). Only authorization decisions are cached, for ten seconds, keyed
+by role, configuration and, on receivers, the observed gateway peer. Infection
+evidence is never cached by this guard. Policy revocation therefore takes up to
+ten seconds to reach a previously authorized legacy client; the new web APIs
+still check DB policy on each request. Expired grants fail closed during outages.
+Explicit denials replace expired grants; transport failures cannot renew them.
+
+Starting or resetting the web demo remains an explicit replacement of this
+device's demo marks. Merely viewing or polling the page does not clear marks.
+
+Deploy the existing installer on dbserver1 first, then participating gateways and
+receivers. No Android upgrade is required for this server change. Verify with an
+unchanged 0.4.5 app: CLEAN, INFECTED, receiver Pokes, and CLEAN again. Also verify
+policy denial after ten seconds and DB outage after grant expiry. This server
+change does not remove the older app's pause-after-confirmation/display defect.
