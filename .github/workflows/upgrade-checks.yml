@@ -27,6 +27,7 @@ jobs:
       - run: sudo apt-get update -qq && sudo apt-get install -y libjson-perl
       - run: python3 tests/standard_upgrade_test.py && sudo python3 tests/upgrade_pull_test.py
       - run: python3 -m unittest discover -s tests -p 'operations*_test.py'
+      - run: python3 tests/automatic_upgrade_status_test.py
       - run: python3 tests/honeypot_refresh_test.py
       - run: python3 tests/cron_systemd_ownership_test.py
       - run: perl tests/upgrade_receipt_test.pl && perl tests/upgrade_policy_test.pl

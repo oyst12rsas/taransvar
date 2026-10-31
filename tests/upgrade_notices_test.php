@@ -34,3 +34,21 @@ ensure($partial['color']==='red','Partial deployment must not pretend the releas
 $quota=taraSecUpgradeView(['software'=>['version'=>0,'components'=>['operations'=>[
  'status'=>'partial','details'=>['connection_check'=>'provider_quota_exhausted']]]]]);
 ensure(str_contains($quota['message'],'credits/quota exhausted'),'Provider quota failure must reach Issues');
+
+$now = time();
+function autoView(array $a, int $now): array {
+    return taraSecAutomaticUpgradeView(['software'=>['automatic_upgrade'=>$a]], $now);
+}
+$healthy = ['enrolled'=>true,'checked_at'=>$now,'timer_enabled'=>'enabled','timer_active'=>'active',
+    'service_active'=>'inactive','service_result'=>'success','last_run_age_seconds'=>3600];
+ensure(taraSecAutomaticUpgradeView([],$now)['color']==='yellow','Missing scheduler evidence cannot be green');
+ensure(autoView(['enrolled'=>false,'checked_at'=>$now],$now)['color']==='red','Unenrolled node must be red');
+ensure(autoView($healthy,$now)['color']==='green','Observed healthy daily timer should be green');
+ensure(autoView(array_replace($healthy,['timer_active'=>'inactive']),$now)['color']==='red','Stopped timer must be red');
+ensure(autoView(array_replace($healthy,['service_result'=>'exit-code']),$now)['color']==='red','Failed service must be red');
+ensure(autoView(array_replace($healthy,['checked_at'=>$now-301]),$now)['color']==='yellow','Old report must be yellow');
+ensure(autoView(array_replace($healthy,['last_run_age_seconds'=>37*3600]),$now)['color']==='yellow','Overdue daily run must be yellow');
+ensure(autoView(array_replace($healthy,['scheduler_status'=>'waiting']),$now)['color']==='yellow','Withheld rollout must be visible');
+ensure(autoView(array_replace($healthy,['service_active'=>'activating']),$now)['color']==='green','Running must be identified');
+$combined = taraSecUpgradeView(['software'=>['version'=>999,'automatic_upgrade'=>['enrolled'=>false,'checked_at'=>$now]]]);
+ensure($combined['color']==='red' && str_contains($combined['message'],'not enrolled'),'Current release must not hide disabled automatic maintenance');

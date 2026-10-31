@@ -90,5 +90,38 @@ function taraSecUpgradeView(array $status): array
 
     if ($assessment['catalog_status'] !== 'ok') $text .= ' Upgrade notice catalog unavailable.';
     if ($messages) $text .= ' '.implode(' ', $messages);
+    $automatic = taraSecAutomaticUpgradeView($status);
+    if ($automatic['color'] === 'red') $color = 'red';
+    elseif ($automatic['color'] === 'yellow' && $color === 'green') $color = 'yellow';
+    $text .= ' '.$automatic['message'];
     return ['color'=>$color, 'message'=>$text, 'assessment'=>$assessment];
+}
+
+// Enrollment/scheduler health is independent of the installed release notice.
+function taraSecAutomaticUpgradeView(array $status, ?int $now = null): array
+{
+    $now ??= time();
+    $a = $status['software']['automatic_upgrade'] ?? null;
+    $view = fn($color, $message) => ['color'=>$color, 'message'=>'Automatic upgrades: '.$message];
+    if (!is_array($a) || !is_numeric($a['checked_at'] ?? null) ||
+        $now - $a['checked_at'] > 300 || $a['checked_at'] > $now + 60)
+        return $view('yellow', 'not reported or report is stale. Update the node reporter.');
+    if (($a['enrolled'] ?? null) === false)
+        return $view('red', 'not enrolled in managed daily maintenance.');
+    if (($a['enrolled'] ?? null) !== true) return $view('yellow', 'enrollment unknown.');
+    if (($a['service_active'] ?? '') === 'failed' ||
+        !in_array($a['service_result'] ?? '', ['', 'success', 'unknown'], true) ||
+        ($a['scheduler_status'] ?? '') === 'blocked')
+        return $view('red', 'last maintenance run failed or is blocked. Inspect the upgrade service journal.');
+    if (($a['timer_enabled'] ?? '') !== 'enabled' || ($a['timer_active'] ?? '') !== 'active')
+        return $view('red', 'enrolled, but the daily timer is disabled, inactive or unavailable.');
+    if (($a['service_active'] ?? '') === 'activating')
+        return $view('green', 'maintenance is running; completion has not yet been confirmed.');
+    $age = $a['last_run_age_seconds'] ?? null;
+    if (!is_numeric($age) || $age < 0 || $age > 36*3600)
+        return $view('yellow', 'timer active, but no completed run within 36 hours.');
+    if (($a['scheduler_status'] ?? '') === 'waiting')
+        return $view('yellow', 'timer active; waiting for rollout permission or an idle node.');
+    if (($a['service_result'] ?? '') !== 'success') return $view('yellow', 'last run result unavailable.');
+    return $view('green', 'daily timer enabled and active; recent maintenance run completed.');
 }
