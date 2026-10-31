@@ -7,6 +7,20 @@ use File::Temp qw(tempfile);
 use Exporter 'import';
 our @EXPORT_OK = qw(softwareForReport upgradeReceipt);
 sub softwareForReport {
+    my $value = _softwareForReport(@_);
+    my $helper = __FILE__;
+    $helper =~ s{[^/]+$}{automatic_upgrade_status.py};
+    if (-f $helper && open(my $pipe, '-|', '/usr/bin/python3', $helper)) {
+        local $/;
+        my $raw = <$pipe>;
+        if (close($pipe)) {
+            my $automatic = eval { decode_json($raw) };
+            $value->{automatic_upgrade} = $automatic if ref($automatic) eq 'HASH';
+        }
+    }
+    return $value;
+}
+sub _softwareForReport {
     my ($path) = @_;
     $path //= '/var/lib/tarasec/upgrade/software.json';
     return {version => undef, status => 'not_reported'} unless -f $path && !-l $path && (-s $path // 0) <= 32768;
