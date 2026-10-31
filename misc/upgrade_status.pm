@@ -7,14 +7,16 @@ use File::Temp qw(tempfile);
 use Exporter 'import';
 our @EXPORT_OK = qw(softwareForReport upgradeReceipt);
 sub softwareForReport {
-    my $value = _softwareForReport(@_);
-    my $helper = __FILE__;
-    $helper =~ s{[^/]+$}{automatic_upgrade_status.py};
-    if (-f $helper && open(my $pipe, '-|', '/usr/bin/python3', $helper)) {
-        local $/;
-        my $raw = <$pipe>;
-        if (close($pipe)) {
-            my $automatic = eval { decode_json($raw) };
+    my ($software_path, $snapshot_path) = @_;
+    my $value = _softwareForReport($software_path);
+    # Reporting only reads a bounded snapshot. Optional scheduler checks must
+    # never fork, wait for systemd, or block the database/status heartbeat.
+    my $path = $snapshot_path // '/var/lib/tarasec/upgrade/automatic-status.json';
+    if (-f $path && !-l $path && (-s $path // 0) <= 8192) {
+        if (open(my $fh, '<', $path)) {
+            local $/;
+            my $automatic = eval { decode_json(<$fh>) };
+            close($fh);
             $value->{automatic_upgrade} = $automatic if ref($automatic) eq 'HASH';
         }
     }
