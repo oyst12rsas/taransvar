@@ -37,4 +37,4 @@ jobs:
           php -l html/gatekeeper/func/unitsMore.php
           php -l html/gatekeeper/ajax/units_partners.php
           php tests/upgrade_notices_test.php
-      - run: bash -n tarasec misc/install_operations_agent.sh misc/setup_ssh_honeypot.sh
+      - run: bash -n tarasec misc/install_operations_agent.sh misc/setup_ssh_honeypot.sh misc/install_upgrade_monitor.sh

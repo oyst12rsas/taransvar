@@ -1073,6 +1073,7 @@ def apply_feature(name, directory, allow_enrollment=False, configure_activity=Fa
         from install_operations_reporter_bridge import patched_source
         reporter = target / 'crontasks.pl'
         atomic(reporter, patched_source(reporter.read_text()), 0o644)
+        run(['bash', REPO / 'misc/install_upgrade_monitor.sh'])
     elif name == 'taralink':
         target = Path('/usr/local/sbin/taralink')
         if not target.exists() or subprocess.run(['systemctl', 'cat', '--quiet', 'taralink.service']).returncode:

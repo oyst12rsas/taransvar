@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Read-only, credential-free evidence for the automatic-maintenance dot."""
 import json
+import os
+import tempfile
 import subprocess
 import time
 from pathlib import Path
@@ -43,4 +45,22 @@ def collect(root=Path('/'), probe=None, now=None):
 
 
 if __name__ == '__main__':
-    print(json.dumps(collect()))
+    import sys
+    result = collect()
+    if sys.argv[1:] == ['--write']:
+        destination = Path('/var/lib/tarasec/upgrade/automatic-status.json')
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix='automatic-', dir=destination.parent)
+        try:
+            with os.fdopen(fd, 'w') as target:
+                os.fchmod(target.fileno(), 0o644)
+                json.dump(result, target)
+                target.write('\n')
+            os.replace(temporary, destination)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+    elif not sys.argv[1:]:
+        print(json.dumps(result))
+    else:
+        raise SystemExit('Usage: automatic_upgrade_status.py [--write]')
