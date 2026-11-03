@@ -48,7 +48,7 @@ def discover(server, service):
     url = urllib.parse.urlsplit(value)
     if url.scheme not in ('http', 'https') or not url.hostname or url.username or url.password or url.query or url.fragment or url.path not in ('', '/'):
         raise ValueError('Use the server management address, for example http://100.68.165.190')
-    req = urllib.request.Request(value.rstrip('/') + '/script/managerSsh.php')
+    req = urllib.request.Request(value.rstrip('/') + '/script/sshDeviceTarget.php')
     with urllib.request.build_opener(NoRedirect()).open(req, timeout=15) as response:
         raw = response.read(16385)
     if len(raw) > 16384:
