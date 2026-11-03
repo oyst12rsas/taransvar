@@ -127,14 +127,20 @@ def prepare():
 
 def lease(port, sources, until):
     """A NAT exemption alone never bypasses the filter-table MFA gate."""
-    timeout = max(0, min(900, int(until - time.time())))
     for version, name in SETS.items():
-        run('ipset', 'flush', name)
-        if timeout:
-            for source in sources:
-                if source.version == version:
-                    run('ipset', 'add', name, str(source) + ',tcp:' + str(port),
-                        'timeout', str(timeout), '-exist')
+        staging = name + '_next'
+        run('ipset', 'create', staging, 'hash:net,port', 'family', 'inet' if version == 4 else 'inet6',
+            'timeout', '900', '-exist')
+        run('ipset', 'flush', staging)
+        for source in sources:
+            # Recompute for each entry, leaving a second for command scheduling.
+            # Updating an existing window never gives its set a fresh 900s lease.
+            timeout = max(0, min(899, int(until - time.time()) - 1))
+            if timeout and source.version == version:
+                run('ipset', 'add', staging, str(source) + ',tcp:' + str(port),
+                    'timeout', str(timeout), '-exist')
+        run('ipset', 'swap', staging, name)
+        run('ipset', 'flush', staging)
 
 
 def require_quiet(port):
