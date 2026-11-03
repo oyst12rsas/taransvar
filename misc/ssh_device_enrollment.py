@@ -13,6 +13,7 @@ import struct
 import time
 
 POLICY = Path('/etc/tarasec/ssh-key-enrollment.json')
+SOURCE_POLICY_VERSION = 1
 
 
 def public_key(value):
@@ -110,6 +111,13 @@ def install_key(account, key):
 
 def execute(job):
     account, key, fingerprint = account_for(job)
+    source = job.get('ssh_source')
+    if source is not None:
+        import ssh_enrollment_source
+        source = ssh_enrollment_source.source_address(source)
     # Local manager identity is checked by the worker before this typed operation.
     install_key(account, key)
+    if source is not None:
+        ssh_enrollment_source.allow_source(source)
     return fingerprint
+
