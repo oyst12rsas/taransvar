@@ -19,8 +19,8 @@ sudo python3 misc/ssh_port_setup.py
 ```
 
 The script privately prompts for the new management port, then asks for decoy
-ports/ranges. Enter retains SSH_HONEYPOT_PORTS from /etc/tarasecfw.conf (or uses
-1000-5000 if absent). Lists such as 22,1000-5000 are supported. The management
+ports/ranges. Enter retains configured decoys from SSH_HONEYPOT_PORTS in /etc/tarasecfw.conf.
+If absent or containing only the backend listener, it defaults to 1000-5000. Lists such as 22,1000-5000 are supported. The management
 port may be inside that range: management port 2345 with range 1000-5000 works.
 
 The chosen port is not a command-line argument and is not echoed in the normal
