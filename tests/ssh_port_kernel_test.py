@@ -11,6 +11,7 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'misc'))
 import ssh_google_window as window
 import ssh_honeypot_route as route
+import ssh_port_setup as setup
 
 
 def run(*args):
@@ -79,6 +80,9 @@ with tempfile.TemporaryDirectory() as directory:
     sources = [ipaddress.ip_network('100.68.10.7/32'), ipaddress.ip_network('fd00::7/128')]
     forwards = {tool: run(tool, '-S', 'FORWARD') for tool in ('iptables', 'ip6tables')}
     window.apply_rules(2345, sources, 0)
+    for tool in ('iptables', 'ip6tables'):
+        guarded = setup.guarded_snapshot(run(tool + '-save'), [2345, 5822])
+        subprocess.run([tool + '-restore', '--test'], input=guarded, text=True, check=True)
     for tool in ('iptables', 'ip6tables'):
         # Local test sockets do not traverse PREROUTING. Feed the SAME chain from
         # OUTPUT only in this isolated fixture; production creates no OUTPUT hook.
