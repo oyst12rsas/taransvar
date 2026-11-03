@@ -74,6 +74,10 @@ def write_state(state):
             os.unlink(temporary)
 
 
+def decoy_enabled():
+    return os.path.exists(CONF) and settings(CONF).get("SSH_CLOSED_HONEYPOT", "no").lower() in ("yes", "true", "on", "1")
+
+
 def apply_rules(port, sources, until):
     # Guard both families before rebuilding. Failures leave new connections
     # rejected. Never flush INPUT, change policy or touch NAT/FORWARD.
@@ -84,6 +88,10 @@ def apply_rules(port, sources, until):
     for tool, _ in families:
         if not command(tool, "-w", "5", "-C", "INPUT", *guard, check=False):
             command(tool, "-w", "5", "-I", "INPUT", "1", *guard)
+    decoys = decoy_enabled()
+    if decoys:
+        import ssh_honeypot_route
+        ssh_honeypot_route.prepare()
     for tool, version in families:
         command(tool, "-w", "5", "-N", CHAIN, check=False)
         command(tool, "-w", "5", "-F", CHAIN)
@@ -97,6 +105,8 @@ def apply_rules(port, sources, until):
         while command(tool, "-w", "5", "-C", "INPUT", *jump, check=False):
             command(tool, "-w", "5", "-D", "INPUT", *jump)
         command(tool, "-w", "5", "-I", "INPUT", "1", *jump)
+    if decoys:
+        ssh_honeypot_route.lease(port, sources, until)
     for tool, _ in families:
         while command(tool, "-w", "5", "-C", "INPUT", *guard, check=False):
             command(tool, "-w", "5", "-D", "INPUT", *guard)
@@ -132,6 +142,9 @@ def open_window(job_id, until, operator_hash=None, approved_at=None):
         return
     if int(state.get("until", 0)) > now:
         raise RuntimeError("Another SSH window is active")
+    if decoy_enabled():
+        import ssh_honeypot_route
+        ssh_honeypot_route.require_quiet(port)
     apply_rules(port, sources, 0)
     # Schedule independent closure BEFORE opening. Retries retain the deadline.
     command("systemd-run", "--quiet", "--collect",
@@ -193,3 +206,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
