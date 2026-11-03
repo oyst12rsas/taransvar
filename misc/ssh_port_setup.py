@@ -119,24 +119,26 @@ def listener(port):
     return bool(command('ss', '-H', '-ltn', f'sport = :{port}').stdout.strip())
 
 
-def guarded_snapshot(text, port):
+def guarded_snapshot(text, ports):
     """Restore files must never briefly reopen a previously active MFA window."""
     lines = text.splitlines()
+    ports = [ports] if isinstance(ports, int) else sorted(set(ports))
     table = None
     result = []
     for line in lines:
         if line.startswith('*'):
             table = line
         if line == 'COMMIT' and table == '*filter':
-            result.append(f'-I INPUT 1 -p tcp --dport {port} -m conntrack --ctstate NEW '
-                          '-m comment --comment tarasec-port-rollback-guard -j REJECT --reject-with tcp-reset')
+            for port in ports:
+                result.append(f'-I INPUT 1 -p tcp --dport {port} -m conntrack --ctstate NEW '
+                              '-m comment --comment tarasec-port-rollback-guard -j REJECT --reject-with tcp-reset')
         result.append(line)
     if not any('tarasec-port-rollback-guard' in line for line in result):
         raise RuntimeError('Cannot snapshot the filter table safely')
     return '\n'.join(result) + '\n'
 
 
-def snapshot():
+def snapshot(new_port):
     if (STATE / 'pending.json').exists():
         raise RuntimeError('A port migration is awaiting confirmation. Confirm from the new login or run --rollback first')
     STATE.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -153,12 +155,12 @@ def snapshot():
             shutil.copy2(path, saved / str(i))
         entries.append({'path': str(path), 'present': present, 'backup': str(saved / str(i))})
     for tool in ('iptables', 'ip6tables'):
-        atomic(saved / (tool + '.rules'), guarded_snapshot(command(tool + '-save').stdout, window.configuration()[0]))
+        atomic(saved / (tool + '.rules'), guarded_snapshot(command(tool + '-save').stdout, [window.configuration()[0], new_port]))
     for name in route.SETS.values():
         result = command('ipset', 'save', name, check=False)
         atomic(saved / name, result.stdout if result.returncode == 0 else '')
     atomic(saved / 'manifest.json', json.dumps(entries))
-    atomic(STATE / 'pending.json', json.dumps({'backup': str(saved), 'started': time.time()}))
+    atomic(STATE / 'pending.json', json.dumps({'backup': str(saved), 'started': time.time(), 'new_port': new_port}))
     return saved
 
 
@@ -186,6 +188,7 @@ def rollback():
     for tool in ('iptables', 'ip6tables'):
         command(tool + '-restore', input=root_file(saved / (tool + '.rules')))
     for name in route.SETS.values():
+        command('ipset', 'destroy', name + '_next', check=False)
         command('ipset', 'flush', name, check=False)
         command('ipset', 'destroy', name, check=False)
         text = root_file(saved / name)
@@ -206,10 +209,11 @@ def rollback():
     window.write_state({'id': '0' * 32, 'until': 0, 'port': port, 'closed_at': int(time.time())})
     window.reconcile()
     for tool in ('iptables', 'ip6tables'):
-        guard = ['-p', 'tcp', '--dport', str(port), '-m', 'conntrack', '--ctstate', 'NEW',
-                 '-m', 'comment', '--comment', 'tarasec-port-rollback-guard', '-j', 'REJECT', '--reject-with', 'tcp-reset']
-        while command(tool, '-w', '5', '-C', 'INPUT', *guard, check=False).returncode == 0:
-            command(tool, '-w', '5', '-D', 'INPUT', *guard)
+        for guarded_port in {port, int(state['new_port'])}:
+            guard = ['-p', 'tcp', '--dport', str(guarded_port), '-m', 'conntrack', '--ctstate', 'NEW',
+                     '-m', 'comment', '--comment', 'tarasec-port-rollback-guard', '-j', 'REJECT', '--reject-with', 'tcp-reset']
+            while command(tool, '-w', '5', '-C', 'INPUT', *guard, check=False).returncode == 0:
+                command(tool, '-w', '5', '-D', 'INPUT', *guard)
     if UNIT.exists():
         command('systemctl', 'enable', 'tarasec-ssh-decoys.service')
     pending.unlink()
@@ -246,7 +250,10 @@ def migrate():
     if port != old and listener(port):
         raise ValueError('The chosen port is already occupied by a local TCP service')
     current_bindings = command('ss', '-H', '-ltn', f'sport = :{old}').stdout
-    spec = input('Honeypot ports/ranges [configured range; default 1000-5000]: ').strip() or cfg.get('SSH_HONEYPOT_PORTS', '1000-5000')
+    default_spec = cfg.get('SSH_HONEYPOT_PORTS', '').strip()
+    if not default_spec or route.ranges(default_spec) == [(backend, backend)]:
+        default_spec = '1000-5000'
+    spec = input('Honeypot ports/ranges [configured decoys; otherwise 1000-5000]: ').strip() or default_spec
     route.ranges(spec)  # The real port is intentionally allowed inside the range.
     for program in ('ipset', 'iptables', 'ip6tables', 'iptables-restore', 'ip6tables-restore', 'ss', 'sshd', 'systemctl', 'journalctl'):
         if not shutil.which(program):
@@ -265,7 +272,7 @@ def migrate():
         if src.resolve() != dst.resolve():
             shutil.copyfile(src, dst)
             dst.chmod(0o755)
-    saved = snapshot()
+    saved = snapshot(port)
     try:
         arm()  # Independent persistent timer is armed before any access change.
         # Freeze current windows at both ports before changing listeners or NAT.
@@ -277,7 +284,9 @@ def migrate():
         atomic(CONF, updated)
         atomic(SSHD, sshd_port_text(root_file(SSHD) if SSHD.exists() else '', port), 0o644)
         if socket_mode():
-            atomic(SOCKET, socket_config(port, current_bindings), 0o644)
+            previous = root_file(SOCKET) if SOCKET.exists() else ''
+            retained = re.sub(r'(?m)^[ \t]*ListenStream[ \t]*=[^\n]*(?:\n|$)', '', previous)
+            atomic(SOCKET, socket_config(port, current_bindings) + retained, 0o644)
         sshd_fields = command('sshd', '-T').stdout.splitlines()
         effective = {int(line.split()[1]) for line in sshd_fields if line.startswith('port ')}
         if effective != {port}:
