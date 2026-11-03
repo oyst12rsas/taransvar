@@ -27,7 +27,7 @@ CORE = ('tarakernel', 'database', 'runtime', 'taralink', 'gatekeeper', 'google',
 SHA = re.compile(r'[a-f0-9]{40}')
 PATHS = {'database': ('misc/install.sql',), 'runtime': ('misc/',),
          'taralink': ('taralink/',), 'gatekeeper': ('html/',),
-         'google': ('misc/install_agent_approvals.sh', 'misc/agent_approval_worker.py', 'misc/ssh_device_enrollment.py',
+         'google': ('misc/install_agent_approvals.sh', 'misc/agent_approval_worker.py', 'misc/ssh_device_enrollment.py', 'misc/ssh_enrollment_source.py',
                     'misc/ssh_google_window.py', 'misc/ssh_approval_poll.py',
                     'misc/ssh_security_evidence.py', 'misc/local_manager_policy.py',
                     'misc/enroll_google_manager.py', 'misc/enroll_gatekeeper_google.py'),
@@ -582,3 +582,4 @@ def main(argv=None):
             return 1
 
 if __name__=='__main__': raise SystemExit(main())
+

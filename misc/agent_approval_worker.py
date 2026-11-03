@@ -65,6 +65,8 @@ def api(action, body, token):
     from enroll_google_manager import enrollment_url
     endpoint = manager_setting("AGENT_APPROVAL_URL", URL)
     enrollment_url(endpoint)  # The same HTTPS-only endpoint validation as enrollment.
+    if action == "poll":
+        body = dict(body, ssh_source_policy=ssh_source_policy_version())
     data = json.dumps(body, separators=(",", ":")).encode("utf-8")
     request = urllib.request.Request(
         endpoint + "?action=" + action, data=data,
@@ -484,6 +486,16 @@ def ssh_client_peers():
         return []
 
 
+def ssh_source_policy_version():
+    try:
+        import ssh_enrollment_source
+        import ssh_device_enrollment
+        version = ssh_enrollment_source.VERSION
+        return version if getattr(ssh_device_enrollment, "SOURCE_POLICY_VERSION", 0) == version else 0
+    except ImportError:
+        return 0
+
+
 def main():
     if os.geteuid() != 0:
         raise RuntimeError("Run as root")
@@ -522,7 +534,8 @@ def main():
                           "assessment": current_assessment,
                           "boot_id": reported_boot_id(),
                           "ssh_access": google_ssh_state(),
-                          "ssh_client_peers": ssh_client_peers()}, token)
+                          "ssh_client_peers": ssh_client_peers(),
+                          "ssh_source_policy": ssh_source_policy_version()}, token)
         remote = "connected"
         print("Agent status: " + ("needs review (" + str(len(concerns)) + " checks)" if concerns else "operating"))
         if obsolete_unit_candidate(evidence):
@@ -558,6 +571,7 @@ if __name__ == "__main__":
     except (OSError, ValueError, RuntimeError, urllib.error.URLError) as exc:
         print("Agent unavailable: " + str(exc), file=sys.stderr)
         sys.exit(1)
+
 
 
 
