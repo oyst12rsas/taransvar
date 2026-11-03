@@ -51,6 +51,10 @@ git pull --ff-only origin main &&
 sudo bash misc/install_ssh_device_enrollment.sh squash
 ```
 
+This also publishes /script/sshDeviceTarget.php through the updated approval installer.
+That unauthenticated endpoint returns only the root-owned enrollment identity, with
+no manager session, status, SSH controls or credentials.
+
 This updates the existing approval worker with --update-only and stores the
 node-owned account allowlist in root-only /etc/tarasec/ssh-key-enrollment.json.
 It retains local manager policy, existing keys, SSH authentication and firewall
