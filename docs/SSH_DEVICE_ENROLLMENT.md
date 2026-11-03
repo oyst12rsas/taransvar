@@ -65,7 +65,7 @@ The intended server account must already be opted into the existing root-owned /
 ```bash
 clear
 # Machine: wt-gw1; use its actual non-root account
-sudo bash misc/install_ssh_device_enrollment.sh wt-gw1
+sudo bash misc/install_ssh_device_enrollment.sh ubuntu
 ```
 
 Install app 0.4.13 and the one-time client script after the service and gateway bundle. A source merge alone does not deploy these components. The older Python and device-initiated protocols remain compatible, but are no longer the app's primary flow.
@@ -87,7 +87,7 @@ curl --fail --show-error --silent --proto '=https' -o "$TMPDIR/tarasec-client.sh
 bash "$TMPDIR/tarasec-client.sh" --install
 ```
 
-The dedicated key stays on the client. Existing server keys, authentication policy and firewall rules are retained. Server-confirmed installation is not proof that a new SSH login was tested; use the existing temporary opening and normal host-identity checks for that first login. Revocation removes the exact key from the server account's authorized_keys.
+The dedicated key stays on the client. Existing server keys and authentication policy are retained. New approved source-mode enrollments also append the exact observed client host (/32 or /128) to SSH_ALLOWED_SOURCES and reconcile the existing timed gate. Enrollment never opens or extends the Authenticator window. Private configuration backups are retained under /var/lib/tarasec/ssh-key-sources. The service waits for a capable gateway worker before dispatching these operations. Older completed requests are not changed retroactively; request and approve a new registration once after deploying both components to apply source enrollment with the existing client key. Server-confirmed installation is not proof that a new SSH login was tested; use the existing temporary opening and normal host-identity checks for that first login. Revocation removes the exact key from the server account's authorized_keys.
 
 ## Verification
 
