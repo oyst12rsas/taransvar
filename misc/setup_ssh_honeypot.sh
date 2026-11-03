@@ -59,6 +59,7 @@ case "$SSH_HONEYPOT_AUTH_MODE" in
     *) echo "SSH_HONEYPOT_AUTH_MODE must be accept-all, reject-all or password" >&2; exit 1 ;;
 esac
 
+is_on() { case "${1,,}" in 1|yes|true|on) return 0 ;; *) return 1 ;; esac; }
 parse_honeypot_ports() {
     local spec="${SSH_HONEYPOT_PORTS// /,}" item first last port
     local -A seen_specs=()
@@ -70,11 +71,15 @@ parse_honeypot_ports() {
             first=$((10#${BASH_REMATCH[1]})); last=$((10#${BASH_REMATCH[2]}))
             [ "$first" -le "$last" ] || { echo "Descending honeypot range: $item" >&2; exit 1; }
             [ "$first" -ge 1 ] && [ "$last" -le 65535 ] || { echo "Invalid honeypot range: $item" >&2; exit 1; }
-            ! (( SSH_PORT >= first && SSH_PORT <= last )) || { echo "Honeypot range collides with real SSH: $item" >&2; exit 1; }
+            if (( SSH_PORT >= first && SSH_PORT <= last )) && ! is_on "${SSH_CLOSED_HONEYPOT:-no}"; then
+                echo "A honeypot range containing real SSH requires SSH_CLOSED_HONEYPOT=yes" >&2; exit 1
+            fi
             item="$first-$last"
         elif [[ "$item" =~ ^[0-9]+$ ]] && [ "$((10#$item))" -ge 1 ] && [ "$((10#$item))" -le 65535 ]; then
             port=$((10#$item))
-            [ "$port" -ne "$SSH_PORT" ] || { echo "Honeypot port collides with real SSH: $port" >&2; exit 1; }
+            if [ "$port" -eq "$SSH_PORT" ] && ! is_on "${SSH_CLOSED_HONEYPOT:-no}"; then
+                echo "A real SSH port in the honeypot list requires SSH_CLOSED_HONEYPOT=yes" >&2; exit 1
+            fi
             item="$port"
         else
             echo "Invalid SSH_HONEYPOT_PORTS entry: $item" >&2; exit 1
@@ -137,7 +142,6 @@ restart_sshd() {
         return 1
     fi
 }
-is_on() { case "${1,,}" in 1|yes|true|on) return 0 ;; *) return 1 ;; esac; }
 tcp_port_listening() {
     local listeners
     listeners=$(ss -H -ltn "sport = :$1" 2>/dev/null) || return 1
@@ -418,3 +422,4 @@ if [ -n "$NETBIRD_IP" ]; then
 else
     echo "WARNING: No NetBird IPv4 address in 100.64.0.0/10 was found; test commands were not generated."
 fi
+

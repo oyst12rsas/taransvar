@@ -1,0 +1,23 @@
+name: SSH port migration and closed-port decoys
+on:
+  pull_request:
+    paths:
+      - 'misc/ssh_port_setup.py'
+      - 'misc/ssh_honeypot_route.py'
+      - 'misc/ssh_google_window.py'
+      - 'misc/tarasec_ssh_honeypot.py'
+      - 'misc/setup_ssh_honeypot.sh'
+      - 'misc/firewall.sh'
+      - 'tests/ssh_port*'
+      - '.github/workflows/ssh-port-policy.yml'
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y iptables ipset iproute2 python3-paramiko
+      - run: sudo python3 -B tests/ssh_port_policy_test.py
+      - run: python3 -B tests/honeypot_refresh_test.py
+      - run: python3 -B misc/test_ssh_google_window.py
+      - run: bash -n misc/setup_ssh_honeypot.sh misc/firewall.sh misc/install_agent_approvals.sh
+      - run: sudo unshare --net python3 -B tests/ssh_port_kernel_test.py
