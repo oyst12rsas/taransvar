@@ -129,6 +129,8 @@ class MigrationTests(unittest.TestCase):
                 output = '*filter\n:INPUT DROP [0:0]\nCOMMIT\n' if args[0].endswith('-save') else ''
                 if args[:2] == ('sshd', '-T'):
                     output = 'port 2345\n'
+                if args[:2] == ('systemctl', 'show'):
+                    output = 'loaded\n' if 'LoadState' in args else 'process\n'
                 return subprocess.CompletedProcess(args, 1 if '-C' in args or args[:2] == ('ipset', 'save') else 0, output, '')
             replacements = {'CONF': conf, 'STATE': root / 'state', 'LIB': root / 'lib',
                             'SSHD': root / 'etc/sshd/90-tarasec.conf', 'SOCKET': root / 'socket/override.conf',
