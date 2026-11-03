@@ -72,12 +72,16 @@ parse_honeypot_ports() {
             first=$((10#${BASH_REMATCH[1]})); last=$((10#${BASH_REMATCH[2]}))
             [ "$first" -le "$last" ] || { echo "Descending honeypot range: $item" >&2; exit 1; }
             valid_port "$first" && valid_port "$last" || { echo "Invalid honeypot range: $item" >&2; exit 1; }
-            ! (( SSH_PORT >= first && SSH_PORT <= last )) || { echo "Honeypot range collides with SSH_PORT=$SSH_PORT: $item" >&2; exit 1; }
+            if (( SSH_PORT >= first && SSH_PORT <= last )) && ! is_on "${SSH_CLOSED_HONEYPOT:-no}"; then
+                echo "Overlapping SSH/honeypot ports require SSH_CLOSED_HONEYPOT=yes" >&2; exit 1
+            fi
             item="$first-$last"
         elif [[ "$item" =~ ^[0-9]+$ ]]; then
             port=$((10#$item))
             valid_port "$port" || { echo "Invalid honeypot port: $item" >&2; exit 1; }
-            [ "$port" != "$SSH_PORT" ] || { echo "Honeypot port collides with SSH_PORT=$SSH_PORT" >&2; exit 1; }
+            if [ "$port" = "$SSH_PORT" ] && ! is_on "${SSH_CLOSED_HONEYPOT:-no}"; then
+                echo "Overlapping SSH/honeypot ports require SSH_CLOSED_HONEYPOT=yes" >&2; exit 1
+            fi
             item="$port"
         else
             echo "Invalid SSH_HONEYPOT_PORTS entry: $item" >&2; exit 1
@@ -150,11 +154,24 @@ if [[ "$IPV6_ONLY" == 1 ]]; then
     exit 0
 fi
 
+if is_on "${SSH_CLOSED_HONEYPOT:-no}"; then
+    [[ "$CONF" == /etc/tarasecfw.conf ]] || { echo 'Closed-port decoys require the live system configuration' >&2; exit 1; }
+    [[ -f /usr/local/lib/tarasec/ssh_honeypot_route.py ]] || { echo 'Install the SSH port policy bundle first' >&2; exit 1; }
+    mkdir -p /run/tarasec
+    exec 9>/run/tarasec/ssh-google-window.lock
+    flock -x 9
+    iptables -P INPUT DROP
+fi
 iptables -F
 iptables -X
 iptables -P INPUT DROP
 iptables -P FORWARD ACCEPT
 iptables -P OUTPUT ACCEPT
+if is_on "${SSH_CLOSED_HONEYPOT:-no}"; then
+    iptables -N TARASEC_SSH_GOOGLE
+    iptables -A TARASEC_SSH_GOOGLE -p tcp -j REJECT --reject-with tcp-reset
+    iptables -I INPUT 1 -p tcp --dport "$SSH_PORT" -m conntrack --ctstate NEW -j TARASEC_SSH_GOOGLE
+fi
 
 IS_GATEWAY="${IS_GATEWAY:-0}"
 LAN_INTERFACE="${LAN_INTERFACE:-wg0}"
@@ -264,7 +281,9 @@ else
     iptables -A INPUT -p tcp --dport "$SSH_PORT" -j REJECT --reject-with tcp-reset
 fi
 
-if is_on "$SSH_HONEYPOT"; then
+if is_on "${SSH_CLOSED_HONEYPOT:-no}"; then
+    : # The MFA-aware route module reconciles NAT after both filter policies exist.
+elif is_on "$SSH_HONEYPOT"; then
     # Redirect only connections addressed to this machine. Forwarded/NAT
     # traffic is excluded by --dst-type LOCAL.
     iptables -t nat -N TARASEC_SSH_HONEYPOT 2>/dev/null || iptables -t nat -F TARASEC_SSH_HONEYPOT
@@ -314,8 +333,19 @@ iptables -A INPUT -j DROP
 
 tarasec_ipv6_apply
 
+if is_on "${SSH_CLOSED_HONEYPOT:-no}"; then
+    # The parent holds the window lock; do not acquire it a second time.
+    python3 - <<'RECONCILE_DECOYS'
+import sys
+sys.path.insert(0, '/usr/local/lib/tarasec')
+import ssh_google_window
+ssh_google_window.reconcile()
+RECONCILE_DECOYS
+fi
+
 if ! dpkg-query -W -f='${Status}' netfilter-persistent 2>/dev/null | grep -q "install ok installed"; then
     apt-get update
     apt-get install -y netfilter-persistent
 fi
 netfilter-persistent save
+
