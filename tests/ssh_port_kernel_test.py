@@ -54,7 +54,8 @@ def server(family, host, port, greeting):
 listeners = []
 for family, host in ((socket.AF_INET, '10.100.0.1'), (socket.AF_INET6, 'fd00::1')):
     for port, greeting in ((2345, b'REAL'), (2222, b'HONEYPOT'), (3306, b'OTHER')):
-        listeners.append(server(family, host, port, greeting))
+        bind = ('0.0.0.0' if family == socket.AF_INET else '::') if port == 2222 else host
+        listeners.append(server(family, bind, port, greeting))
 
 
 def connect(port, family=socket.AF_INET, allowed=True):
