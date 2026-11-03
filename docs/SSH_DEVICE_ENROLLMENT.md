@@ -11,6 +11,24 @@
 
 An absent client helper remains explicitly waiting for the client. A submitted key remains waiting for Ops approval. An approved request remains waiting for the server until a real result is recorded. No stage implies the next one succeeded.
 
+## Commands are available in the app
+
+App 0.4.14 or newer includes Copy run command directly in Manage → SSH. An installed
+client needs no parameters: run ~/.local/bin/tarasec-client. It reads its saved
+gateways, approval service and key automatically. The scheduled check can also be
+left to run normally.
+
+Expand First-time setup, update or add this server to view/copy the complete setup
+command. The app fills in the already-selected server address and adds a custom
+approval-service option only when needed. No ChatGPT session or manually entered
+IP/service/username arguments are needed to construct the command. Username stays
+in the queued app request.
+
+Setup downloads the standalone script, updates/installs it and adds the selected
+gateway while preserving saved gateways, the existing key selection and cron jobs.
+Re-running the installed client normally requires no download or install flags.
+Different approval services are not silently mixed into the same saved configuration.
+
 ## One-time client installation
 
 Download just one script; no TaraSec checkout, database, Python, gateway code or server service is installed on the client. Linux needs Bash, curl, jq, OpenSSH and a running cron service. Termux needs curl, jq, openssh and cronie, with crond running. Android may delay background work.
