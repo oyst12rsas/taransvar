@@ -271,6 +271,7 @@ def migrate():
         dst = LIB / name
         if src.resolve() != dst.resolve():
             shutil.copyfile(src, dst)
+            os.chown(dst, 0, 0)
             dst.chmod(0o755)
     saved = snapshot(port)
     try:
