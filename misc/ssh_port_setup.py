@@ -94,6 +94,13 @@ def socket_config(port, listeners):
     return '[Socket]\nListenStream=\n' + ''.join('ListenStream=' + entry + '\n' for entry in sorted(entries))
 
 
+def sshd_port_text(text, port):
+    # This file can contain owner authentication policy as well as our Port.
+    # Change only Port directives; keep keys/passwords/Match policy intact.
+    kept = re.sub(r'(?im)^[ \t]*Port[ \t]+[^\n]*(?:\n|$)', '', text)
+    return '# Management port set by TaraSec\nPort ' + str(port) + '\n' + kept
+
+
 def reload_sshd():
     command('sshd', '-t')
     command('systemctl', 'daemon-reload')
@@ -268,7 +275,7 @@ def migrate():
         updated = config_text(text, {'SSH_PORT': port, 'SSH_HONEYPOT': 'on',
                                     'SSH_HONEYPOT_PORTS': spec, 'SSH_CLOSED_HONEYPOT': 'yes'})
         atomic(CONF, updated)
-        atomic(SSHD, '# Managed by TaraSec port setup\nPort ' + str(port) + '\n', 0o644)
+        atomic(SSHD, sshd_port_text(root_file(SSHD) if SSHD.exists() else '', port), 0o644)
         if socket_mode():
             atomic(SOCKET, socket_config(port, current_bindings), 0o644)
         sshd_fields = command('sshd', '-T').stdout.splitlines()
