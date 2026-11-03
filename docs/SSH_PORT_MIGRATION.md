@@ -72,8 +72,9 @@ Backups stay private under /var/lib/tarasec/ssh-port-migration. Boot ordering ma
 the SSH service depend on the closed-decoy policy; socket activation may queue a
 connection before the service starts, but must not start real SSH without the
 policy. Verify this on the actual distribution before treating boot behavior as
-accepted. Socket mode requires ssh.service KillMode=process to preserve existing
-sessions when its master/listeners restart. Fixed conflicting Port/ListenAddress
+accepted. Migration requires the active SSH service to use KillMode=process to preserve
+existing sessions when its master/listeners restart. Socket activation is detected
+automatically. Fixed conflicting Port/ListenAddress
 directives are refused rather than silently rewritten.
 
 ## Attack-aware opening
