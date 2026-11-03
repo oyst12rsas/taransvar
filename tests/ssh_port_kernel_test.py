@@ -107,6 +107,18 @@ with tempfile.TemporaryDirectory() as directory:
         client, greeting = connect(2345, family)
         assert greeting == b'HONEYPOT', 'Expired MFA lease still reached real SSH'
         client.close()
+    # Even a local path that bypasses decoy NAT must not bypass kernel expiry.
+    for tool, family in (('iptables', socket.AF_INET), ('ip6tables', socket.AF_INET6)):
+        hook = ['-p', 'tcp', '-m', 'addrtype', '--dst-type', 'LOCAL', '-j', route.CHAIN]
+        run(tool, '-t', 'nat', '-D', 'OUTPUT', *hook)
+        try:
+            client, greeting = connect(2345, family)
+        except OSError:
+            pass
+        else:
+            client.close()
+            raise AssertionError('Local connection bypassed the expired filter lease')
+        run(tool, '-t', 'nat', '-A', 'OUTPUT', *hook)
     for client in held:
         client.sendall(b'survives-expiry')
         assert client.recv(64) == b'survives-expiry', 'Established real SSH session was interrupted'
