@@ -15,6 +15,10 @@ mode=os.environ['TS_SCENARIO'];ref='a'*64;token='b'*64
 if url.endswith('/script/sshClientQueue.php'):
     service='https://other.test/ops/agent/' if mode=='wrong-service' else 'https://tarasec.org/ops/agent/'
     job=None if mode=='idle' else {'server_ref':ref,'pairing_token':token,'ssh_user':'alice','device_name':'Acer'}
+    if mode=='source-bootstrap':
+        body=json.loads(pathlib.Path(args[args.index('--data-binary')+1][1:]).read_text()) if '--data-binary' in args else {}
+        if not body.get('public_key'): job={'id':'q','needs_key':True,'server_ref':ref,'ssh_user':'alice'}
+        else: (pathlib.Path(os.environ['TS_STATE'])/'announced-key').write_text(body['public_key'])
     value={'ok':True,'server_ref':ref,'approval_service':service,'job':job}
 elif url.endswith('action=challenge'):
     value={'ok':True,'server_ref':ref,'ssh_user':'mallory' if mode=='wrong-user' else 'alice','device_name':'Acer','message':'real signed challenge\n'}
@@ -54,6 +58,10 @@ class BashClientTest(unittest.TestCase):
         self.assertIn('Finalize at',r.stdout);self.assertNotIn('b'*64,r.stdout+r.stderr)
         r=self.run_client('pending');self.assertEqual(r.returncode,0,r.stderr)
         self.assertEqual(before,key.read_bytes())
+    def test_source_bootstrap_announces_exact_key_before_signing(self):
+        r=self.run_client('source-bootstrap');self.assertEqual(r.returncode,0,r.stderr)
+        self.assertEqual((self.root/'announced-key').read_text(),(self.root/'submitted').read_text())
+        self.assertIn('Finalize at',r.stdout)
     def test_mismatches_stop_submission_or_completion(self):
         for mode in ['wrong-service','wrong-user','wrong-fingerprint']:
             with self.subTest(mode=mode):
@@ -74,3 +82,4 @@ class BashClientTest(unittest.TestCase):
         self.assertEqual(r.returncode,0,r.stderr)
 
 if __name__=='__main__': unittest.main()
+

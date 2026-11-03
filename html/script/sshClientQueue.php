@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 ini_set('display_errors','0');
-// The gateway attests the actual overlay source. Caller headers/addresses are ignored.
+// The gateway attests the actual LAN/VPN source. Caller headers/addresses are ignored.
 require_once __DIR__.'/managerSshApprovalTarget.php';
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -10,10 +10,16 @@ function clientQueueReply(int $code,array $body): never {
     http_response_code($code);echo json_encode($body,JSON_UNESCAPED_SLASHES);exit;
 }
 if (($_SERVER['REQUEST_METHOD']??'')!=='POST') clientQueueReply(405,['ok'=>false,'error'=>'post_required']);
-$source=(string)($_SERVER['REMOTE_ADDR']??'');
-if (!filter_var($source,FILTER_VALIDATE_IP,FILTER_FLAG_IPV4) || (ip2long($source)&0xffc00000)!==ip2long('100.64.0.0'))
-    clientQueueReply(403,['ok'=>false,'error'=>'netbird_source_required']);
+require_once __DIR__.'/sshClientSource.php';
+try { $source=queueConnectingSource((string)($_SERVER['REMOTE_ADDR']??'')); }
+catch (Throwable $e) { clientQueueReply(403,['ok'=>false,'error'=>'private_source_required']); }
 try {
+    $input=file_get_contents('php://input',false,null,0,2049);
+    if (!is_string($input) || strlen($input)>2048) throw new RuntimeException('invalid client request');
+    $body=json_decode($input,true)??[];
+    if (!is_array($body)) throw new RuntimeException('invalid client request');
+    $public=(string)($body['public_key']??'');$label=(string)($body['device_name']??'');
+    if (strlen($public)>256 || strlen($label)>128) throw new RuntimeException('invalid client request');
     $path='/etc/tarasec/gatekeeper-google.php';$info=@lstat($path);
     if (!$info || is_link($path) || ($info['mode']&0170000)!==0100000 || $info['uid']!==0 || ($info['mode']&0027)!==0)
         throw new RuntimeException('configuration unavailable');
@@ -25,7 +31,7 @@ try {
     curl_setopt_array($ch,[CURLOPT_POST=>true,CURLOPT_FOLLOWLOCATION=>false,
         CURLOPT_CONNECTTIMEOUT=>4,CURLOPT_TIMEOUT=>10,
         CURLOPT_HTTPHEADER=>['Authorization: Bearer '.$cfg['shared_secret'],'Content-Type: application/json'],
-        CURLOPT_POSTFIELDS=>json_encode(['client_id'=>$cfg['client_id'],'source_ip'=>$source]),
+        CURLOPT_POSTFIELDS=>json_encode(['client_id'=>$cfg['client_id'],'source_ip'=>$source,'public_key'=>$public,'device_name'=>$label]),
         CURLOPT_WRITEFUNCTION=>static function($c,string $chunk) use(&$raw): int {
             if (strlen($raw)+strlen($chunk)>16384) return 0;
             $raw.=$chunk;return strlen($chunk);
@@ -40,3 +46,4 @@ try {
 } catch (Throwable $e) {
     clientQueueReply(503,['ok'=>false,'error'=>'ssh_client_queue_unavailable']);
 }
+

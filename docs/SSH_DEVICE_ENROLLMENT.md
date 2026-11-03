@@ -2,11 +2,11 @@
 
 ## Normal use
 
-1. Open Manage → SSH in app 0.4.12 or newer. The selected gateway already determines the target server and address.
-2. Enter the Linux username on that server and select the connecting client from the gateway's current NetBird peer list.
-3. Tap Request client registration. The request is persisted for up to 24 hours.
-4. The standalone Bash client collects it during its next scheduled check (every five minutes), generates or reuses its dedicated local Ed25519 key, and submits a signed public key. No per-request terminal command or pairing code is required.
-5. Open https://tarasec.org/ops/agent/ and finalize the exact device/server/account/key with Google and Authenticator.
+1. Open Manage → SSH in app 0.4.13 or newer. The selected gateway already determines the target server and address.
+2. Enter only the Linux username on that server. No client or server dropdown is needed: the managed server is already the target.
+3. Tap Request SSH registration. The request is persisted for up to 24 hours.
+4. Run the installed Bash helper on the connecting device, or let its five-minute scheduled check collect the intent. It generates or reuses its dedicated local Ed25519 key and submits a signed public key. LAN WireGuard clients do not need NetBird. No per-request terminal command or pairing code is required.
+5. Open https://tarasec.org/ops/agent/ and finalize the exact observed source, target server, Linux account and key fingerprint with Google and Authenticator. Multiple helpers can submit distinct candidates; approve only the intended device.
 6. The gateway's existing worker installs the approved key on its next check. The app reports installed only after that worker reports completion.
 
 An absent client helper remains explicitly waiting for the client. A submitted key remains waiting for Ops approval. An approved request remains waiting for the server until a real result is recorded. No stage implies the next one succeeded.
@@ -50,20 +50,29 @@ clear
 sudo bash misc/install_ssh_device_enrollment.sh wt-gw1
 ```
 
-Install app 0.4.12 and the one-time client script after the service and gateway bundle. A source merge alone does not deploy these components. The older Python and device-initiated protocols remain compatible, but are no longer the app's primary flow.
+Install app 0.4.13 and the one-time client script after the service and gateway bundle. A source merge alone does not deploy these components. The older Python and device-initiated protocols remain compatible, but are no longer the app's primary flow.
 
 ## Identity and approval boundary
 
-The gateway reports at most 32 NetBird peer identities from netbird status --json in its authenticated heartbeat. The service stores them separately from public status/history and exposes them only to authorized manager queue listings. Current IPv4 overlay addresses are matched to a stable hash of the peer's NetBird public key. The queue rejects stale snapshots, ambiguous identities, changed peer keys at reused addresses, revoked managers and a mismatching target server. An IP change with the same stable peer identity is supported.
+New app requests have no preselected client. The gateway takes the actual connecting address from REMOTE_ADDR and forwards it with its existing enrolled handoff credential. It accepts private LAN/VPN sources (RFC1918, CGNAT and ULA IPv6, including private mapped IPv4). Caller address claims in request bodies and forwarded headers are ignored. The request's target server remains bound to that enrolled gateway.
 
-The client polls the gateway directly over NetBird. The gateway forwards its actual REMOTE_ADDR using its existing enrolled handoff credential; source claims in request bodies or forwarded headers are not accepted. No NetBird administrator credential is installed on the client or written into queued jobs. No arbitrary jobs are stored in NetBird itself.
+An idle check generates no key. When an intent exists, the helper announces its public key, receives a capability sealed to that source/key candidate, and signs the challenge. The source address is connection metadata, never installation authorization. Different helpers, including devices sharing one NAT address, receive separate candidates; one cannot consume the intent for the other. Once a candidate is approved, running or done, that intent stops accepting additional candidates. A new explicit app request can open another intent.
 
-Pickup creates a short-lived, retryable signing challenge. Signed submission consumes that challenge once and creates only a pending exact-key proposal. Final Google/Authenticator approval and the worker's local manager/account/path/key guards remain mandatory. Queued intent is not permission to install. The client never receives a server manager credential.
+The submission creates only a pending exact-key proposal at TaraSec Ops. Its observed source and fingerprint are shown for final Google/Authenticator approval. Existing local manager/account/path/key guards remain mandatory. Old NetBird-peer-selected requests remain compatible for older apps, but the new flow requires no NetBird peer directory or NetBird administrator credential.
+
+The updated gateway installer deploys both sshClientSource.php and sshClientQueue.php. Update the hosted service first, then the gateway bundle and installed Bash helper, then app 0.4.13. An already-installed client needs its script refreshed once for the key-announcement handshake; its saved gateways, user cron entry and existing key can be retained by reinstalling without --gateway:
+
+```bash
+clear
+# Machine: Phone / Termux (or use a writable temporary path on Acer)
+curl --fail --show-error --silent --proto '=https' -o "$TMPDIR/tarasec-client.sh" https://raw.githubusercontent.com/oyst12rsas/taransvar/main/misc/tarasec-client.sh &&
+bash "$TMPDIR/tarasec-client.sh" --install
+```
 
 The dedicated key stays on the client. Existing server keys, authentication policy and firewall rules are retained. Server-confirmed installation is not proof that a new SSH login was tested; use the existing temporary opening and normal host-identity checks for that first login. Revocation removes the exact key from the server account's authorized_keys.
 
 ## Verification
 
-CI covers source/peer/server binding, stale and reassigned identities, changed addresses, revocation, repeated taps and polls, signature verification, single-use submission, capability redaction and truthful stage reporting. Bash integration tests use real OpenSSH signatures and verify idle/no-key behavior, key reuse, mismatch rejection and cron preservation. The gateway bridge rejects unsupported methods and spoofed forwarding headers before credential access.
+CI covers legacy peer binding and the no-selector flow: LAN/VPN source validation, independent source/key candidates behind shared NAT, exact-key proofs, final approval, repeated taps and polls, capability redaction and truthful stage reporting. Bash integration tests use real OpenSSH signatures and verify idle/no-key behavior, key reuse, mismatch rejection and cron preservation. The gateway bridge rejects unsupported methods and spoofed forwarding headers before credential access.
 
 Live phone/gateway/client acceptance remains separate from source and CI checks. Verify that the new app queues an intent, the installed user's cron submits its signed key, Ops approval is required, and the gateway reports actual installation before declaring the rollout complete.
