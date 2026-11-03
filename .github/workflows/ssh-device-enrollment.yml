@@ -1,7 +1,7 @@
 name: SSH device enrollment worker
 on:
   pull_request:
-    paths: ['misc/*ssh*', 'misc/tarasec-client.sh', 'html/script/sshClientQueue.php', 'tests/ssh_client*', 'misc/agent_approval_worker.py', 'misc/install_agent_approvals.sh', 'tests/ssh_device_enrollment_test.py', 'tests/pair_ssh_device_auto_test.py', 'html/script/sshDeviceTarget.php', '.github/workflows/ssh-device-enrollment.yml']
+    paths: ['misc/*ssh*', 'misc/tarasec-client.sh', 'html/script/sshClient*.php', 'tests/ssh_client*', 'misc/agent_approval_worker.py', 'misc/install_agent_approvals.sh', 'tests/ssh_device_enrollment_test.py', 'tests/pair_ssh_device_auto_test.py', 'html/script/sshDeviceTarget.php', '.github/workflows/ssh-device-enrollment.yml']
 jobs:
   worker:
     runs-on: ubuntu-latest
