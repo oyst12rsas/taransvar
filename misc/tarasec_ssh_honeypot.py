@@ -82,6 +82,14 @@ def clean(value, limit=200):
 def original_destination(sock):
     """Return the pre-REDIRECT IPv4 destination when Netfilter provides it."""
     local_ip, local_port = sock.getsockname()[:2]
+    if sock.family == socket.AF_INET6:
+        try:
+            raw = sock.getsockopt(socket.IPPROTO_IPV6, 80, 28)
+            if struct.unpack_from("=H", raw, 0)[0] == socket.AF_INET6:
+                return socket.inet_ntop(socket.AF_INET6, raw[8:24]), struct.unpack_from("!H", raw, 2)[0]
+        except OSError:
+            pass
+        return local_ip, local_port
     try:
         raw = sock.getsockopt(socket.SOL_IP, 80, 16)  # SO_ORIGINAL_DST
         family = struct.unpack_from("=H", raw, 0)[0]
@@ -338,6 +346,14 @@ class ThreadedServer(socketserver.ThreadingTCPServer):
     request_queue_size = 50
 
 
+class ThreadedServer6(ThreadedServer):
+    address_family = socket.AF_INET6
+
+    def server_bind(self):
+        self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+        super().server_bind()
+
+
 if __name__ == "__main__":
     if AUTH_MODE not in {"accept-all", "reject-all", "password"}:
         raise SystemExit(f"invalid TARASEC_SSH_HONEYPOT_AUTH_MODE: {AUTH_MODE}")
@@ -356,6 +372,8 @@ if __name__ == "__main__":
         if len(DEMO_NODE_TOKEN) < 32:
             raise SystemExit("demo challenge validation requires a node token of at least 32 characters")
     servers = [ThreadedServer((HOST, port), Handler) for port in PORTS]
+    if os.environ.get("TARASEC_SSH_HONEYPOT_IPV6", "no").lower() in ("yes", "true", "on", "1"):
+        servers += [ThreadedServer6(("::", port), Handler) for port in PORTS]
     print(
         json.dumps(
             {
@@ -385,3 +403,4 @@ if __name__ == "__main__":
         for server in servers:
             server.shutdown()
             server.server_close()
+
