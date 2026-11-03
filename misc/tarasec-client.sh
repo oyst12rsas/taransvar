@@ -7,6 +7,8 @@ if [[ -f $config/path ]]; then IFS= read -r saved_path < "$config/path"; export 
 service=https://tarasec.org/ops/agent/
 key=$HOME/.ssh/id_ed25519_tarasec
 install=false
+service_set=false
+key_set=false
 tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
 : > "$tmp/gateways"
@@ -17,14 +19,14 @@ while (($#)); do
             (($# >= 2)) || fail "Missing value for $1"
             case "$1" in
                 --gateway) printf '%s\n' "$2" >> "$tmp/gateways" ;;
-                --service) service=$2 ;; --key) key=$2 ;;
+                --service) service=$2; service_set=true ;; --key) key=$2; key_set=true ;;
             esac
             shift 2 ;;
         --install) install=true; shift ;;
         --once) shift ;;
         -h|--help)
             printf '%s\n' 'Install once: bash tarasec-client.sh --install --gateway http://GATEWAY' \
-                'Poll saved gateways: tarasec-client.sh --once' \
+                'Run with saved settings: tarasec-client.sh (no arguments needed)' \
                 'Optional: repeat --gateway; --service HTTPS_URL; --key PRIVATE_KEY'
             exit 0 ;;
         *) fail "Unknown option: $1" ;;
@@ -33,15 +35,23 @@ done
 for tool in curl jq ssh-keygen; do
     command -v "$tool" >/dev/null || fail "Install $tool. Linux: curl jq openssh-client; Termux: curl jq openssh cronie."
 done
-if [[ ! -s $tmp/gateways ]]; then
-    [[ -r $config/settings.json ]] || fail 'Install once with --gateway to save your gateway addresses.'
-    jq -er '.gateways[]' "$config/settings.json" > "$tmp/gateways"
-    service=$(jq -er '.service' "$config/settings.json")
-    key=$(jq -er '.key' "$config/settings.json")
+if [[ -r $config/settings.json ]]; then
+    if ! $service_set; then service=$(jq -er '.service' "$config/settings.json"); fi
+    if ! $key_set; then key=$(jq -er '.key' "$config/settings.json"); fi
+    if [[ ! -s $tmp/gateways ]]; then
+        jq -er '.gateways[]' "$config/settings.json" > "$tmp/gateways"
+    elif $install; then
+        saved_service=$(jq -er '.service' "$config/settings.json")
+        [[ $service == "$saved_service" ]] || fail 'Existing gateways use another approval service. Keep a separate client configuration for that service.'
+        jq -er '.gateways[]' "$config/settings.json" >> "$tmp/gateways"
+        sort -u "$tmp/gateways" > "$tmp/merged-gateways"
+        mv -- "$tmp/merged-gateways" "$tmp/gateways"
+    fi
 fi
+[[ -s $tmp/gateways ]] || fail 'Copy the first-time client setup command from Manage → SSH in the TaraSec app.'
 while IFS= read -r gateway; do
     jq -en --arg url "$gateway" '$url | test("^https?://[A-Za-z0-9.:[\\]-]+/?$")' >/dev/null ||
-        fail 'Invalid gateway address; use its NetBird management address.'
+        fail 'Invalid gateway management address.'
 done < "$tmp/gateways"
 jq -en --arg url "$service" '$url | test("^https://[A-Za-z0-9.-]+(:[0-9]+)?/ops/agent/$")' >/dev/null ||
     fail 'Use an HTTPS /ops/agent/ approval service.'
@@ -134,4 +144,5 @@ while IFS= read -r gateway; do
     printf 'Client key fingerprint: %s\n' "$fingerprint"
     printf 'Key request submitted for %s. Finalize at %s; installation requires approval.\n' "$gateway" "$service"
 done < "$tmp/gateways"
+
 
