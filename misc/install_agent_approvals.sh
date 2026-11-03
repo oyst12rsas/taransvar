@@ -110,12 +110,12 @@ else:
     print('SSH app target unavailable: explicit Google enrollment is required.')
 PUBLISH_SSH_TARGET
 
-# Deploy authenticated target discovery without installing or changing a legacy SSH gate.
+# Deploy the public device identity and authenticated management bundle without changing a legacy SSH gate.
 if [[ -d "$gatekeeper_web_root/script" && -f "$root/../html/script/managerSshApprovalTarget.php" ]]; then
-    for name in managerSsh managerSshCommon managerSshApprovalTarget managerGoogleSession managerAuth managerGateway managerAi managerThreat managerOverview appAssistance managerActiveUnits; do
+    for name in sshDeviceTarget managerSsh managerSshCommon managerSshApprovalTarget managerGoogleSession managerAuth managerGateway managerAi managerThreat managerOverview appAssistance managerActiveUnits; do
         php -l "$root/../html/script/$name.php" >/dev/null
     done
-    for name in managerSsh managerSshCommon managerSshApprovalTarget managerGoogleSession managerAuth managerGateway managerAi managerThreat managerOverview appAssistance managerActiveUnits; do
+    for name in sshDeviceTarget managerSsh managerSshCommon managerSshApprovalTarget managerGoogleSession managerAuth managerGateway managerAi managerThreat managerOverview appAssistance managerActiveUnits; do
         destination="$gatekeeper_web_root/script/$name.php"
         [[ ! -f "$destination" ]] || cp -a --parents "$destination" "$backup/"
         install -o root -g root -m 0644 "$root/../html/script/$name.php" "$destination.new"
