@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import subprocess
 import unittest
 from unittest import mock
 
@@ -89,6 +90,35 @@ class SourcePolicyTest(unittest.TestCase):
                 source_returns=[c for c in calls if '10.100.0.150/32' in c and 'RETURN' in c]
                 self.assertEqual(bool(source_returns),until>1000)
                 self.assertFalse(any('systemd-run' in c for c in calls))
+
+    def test_existing_source_filter_gets_only_configured_port_scoped_returns(self):
+        import ipaddress
+        calls=[]
+        def command(args, **kwargs):
+            calls.append(args)
+            if '-S' in args:
+                return subprocess.CompletedProcess(args,0,'-P INPUT DROP\n-N TARASEC_SSH_SOURCE\n','')
+            return subprocess.CompletedProcess(args,1 if '-C' in args else 0,'','')
+        with mock.patch.object(source.subprocess,'run',side_effect=command):
+            source.reconcile_source_filter(5822,[ipaddress.ip_network('100.68.10.7'),ipaddress.ip_network('10.100.0.150')])
+        inserts=[args for args in calls if '-I' in args]
+        self.assertEqual(len(inserts),2)
+        self.assertEqual(inserts[1],['iptables','-w','5','-I','TARASEC_SSH_SOURCE','1','-p','tcp','--dport','5822','-s','10.100.0.150/32','-j','RETURN'])
+        self.assertFalse(any('-F' in args or 'ACCEPT' in args or 'INPUT' in args for args in calls))
+    def test_missing_source_filter_is_not_created_and_existing_rule_is_idempotent(self):
+        import ipaddress
+        nets=[ipaddress.ip_network('10.100.0.150')]
+        for listing in ['-P INPUT DROP\n','-N TARASEC_SSH_SOURCE\n']:
+            calls=[]
+            def command(args,**kwargs):
+                calls.append(args);return subprocess.CompletedProcess(args,0,listing,'')
+            with mock.patch.object(source.subprocess,'run',side_effect=command):
+                source.reconcile_source_filter(5822,nets)
+            self.assertFalse(any('-I' in args or '-N' in args for args in calls))
+    def test_source_filter_errors_are_not_reported_as_success(self):
+        import ipaddress
+        with mock.patch.object(source.subprocess,'run',return_value=subprocess.CompletedProcess([],2,'','failed')):
+            with self.assertRaises(RuntimeError):source.reconcile_source_filter(5822,[ipaddress.ip_network('10.100.0.150')])
 
     def test_key_operation_validates_source_before_writing_and_keeps_legacy_behavior(self):
         spec=importlib.util.spec_from_file_location('enroll_source_test',MISC/'ssh_device_enrollment.py')
