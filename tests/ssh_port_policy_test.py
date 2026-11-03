@@ -33,6 +33,8 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(rules.count('tarasec-port-rollback-guard'), 1)
         self.assertIn('--ctstate NEW', rules)
         self.assertLess(rules.index('*filter'), rules.index('tarasec-port-rollback-guard'))
+        both = setup.guarded_snapshot('*filter\n:INPUT DROP [0:0]\nCOMMIT\n', [5822, 2345])
+        self.assertEqual(both.count('tarasec-port-rollback-guard'), 2)
         override = setup.socket_config(2345, 'LISTEN 0 128 100.68.1.2:5822 *:*\nLISTEN 0 128 [::1]:5822 *:*\n')
         self.assertIn('ListenStream=100.68.1.2:2345', override)
         self.assertIn('ListenStream=[::1]:2345', override)
@@ -73,7 +75,7 @@ class PolicyTests(unittest.TestCase):
             route.lease(2345, sources, 1010)
             additions = [c.args for c in run.call_args_list if 'add' in c.args]
             self.assertEqual(len(additions), 2)
-            self.assertTrue(all(args[-3:] == ('timeout', '10', '-exist') for args in additions))
+            self.assertTrue(all(args[-3:] == ('timeout', '9', '-exist') for args in additions))
             run.reset_mock()
             route.lease(2345, sources, 999)
             self.assertFalse(any('add' in c.args for c in run.call_args_list))
