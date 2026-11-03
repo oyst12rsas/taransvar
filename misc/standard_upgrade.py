@@ -518,7 +518,7 @@ def existing_google_setup(root=Path('/')):
 
 
 APPROVAL_WORKER_FILES = (
-    'agent_approval_worker.py', 'ssh_approval_poll.py', 'ssh_google_window.py',
+    'agent_approval_worker.py', 'ssh_device_enrollment.py', 'ssh_approval_poll.py', 'ssh_google_window.py',
     'ssh_security_evidence.py', 'local_manager_policy.py',
     'enroll_google_manager.py', 'enroll_gatekeeper_google.py',
 )

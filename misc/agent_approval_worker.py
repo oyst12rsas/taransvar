@@ -106,6 +106,11 @@ def execute_approved_job(job):
     # Read current root-local policy for EVERY operation, including fast polls.
     operator_hash = job.get("approved_operator_sha256")
     local_manager_policy.require_manager(operator_hash)
+    if job.get("operation") == "install_ssh_device_key":
+        import ssh_device_enrollment
+        fingerprint = ssh_device_enrollment.execute(job)
+        audit({"action":"install_ssh_device_key", "fingerprint":fingerprint, "success":True})
+        return True
     if job.get("operation") == "open_ssh_temporarily":
         if not enabled("SSH_GOOGLE_REOPEN_ENABLED"):
             raise RuntimeError("Google-controlled SSH is not enabled by the owner")
