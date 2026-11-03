@@ -74,8 +74,12 @@ if $install; then
     quoted_client=$(printf '%s' "$installed" | jq -Rrs @sh)
     quoted_log=$(printf '%s' "$config/client.log" | jq -Rrs @sh)
     printf '*/5 * * * * %s %s --once >> %s 2>&1 # tarasec-ssh-client\n' "$quoted_bash" "$quoted_client" "$quoted_log" >> "$tmp/new-crontab"
-    crontab "$tmp/new-crontab"
-    printf '%s\n' 'Next: request SSH registration in Manage → SSH in the TaraSec app. This helper checks every five minutes.'
+    if ! crontab "$tmp/new-crontab" >"$tmp/cron-output" 2>&1; then
+        if $verbose; then cat "$tmp/cron-output" >&2; fi
+        fail 'Could not schedule client checks. Check that cron is installed, then run setup again.'
+    fi
+    if $verbose; then cat "$tmp/cron-output" >&2; fi
+    printf '%s\n' 'Next: request SSH registration in Manage → SSH in the TaraSec app, then run ~/.local/bin/tarasec-client here (or wait for its next scheduled check).'
     exit 0
 fi
 post() {
