@@ -66,7 +66,7 @@ grep -Eq '^AGENT_PUBLIC_NICKNAME=' /etc/tarasecfw.conf || {
     echo "Missing AGENT_PUBLIC_NICKNAME in /etc/tarasecfw.conf" >&2; exit 1;
 }
 # Validate the complete bundle before stopping or replacing any installed worker.
-for file in agent_approval_worker.py ssh_google_window.py ssh_security_evidence.py ssh_approval_poll.py local_manager_policy.py enroll_google_manager.py enroll_gatekeeper_google.py; do
+for file in agent_approval_worker.py ssh_device_enrollment.py ssh_google_window.py ssh_security_evidence.py ssh_approval_poll.py local_manager_policy.py enroll_google_manager.py enroll_gatekeeper_google.py; do
     python3 - "$root/$file" <<'CHECK'
 from pathlib import Path
 import sys
@@ -96,7 +96,7 @@ systemctl stop tarasec-agent-approvals.service 2>/dev/null || true
 install -d -o root -g root -m 0755 /usr/local/lib/tarasec
 install -d -o root -g syslog -m 0750 /var/log/tarasec
 install -o root -g root -m 0755 "$root/ssh_security_evidence.py" /usr/local/lib/tarasec/
-install -o root -g root -m 0755 "$root/agent_approval_worker.py" "$root/ssh_google_window.py" "$root/ssh_approval_poll.py" "$root/local_manager_policy.py" "$root/enroll_google_manager.py" "$root/enroll_gatekeeper_google.py" /usr/local/lib/tarasec/
+install -o root -g root -m 0755 "$root/agent_approval_worker.py" "$root/ssh_device_enrollment.py" "$root/ssh_google_window.py" "$root/ssh_approval_poll.py" "$root/local_manager_policy.py" "$root/enroll_google_manager.py" "$root/enroll_gatekeeper_google.py" /usr/local/lib/tarasec/
 # Existing enrolled nodes can publish their exact public approval target on upgrade.
 python3 - <<'PUBLISH_SSH_TARGET'
 import json, sys
