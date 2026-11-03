@@ -74,6 +74,18 @@ post() {
         fail 'Approval service unavailable; the next scheduled check will retry.'
     jq -e '.ok == true' "$output" >/dev/null || fail 'Approval service rejected the request.'
 }
+client_key() {
+    if [[ ! -e $key ]]; then
+        [[ ! -L $key ]] || fail 'Refusing a dangling private-key symlink.'
+        mkdir -p -m 700 -- "$(dirname -- "$key")"
+        ssh-keygen -q -t ed25519 -N '' -f "$key" </dev/null
+    fi
+    ssh-keygen -y -f "$key" </dev/null > "$tmp/public" ||
+        fail 'Cannot unlock this key unattended. Use the dedicated client key or configure unattended key access.'
+    read -r kind blob _ < "$tmp/public"
+    [[ $kind == ssh-ed25519 ]] || fail 'Use an Ed25519 key; existing keys are never overwritten.'
+    printf '%s %s\n' "$kind" "$blob" > "$tmp/public"
+}
 while IFS= read -r gateway; do
     url=$(printf '%s' "$gateway" | sed 's:/$::')
     # Identity comes from the gateway's actual overlay connection, not this body.
@@ -86,18 +98,24 @@ while IFS= read -r gateway; do
     jq -e --arg service "$service" '.ok == true and .approval_service == $service and (.server_ref | test("^[a-f0-9]{64}$"))' "$tmp/poll" >/dev/null ||
         fail 'Gateway queue does not match the configured approval service.'
     if jq -e '.job == null' "$tmp/poll" >/dev/null; then continue; fi
+    if jq -e '.job.needs_key == true' "$tmp/poll" >/dev/null; then
+        ref=$(jq -r '.server_ref' "$tmp/poll")
+        client_key
+        label=$(uname -n)
+        jq -n --rawfile public "$tmp/public" --arg label "$label" \
+            '{public_key:($public | rtrimstr("\n")),device_name:$label}' > "$tmp/claim"
+        curl --silent --show-error --fail --globoff --connect-timeout 5 --max-time 20 --max-filesize 16384 \
+            --max-redirs 0 --proto '=http,https' --header 'Content-Type: application/json' \
+            --data-binary "@$tmp/claim" --output "$tmp/poll" --url "$url/script/sshClientQueue.php" ||
+            fail 'Could not collect this device request; will retry next check.'
+        jq -e --arg service "$service" --arg ref "$ref" \
+            '.ok == true and .approval_service == $service and .server_ref == $ref' "$tmp/poll" >/dev/null ||
+            fail 'Gateway changed the server identity while collecting the request.'
+        if jq -e '.job == null' "$tmp/poll" >/dev/null; then continue; fi
+    fi
     jq -e '.job.server_ref == .server_ref and (.job.pairing_token | test("^[a-f0-9]{64}$")) and
         (.job.ssh_user | test("^[a-z_][a-z0-9_-]{0,31}$"))' "$tmp/poll" >/dev/null || fail 'Invalid queued request.'
-    if [[ ! -e $key ]]; then
-        [[ ! -L $key ]] || fail 'Refusing a dangling private-key symlink.'
-        mkdir -p -m 700 -- "$(dirname -- "$key")"
-        ssh-keygen -q -t ed25519 -N '' -f "$key" </dev/null
-    fi
-    ssh-keygen -y -f "$key" </dev/null > "$tmp/public" ||
-        fail 'Cannot unlock this key unattended. Use the dedicated client key or configure unattended key access.'
-    read -r kind blob _ < "$tmp/public"
-    [[ $kind == ssh-ed25519 ]] || fail 'Use an Ed25519 key; existing keys are never overwritten.'
-    printf '%s %s\n' "$kind" "$blob" > "$tmp/public"
+    client_key
     jq '{pairing_token:.job.pairing_token}' "$tmp/poll" > "$tmp/request"
     post challenge "$tmp/request" "$tmp/challenge"
     jq -e --slurpfile poll "$tmp/poll" '.server_ref == $poll[0].server_ref and .ssh_user == $poll[0].job.ssh_user and
@@ -113,5 +131,7 @@ while IFS= read -r gateway; do
     jq -e --arg fingerprint "$fingerprint" --slurpfile poll "$tmp/poll" \
         '.server_ref == $poll[0].server_ref and .fingerprint == $fingerprint' "$tmp/result" >/dev/null ||
         fail 'Registration response does not match this device key.'
+    printf 'Client key fingerprint: %s\n' "$fingerprint"
     printf 'Key request submitted for %s. Finalize at %s; installation requires approval.\n' "$gateway" "$service"
 done < "$tmp/gateways"
+
