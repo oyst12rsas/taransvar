@@ -6,12 +6,14 @@ config=$HOME/.config/tarasec-client
 if [[ -f $config/path ]]; then IFS= read -r saved_path < "$config/path"; export PATH="$saved_path"; fi
 service=https://tarasec.org/ops/agent/
 key=$HOME/.ssh/id_ed25519_tarasec
+verbose=false
 install=false
 service_set=false
 key_set=false
 tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
 : > "$tmp/gateways"
+debug() { if $verbose; then printf 'TaraSec debug: %s\n' "$*" >&2; fi; }
 fail() { printf 'TaraSec client: %s\n' "$*" >&2; exit 1; }
 while (($#)); do
     case "$1" in
@@ -24,10 +26,11 @@ while (($#)); do
             shift 2 ;;
         --install) install=true; shift ;;
         --once) shift ;;
+        -v|--verbose) verbose=true; shift ;;
         -h|--help)
             printf '%s\n' 'Install once: bash tarasec-client.sh --install --gateway http://GATEWAY' \
                 'Run with saved settings: tarasec-client.sh (no arguments needed)' \
-                'Optional: repeat --gateway; --service HTTPS_URL; --key PRIVATE_KEY'
+                'Optional: repeat --gateway; --service HTTPS_URL; --key PRIVATE_KEY; -v for diagnostics'
             exit 0 ;;
         *) fail "Unknown option: $1" ;;
     esac
@@ -72,12 +75,12 @@ if $install; then
     quoted_log=$(printf '%s' "$config/client.log" | jq -Rrs @sh)
     printf '*/5 * * * * %s %s --once >> %s 2>&1 # tarasec-ssh-client\n' "$quoted_bash" "$quoted_client" "$quoted_log" >> "$tmp/new-crontab"
     crontab "$tmp/new-crontab"
-    printf '%s\n' 'Client installed for this user. It checks every five minutes; requests start in the app.' \
-        'A dedicated local Ed25519 key is generated only when a request arrives. Final approval remains at TaraSec Ops.'
+    printf '%s\n' 'Next: request SSH registration in Manage → SSH in the TaraSec app. This helper checks every five minutes.'
     exit 0
 fi
 post() {
     local action=$1 input=$2 output=$3
+    debug "Contacting approval service: $action"
     curl --silent --show-error --fail --globoff --connect-timeout 5 --max-time 20 --max-filesize 16384 \
         --max-redirs 0 --proto '=https' --header 'Content-Type: application/json' \
         --data-binary "@$input" --output "$output" --url "$service""ssh-device.php?action=$action" ||
@@ -98,6 +101,7 @@ client_key() {
 }
 while IFS= read -r gateway; do
     url=$(printf '%s' "$gateway" | sed 's:/$::')
+    debug "Checking gateway: $gateway; approval service: $service"
     # Identity comes from the gateway's actual overlay connection, not this body.
     if ! curl --silent --show-error --fail --globoff --connect-timeout 5 --max-time 20 --max-filesize 16384 \
         --max-redirs 0 --proto '=http,https' --request POST --data '{}' \
@@ -107,7 +111,10 @@ while IFS= read -r gateway; do
     fi
     jq -e --arg service "$service" '.ok == true and .approval_service == $service and (.server_ref | test("^[a-f0-9]{64}$"))' "$tmp/poll" >/dev/null ||
         fail 'Gateway queue does not match the configured approval service.'
-    if jq -e '.job == null' "$tmp/poll" >/dev/null; then continue; fi
+    if jq -e '.job == null' "$tmp/poll" >/dev/null; then
+        debug "No registration available from $gateway; check the current stage in the app."
+        continue
+    fi
     if jq -e '.job.needs_key == true' "$tmp/poll" >/dev/null; then
         ref=$(jq -r '.server_ref' "$tmp/poll")
         client_key
@@ -125,6 +132,7 @@ while IFS= read -r gateway; do
     fi
     jq -e '.job.server_ref == .server_ref and (.job.pairing_token | test("^[a-f0-9]{64}$")) and
         (.job.ssh_user | test("^[a-z_][a-z0-9_-]{0,31}$"))' "$tmp/poll" >/dev/null || fail 'Invalid queued request.'
+    debug "Collected registration for $(jq -r '.job.ssh_user' "$tmp/poll") on $gateway"
     client_key
     jq '{pairing_token:.job.pairing_token}' "$tmp/poll" > "$tmp/request"
     post challenge "$tmp/request" "$tmp/challenge"
@@ -133,7 +141,9 @@ while IFS= read -r gateway; do
         fail 'Challenge does not match the queued target and Linux username.'
     jq -rj '.message' "$tmp/challenge" > "$tmp/message"
     rm -f -- "$tmp/message.sig"
-    ssh-keygen -Y sign -f "$key" -n tarasec-ssh-enrollment "$tmp/message" </dev/null
+    ssh-keygen -Y sign -f "$key" -n tarasec-ssh-enrollment "$tmp/message" </dev/null 2>"$tmp/sign-error" ||
+        fail 'Could not sign the registration request. Check that the configured SSH key is usable, then run this helper again.'
+    if $verbose; then cat "$tmp/sign-error" >&2; fi
     jq -n --slurpfile poll "$tmp/poll" --rawfile public "$tmp/public" --rawfile signature "$tmp/message.sig" \
         '{pairing_token:$poll[0].job.pairing_token,public_key:($public | rtrimstr("\n")),signature:$signature}' > "$tmp/submit"
     post submit "$tmp/submit" "$tmp/result"
@@ -141,8 +151,8 @@ while IFS= read -r gateway; do
     jq -e --arg fingerprint "$fingerprint" --slurpfile poll "$tmp/poll" \
         '.server_ref == $poll[0].server_ref and .fingerprint == $fingerprint' "$tmp/result" >/dev/null ||
         fail 'Registration response does not match this device key.'
-    printf 'Client key fingerprint: %s\n' "$fingerprint"
-    printf 'Key request submitted for %s. Finalize at %s; installation requires approval.\n' "$gateway" "$service"
+    debug "Client key fingerprint: $fingerprint; response matches the requested machine and key."
+    printf 'Next: open %s, select the machine for %s, and approve SSH device registration with your Authenticator code.\n' "$service" "$gateway"
 done < "$tmp/gateways"
 
 
