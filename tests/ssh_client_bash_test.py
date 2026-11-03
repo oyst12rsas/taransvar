@@ -55,18 +55,30 @@ class BashClientTest(unittest.TestCase):
         key=self.home/'.ssh/id_ed25519_tarasec';before=key.read_bytes()
         self.assertEqual(key.stat().st_mode & 0o777,0o600)
         self.assertTrue((self.root/'submitted').exists())
-        self.assertIn('Finalize at',r.stdout);self.assertNotIn('b'*64,r.stdout+r.stderr)
+        self.assertIn('Next: open',r.stdout);self.assertNotIn('b'*64,r.stdout+r.stderr)
         r=self.run_client('pending');self.assertEqual(r.returncode,0,r.stderr)
         self.assertEqual(before,key.read_bytes())
+    def test_output_is_concise_unless_verbose(self):
+        normal=self.run_client('pending')
+        self.assertEqual(normal.returncode,0,normal.stderr)
+        self.assertEqual(len(normal.stdout.splitlines()),1)
+        self.assertEqual(normal.stderr,'')
+        self.assertNotIn('SHA256:',normal.stdout)
+        verbose=self.run_client('pending','-v')
+        self.assertEqual(verbose.returncode,0,verbose.stderr)
+        self.assertIn('Client key fingerprint: SHA256:',verbose.stderr)
+        self.assertIn('Signing file',verbose.stderr)
+        self.assertNotIn('b'*64,verbose.stdout+verbose.stderr)
+        self.assertNotIn('PRIVATE KEY',verbose.stdout+verbose.stderr)
     def test_source_bootstrap_announces_exact_key_before_signing(self):
         r=self.run_client('source-bootstrap');self.assertEqual(r.returncode,0,r.stderr)
         self.assertEqual((self.root/'announced-key').read_text(),(self.root/'submitted').read_text())
-        self.assertIn('Finalize at',r.stdout)
+        self.assertIn('Next: open',r.stdout)
     def test_mismatches_stop_submission_or_completion(self):
         for mode in ['wrong-service','wrong-user','wrong-fingerprint']:
             with self.subTest(mode=mode):
                 r=self.run_client(mode);self.assertNotEqual(r.returncode,0)
-                self.assertNotIn('Key request submitted',r.stdout)
+                self.assertNotIn('Next: open',r.stdout)
     def prepare_cron(self):
         cron=self.root/'crontab';cron.write_text('0 * * * * existing-job\n')
         mock='#!/bin/sh\nif [ "$1" = "-l" ]; then cat "$TS_STATE/crontab"; else cp "$1" "$TS_STATE/crontab"; fi\n'
