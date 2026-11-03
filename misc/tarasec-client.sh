@@ -141,7 +141,7 @@ while IFS= read -r gateway; do
         fail 'Challenge does not match the queued target and Linux username.'
     jq -rj '.message' "$tmp/challenge" > "$tmp/message"
     rm -f -- "$tmp/message.sig"
-    ssh-keygen -q -Y sign -f "$key" -n tarasec-ssh-enrollment "$tmp/message" </dev/null 2>"$tmp/sign-error" ||
+    ssh-keygen -Y sign -f "$key" -n tarasec-ssh-enrollment "$tmp/message" </dev/null 2>"$tmp/sign-error" ||
         fail 'Could not sign the registration request. Check that the configured SSH key is usable, then run this helper again.'
     if $verbose; then cat "$tmp/sign-error" >&2; fi
     jq -n --slurpfile poll "$tmp/poll" --rawfile public "$tmp/public" --rawfile signature "$tmp/message.sig" \
