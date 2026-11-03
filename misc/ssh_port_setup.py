@@ -79,6 +79,13 @@ def socket_mode():
             or command('systemctl', 'is-enabled', '--quiet', 'ssh.socket', check=False).returncode == 0)
 
 
+def ssh_service_name():
+    for name in ('ssh.service', 'sshd.service'):
+        if command('systemctl', 'show', name, '-p', 'LoadState', '--value', check=False).stdout.strip() == 'loaded':
+            return name
+    raise RuntimeError('No supported systemd SSH service was found')
+
+
 def socket_config(port, listeners):
     entries = set()
     for line in listeners.splitlines():
@@ -104,15 +111,14 @@ def sshd_port_text(text, port):
 def reload_sshd():
     command('sshd', '-t')
     command('systemctl', 'daemon-reload')
+    service = ssh_service_name()
+    if command('systemctl', 'show', service, '-p', 'KillMode', '--value').stdout.strip() != 'process':
+        raise RuntimeError('SSH service KillMode=process is required to preserve established sessions')
     if socket_mode():
-        if command('systemctl', 'show', 'ssh.service', '-p', 'KillMode', '--value').stdout.strip() != 'process':
-            raise RuntimeError('Socket-mode migration requires ssh.service KillMode=process to preserve established sessions')
         command('systemctl', 'restart', 'ssh.socket')
-        command('systemctl', 'restart', 'ssh.service')
-    elif command('systemctl', 'list-unit-files', 'ssh.service', check=False).returncode == 0:
-        command('systemctl', 'reload', 'ssh.service')
+        command('systemctl', 'restart', service)
     else:
-        command('systemctl', 'reload', 'sshd.service')
+        command('systemctl', 'reload', service)
 
 
 def listener(port):
@@ -258,8 +264,8 @@ def migrate():
     for program in ('ipset', 'iptables', 'ip6tables', 'iptables-restore', 'ip6tables-restore', 'ss', 'sshd', 'systemctl', 'journalctl'):
         if not shutil.which(program):
             raise RuntimeError('Missing dependency: ' + program + '. Install ipset, iptables, iproute2 and openssh-server, then retry')
-    if socket_mode() and command('systemctl', 'show', 'ssh.service', '-p', 'KillMode', '--value').stdout.strip() != 'process':
-        raise RuntimeError('Socket-mode migration requires ssh.service KillMode=process to preserve established sessions')
+    if command('systemctl', 'show', ssh_service_name(), '-p', 'KillMode', '--value').stdout.strip() != 'process':
+        raise RuntimeError('SSH service KillMode=process is required to preserve established sessions')
     repo = Path(__file__).resolve().parents[1]
     setup = repo / 'misc/setup_ssh_honeypot.sh'
     if not setup.exists():
