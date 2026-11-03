@@ -67,10 +67,13 @@ class BashClientTest(unittest.TestCase):
             with self.subTest(mode=mode):
                 r=self.run_client(mode);self.assertNotEqual(r.returncode,0)
                 self.assertNotIn('Key request submitted',r.stdout)
-    def test_install_preserves_crontab_and_is_idempotent(self):
+    def prepare_cron(self):
         cron=self.root/'crontab';cron.write_text('0 * * * * existing-job\n')
         mock='#!/bin/sh\nif [ "$1" = "-l" ]; then cat "$TS_STATE/crontab"; else cp "$1" "$TS_STATE/crontab"; fi\n'
         (self.bin/'crontab').write_text(mock);(self.bin/'crontab').chmod(0o700)
+    def test_install_preserves_crontab_and_is_idempotent(self):
+        self.prepare_cron()
+        cron=self.root/'crontab'
         for _ in range(2):
             r=self.run_client('idle','--install');self.assertEqual(r.returncode,0,r.stderr)
         self.assertIn('existing-job',cron.read_text())
@@ -78,8 +81,38 @@ class BashClientTest(unittest.TestCase):
         self.assertFalse((self.home/'.ssh').exists())
         config=json.loads((self.home/'.config/tarasec-client/settings.json').read_text())
         self.assertEqual(config['gateways'],['http://100.68.165.190'])
-        r=subprocess.run(['bash',str(self.home/'.local/bin/tarasec-client'),'--once'],env=dict(self.env,TS_SCENARIO='idle'),capture_output=True,text=True)
+        r=subprocess.run(['bash',str(self.home/'.local/bin/tarasec-client')],env=dict(self.env,TS_SCENARIO='idle'),capture_output=True,text=True)
         self.assertEqual(r.returncode,0,r.stderr)
 
+    def test_adding_server_retains_saved_gateways_service_and_key(self):
+        self.prepare_cron()
+        custom_key=str(self.home/'custom key')
+        r=self.run_client('idle','--install','--key',custom_key,'--service','https://custom.test/ops/agent/')
+        self.assertEqual(r.returncode,0,r.stderr)
+        r=self.run_client('idle','--install','--gateway','http://100.68.149.164')
+        self.assertEqual(r.returncode,0,r.stderr)
+        config=json.loads((self.home/'.config/tarasec-client/settings.json').read_text())
+        self.assertEqual(set(config['gateways']),{'http://100.68.165.190','http://100.68.149.164'})
+        self.assertEqual(config['service'],'https://custom.test/ops/agent/')
+        self.assertEqual(config['key'],custom_key)
+        r=self.run_client('idle','--install')
+        self.assertEqual(r.returncode,0,r.stderr)
+        after=json.loads((self.home/'.config/tarasec-client/settings.json').read_text())
+        self.assertEqual(after,config)
+        self.assertEqual((self.root/'crontab').read_text().count('# tarasec-ssh-client'),1)
+        self.assertFalse(Path(custom_key).exists())
+
+    def test_mixing_services_does_not_replace_saved_settings(self):
+        self.prepare_cron()
+        r=self.run_client('idle','--install');self.assertEqual(r.returncode,0,r.stderr)
+        settings=self.home/'.config/tarasec-client/settings.json'
+        before=settings.read_bytes()
+        cron=(self.root/'crontab').read_bytes()
+        r=self.run_client('idle','--install','--service','https://custom.test/ops/agent/')
+        self.assertNotEqual(r.returncode,0)
+        self.assertEqual(before,settings.read_bytes())
+        self.assertEqual(cron,(self.root/'crontab').read_bytes())
+
 if __name__=='__main__': unittest.main()
+
 
