@@ -12,6 +12,7 @@ jobs:
       - run: php -l html/script/sshClientSource.php && php -l html/script/sshClientQueue.php && php tests/ssh_client_bridge_test.php
       - run: bash -n misc/tarasec-client.sh
       - run: php -l html/script/sshDeviceTarget.php
+      - run: sudo python3 -B tests/ssh_enrollment_source_test.py
       - run: sudo python3 -B tests/ssh_device_enrollment_test.py
       - run: python3 misc/test_agent_approval_worker.py && python3 misc/test_local_manager_policy.py && python3 misc/test_ssh_approval_poll.py
       - run: python3 -m py_compile misc/pair_ssh_device.py misc/ssh_device_enrollment.py && bash -n misc/install_ssh_device_enrollment.sh misc/install_agent_approvals.sh
