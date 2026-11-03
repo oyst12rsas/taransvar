@@ -37,6 +37,10 @@ class PolicyTests(unittest.TestCase):
         self.assertIn('ListenStream=100.68.1.2:2345', override)
         self.assertIn('ListenStream=[::1]:2345', override)
         self.assertNotIn('0.0.0.0', override)
+        sshd = setup.sshd_port_text('Port 5822\nAuthenticationMethods publickey,password\nPasswordAuthentication yes\n', 2345)
+        self.assertIn('AuthenticationMethods publickey,password', sshd)
+        self.assertIn('PasswordAuthentication yes', sshd)
+        self.assertNotIn('5822', sshd)
 
     def test_redirect_is_local_only_and_mfa_exemption_precedes_overlapping_range(self):
         calls = []
