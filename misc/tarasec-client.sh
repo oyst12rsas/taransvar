@@ -7,6 +7,9 @@ if [[ -f $config/path ]]; then IFS= read -r saved_path < "$config/path"; export 
 service=https://tarasec.org/ops/agent/
 key=$HOME/.ssh/id_ed25519_tarasec
 verbose=false
+connect=false
+ssh_user=''
+ssh_port=5822
 install=false
 service_set=false
 key_set=false
@@ -24,13 +27,19 @@ while (($#)); do
                 --service) service=$2; service_set=true ;; --key) key=$2; key_set=true ;;
             esac
             shift 2 ;;
+        --connect) connect=true; shift ;;
+        --user|--port)
+            (($# >= 2)) || fail "Missing value for $1"
+            if [[ $1 == --user ]]; then ssh_user=$2; else ssh_port=$2; fi
+            shift 2 ;;
         --install) install=true; shift ;;
         --once) shift ;;
         -v|--verbose) verbose=true; shift ;;
         -h|--help)
             printf '%s\n' 'Install once: bash tarasec-client.sh --install --gateway http://GATEWAY' \
                 'Run with saved settings: tarasec-client.sh (no arguments needed)' \
-                'Optional: repeat --gateway; --service HTTPS_URL; --key PRIVATE_KEY; -v for diagnostics'
+                'Connect: tarasec-client --connect (default port 5822; --port overrides it)' \
+                'Optional: repeat --gateway; --service HTTPS_URL; --key PRIVATE_KEY; --user SSH_USER; -v for diagnostics'
             exit 0 ;;
         *) fail "Unknown option: $1" ;;
     esac
@@ -103,6 +112,71 @@ client_key() {
     [[ $kind == ssh-ed25519 ]] || fail 'Use an Ed25519 key; existing keys are never overwritten.'
     printf '%s %s\n' "$kind" "$blob" > "$tmp/public"
 }
+receipt_path() {
+    local gateway_id
+    # Base64 encodes the URL as a safe, collision-free filename; it is not a credential.
+    gateway_id=$(printf '%s' "$gateway" | jq -Rr '@base64 | gsub("/"; "_") | gsub("\\+"; "-")')
+    printf '%s/receipts/%s.json' "$config" "$gateway_id"
+}
+connection_command() {
+    local host
+    host=${gateway#*://}; host=${host%/}
+    [[ $host == \[*\]* ]] && host=${host#\[} && host=${host%%\]*}
+    [[ $host == *:* && $host != *:*:* ]] && host=${host%:*}
+    [[ $ssh_user =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || fail 'Choose the Linux username in the app and copy its connection command.'
+    [[ $ssh_port =~ ^[0-9]{1,5}$ ]] && ((10#$ssh_port >= 1 && 10#$ssh_port <= 65535)) || fail 'Use an SSH port between 1 and 65535.'
+    command -v ssh >/dev/null || fail 'Install OpenSSH before connecting.'
+    [[ -f $key ]] || fail 'This device has no enrolled SSH key. Request registration in the app and run the helper first.'
+    debug "Connecting to $host as $ssh_user on port $ssh_port"
+    ssh -p "$ssh_port" -i "$key" -o IdentitiesOnly=yes -l "$ssh_user" -- "$host"
+}
+if $connect; then
+    [[ $(wc -l < "$tmp/gateways") -eq 1 ]] || fail 'More than one server is saved. Copy the selected server connection command from the app.'
+    IFS= read -r gateway < "$tmp/gateways"
+    if [[ -z $ssh_user ]]; then
+        receipt=$(receipt_path)
+        [[ -f $receipt ]] || fail 'Copy the connection command from Manage → SSH in the app; this helper has no saved registration username yet.'
+        ssh_user=$(jq -er --arg service "$service" 'select(.service == $service) | .ssh_user' "$receipt") ||
+            fail 'Saved registration does not match this approval service.'
+    fi
+    connection_command
+    exit $?
+fi
+show_saved_status() {
+    local receipt state
+    receipt=$(receipt_path)
+    if [[ ! -f $receipt ]]; then
+        printf 'No new registration request for %s. Next: check registration status in Manage → SSH; if installed, open the SSH window and copy its connection command.\n' "$gateway"
+        return
+    fi
+    jq -e --arg service "$service" '(.service == $service) and (.pairing_token | test("^[a-f0-9]{64}$")) and (.server_ref | test("^[a-f0-9]{64}$"))' "$receipt" >/dev/null ||
+        fail 'Saved registration is invalid. Check registration status in the app.'
+    jq '{pairing_token}' "$receipt" > "$tmp/status-request"
+    debug "Checking submitted registration status for $gateway"
+    if ! curl --silent --show-error --fail --globoff --connect-timeout 5 --max-time 20 --max-filesize 16384 \
+        --max-redirs 0 --proto '=https' --header 'Content-Type: application/json' \
+        --data-binary "@$tmp/status-request" --output "$tmp/status" --url "${service}ssh-device.php?action=status"; then
+        printf 'Cannot confirm registration status for %s. Next: check Manage → SSH in the app.\n' "$gateway" >&2
+        return
+    fi
+    jq -e --slurpfile receipt "$receipt" '.ok == true and .server_ref == $receipt[0].server_ref and .fingerprint == $receipt[0].fingerprint' "$tmp/status" >/dev/null ||
+        fail 'Registration status does not match this device. Check Manage → SSH in the app.'
+    state=$(jq -r '.state' "$tmp/status")
+    case "$state" in
+        pending) printf 'Registration submitted for %s. Next: approve it at %s with your Authenticator code.\n' "$gateway" "$service" ;;
+        approved|running) printf 'Registration approved for %s. Next: wait for the server to finish installation, then run this helper again.\n' "$gateway" ;;
+        done)
+            printf 'Registration installed for %s; no client errors detected. Next: open the timed SSH window in the app, then test with:\n' "$gateway"
+            if [[ $(wc -l < "$tmp/gateways") -eq 1 ]]; then
+                printf '%s\n' '~/.local/bin/tarasec-client --connect'
+            else
+                printf '~/.local/bin/tarasec-client --connect --gateway %q --user %q\n' "$gateway" "$(jq -r '.ssh_user' "$receipt")"
+            fi
+            printf '%s\n' 'The connection command uses port 5822; add --port NUMBER if this server uses another port. Login has not been tested yet.'
+            ;;
+        *) printf 'Registration for %s is %s. Next: check Manage → SSH and request registration again if needed.\n' "$gateway" "$state" ;;
+    esac
+}
 while IFS= read -r gateway; do
     url=$(printf '%s' "$gateway" | sed 's:/$::')
     debug "Checking gateway: $gateway; approval service: $service"
@@ -116,7 +190,7 @@ while IFS= read -r gateway; do
     jq -e --arg service "$service" '.ok == true and .approval_service == $service and (.server_ref | test("^[a-f0-9]{64}$"))' "$tmp/poll" >/dev/null ||
         fail 'Gateway queue does not match the configured approval service.'
     if jq -e '.job == null' "$tmp/poll" >/dev/null; then
-        debug "No registration available from $gateway; check the current stage in the app."
+        show_saved_status
         continue
     fi
     if jq -e '.job.needs_key == true' "$tmp/poll" >/dev/null; then
@@ -132,7 +206,7 @@ while IFS= read -r gateway; do
         jq -e --arg service "$service" --arg ref "$ref" \
             '.ok == true and .approval_service == $service and .server_ref == $ref' "$tmp/poll" >/dev/null ||
             fail 'Gateway changed the server identity while collecting the request.'
-        if jq -e '.job == null' "$tmp/poll" >/dev/null; then continue; fi
+        if jq -e '.job == null' "$tmp/poll" >/dev/null; then show_saved_status; continue; fi
     fi
     jq -e '.job.server_ref == .server_ref and (.job.pairing_token | test("^[a-f0-9]{64}$")) and
         (.job.ssh_user | test("^[a-z_][a-z0-9_-]{0,31}$"))' "$tmp/poll" >/dev/null || fail 'Invalid queued request.'
@@ -155,6 +229,12 @@ while IFS= read -r gateway; do
     jq -e --arg fingerprint "$fingerprint" --slurpfile poll "$tmp/poll" \
         '.server_ref == $poll[0].server_ref and .fingerprint == $fingerprint' "$tmp/result" >/dev/null ||
         fail 'Registration response does not match this device key.'
+    mkdir -p -m 700 "$config/receipts"
+    receipt=$(receipt_path)
+    jq --arg service "$service" --arg fingerprint "$fingerprint" \
+        '{service:$service,pairing_token:.job.pairing_token,server_ref:.server_ref,ssh_user:.job.ssh_user,fingerprint:$fingerprint}' \
+        "$tmp/poll" > "$receipt.new"
+    mv -f -- "$receipt.new" "$receipt"
     debug "Client key fingerprint: $fingerprint; response matches the requested machine and key."
     printf 'Next: open %s, select the machine for %s, and approve SSH device registration with your Authenticator code.\n' "$service" "$gateway"
 done < "$tmp/gateways"
