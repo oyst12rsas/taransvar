@@ -72,8 +72,7 @@ if $install; then
     quoted_log=$(printf '%s' "$config/client.log" | jq -Rrs @sh)
     printf '*/5 * * * * %s %s --once >> %s 2>&1 # tarasec-ssh-client\n' "$quoted_bash" "$quoted_client" "$quoted_log" >> "$tmp/new-crontab"
     crontab "$tmp/new-crontab"
-    printf '%s\n' 'Client installed for this user. It checks every five minutes; requests start in the app.' \
-        'A dedicated local Ed25519 key is generated only when a request arrives. Final approval remains at TaraSec Ops.'
+    printf '%s\n' 'Next: request SSH registration in Manage → SSH in the TaraSec app. This helper checks every five minutes.'
     exit 0
 fi
 post() {
@@ -133,7 +132,8 @@ while IFS= read -r gateway; do
         fail 'Challenge does not match the queued target and Linux username.'
     jq -rj '.message' "$tmp/challenge" > "$tmp/message"
     rm -f -- "$tmp/message.sig"
-    ssh-keygen -Y sign -f "$key" -n tarasec-ssh-enrollment "$tmp/message" </dev/null
+    ssh-keygen -q -Y sign -f "$key" -n tarasec-ssh-enrollment "$tmp/message" </dev/null 2>"$tmp/sign-error" ||
+        fail 'Could not sign the registration request. Check that the configured SSH key is usable, then run this helper again.'
     jq -n --slurpfile poll "$tmp/poll" --rawfile public "$tmp/public" --rawfile signature "$tmp/message.sig" \
         '{pairing_token:$poll[0].job.pairing_token,public_key:($public | rtrimstr("\n")),signature:$signature}' > "$tmp/submit"
     post submit "$tmp/submit" "$tmp/result"
@@ -141,8 +141,7 @@ while IFS= read -r gateway; do
     jq -e --arg fingerprint "$fingerprint" --slurpfile poll "$tmp/poll" \
         '.server_ref == $poll[0].server_ref and .fingerprint == $fingerprint' "$tmp/result" >/dev/null ||
         fail 'Registration response does not match this device key.'
-    printf 'Client key fingerprint: %s\n' "$fingerprint"
-    printf 'Key request submitted for %s. Finalize at %s; installation requires approval.\n' "$gateway" "$service"
+    printf 'Next: open %s, select the machine for %s, and approve SSH device registration with your Authenticator code.\n' "$service" "$gateway"
 done < "$tmp/gateways"
 
 
