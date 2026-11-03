@@ -82,7 +82,7 @@ def clean(value, limit=200):
 def original_destination(sock):
     """Return the pre-REDIRECT IPv4 destination when Netfilter provides it."""
     local_ip, local_port = sock.getsockname()[:2]
-    if sock.family == socket.AF_INET6:
+    if getattr(sock, 'family', socket.AF_INET) == socket.AF_INET6:
         try:
             raw = sock.getsockopt(socket.IPPROTO_IPV6, 80, 28)
             if struct.unpack_from("=H", raw, 0)[0] == socket.AF_INET6:
