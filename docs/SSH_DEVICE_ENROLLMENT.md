@@ -121,3 +121,28 @@ Deploy the hosted receipt change before updating clients. No new gateway bundle
 is required for receipt checking or the connection wrapper. Existing approvals
 remain valid; no automatic SSH login or policy change is performed by a normal
 client check.
+
+## Repairing an older live SSH source filter
+
+Some installations retain a TARASEC_SSH_SOURCE chain in front of the final SSH
+accept. An earlier enrollment update persisted the source and reconciled the
+timed Google gate but left that chain stale: the new host was still dropped.
+Enrollment now inserts port-scoped RETURN rules for configured sources in an
+existing source chain. It does not flush rules, add ACCEPT rules, create hooks,
+or open/extend a timed window.
+
+For an already approved source in /etc/tarasecfw.conf, update the gateway approval
+bundle and run the root-only reconciliation once; re-enrollment is unnecessary:
+
+```bash
+clear
+# Machine: wt-gw1
+cd ~/taransvar &&
+git pull --ff-only origin main &&
+sudo bash misc/install_agent_approvals.sh --update-only &&
+sudo python3 /usr/local/lib/tarasec/ssh_enrollment_source.py reconcile
+```
+
+Then open the timed SSH window and test from the enrolled device. Check source
+chain counters and a packet capture if the connection still fails; a RETURN
+rule preserves the remaining firewall checks and does not prove login success.

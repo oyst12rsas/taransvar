@@ -64,8 +64,36 @@ def read_config(path):
         return handle.read().decode('utf-8'), info
 
 
+def reconcile_source_filter(port, sources):
+    """Refresh existing source filters without accepting traffic or changing hooks."""
+    for tool, version in [('iptables', 4), ('ip6tables', 6)]:
+        selected = [str(source) for source in sources if source.version == version]
+        if not selected:
+            continue
+        result = subprocess.run([tool, '-w', '5', '-S'],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15)
+        if result.returncode:
+            raise RuntimeError('Cannot inspect the existing SSH source filter')
+        if '-N TARASEC_SSH_SOURCE' not in result.stdout.splitlines():
+            continue  # Never create a source policy or INPUT hook during enrollment.
+        for source in selected:
+            rule = ['-p', 'tcp', '--dport', str(port), '-s', source, '-j', 'RETURN']
+            check = subprocess.run([tool, '-w', '5', '-C', 'TARASEC_SSH_SOURCE', *rule],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15)
+            if check.returncode == 0:
+                continue
+            if check.returncode != 1:
+                raise RuntimeError('Cannot verify the existing SSH source rule')
+            added = subprocess.run([tool, '-w', '5', '-I', 'TARASEC_SSH_SOURCE', '1', *rule],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15)
+            if added.returncode:
+                raise RuntimeError('SSH source saved but source filter reconciliation failed')
+
+
 def reconcile_gate():
     import ssh_google_window as window
+    port, sources = window.configuration(require_enabled=False)
+    reconcile_source_filter(port, sources)
     policy = window.settings(window.POLICY)
     if policy.get('SSH_GOOGLE_REOPEN_ENABLED', 'no').lower() not in ('yes', 'true', 'on', '1'):
         return  # Retain the owner's disabled gate; never enable it here.
@@ -122,3 +150,10 @@ def allow_source(value, config=CONF, state=STATE):
         # Runs even on a retry. Reconcile preserves the current window deadline.
         reconcile_gate()
         return changed
+
+
+if __name__ == '__main__':
+    if os.geteuid() != 0 or sys.argv[1:] != ['reconcile']:
+        raise SystemExit('Run as root: python3 ssh_enrollment_source.py reconcile')
+    reconcile_gate()
+    print('Configured SSH sources reconciled. Next: open the timed SSH window and test a login.')
