@@ -471,6 +471,19 @@ def reported_boot_id():
         return None
 
 
+def ssh_client_peers():
+    """Bounded public NetBird identities; returned only to authorized managers."""
+    try:
+        value = json.loads(run("netbird", "status", "--json").stdout)
+        peers = value.get("peers", {}).get("details", [])
+        return [{"ip": str(p.get("netbirdIp", "")).split("/")[0],
+                 "public_key": str(p.get("publicKey", "")),
+                 "name": str(p.get("fqdn", ""))[:64]}
+                for p in peers[:32] if isinstance(p, dict)]
+    except (OSError, ValueError, TypeError, AttributeError, subprocess.TimeoutExpired):
+        return []
+
+
 def main():
     if os.geteuid() != 0:
         raise RuntimeError("Run as root")
@@ -508,7 +521,8 @@ def main():
                           "findings": concerns,
                           "assessment": current_assessment,
                           "boot_id": reported_boot_id(),
-                          "ssh_access": google_ssh_state()}, token)
+                          "ssh_access": google_ssh_state(),
+                          "ssh_client_peers": ssh_client_peers()}, token)
         remote = "connected"
         print("Agent status: " + ("needs review (" + str(len(concerns)) + " checks)" if concerns else "operating"))
         if obsolete_unit_candidate(evidence):
@@ -544,5 +558,6 @@ if __name__ == "__main__":
     except (OSError, ValueError, RuntimeError, urllib.error.URLError) as exc:
         print("Agent unavailable: " + str(exc), file=sys.stderr)
         sys.exit(1)
+
 
 
