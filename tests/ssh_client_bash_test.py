@@ -14,7 +14,7 @@ out=pathlib.Path(args[args.index('--output')+1]);url=args[args.index('--url')+1]
 mode=os.environ['TS_SCENARIO'];ref='a'*64;token='b'*64
 if url.endswith('/script/sshClientQueue.php'):
     service='https://other.test/ops/agent/' if mode=='wrong-service' else 'https://tarasec.org/ops/agent/'
-    job=None if mode=='idle' else {'server_ref':ref,'pairing_token':token,'ssh_user':'alice','device_name':'Acer'}
+    job=None if mode in ['idle','status-wrong-node'] else {'server_ref':ref,'pairing_token':token,'ssh_user':'alice','device_name':'Acer'}
     if mode=='source-bootstrap':
         body=json.loads(pathlib.Path(args[args.index('--data-binary')+1][1:]).read_text()) if '--data-binary' in args else {}
         if not body.get('public_key'): job={'id':'q','needs_key':True,'server_ref':ref,'ssh_user':'alice'}
@@ -22,6 +22,10 @@ if url.endswith('/script/sshClientQueue.php'):
     value={'ok':True,'server_ref':ref,'approval_service':service,'job':job}
 elif url.endswith('action=challenge'):
     value={'ok':True,'server_ref':ref,'ssh_user':'mallory' if mode=='wrong-user' else 'alice','device_name':'Acer','message':'real signed challenge\n'}
+elif url.endswith('action=status'):
+    public=(pathlib.Path(os.environ['TS_STATE'])/'submitted').read_text()
+    fingerprint='SHA256:'+base64.b64encode(hashlib.sha256(base64.b64decode(public.split()[1])).digest()).decode().rstrip('=')
+    value={'ok':True,'server_ref':'c'*64 if mode=='status-wrong-node' else ref,'fingerprint':fingerprint,'state':os.environ.get('TS_REGISTRATION_STATE','done')}
 elif url.endswith('action=submit'):
     body=json.loads(pathlib.Path(args[args.index('--data-binary')+1][1:]).read_text())
     assert body['pairing_token']==token and 'PRIVATE KEY' not in json.dumps(body)
@@ -79,6 +83,30 @@ class BashClientTest(unittest.TestCase):
             with self.subTest(mode=mode):
                 r=self.run_client(mode);self.assertNotEqual(r.returncode,0)
                 self.assertNotIn('Next: open',r.stdout)
+    def test_saved_registration_status_and_short_connection_command(self):
+        r=self.run_client('pending');self.assertEqual(r.returncode,0,r.stderr)
+        receipts=list((self.home/'.config/tarasec-client/receipts').glob('*.json'))
+        self.assertEqual(len(receipts),1)
+        self.assertEqual(receipts[0].stat().st_mode & 0o777,0o600)
+        for state,expected in [('pending','approve it'),('approved','wait for the server'),('running','wait for the server'),('done','--connect'),('failed','request registration again')]:
+            self.env['TS_REGISTRATION_STATE']=state
+            r=self.run_client('idle')
+            self.assertEqual(r.returncode,0,r.stderr)
+            self.assertIn(expected,r.stdout)
+            self.assertNotIn('SHA256:',r.stdout+r.stderr)
+            self.assertNotIn('b'*64,r.stdout+r.stderr)
+        r=self.run_client('status-wrong-node')
+        self.assertNotEqual(r.returncode,0)
+        self.assertNotIn('Registration installed',r.stdout)
+        mock='#!/usr/bin/env python3\nimport json,os,sys\nopen(os.environ["TS_STATE"]+"/ssh-args","w").write(json.dumps(sys.argv[1:]))\n'
+        (self.bin/'ssh').write_text(mock);(self.bin/'ssh').chmod(0o700)
+        r=self.run_client('idle','--connect','--port','4810')
+        self.assertEqual(r.returncode,0,r.stderr)
+        args=json.loads((self.root/'ssh-args').read_text())
+        self.assertEqual(args,['-p','4810','-i',str(self.home/'.ssh/id_ed25519_tarasec'),'-o','IdentitiesOnly=yes','-l','alice','--','100.68.165.190'])
+        self.assertEqual(r.stdout,'')
+        r=self.run_client('idle','--connect','--user','-oProxyCommand=bad')
+        self.assertNotEqual(r.returncode,0)
     def prepare_cron(self):
         cron=self.root/'crontab';cron.write_text('0 * * * * existing-job\n')
         mock='#!/bin/sh\nif [ "$1" = "-l" ]; then cat "$TS_STATE/crontab"; else cp "$1" "$TS_STATE/crontab"; fi\n'

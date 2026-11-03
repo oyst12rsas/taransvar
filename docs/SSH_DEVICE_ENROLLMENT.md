@@ -94,3 +94,30 @@ The dedicated key stays on the client. Existing server keys and authentication p
 CI covers legacy peer binding and the no-selector flow: LAN/VPN source validation, independent source/key candidates behind shared NAT, exact-key proofs, final approval, repeated taps and polls, capability redaction and truthful stage reporting. Bash integration tests use real OpenSSH signatures and verify idle/no-key behavior, key reuse, mismatch rejection and cron preservation. The gateway bridge rejects unsupported methods and spoofed forwarding headers before credential access.
 
 Live phone/gateway/client acceptance remains separate from source and CI checks. Verify that the new app queues an intent, the installed user's cron submits its signed key, Ops approval is required, and the gateway reports actual installation before declaring the rollout complete.
+
+## Client progress and connection command
+
+Updated clients save a private receipt when submitting a registration. On later
+runs with no new intent, they check the existing receipt and report pending
+approval, approved/running, completed or failed. A completed receipt confirms
+installation only: open the timed SSH window and test a real login. Receipt
+status is available for 24 hours; unavailable or older receipts direct the user
+to Manage → SSH instead of claiming success. Registrations submitted before this
+update have no local receipt; check their completion in the app.
+
+After a new submission, a single-server client can connect with
+`~/.local/bin/tarasec-client --connect`. This uses the saved username and private
+key automatically, without changing SSH configuration or host-key verification.
+Port 5822 is the standard default; `--port 4810` selects a different server port.
+
+App 0.4.15 provides Copy connection command for completed registrations. It fills
+the selected gateway and Linux account; its port field supports nonstandard
+ports. Run the copied command on the device whose key was registered, with its
+updated client helper. Explicit `--gateway URL --user USER` also works for older
+completed registrations and avoids ambiguity when several gateways are saved.
+The helper never opens the timed SSH gate itself.
+
+Deploy the hosted receipt change before updating clients. No new gateway bundle
+is required for receipt checking or the connection wrapper. Existing approvals
+remain valid; no automatic SSH login or policy change is performed by a normal
+client check.
