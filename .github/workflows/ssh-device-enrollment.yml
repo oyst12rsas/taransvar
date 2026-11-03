@@ -1,12 +1,14 @@
 name: SSH device enrollment worker
 on:
   pull_request:
-    paths: ['misc/*ssh*', 'misc/agent_approval_worker.py', 'misc/install_agent_approvals.sh', 'tests/ssh_device_enrollment_test.py', '.github/workflows/ssh-device-enrollment.yml']
+    paths: ['misc/*ssh*', 'misc/agent_approval_worker.py', 'misc/install_agent_approvals.sh', 'tests/ssh_device_enrollment_test.py', 'tests/pair_ssh_device_auto_test.py', 'html/script/sshDeviceTarget.php', '.github/workflows/ssh-device-enrollment.yml']
 jobs:
   worker:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: python3 -B tests/pair_ssh_device_auto_test.py
+      - run: php -l html/script/sshDeviceTarget.php
       - run: sudo python3 -B tests/ssh_device_enrollment_test.py
       - run: python3 misc/test_agent_approval_worker.py && python3 misc/test_local_manager_policy.py && python3 misc/test_ssh_approval_poll.py
       - run: python3 -m py_compile misc/pair_ssh_device.py misc/ssh_device_enrollment.py && bash -n misc/install_ssh_device_enrollment.sh misc/install_agent_approvals.sh
