@@ -150,3 +150,10 @@ def allow_source(value, config=CONF, state=STATE):
         # Runs even on a retry. Reconcile preserves the current window deadline.
         reconcile_gate()
         return changed
+
+
+if __name__ == '__main__':
+    if os.geteuid() != 0 or sys.argv[1:] != ['reconcile']:
+        raise SystemExit('Run as root: python3 ssh_enrollment_source.py reconcile')
+    reconcile_gate()
+    print('Configured SSH sources reconciled. Next: open the timed SSH window and test a login.')
