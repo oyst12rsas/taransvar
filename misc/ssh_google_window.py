@@ -98,7 +98,8 @@ def apply_rules(port, sources, until):
         if until > time.time():
             for source in sources:
                 if source.version == version:
-                    command(tool, "-w", "5", "-A", CHAIN, "-s", str(source), "-j", "RETURN")
+                    extra = ["-p", "tcp", "-m", "set", "--match-set", ssh_honeypot_route.SETS[version], "src,dst"] if decoys else []
+                    command(tool, "-w", "5", "-A", CHAIN, "-s", str(source), *extra, "-j", "RETURN")
         command(tool, "-w", "5", "-A", CHAIN, "-p", "tcp", "-j", "REJECT", "--reject-with", "tcp-reset")
         jump = ["-p", "tcp", "--dport", str(port), "-m", "conntrack",
                 "--ctstate", "NEW", "-j", CHAIN]
