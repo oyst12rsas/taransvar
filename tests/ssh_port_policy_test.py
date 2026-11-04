@@ -115,7 +115,7 @@ class PolicyTests(unittest.TestCase):
 
 @unittest.skipUnless(os.geteuid() == 0, 'Root-owned migration file guards')
 class MigrationTests(unittest.TestCase):
-    def exercise(self, backend_ready):
+    def exercise(self, backend_ready, console_recovery=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             conf = root / 'etc/tarasecfw.conf'
@@ -155,18 +155,30 @@ class MigrationTests(unittest.TestCase):
                 stack.enter_context(mock.patch('builtins.input', return_value='1000-5000'))
                 output = stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
                 if backend_ready:
-                    setup.migrate()
+                    setup.migrate(console_recovery=console_recovery)
                     self.assertIn('SSH_PORT="2345"', conf.read_text())
                     self.assertTrue((root / 'state/pending.json').exists())
                     self.assertNotIn('2345', output.getvalue())
                 else:
                     with self.assertRaisesRegex(RuntimeError, 'backend is not listening'):
-                        setup.migrate()
-                    self.assertEqual(conf.read_text(), original)
-                    self.assertFalse((root / 'state/pending.json').exists())
-                timer = next(i for i, args in enumerate(events) if args[:3] == ('systemctl', 'enable', '--now'))
-                gate = next(i for i, args in enumerate(events) if args[0] == 'gate')
-                self.assertLess(timer, gate)
+                        setup.migrate(console_recovery=console_recovery)
+                    if console_recovery:
+                        self.assertIn('SSH_PORT="2345"', conf.read_text())
+                        self.assertEqual(json.loads((root/'state/pending.json').read_text())['phase'],'console_recovery_required')
+                        self.assertFalse(any(args[0].endswith('-restore') for args in events))
+                    else:
+                        self.assertEqual(conf.read_text(), original)
+                        self.assertFalse((root / 'state/pending.json').exists())
+                if console_recovery:
+                    self.assertFalse(any(args[:3] == ('systemctl','enable','--now') for args in events))
+                    if backend_ready:
+                        receipt=json.loads((root/'state/pending.json').read_text())
+                        self.assertEqual(receipt['phase'],'complete_console')
+                        self.assertFalse(receipt['automatic_rollback'])
+                else:
+                    timer = next(i for i, args in enumerate(events) if args[:3] == ('systemctl', 'enable', '--now'))
+                    gate = next(i for i, args in enumerate(events) if args[0] == 'gate')
+                    self.assertLess(timer, gate)
                 self.assertEqual(conf.stat().st_mode & 0o777, 0o640)
 
     def test_missing_runtime_is_created_and_unsafe_runtime_is_refused(self):
@@ -185,6 +197,57 @@ class MigrationTests(unittest.TestCase):
 
     def test_failure_restores_configuration_and_firewall(self):
         self.exercise(False)
+
+
+    def test_console_recovery_does_not_arm_or_automatically_restore(self):
+        self.exercise(True, console_recovery=True)
+        self.exercise(False, console_recovery=True)
+
+    def test_recover_current_keeps_configuration_and_closes_mfa_before_guard_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            state=root/'state';state.mkdir(mode=0o700)
+            pending=state/'pending.json'
+            pending.write_text(json.dumps({'backup':'must-not-be-read','new_port':4563,'phase':'rollback'}))
+            pending.chmod(0o600)
+            config=root/'config';config.write_text('SSH_PORT="5822"\nOWNER_SETTING="retain"\n')
+            before=config.read_bytes()
+            calls=[]
+            def command(*args,**kwargs):
+                calls.append(args)
+                self.assertFalse(args[0].endswith('-restore'),'Current recovery must never restore snapshots')
+                return subprocess.CompletedProcess(args,0,'port 5822\n' if args[:2]==('sshd','-T') else '','')
+            with mock.patch.object(setup,'STATE',state),mock.patch.object(setup,'SSHD_RUNTIME',root/'run/sshd'), \
+                 mock.patch.object(setup,'command',side_effect=command),mock.patch.object(setup,'listener',return_value=True), \
+                 mock.patch.object(window,'configuration',return_value=(5822,[])), \
+                 mock.patch.object(window,'write_state') as closed, \
+                 mock.patch.object(window,'reconcile',side_effect=lambda:calls.append(('reconcile',))), \
+                 mock.patch.object(setup,'clear_rollback_guard',side_effect=lambda port:calls.append(('clear',port))) as clear, \
+                 contextlib.redirect_stdout(io.StringIO()):
+                setup.recover_current()
+            self.assertEqual(config.read_bytes(),before)
+            self.assertEqual(closed.call_args.args[0]['until'],0)
+            self.assertLess(calls.index(('reconcile',)),calls.index(('clear',5822)))
+            clear.assert_called_once_with(5822)
+            receipt=json.loads(pending.read_text())
+            self.assertEqual(receipt['phase'],'complete_console')
+            self.assertFalse(receipt['automatic_rollback'])
+            self.assertIn(('systemctl','disable','--now',setup.ROLLBACK+'.timer'),calls)
+
+    def test_migration_phases_and_legacy_guards_block_opening(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pending=Path(directory)/'pending.json'
+            with mock.patch.object(window,'MIGRATION_PENDING',str(pending)), \
+                 mock.patch.object(window,'command',return_value=False) as command:
+                for phase in ['staging','rollback','console_recovery_required']:
+                    pending.write_text(json.dumps({'phase':phase}));pending.chmod(0o600)
+                    self.assertTrue(window.migration_blocked(5822))
+                for phase in ['awaiting_confirmation','complete_console']:
+                    pending.write_text(json.dumps({'phase':phase}))
+                    self.assertFalse(window.migration_blocked(5822))
+                pending.write_text('{}')
+                command.return_value=True
+                self.assertTrue(window.migration_blocked(5822))
 
 
 if __name__ == '__main__':

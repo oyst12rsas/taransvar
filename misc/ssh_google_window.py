@@ -5,6 +5,7 @@ import ipaddress
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -17,6 +18,7 @@ STATE = "/run/tarasec/ssh-google-window.json"
 LOCK = "/run/tarasec/ssh-google-window.lock"
 CHAIN = "TARASEC_SSH_GOOGLE"
 COMMENT = "tarasec-google-ssh-rebuild"
+MIGRATION_PENDING = "/var/lib/tarasec/ssh-port-migration/pending.json"
 
 
 def settings(path):
@@ -113,10 +115,36 @@ def apply_rules(port, sources, until):
             command(tool, "-w", "5", "-D", "INPUT", *guard)
 
 
+def migration_blocked(port):
+    try:
+        info = os.lstat(MIGRATION_PENDING)
+    except FileNotFoundError:
+        return False
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022 or info.st_size > 8192:
+        raise RuntimeError("Unsafe SSH port migration state; local recovery required")
+    with open(MIGRATION_PENDING, encoding="utf-8") as source:
+        pending = json.load(source)
+    if not isinstance(pending, dict):
+        raise RuntimeError("Invalid SSH port migration state; local recovery required")
+    if pending.get("phase") in ("staging", "rollback", "console_recovery_required"):
+        return True
+    # Older pending receipts have no phase. Identify their fail-closed guards.
+    guard = ["-p", "tcp", "--dport", str(port), "-m", "conntrack", "--ctstate", "NEW",
+             "-m", "comment", "--comment", "tarasec-port-rollback-guard",
+             "-j", "REJECT", "--reject-with", "tcp-reset"]
+    return any(command(tool, "-w", "5", "-C", "INPUT", *guard, check=False)
+               for tool in ("iptables", "ip6tables"))
+
+
 def reconcile():
     port, sources = configuration()
     state = read_state()
     until = int(state.get("until", 0))
+    if migration_blocked(port):
+        if until:
+            state.update({"until": 0, "closed_at": int(time.time())})
+            write_state(state)
+        until = 0
     if until > time.time():
         try:
             local_manager_policy.require_manager(state.get("approved_operator_sha256"))
@@ -128,6 +156,8 @@ def reconcile():
 def open_window(job_id, until, operator_hash=None, approved_at=None):
     local_manager_policy.require_manager(operator_hash)
     port, sources = configuration()
+    if migration_blocked(port):
+        raise RuntimeError("SSH port recovery is incomplete; use ssh_port_setup.py --recover-current from the console or finish the pending rollback before requesting a new window")
     now = int(time.time())
     if (isinstance(until, bool) or not isinstance(until, int)
             or not re.fullmatch(r"[a-f0-9]{32}", job_id) or not now < until <= now + 900):

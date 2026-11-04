@@ -16,6 +16,35 @@ class GoogleWindowTests(unittest.TestCase):
         self.auth.start()
         self.addCleanup(self.auth.stop)
 
+
+    def test_incomplete_migration_closes_saved_lease_and_refuses_new_opening(self):
+        with mock.patch.object(window,'configuration',return_value=(5822,[])), \
+             mock.patch.object(window,'migration_blocked',return_value=True), \
+             mock.patch.object(window,'read_state',return_value={'id':'a'*32,'until':1300}), \
+             mock.patch.object(window,'write_state') as write, \
+             mock.patch.object(window,'apply_rules') as rules, \
+             mock.patch.object(window.time,'time',return_value=1000):
+            window.reconcile()
+            self.assertEqual(write.call_args.args[0]['until'],0)
+            rules.assert_called_once_with(5822,[],0)
+            rules.reset_mock()
+            with self.assertRaisesRegex(RuntimeError,'recovery is incomplete'):
+                window.open_window('b'*32,1300,'c'*64)
+            rules.assert_not_called()
+
+    def test_public_status_does_not_claim_open_during_unfinished_recovery(self):
+        with mock.patch.object(worker,'enabled',return_value=True), \
+             mock.patch.object(window,'read_state',return_value={'until':int(time.time())+120}), \
+             mock.patch.object(window,'configuration',return_value=(5822,[])), \
+             mock.patch.object(window,'command',return_value=True), \
+             mock.patch.object(window,'migration_blocked',return_value=True), \
+             mock.patch.object(worker,'terminal_state',return_value={'verified':True}):
+            status=worker.google_ssh_state()
+            self.assertEqual(status['state'],'unverified')
+            self.assertEqual(status['remaining_seconds'],0)
+            self.assertEqual(status['expires_at'],0)
+            self.assertNotIn('port',status)
+
     def test_configuration_opt_in_and_explicit_sources(self):
         with tempfile.TemporaryDirectory() as folder:
             cfg, policy = Path(folder)/'fw', Path(folder)/'policy'
