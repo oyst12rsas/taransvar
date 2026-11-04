@@ -98,8 +98,9 @@ def google_ssh_state():
     verified = all(window.command(tool, "-w", "5", "-C", "INPUT", "-p", "tcp",
         "--dport", str(port), "-m", "conntrack", "--ctstate", "NEW", "-j", window.CHAIN,
         check=False) for tool in ("iptables", "ip6tables"))
+    verified = verified and not window.migration_blocked(port)
     return {"enabled": True, "state": ("open" if remaining else "closed") if verified else "unverified",
-            "remaining_seconds": remaining, "expires_at": int(state.get("until", 0)),
+            "remaining_seconds": remaining if verified else 0, "expires_at": int(state.get("until", 0)) if verified else 0,
             "can_disconnect": enabled("AI_MAY_TERMINATE_EXISTING_SSH_SESSIONS"),
             "console_verified": bool(terminal_state()["verified"])}
 
