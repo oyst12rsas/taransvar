@@ -39,7 +39,8 @@
 SSH_ALLOWED_SOURCES="100.68.10.7"
 SSH_HONEYPOT="on"
 SSH_HONEYPOT_PORTS="22"
-SSH_HONEYPOT_AUTH_MODE="accept-all"
+SSH_HONEYPOT_AUTH_MODE="reject-all"
+SSH_HONEYPOT_DEBUG_SHELL="no"
 DBSERVER="100.68.126.0"</code></pre>
     <p>Port 22 is reserved for the honeypot/demo service; genuine administrative SSH uses <code>SSH_PORT</code>. Additional decoy entries can be comma/space separated and may contain inclusive ranges. TaraSec keeps ranges compact and redirects them to one honeypot listener. It rejects collisions with <code>SSH_PORT</code> and permits at most 64 individual entries or ranges.</p>
 
