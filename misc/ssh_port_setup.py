@@ -154,12 +154,17 @@ def guarded_snapshot(text, ports):
 
 
 def snapshot(new_port):
-    if (STATE / 'pending.json').exists():
-        raise RuntimeError('A port migration is awaiting confirmation. Confirm from the new login or run --rollback first')
     STATE.mkdir(mode=0o700, parents=True, exist_ok=True)
     info = STATE.lstat()
     if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o077:
         raise ValueError('Unsafe migration state directory')
+    pending = STATE / 'pending.json'
+    if pending.exists():
+        previous = json.loads(root_file(pending))
+        if previous.get('phase') == 'complete_console':
+            os.replace(pending, STATE / 'last-console-migration.json')
+        else:
+            raise RuntimeError('An unfinished port migration exists. Use --recover-current with console recovery, or --rollback before starting another')
     saved = STATE / ('backup-' + str(time.time_ns()))
     saved.mkdir(mode=0o700)
     entries = []
@@ -175,7 +180,7 @@ def snapshot(new_port):
         result = command('ipset', 'save', name, check=False)
         atomic(saved / name, result.stdout if result.returncode == 0 else '')
     atomic(saved / 'manifest.json', json.dumps(entries))
-    atomic(STATE / 'pending.json', json.dumps({'backup': str(saved), 'started': time.time(), 'new_port': new_port}))
+    atomic(STATE / 'pending.json', json.dumps({'backup': str(saved), 'started': time.time(), 'new_port': new_port, 'phase': 'staging'}))
     return saved
 
 
@@ -198,6 +203,9 @@ def rollback():
     saved = Path(state['backup'])
     if saved.parent != STATE or not saved.name.startswith('backup-'):
         raise ValueError('Invalid migration backup')
+    state['phase'] = 'rollback'
+    atomic(pending, json.dumps(state))
+    ensure_sshd_runtime()
     command('systemctl', 'disable', '--now', 'tarasec-ssh-decoys.service', check=False)
     # Restore NAT/filter first, then listener/configuration and previous window state.
     for tool in ('iptables', 'ip6tables'):
@@ -236,6 +244,38 @@ def rollback():
     print('Previous SSH port and firewall restored. Next: reconnect using the previous settings.')
 
 
+def clear_rollback_guard(port):
+    for tool in ('iptables', 'ip6tables'):
+        guard = ['-p', 'tcp', '--dport', str(port), '-m', 'conntrack', '--ctstate', 'NEW',
+                 '-m', 'comment', '--comment', 'tarasec-port-rollback-guard', '-j', 'REJECT', '--reject-with', 'tcp-reset']
+        while command(tool, '-w', '5', '-C', 'INPUT', *guard, check=False).returncode == 0:
+            command(tool, '-w', '5', '-D', 'INPUT', *guard)
+
+
+def recover_current():
+    """Keep current configuration and resolve only the current port's stale guard."""
+    ensure_sshd_runtime()
+    command('sshd', '-t')
+    port, _ = window.configuration()
+    ports = {int(line.split()[1]) for line in command('sshd', '-T').stdout.splitlines() if line.startswith('port ')}
+    if ports != {port} or not listener(port):
+        raise RuntimeError('Current SSH configuration/listener does not match local policy; repair it from the console first')
+    # Stop any old recovery job before marking its state resolved. Never restore
+    # snapshots here, and keep unused-port guards in case an old socket survives.
+    command('systemctl', 'disable', '--now', ROLLBACK + '.timer', check=False)
+    command('systemctl', 'stop', ROLLBACK + '.service', check=False)
+    window.write_state({'id': '0' * 32, 'until': 0, 'port': port, 'closed_at': int(time.time())})
+    window.reconcile()
+    clear_rollback_guard(port)
+    pending_path = STATE / 'pending.json'
+    if pending_path.exists():
+        pending = json.loads(root_file(pending_path))
+        pending.update({'phase': 'complete_console', 'automatic_rollback': False})
+        atomic(pending_path, json.dumps(pending))
+    print('Current SSH settings retained; stale guard cleared and automatic rollback stopped.')
+    print('Next: open a fresh MFA window and test a new connection.')
+
+
 def confirm():
     fields = os.environ.get('SSH_CONNECTION', '').split()
     port = window.configuration()[0]
@@ -249,7 +289,7 @@ def confirm():
     print('New SSH login confirmed; rollback cancelled. Keep using MFA before new SSH connections.')
 
 
-def migrate():
+def migrate(console_recovery=False):
     text = root_file(CONF)
     ensure_sshd_runtime()
     old, sources = window.configuration()
@@ -271,6 +311,8 @@ def migrate():
         default_spec = '1000-5000'
     spec = input('Honeypot ports/ranges [configured decoys; otherwise 1000-5000]: ').strip() or default_spec
     route.ranges(spec)  # The real port is intentionally allowed inside the range.
+    if not console_recovery:
+        console_recovery = input('Independent console available; use it instead of automatic rollback? [y/N]: ').strip().lower() in ('y', 'yes')
     for program in ('ipset', 'iptables', 'ip6tables', 'iptables-restore', 'ip6tables-restore', 'ss', 'sshd', 'systemctl', 'journalctl'):
         if not shutil.which(program):
             raise RuntimeError('Missing dependency: ' + program + '. Install ipset, iptables, iproute2 and openssh-server, then retry')
@@ -291,7 +333,11 @@ def migrate():
             dst.chmod(0o755)
     saved = snapshot(port)
     try:
-        arm()  # Independent persistent timer is armed before any access change.
+        if console_recovery:
+            command('systemctl', 'disable', '--now', ROLLBACK + '.timer', check=False)
+            command('systemctl', 'stop', ROLLBACK + '.service', check=False)
+        else:
+            arm()  # Independent persistent timer is armed before any access change.
         # Freeze current windows at both ports before changing listeners or NAT.
         window.apply_rules(old, sources, 0)
         window.apply_rules(port, sources, 0)
@@ -329,6 +375,7 @@ def migrate():
                '[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/bin/python3 '
                + str(LIB / 'ssh_port_setup.py') + ' --boot\n[Install]\nWantedBy=multi-user.target\n', 0o644)
         window.reconcile()
+        clear_rollback_guard(port)
         for path in SSH_SERVICE_DROPINS:
             atomic(path, '[Unit]\nRequires=tarasec-ssh-decoys.service\nAfter=tarasec-ssh-decoys.service\n', 0o644)
         # Remove only stale hooks to the owned gate for the old management port.
@@ -339,21 +386,38 @@ def migrate():
                     command(tool, '-w', '5', '-D', 'INPUT', *rule)
         command('systemctl', 'daemon-reload')
         command('systemctl', 'enable', 'tarasec-ssh-decoys.service')
+        pending_path = STATE / 'pending.json'
+        pending = json.loads(root_file(pending_path))
+        pending['phase'] = 'complete_console' if console_recovery else 'awaiting_confirmation'
+        pending['automatic_rollback'] = not console_recovery
+        atomic(pending_path, json.dumps(pending))
+        if console_recovery:
+            print('SSH port and honeypot routing configured. Console recovery selected; automatic rollback is disabled.')
+            print('Next: open a fresh MFA window and test a NEW login using your chosen port. No timer confirmation is required.')
+            return
         print('SSH port and honeypot routing staged; rollback is armed for ten minutes.')
         print('Next: open an MFA window in the app and make a NEW login using your chosen port.')
         print('From that new login, confirm with:')
         print('sudo --preserve-env=SSH_CONNECTION python3 /usr/local/lib/tarasec/ssh_port_setup.py --confirm')
         print('Without confirmation, the previous port and firewall are restored automatically.')
     except BaseException:
-        rollback()
+        if console_recovery:
+            pending_path = STATE / 'pending.json'
+            pending = json.loads(root_file(pending_path))
+            pending.update({'phase': 'console_recovery_required', 'automatic_rollback': False})
+            atomic(pending_path, json.dumps(pending))
+            print('Setup incomplete. Settings retained for console repair; no automatic rollback was performed.')
+            print('After repairing SSH, use --recover-current; use --rollback only if you want the previous configuration restored.')
+        else:
+            rollback()
         raise
 
 
 def main():
     if os.geteuid() != 0:
         raise SystemExit('Run with sudo on the server whose SSH port you are changing')
-    if sys.argv[1:] not in ([], ['--confirm'], ['--rollback'], ['--boot']):
-        raise SystemExit('Usage: sudo python3 misc/ssh_port_setup.py [--confirm|--rollback]')
+    if sys.argv[1:] not in ([], ['--confirm'], ['--rollback'], ['--boot'], ['--console-recovery'], ['--recover-current']):
+        raise SystemExit('Usage: sudo python3 misc/ssh_port_setup.py [--console-recovery|--recover-current|--confirm|--rollback]')
     Path(window.LOCK).parent.mkdir(parents=True, exist_ok=True)
     with open(window.LOCK, 'a') as lock:
         os.chmod(window.LOCK, 0o600)
@@ -364,8 +428,10 @@ def main():
             rollback()
         elif sys.argv[1:] == ['--boot']:
             window.reconcile()
+        elif sys.argv[1:] == ['--recover-current']:
+            recover_current()
         else:
-            migrate()
+            migrate(console_recovery=sys.argv[1:] == ['--console-recovery'])
 
 
 if __name__ == '__main__':
@@ -373,3 +439,4 @@ if __name__ == '__main__':
         main()
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         raise SystemExit(str(error))
+
