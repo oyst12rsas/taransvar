@@ -29,7 +29,7 @@ KEY_FILE = os.environ.get(
 )
 NODE = socket.gethostname()
 MAX_PORTS = 64
-AUTH_MODE = os.environ.get("TARASEC_SSH_HONEYPOT_AUTH_MODE", "accept-all")
+AUTH_MODE = os.environ.get("TARASEC_SSH_HONEYPOT_AUTH_MODE", "reject-all")
 PASSWORD_HASH = os.environ.get("TARASEC_SSH_HONEYPOT_PASSWORD_HASH", "").lower()
 DEMO_PORT = int(os.environ.get("TARASEC_SSH_HONEYPOT_DEMO_PORT", "0"))
 DEMO_DB_URL = os.environ.get("TARASEC_SSH_HONEYPOT_DEMO_DB_URL", "").strip()
