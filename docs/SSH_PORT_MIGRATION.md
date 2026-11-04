@@ -15,7 +15,7 @@ clear
 cd ~/taransvar &&
 git pull --ff-only origin main &&
 sudo bash misc/install_agent_approvals.sh --update-only &&
-sudo python3 misc/ssh_port_setup.py
+sudo python3 misc/ssh_port_setup.py --console-recovery
 ```
 
 The script privately prompts for the new management port, then asks for decoy
@@ -41,7 +41,39 @@ the honeypot. A kernel-expiring ipset exemption cannot outlive the approved
 deadline. New connections return to the honeypot after expiry even if the
 worker stops; established real SSH connections retain their conntrack mapping.
 
-## Verify and confirm within ten minutes
+## With independent console recovery
+
+Use --console-recovery when you have an independent VM/local console. The
+interactive command also asks whether to use console recovery instead of a timer.
+Console mode never arms automatic rollback, never automatically restores the old
+configuration after an error, and requires no ten-minute confirmation. Backups
+remain available for an explicit manual --rollback.
+
+After successful setup, open a fresh MFA window and test the new listener.
+A failure retains the current settings for console repair and marks recovery
+incomplete. Once the current configuration and listener are valid, use:
+
+```bash
+clear
+sudo python3 /usr/local/lib/tarasec/ssh_port_setup.py --recover-current
+```
+
+This keeps the current port/configuration, stops any old rollback timer, closes
+the MFA window, and clears only the current management port's stale rollback
+guard. Guards on unused ports remain in place. It never restores a snapshot or
+opens SSH by itself. Open a fresh MFA window afterward.
+
+The same command repairs an older failed rollback that left a temporary
+tarasec-port-rollback-guard rejecting connections after the MFA gate. Incomplete
+recovery is not reported as a verified open window, and new opening jobs are
+refused until recovery is resolved.
+
+## Automatic recovery when no independent console is available
+
+Run without --console-recovery and answer no to the console-recovery question.
+The following timer/confirmation procedure applies only to automatic mode.
+
+### Verify and confirm within ten minutes
 
 A persistent systemd timer is armed before changing listener/firewall policy.
 Any staging failure restores the previous configuration automatically. A staged
