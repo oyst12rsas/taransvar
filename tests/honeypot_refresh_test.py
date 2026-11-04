@@ -90,6 +90,13 @@ else:
         self.assertFalse((self.root/'var/lib/tarasec/ssh-rollback').exists())
         self.assertFalse((self.root/'etc/ssh/sshd_config.d/90-tarasec.conf').exists())
 
+    def test_refresh_creates_runtime_before_sshd_configuration_check(self):
+        self.command('sshd', '[[ -d "$TEST_ROOT/run/sshd" ]] || { echo "Missing privilege separation directory" >&2; exit 1; }; if [[ $1 == -T ]]; then echo "port 5822"; fi')
+        r=self.execute('--refresh-only')
+        self.assertEqual(r.returncode,0,r.stdout+r.stderr)
+        self.assertTrue((self.root/'run/sshd').is_dir())
+        self.assertNotIn('iptables -I',self.commands())
+
     def test_standard_rejection_and_explicit_debug_switch(self):
         config=self.root/'etc/tarasecfw.conf'
         config.write_text(config.read_text()+'SSH_HONEYPOT_AUTH_MODE=accept-all\n')
