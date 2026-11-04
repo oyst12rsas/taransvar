@@ -90,6 +90,18 @@ else:
         self.assertFalse((self.root/'var/lib/tarasec/ssh-rollback').exists())
         self.assertFalse((self.root/'etc/ssh/sshd_config.d/90-tarasec.conf').exists())
 
+    def test_standard_rejection_and_explicit_debug_switch(self):
+        config=self.root/'etc/tarasecfw.conf'
+        config.write_text(config.read_text()+'SSH_HONEYPOT_AUTH_MODE=accept-all\n')
+        for option,mode,debug in [('--refresh-only','reject-all','no'),('--debug-shell','accept-all','yes'),('--reject-logins','reject-all','no')]:
+            result=self.execute(option)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            unit=(self.root/'etc/systemd/system/tarasec-ssh-honeypot.service.d/10-port.conf').read_text()
+            self.assertIn('TARASEC_SSH_HONEYPOT_AUTH_MODE='+mode,unit)
+            self.assertIn('TARASEC_SSH_HONEYPOT_DEBUG_SHELL='+debug,unit)
+            self.assertNotIn('iptables -I',self.commands())
+            self.assertNotIn('reload ssh',self.commands())
+
     def test_refresh_only_never_falls_back_to_migration(self):
         self.env['TEST_LISTENER']='no'
         r=self.execute('--refresh-only')

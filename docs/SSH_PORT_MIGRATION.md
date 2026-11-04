@@ -120,3 +120,32 @@ migration and boot still require acceptance on the actual server.
 
 Deployment checks: https://tarasec.org/safety/#deployment
 Continuing priorities: https://tarasec.org/safety/#hardening-priorities
+
+## Switch honeypot diagnostics without changing real SSH
+
+Shared installation/refresh scripts migrate ordinary honeypots to rejected
+password authentication, including configurations that previously said
+SSH_HONEYPOT_AUTH_MODE=accept-all. Attempts still generate telemetry. Explicit
+DB-authorized demo challenges retain their separate validation path.
+
+Run from a REAL administrative SSH session or console:
+
+```bash
+clear
+cd ~/taransvar &&
+sudo bash misc/setup_ssh_honeypot.sh --reject-logins
+```
+
+For an intentionally interactive simulated shell during diagnostics, use
+`sudo bash misc/setup_ssh_honeypot.sh --debug-shell`.
+Return to normal with `sudo bash misc/setup_ssh_honeypot.sh --reject-logins`.
+
+The commands refresh the honeypot only and persist SSH_HONEYPOT_DEBUG_SHELL=yes
+or no in /etc/tarasecfw.conf. Ordinary refreshes and upgrades retain this explicit
+debug choice until turned off. Real SSH authentication, listeners, firewall and
+MFA windows are unchanged by these refresh-only switches. The debug shell is
+simulated; it cannot run sudo or inspect the actual host. An existing inactive
+honeypot remains inactive on refresh-only operations.
+
+The sensor reads the explicit debug flag; a stale legacy accept-all environment
+entry alone no longer opens a simulated shell.

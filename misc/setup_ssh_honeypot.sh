@@ -5,14 +5,16 @@ CONF="/etc/tarasecfw.conf"
 
 REFRESH_ONLY=false
 UPDATE_ONLY=false
-if [[ ${1:-} == --refresh-only && $# -eq 1 ]]; then
-    REFRESH_ONLY=true
-    UPDATE_ONLY=true
-elif [ "$#" -ne 0 ]; then
-    echo "Usage: sudo bash $0 [--refresh-only]" >&2
-    echo "Configuration is always read from $CONF" >&2
-    exit 1
-fi
+DEBUG_OVERRIDE=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --refresh-only) REFRESH_ONLY=true; UPDATE_ONLY=true ;;
+        --debug-shell) REFRESH_ONLY=true; UPDATE_ONLY=true; DEBUG_OVERRIDE=yes ;;
+        --reject-logins) REFRESH_ONLY=true; UPDATE_ONLY=true; DEBUG_OVERRIDE=no ;;
+        *) echo "Usage: sudo bash $0 [--refresh-only|--debug-shell|--reject-logins]" >&2; exit 1 ;;
+    esac
+    shift
+done
 REPO_DIR="${TARASEC_REPO_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 HONEYPOT_SRC="$REPO_DIR/misc/tarasec_ssh_honeypot.py"
 SERVICE_SRC="$REPO_DIR/misc/tarasec-ssh-honeypot.service"
@@ -33,7 +35,12 @@ SSH_PORT="${SSH_PORT:-48222}"
 SSH_HONEYPOT="${SSH_HONEYPOT:-on}"
 SSH_HONEYPOT_PORT="${SSH_HONEYPOT_PORT:-22}"
 SSH_HONEYPOT_PORTS="${SSH_HONEYPOT_PORTS:-$SSH_HONEYPOT_PORT}"
-SSH_HONEYPOT_AUTH_MODE="${SSH_HONEYPOT_AUTH_MODE:-accept-all}"
+SSH_HONEYPOT_DEBUG_SHELL="${DEBUG_OVERRIDE:-${SSH_HONEYPOT_DEBUG_SHELL:-no}}"
+case "${SSH_HONEYPOT_DEBUG_SHELL,,}" in
+    1|yes|true|on) SSH_HONEYPOT_AUTH_MODE=accept-all; SSH_HONEYPOT_DEBUG_SHELL=yes ;;
+    0|no|false|off) SSH_HONEYPOT_AUTH_MODE=reject-all; SSH_HONEYPOT_DEBUG_SHELL=no ;;
+    *) echo "SSH_HONEYPOT_DEBUG_SHELL must be yes or no" >&2; exit 1 ;;
+esac
 SSH_HONEYPOT_PASSWORD_HASH="${SSH_HONEYPOT_PASSWORD_HASH:-}"
 SSH_HONEYPOT_DEMO_PORT="${SSH_HONEYPOT_DEMO_PORT:-0}"
 SSH_HONEYPOT_DEMO_DB_URL="${SSH_HONEYPOT_DEMO_DB_URL:-}"
@@ -309,6 +316,34 @@ if ! wait_for_tcp_port "$SSH_PORT" || ! sshd_only_admin_port; then echo "Final S
 echo "Real SSH configured for TCP/$SSH_PORT."
 fi # No SSH, firewall, snapshot or rollback changes on refresh-only runs.
 
+# Persist the shared normal policy and its explicit debug override. Older
+# accept-all settings do not silently leave ordinary honeypots accepting logins.
+python3 - "$CONF" "$SSH_HONEYPOT_AUTH_MODE" "$SSH_HONEYPOT_DEBUG_SHELL" <<'HONEYPOT_POLICY'
+from pathlib import Path
+import os, re, shutil, stat, sys, tempfile
+path = Path(sys.argv[1])
+info = path.lstat()
+if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+    raise SystemExit('Unsafe honeypot policy configuration')
+old = path.read_text()
+text = old
+for key, value in [('SSH_HONEYPOT_AUTH_MODE', sys.argv[2]), ('SSH_HONEYPOT_DEBUG_SHELL', sys.argv[3])]:
+    text = re.sub(r'(?m)^[ \t]*' + key + r'[ \t]*=[^\n]*(?:\n|$)', '', text)
+    text = text.rstrip('\n') + '\n' + key + '="' + value + '"\n'
+if text != old:
+    fd, temporary = tempfile.mkstemp(prefix='.tarasec-honeypot-', dir=path.parent)
+    try:
+        with os.fdopen(fd, 'w') as handle:
+            os.fchown(handle.fileno(), info.st_uid, info.st_gid)
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        shutil.copystat(path, temporary, follow_symlinks=False)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+HONEYPOT_POLICY
 install -d -o root -g root -m 0755 /usr/local/lib/tarasec
 if ! python3 -c 'import paramiko' >/dev/null 2>&1; then
     apt-get update
@@ -326,6 +361,7 @@ cat > /etc/systemd/system/tarasec-ssh-honeypot.service.d/10-port.conf <<EOF
 Environment=TARASEC_SSH_HONEYPOT_PORT=$SSH_HONEYPOT_PORT
 Environment="TARASEC_SSH_HONEYPOT_PORTS=$SSH_HONEYPOT_LISTEN_PORTS"
 Environment=TARASEC_SSH_HONEYPOT_AUTH_MODE=$SSH_HONEYPOT_AUTH_MODE
+Environment=TARASEC_SSH_HONEYPOT_DEBUG_SHELL=$SSH_HONEYPOT_DEBUG_SHELL
 Environment=TARASEC_SSH_HONEYPOT_PASSWORD_HASH=$SSH_HONEYPOT_PASSWORD_HASH
 Environment=TARASEC_SSH_HONEYPOT_DEMO_PORT=$SSH_HONEYPOT_DEMO_PORT
 Environment=TARASEC_SSH_HONEYPOT_DEMO_DB_URL=$SSH_HONEYPOT_DEMO_DB_URL
