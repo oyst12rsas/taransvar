@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 Environment=TARASEC_SSH_HONEYPOT_PORT=22
-Environment=TARASEC_SSH_HONEYPOT_AUTH_MODE=accept-all
+Environment=TARASEC_SSH_HONEYPOT_AUTH_MODE=reject-all
 ExecStart=/usr/local/lib/tarasec/tarasec_ssh_honeypot.py
 Restart=on-failure
 RestartSec=2
