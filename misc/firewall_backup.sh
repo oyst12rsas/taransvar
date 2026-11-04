@@ -30,7 +30,7 @@
 #IPV6_TRANSPORT_UDP_PORTS="" # extra userspace VPN UDP ports; kernel WireGuard ports are discovered
 #SSH_HONEYPOT="on"
 #SSH_HONEYPOT_PORTS="22"
-#SSH_HONEYPOT_AUTH_MODE="accept-all" # accept-all, reject-all, password
+#SSH_HONEYPOT_AUTH_MODE="reject-all" # accept-all, reject-all, password
 #SSH_HONEYPOT_PASSWORD_HASH=""       # SHA-256; only for password mode
 #SSH_HONEYPOT_DEMO_PORT="22"         # optional DB-authorized demo service
 #SSH_HONEYPOT_DEMO_DB_URL="https://db.example/script/appDemoSshSession.php"
