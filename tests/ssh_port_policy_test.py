@@ -132,7 +132,7 @@ class MigrationTests(unittest.TestCase):
                 if args[:2] == ('systemctl', 'show'):
                     output = 'loaded\n' if 'LoadState' in args else 'process\n'
                 return subprocess.CompletedProcess(args, 1 if '-C' in args or args[:2] == ('ipset', 'save') else 0, output, '')
-            replacements = {'CONF': conf, 'STATE': root / 'state', 'LIB': root / 'lib',
+            replacements = {'CONF': conf, 'SSHD_RUNTIME': root / 'run/sshd', 'STATE': root / 'state', 'LIB': root / 'lib',
                             'SSHD': root / 'etc/sshd/90-tarasec.conf', 'SOCKET': root / 'socket/override.conf',
                             'HP': root / 'honeypot/override.conf', 'UNIT': root / 'systemd/decoys.service',
                             'SYSTEMD': root / 'systemd'}
@@ -168,6 +168,17 @@ class MigrationTests(unittest.TestCase):
                 gate = next(i for i, args in enumerate(events) if args[0] == 'gate')
                 self.assertLess(timer, gate)
                 self.assertEqual(conf.stat().st_mode & 0o777, 0o640)
+
+    def test_missing_runtime_is_created_and_unsafe_runtime_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime=Path(directory)/'sshd'
+            with mock.patch.object(setup,'SSHD_RUNTIME',runtime):
+                setup.ensure_sshd_runtime()
+                self.assertTrue(runtime.is_dir())
+                self.assertEqual(runtime.stat().st_mode & 0o777,0o755)
+                runtime.chmod(0o777)
+                with self.assertRaises(ValueError):
+                    setup.ensure_sshd_runtime()
 
     def test_stage_overlapping_range_after_arming_rollback(self):
         self.exercise(True)

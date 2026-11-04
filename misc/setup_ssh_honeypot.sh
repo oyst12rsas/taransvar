@@ -129,6 +129,10 @@ if [ "$SSH_HONEYPOT_DEMO_PORT" != "0" ] && [ "$SSH_HONEYPOT_DEMO_PORT" != "$SSH_
     SSH_HONEYPOT_LISTEN_PORTS+=",$SSH_HONEYPOT_DEMO_PORT"
 fi
 if ! command -v sshd >/dev/null 2>&1; then echo "OpenSSH server is not installed." >&2; exit 1; fi
+# Socket activation can leave ssh.service inactive and its runtime directory absent.
+# Standalone sshd -T/-t checks need it before selecting refresh or migration.
+[[ ! -L /run/sshd ]] || { echo "Unsafe SSH privilege separation directory" >&2; exit 1; }
+install -d -o root -g root -m 0755 /run/sshd
 
 # Ubuntu 22.10+ may use systemd ssh.socket activation. In that mode the
 # socket generator derives ListenStream entries from sshd_config during

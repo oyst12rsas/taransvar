@@ -17,6 +17,7 @@ import ssh_google_window as window
 import ssh_honeypot_route as route
 
 CONF = Path('/etc/tarasecfw.conf')
+SSHD_RUNTIME = Path('/run/sshd')
 STATE = Path('/var/lib/tarasec/ssh-port-migration')
 LIB = Path('/usr/local/lib/tarasec')
 SSHD = Path('/etc/ssh/sshd_config.d/90-tarasec.conf')
@@ -108,7 +109,15 @@ def sshd_port_text(text, port):
     return '# Management port set by TaraSec\nPort ' + str(port) + '\n' + kept
 
 
+def ensure_sshd_runtime():
+    SSHD_RUNTIME.mkdir(mode=0o755, parents=True, exist_ok=True)
+    info = SSHD_RUNTIME.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+        raise ValueError('Unsafe SSH privilege separation directory')
+
+
 def reload_sshd():
+    ensure_sshd_runtime()
     command('sshd', '-t')
     command('systemctl', 'daemon-reload')
     service = ssh_service_name()
@@ -242,6 +251,7 @@ def confirm():
 
 def migrate():
     text = root_file(CONF)
+    ensure_sshd_runtime()
     old, sources = window.configuration()
     if not sys.stdin.isatty():
         raise RuntimeError('Run interactively in a terminal; the management port is prompted privately')
