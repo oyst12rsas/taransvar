@@ -17,6 +17,15 @@ HOTSPOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$HOTSPOT_DIR/.." && pwd)"
 cd "$HOTSPOT_DIR"
 
+# Bind ownership before deploying hotspot services or joining the overlay.
+if [[ ! -f /etc/tarasec/agent-enrollment.json ]]; then
+    if ! command -v python3 >/dev/null; then
+        apt-get update
+        apt-get install -y python3 ca-certificates
+    fi
+    python3 "$REPO_ROOT/misc/enroll_google_manager.py" --install-secret
+fi
+
 echo "=== TaraSec hotspot preflight ==="
 if [ ! -r /etc/os-release ]; then
     echo "ERROR: Cannot identify this Linux installation." >&2
@@ -266,10 +275,12 @@ bash "$REPO_ROOT/misc/install_netbird_management.sh"
 # The firewall and app demo-discovery endpoint share this local policy file.
 # Create a conservative baseline on fresh installations, but never replace a
 # gateway owner's existing policy.
-if [ ! -e /etc/tarasecfw.conf ]; then
+# Early ownership enrollment may have created only the public nickname. Fill
+# the normal baseline in that case, retaining the name and any real policy.
+if [ ! -e /etc/tarasecfw.conf ] || ! grep -Evq '^[[:space:]]*(#|$|AGENT_PUBLIC_NICKNAME[[:space:]]*=)' /etc/tarasecfw.conf; then
     echo
     echo "Creating default TaraSec firewall configuration..."
-    cat > /etc/tarasecfw.conf <<EOF
+    cat >> /etc/tarasecfw.conf <<EOF
 # TaraSec local firewall and demo policy
 DBSERVER="100.68.126.0"
 IS_GATEWAY=0
@@ -297,6 +308,8 @@ NODE_NAME="$(hostname)"
 EOF
     chmod 0644 /etc/tarasecfw.conf
 fi
+
+bash "$REPO_ROOT/misc/install_agent_approvals.sh" --sync
 
 # openNDS normally offloads established client flows. TaraSec must continue to
 # see every packet destined for DEMO_NODES so it can preserve the traffic tag.
@@ -433,3 +446,4 @@ echo "Ask your AI assistant to check the next missing control, test it and fix i
 read -n 1 -s -p "********** The system should now restart. Press Ctrl-C to abort or any other key to reboot. "
 echo
 reboot
+

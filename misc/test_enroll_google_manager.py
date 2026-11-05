@@ -34,6 +34,34 @@ class EnrollmentTests(unittest.TestCase):
 
 
 
+    def test_install_secret_derives_and_persists_verified_owner(self):
+        owner = local_manager_policy.email_hash('owner@example.com')
+        def answer(req, timeout):
+            self.calls.append(req)
+            data = json.loads(req.data)
+            self.assertEqual(data['install_secret'], 'e'*64)
+            self.assertEqual(data['manager_hashes'], [])
+            token = req.get_header('Authorization').split()[1]
+            return io.BytesIO(json.dumps(dict(ok=True,
+                node_id='enrolled-'+hashlib.sha256(token.encode()).hexdigest(),
+                nickname=data['nickname'], manager_count=1, owner_hash=owner)).encode())
+        self.opener.open.side_effect = answer
+        result = self.run_enroll(install_secret='e'*64)
+        self.assertEqual(result['owner_hash'], owner)
+        access = self.root/'etc/tarasec/access.conf'
+        self.assertEqual(local_manager_policy.manager_hashes(str(access)), {owner})
+        for file in (self.root/'etc/tarasec').iterdir():
+            self.assertNotIn('e'*64, file.read_text())
+        self.assertEqual(access.stat().st_mode & 0o777, 0o600)
+
+    def test_install_secret_rejects_override_and_unconfirmed_owner(self):
+        with self.assertRaises(ValueError): self.run_enroll(['intruder@example.com'], install_secret='e'*64)
+        with self.assertRaises(ValueError): self.run_enroll(install_secret='short')
+        self.opener.open.assert_not_called()
+        with self.assertRaises(ValueError): self.run_enroll(install_secret='e'*64)
+        self.assertFalse((self.root/'etc/tarasec/access.conf').exists())
+        self.assertFalse((self.root/'etc/tarasec/agent-enrollment.json').exists())
+
     def test_shared_firewall_read_permissions_survive_nickname_update(self):
         cfg=self.root/'etc/tarasecfw.conf';cfg.parent.mkdir(parents=True)
         original='SSH_PORT=5822\nAGENT_PUBLIC_NICKNAME="Node fb0c00c7"\n'
@@ -186,3 +214,4 @@ class EnrollmentTests(unittest.TestCase):
 
 
 if __name__=='__main__': unittest.main()
+

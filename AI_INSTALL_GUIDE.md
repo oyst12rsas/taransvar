@@ -60,6 +60,40 @@ The remaining clean-install acceptance sequence is:
 
 Until that sequence passes from a fresh reset, say **implemented on main, pending clean reinstall acceptance test**.
 
+## Register ownership before installation
+
+Before installing a new server, the owner signs into
+https://tarasec.org/ops/agent/install.php with the Google account they will use in
+the app and generates a single-use installation secret. Open that page on a
+trusted device and transfer the secret manually to the server console. Never ask
+the user to paste it into an AI conversation, command line, environment variable
+or support log. Secrets expire after 15 minutes and register one new server.
+
+The core, hotspot and standalone NetBird installers register ownership before
+deploying TaraSec services or joining the management overlay. If Python is
+missing, they install Python/CA prerequisites through the OS package manager
+first. Failed registration stops installation. The hidden prompt is implemented
+by misc/enroll_google_manager.py --install-secret; that flag takes no value.
+
+The enrollment service derives the initial manager from the verified Google
+account and returns its hash for the local access policy. The installer creates
+or retains a unique root-only bearer credential, not an asymmetric identity key
+pair. After the normal management/Gatekeeper installation, the same Google
+account has management permission in the app without a separate manager grant.
+TOTP is still required to approve SSH operations. Secret issuance itself does not
+provide access to any existing server.
+
+Deploy the matching tarasec.org enrollment service before these installers.
+Existing registered nodes keep their credentials and can use --sync or add local
+managers as before. An unregistered node cannot substitute --email for a secret
+on the public service. Lost replies can be retried with the same secret and
+credential for up to 24 hours; do not generate a replacement node credential.
+
+Ownership enrollment authenticates the start of the management process. It does
+not certify that the OS, downloaded installer or every inter-server protocol is
+secure. Verify source provenance, HTTPS certificates, encrypted management
+connectivity, service authorization and the deployment checklist separately.
+
 ## Main hotspot install
 
 From a fresh repository checkout:
@@ -172,7 +206,8 @@ Restricted bootstrap enrollment does not automatically grant full operational ac
 
 ## NetBird enrollment details
 
-`misc/install_netbird_management.sh` performs zero-touch management enrollment through:
+`misc/install_netbird_management.sh` first establishes owner registration when
+needed, then requests restricted NetBird management enrollment through:
 
 `https://tarasec.org/script/hotspotNetbirdEnroll.php`
 
@@ -218,3 +253,4 @@ Use `docs/AI_OPERATIONS_MANUAL.md` as the capability inventory for development, 
 See [docs/google-ssh.md](docs/google-ssh.md) for node-specific enrollment,
 repository-based installation, explicit enablement, acceptance and console recovery.
 Ordinary agent installation preserves the current SSH policy.
+

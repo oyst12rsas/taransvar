@@ -1,5 +1,28 @@
 # Google-authorized temporary SSH
 
+## First installation: owner secret
+
+Before registering a new node, sign into
+https://tarasec.org/ops/agent/install.php with the Google account you will use to
+manage it in the app. Generate a one-use secret and enter it at the installer's
+hidden prompt. Do not put it in a command argument, environment variable or chat.
+The secret binds one new node to that account and supplies the first local and
+central management grant automatically. It expires after 15 minutes. Existing
+registered nodes retain their credentials and owner-controlled manager lists.
+
+The explicit entry point on the intended server is:
+
+```sh
+clear
+# Run on the server being registered, from the current taransvar checkout.
+sudo bash misc/install_agent_approvals.sh --install-secret
+```
+
+Deploy the matching tarasec.org secret service first. Verify Google management,
+TOTP and independent console recovery before enabling SSH closure. Ownership
+registration does not automatically configure key-plus-password SSH login or
+certify all communication channels.
+
 This optional node policy rejects new admin SSH connections unless an operator
 explicitly approves a bounded opening through Google sign-in and TOTP on the
 approval service. Signing in alone does not open SSH. Established connections
@@ -314,3 +337,4 @@ this shared file to a private credential. Existing contents are backed up privat
 Actual enrollment credentials, manager policies and receipts retain their root-only
 0600/0400 validation. Non-root-owned or writable shared policy is rejected before
 creating or changing identity/grant files; repair ownership deliberately on the node.
+

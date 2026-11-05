@@ -15,6 +15,13 @@ echo $SCRIPT_DIR
 cd $SCRIPT_DIR
 printf "\nInstalling Taransvar Cyber Solution\n"
 read -t 5 -p "Continuing in 5 seconds..."
+# Stop before deploying TaraSec services if trusted registration fails.
+if [[ ! -f /etc/tarasec/agent-enrollment.json ]]; then
+    if ! command -v python3 >/dev/null; then
+        apt-get update && apt-get install -y python3 ca-certificates || exit 1
+    fi
+    python3 "$SCRIPT_DIR/misc/enroll_google_manager.py" --install-secret || exit 1
+fi
 printf "Installing required linux packages...\n"
 
 apt-get update -y
@@ -148,6 +155,10 @@ esac
     perl startup.pl
 )
 
+# Deploy the encrypted management network, then the enrolled service/grants.
+bash "$SCRIPT_DIR/misc/install_netbird_management.sh" || exit 1
+bash "$SCRIPT_DIR/misc/install_agent_approvals.sh" --sync || exit 1
+
 echo "Next: review and verify your node security at https://tarasec.org/safety/#deployment"
 echo "Hardening priorities: https://tarasec.org/safety/#hardening-priorities"
 echo "Ask your AI assistant to check the next missing control, test it and fix in-scope routine failures."
@@ -157,3 +168,4 @@ if [[ ! -e /usr/local/sbin/tarasec && ! -L /usr/local/sbin/tarasec ]]; then
     ln -s "$SCRIPT_DIR/tarasec" /usr/local/sbin/tarasec
 fi
 echo 'Future updates: sudo tarasec upgrade'
+
