@@ -20,6 +20,16 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
+# A standalone management-plane install must also establish its owner first.
+helper_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ ! -f /etc/tarasec/agent-enrollment.json ]]; then
+    if ! command -v python3 >/dev/null; then
+        apt-get update
+        apt-get install -y python3 ca-certificates
+    fi
+    python3 "$helper_dir/enroll_google_manager.py" --install-secret
+fi
+
 TARASEC_DIR="${TARASEC_DIR:-/etc/tarasec}"
 DEVICE_ID_FILE="$TARASEC_DIR/device-id"
 ENROLL_URL="${TARASEC_ENROLL_URL:-https://tarasec.org/script/hotspotNetbirdEnroll.php}"
@@ -203,3 +213,4 @@ echo
 echo "NetBird management plane is installed, enrolled, and connected."
 echo "TaraSec device ID: $DEVICE_ID"
 echo "wt0/wt* is reserved for TaraSec management and is not a hotspot WAN/LAN interface."
+

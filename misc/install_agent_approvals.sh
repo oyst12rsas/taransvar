@@ -16,6 +16,7 @@ while [[ $# -gt 0 ]]; do
             enroll=true; gatekeeper_args+=("$1" "$2");
             if [[ $1 == --web-root ]]; then gatekeeper_web_root=$2; fi
             shift 2 ;;
+        --install-secret) enroll=true; enroll_args+=("--install-secret"); shift ;;
         --enroll-google) enroll=true; shift ;;
         --email|--approval-url|--nickname)
             [[ $# -ge 2 ]] || { echo "Missing value for $1" >&2; exit 1; }
@@ -31,6 +32,9 @@ if $update_only; then
     for policy in /etc/tarasec/access.conf /etc/tarasec-server-manager.conf; do
         [[ -r $policy ]] || { echo "Missing worker policy: $policy. Update-only stopped before changing services." >&2; exit 1; }
     done
+fi
+if ! $enroll && ! $skip_enrollment && [[ ! -f /etc/tarasec/agent-enrollment.json ]]; then
+    enroll=true; enroll_args+=(--install-secret)
 fi
 if ! $enroll && ! $skip_enrollment && [[ -t 0 ]]; then
     read -r -p 'Google manager email (Enter to keep current enrollment): ' manager_email
@@ -199,5 +203,6 @@ print()
 print('MACHINE NICKNAME: ' + nickname)
 NICKNAME
 fi
+
 
 
