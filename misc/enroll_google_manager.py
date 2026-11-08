@@ -267,7 +267,11 @@ def main():
     if args.install_secret or (fresh and not args.sync):
         if args.email or args.sync: parser.error('Use the secret owner account for initial enrollment; add other managers later')
         if not os.isatty(0): parser.error('Initial enrollment requires a terminal for the hidden secret prompt')
-        print('Get a one-use secret on a trusted device: https://tarasec.org/ops/agent/install.php')
+        print('Register this server with your Google account before installing TaraSec.')
+        print('1. On a trusted device, open https://tarasec.org/ops/agent/install.php')
+        print('2. Sign in with the Google account you will use to manage this server in the TaraSec app.')
+        print('3. Generate a one-use secret and paste it at the prompt below within 15 minutes.')
+        print('   If it expires, generate a new secret and rerun the installer.')
         secret = getpass.getpass('Installation secret (input hidden): ').strip()
     elif not args.email and not args.sync:
         args.email = [input('Google email authorized to manage this server: ').strip()]
