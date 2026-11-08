@@ -5,6 +5,7 @@ This registers identity and permissions only. It never changes firewall rules or
 closes SSH; enabling that policy still requires a working recovery console.
 """
 import argparse
+import getpass
 import json
 import os
 from pathlib import Path
@@ -117,9 +118,13 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise ValueError('Enrollment redirects are prohibited')
 
 
-def register(api_url, token, nickname, hashes, opener=None, gatekeeper=None):
+def register(api_url, token, nickname, hashes, opener=None, gatekeeper=None, install_secret=None):
     data = {'nickname': nickname, 'manager_hashes': sorted(hashes)}
     if gatekeeper is not None: data['gatekeeper'] = gatekeeper
+    if install_secret is not None:
+        if not re.fullmatch('[a-f0-9]{64}', install_secret): raise ValueError('Invalid installation secret')
+        if hashes: raise ValueError('Installation managers are derived from the verified owner')
+        data['install_secret'] = install_secret
     payload = json.dumps(data).encode()
     req = urllib.request.Request(enrollment_url(api_url), data=payload,
         headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token}, method='POST')
@@ -131,7 +136,11 @@ def register(api_url, token, nickname, hashes, opener=None, gatekeeper=None):
     if (not isinstance(answer, dict) or answer.get('ok') is not True
             or not isinstance(answer.get('node_id'), str)
             or not re.fullmatch('[A-Za-z0-9_. -]{1,128}', answer['node_id'])
-            or answer.get('manager_count') != len(hashes)):
+            or (install_secret is None and answer.get('manager_count') != len(hashes))
+            or (install_secret is not None and (not isinstance(answer.get('owner_hash'), str)
+                or not re.fullmatch('[a-f0-9]{64}', answer['owner_hash'])
+                or type(answer.get('manager_count')) is not int
+                or not 1 <= answer['manager_count'] <= 128))):
         raise ValueError('Enrollment was not confirmed by the approval service')
     return answer
 
@@ -164,14 +173,18 @@ def public_nickname(current, requested=None):
     return secrets.choice(qualities) + ' ' + secrets.choice(places)
 
 
-def enroll(emails, sync=False, approval_url=None, nickname=None, root=Path('/'), opener=None):
+def enroll(emails, sync=False, approval_url=None, nickname=None, root=Path('/'), opener=None, install_secret=None):
     cfg = root / 'etc/tarasecfw.conf'
     access = root / 'etc/tarasec/access.conf'
     manager = root / 'etc/tarasec-server-manager.conf'
     new_hashes = {local_manager_policy.email_hash(email) for email in emails}
     existing = local_manager_policy.manager_hashes(str(access)) if access.exists() else set()
     hashes = existing | new_hashes
-    if not hashes and not sync: raise ValueError('Supply a manager Google email, or --sync to publish an empty revocation list')
+    if install_secret is not None and (new_hashes or sync):
+        raise ValueError('Installation managers are derived from the verified owner')
+    if install_secret is not None and not re.fullmatch('[a-f0-9]{64}', install_secret):
+        raise ValueError('Invalid installation secret')
+    if not hashes and not sync and install_secret is None: raise ValueError('Supply a manager Google email, or --sync to publish an empty revocation list')
     cfg_text = enrollment_read(cfg, shared_config=True) if cfg.exists() else ''
     nickname = public_nickname(setting(cfg_text, 'AGENT_PUBLIC_NICKNAME'), nickname)
     if not re.fullmatch('[A-Za-z][A-Za-z0-9 _-]{2,31}', nickname): raise ValueError('Invalid public nickname')
@@ -179,7 +192,7 @@ def enroll(emails, sync=False, approval_url=None, nickname=None, root=Path('/'),
     api_url = approval_url or setting(manager_text, 'AGENT_APPROVAL_URL') or DEFAULT_URL
     enrollment_url(api_url)  # Validate before creating credentials or changing files.
     token = node_token(root / 'etc/tarasec/agent-node.token')
-    if new_hashes - existing or not access.exists():
+    if install_secret is None and (new_hashes - existing or not access.exists()):
         # Merge with existing grants; an update never silently removes another
         # manager. For revocation edit access.conf, then run --sync.
         text = private_read(access) if access.exists() else 'MANAGER_EMAILS=""\nMANAGER_EMAIL_SHA256=""\n'
@@ -193,7 +206,12 @@ def enroll(emails, sync=False, approval_url=None, nickname=None, root=Path('/'),
         atomic_write(cfg, set_setting(cfg_text, 'AGENT_PUBLIC_NICKNAME', nickname), shared_config=True)
     if approval_url:
         atomic_write(manager, set_setting(manager_text, 'AGENT_APPROVAL_URL', api_url))
-    answer = register(api_url, token, nickname, hashes, opener)
+    answer = register(api_url, token, nickname, set() if install_secret is not None else hashes,
+                      opener, install_secret=install_secret)
+    if install_secret is not None:
+        hashes.add(answer['owner_hash'])
+        text = private_read(access) if access.exists() else 'MANAGER_EMAILS=""\nMANAGER_EMAIL_SHA256=""\n'
+        atomic_write(access, set_setting(text, 'MANAGER_EMAIL_SHA256', ','.join(sorted(hashes))))
     atomic_write(root / 'etc/tarasec/agent-enrollment.json', json.dumps({
         'node_id': answer['node_id'], 'approval_url': api_url, 'nickname': nickname,
         'manager_count': len(hashes)}, indent=2) + '\n')
@@ -240,12 +258,25 @@ def main():
     parser.add_argument('--sync', action='store_true', help='Publish current local hashes, including an empty revocation list')
     parser.add_argument('--approval-url', help='Private/self-hosted HTTPS approval api.php URL')
     parser.add_argument('--nickname')
+    parser.add_argument('--install-secret', action='store_true',
+                        help='Read a single-use installation secret at a hidden terminal prompt')
     args = parser.parse_args()
     if os.geteuid() != 0: parser.error('Run with sudo on the intended server')
-    if not args.email and not args.sync:
+    secret = None
+    fresh = not Path('/etc/tarasec/agent-enrollment.json').exists()
+    if args.install_secret or (fresh and not args.sync):
+        if args.email or args.sync: parser.error('Use the secret owner account for initial enrollment; add other managers later')
+        if not os.isatty(0): parser.error('Initial enrollment requires a terminal for the hidden secret prompt')
+        print('Register this server with your Google account before installing TaraSec.')
+        print('1. On a trusted device, open https://tarasec.org/ops/agent/install.php')
+        print('2. Sign in with the Google account you will use to manage this server in the TaraSec app.')
+        print('3. Generate a one-use secret and paste it at the prompt below within 15 minutes.')
+        print('   If it expires, generate a new secret and rerun the installer.')
+        secret = getpass.getpass('Installation secret (input hidden): ').strip()
+    elif not args.email and not args.sync:
         args.email = [input('Google email authorized to manage this server: ').strip()]
     try:
-        result = enroll(args.email, args.sync, args.approval_url, args.nickname)
+        result = enroll(args.email, args.sync, args.approval_url, args.nickname, install_secret=secret)
     except urllib.error.HTTPError as e:
         raise SystemExit('Enrollment rejected (HTTP %s); local identity retained. Deploy the central enrollment endpoint, then retry.' % e.code)
     except urllib.error.URLError:
@@ -270,4 +301,5 @@ def main():
 
 
 if __name__ == '__main__': main()
+
 
