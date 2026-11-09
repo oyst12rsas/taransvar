@@ -52,7 +52,7 @@ class UpgradeTests(unittest.TestCase):
         (self.root/'etc').mkdir()
         (self.root/'etc/tarasecfw.conf').write_text('DBSERVER=100.68.126.0\n')
         with patch.object(u,'operations_central_database',return_value=False), patch('builtins.input',return_value='yes'), patch('sys.stdout',new=io.StringIO()) as output:
-            self.assertTrue(u.confirm_local_roles(['database','gateway'],self.root))
+            u.print_local_inventory(self.root)
         self.assertIn('MySQL/MariaDB TaraSec database: present',output.getvalue())
         self.assertIn('Central coordination: not configured',output.getvalue())
         self.assertIn('local TaraSec database is part of the core',output.getvalue())
@@ -73,7 +73,7 @@ class UpgradeTests(unittest.TestCase):
         (self.root/'etc').mkdir()
         (self.root/'etc/tarasecfw.conf').write_text('DBSERVER=100.68.126.0\n')
         with patch('builtins.input',return_value='yes'), patch('sys.stdout',new=io.StringIO()) as out:
-            self.assertTrue(u.confirm_local_roles(['gateway'],self.root))
+            u.print_local_inventory(self.root)
         self.assertIn('tarakernel:',out.getvalue())
         self.assertIn('taralink:',out.getvalue())
         self.assertIn('Server protection: Google/TOTP: not enrolled',out.getvalue())
@@ -92,32 +92,27 @@ class UpgradeTests(unittest.TestCase):
             self.assertIsNone(u.operations_central_database(self.root))
             settings.assert_not_called()
 
-    def test_role_confirmation_cannot_persist_never(self):
-        with patch('builtins.input',side_effect=['never','no']) as prompt, patch('sys.stdout',new=io.StringIO()):
-            self.assertFalse(u.confirm_local_roles(['node'],self.root))
-        self.assertEqual(prompt.call_count,2)
-
     def test_ssh_auth_always_requires_confirmation_and_honors_never(self):
         for mode in ('demo', 'production'):
             for answer in ('no', 'never'):
                 u.MODE.write_text(mode+'\n')
                 u.save({'features': {}, 'history': []})
-                with patch.object(u, 'FEATURES', (('ssh-auth', 'SSH factors', {'node'}),)), patch.object(u, 'COMMAND', self.root/'tarasec'), patch.object(u.sys.stdin, 'isatty', return_value=True), patch.object(u, 'ssh_auth_policy', return_value={'authenticationmethods':'any'}), patch('builtins.input', side_effect=['yes', answer]) as prompt, patch.object(u, 'apply_feature') as apply, patch('sys.stdout', new=io.StringIO()) as output:
+                with patch.object(u, 'FEATURES', (('ssh-auth', 'SSH factors', {'node'}),)), patch.object(u, 'COMMAND', self.root/'tarasec'), patch.object(u.sys.stdin, 'isatty', return_value=True), patch.object(u, 'ssh_auth_policy', return_value={'authenticationmethods':'any'}), patch('builtins.input', side_effect=[answer]) as prompt, patch.object(u, 'apply_feature') as apply, patch('sys.stdout', new=io.StringIO()) as output:
                     self.assertEqual(u.main(['upgrade','--roles','node']),0)
                     self.assertIn('WARNING: SSH AuthenticationMethods is any',output.getvalue())
-                self.assertEqual(prompt.call_count,2)
+                self.assertEqual(prompt.call_count, 1)
                 apply.assert_not_called()
                 self.assertEqual(u.load_state()['features']['ssh-auth']['choice'],answer)
                 if answer == 'never':
-                    with patch.object(u, 'FEATURES', (('ssh-auth','SSH factors',{'node'}),)), patch.object(u, 'COMMAND', self.root/'tarasec'), patch.object(u.sys.stdin,'isatty',return_value=True), patch('builtins.input',side_effect=['yes']) as prompt, patch.object(u,'ssh_auth_policy') as check, patch('sys.stdout',new=io.StringIO()):
+                    with patch.object(u, 'FEATURES', (('ssh-auth','SSH factors',{'node'}),)), patch.object(u, 'COMMAND', self.root/'tarasec'), patch.object(u.sys.stdin,'isatty',return_value=True), patch('builtins.input',side_effect=[]) as prompt, patch.object(u,'ssh_auth_policy') as check, patch('sys.stdout',new=io.StringIO()):
                         self.assertEqual(u.main(['upgrade','--roles','node']),0)
                     check.assert_not_called()
 
     def test_ssh_auth_current_skips_offer(self):
         u.MODE.write_text('demo\n')
-        with patch.object(u,'FEATURES',(('ssh-auth','SSH factors',{'node'}),)), patch.object(u,'COMMAND',self.root/'tarasec'), patch.object(u.sys.stdin,'isatty',return_value=True), patch.object(u,'ssh_auth_policy',return_value={'authenticationmethods':'publickey,password'}), patch('builtins.input',side_effect=['yes']) as prompt, patch.object(u,'apply_feature') as apply, patch('sys.stdout',new=io.StringIO()):
+        with patch.object(u,'FEATURES',(('ssh-auth','SSH factors',{'node'}),)), patch.object(u,'COMMAND',self.root/'tarasec'), patch.object(u.sys.stdin,'isatty',return_value=True), patch.object(u,'ssh_auth_policy',return_value={'authenticationmethods':'publickey,password'}), patch('builtins.input',side_effect=[]) as prompt, patch.object(u,'apply_feature') as apply, patch('sys.stdout',new=io.StringIO()):
             self.assertEqual(u.main(['upgrade','--roles','node']),0)
-        self.assertEqual(prompt.call_count,1)
+        self.assertEqual(prompt.call_count, 0)
         apply.assert_not_called()
 
     def test_ssh_auth_guarded_apply_and_rollback(self):
@@ -274,7 +269,7 @@ class UpgradeTests(unittest.TestCase):
 
     def test_normal_upgrade_includes_activity_configuration(self):
         u.MODE.write_text('demo\n')
-        with patch.object(u,'FEATURES',(('operations','Operations',{'node'}),)), patch.object(u,'COMMAND',self.root/'tarasec'), patch.object(u.sys.stdin,'isatty',return_value=True), patch('builtins.input',side_effect=['yes']), patch.object(u,'apply_feature') as apply, patch('sys.stdout',new=io.StringIO()):
+        with patch.object(u,'FEATURES',(('operations','Operations',{'node'}),)), patch.object(u,'COMMAND',self.root/'tarasec'), patch.object(u.sys.stdin,'isatty',return_value=True), patch('builtins.input',side_effect=[]), patch.object(u,'apply_feature') as apply, patch('sys.stdout',new=io.StringIO()):
             self.assertEqual(u.main(['upgrade','--roles','node']),0)
         self.assertTrue(apply.call_args.kwargs['configure_activity'])
 
@@ -315,16 +310,16 @@ class UpgradeTests(unittest.TestCase):
     def test_current_ssh_window_skips_prompt_in_both_modes(self):
         for mode in ('demo','production'):
             u.MODE.write_text(mode+'\n')
-            with patch.object(u,'ssh_window_current',return_value=True), patch.object(u,'FEATURES',(('ssh-window','SSH window',{'node'}),)), patch.object(u,'COMMAND',self.root/'tarasec'), patch.object(u.sys.stdin,'isatty',return_value=True), patch('builtins.input',side_effect=['yes']) as prompt, patch.object(u,'apply_feature') as apply, patch('sys.stdout',new=io.StringIO()):
+            with patch.object(u,'ssh_window_current',return_value=True), patch.object(u,'FEATURES',(('ssh-window','SSH window',{'node'}),)), patch.object(u,'COMMAND',self.root/'tarasec'), patch.object(u.sys.stdin,'isatty',return_value=True), patch('builtins.input',side_effect=[]) as prompt, patch.object(u,'apply_feature') as apply, patch('sys.stdout',new=io.StringIO()):
                 self.assertEqual(u.main(['upgrade','--roles','node']),0)
-            self.assertEqual(prompt.call_count,1)
+            self.assertEqual(prompt.call_count, 0)
             apply.assert_not_called()
 
     def test_new_agent_requires_installation_confirmation_in_demo(self):
         u.MODE.write_text('demo\n')
-        with patch.object(u, 'operations_installed', return_value=False), patch.object(u, 'FEATURES', (('operations', 'AI agent', {'node'}),)), patch.object(u, 'COMMAND', self.root/'tarasec'), patch.object(u.sys.stdin, 'isatty', return_value=True), patch('builtins.input', side_effect=['yes','no']) as prompt, patch.object(u, 'apply_feature') as apply, patch('sys.stdout', new=io.StringIO()):
+        with patch.object(u, 'operations_installed', return_value=False), patch.object(u, 'FEATURES', (('operations', 'AI agent', {'node'}),)), patch.object(u, 'COMMAND', self.root/'tarasec'), patch.object(u.sys.stdin, 'isatty', return_value=True), patch('builtins.input', side_effect=['no']) as prompt, patch.object(u, 'apply_feature') as apply, patch('sys.stdout', new=io.StringIO()):
             self.assertEqual(u.main(['upgrade','--roles','node']),0)
-        self.assertEqual(prompt.call_count,2)
+        self.assertEqual(prompt.call_count, 1)
         apply.assert_not_called()
 
     def test_agent_activation_uses_selected_mode_only_after_successful_probe(self):
@@ -644,7 +639,7 @@ class UpgradeTests(unittest.TestCase):
         u.MODE.write_text('demo\n')
         u.save({'features': {'google': {'choice': 'never', 'status': 'declined'}}, 'history': []})
         features = (('google', 'Google', {'node'}), ('runtime', 'Runtime', {'node'}), ('ssh-key', 'Key', {'node'}))
-        with patch.object(u, 'FEATURES', features), patch.object(u, 'COMMAND', self.root / 'tarasec'), patch.object(u.sys.stdin, 'isatty', return_value=True), patch('builtins.input', side_effect=['yes', 'yes']), patch.object(u, 'apply_feature', side_effect=ValueError('prerequisite missing')) as apply, patch('sys.stdout', new=io.StringIO()):
+        with patch.object(u, 'FEATURES', features), patch.object(u, 'COMMAND', self.root / 'tarasec'), patch.object(u.sys.stdin, 'isatty', return_value=True), patch('builtins.input', side_effect=['yes']), patch.object(u, 'apply_feature', side_effect=ValueError('prerequisite missing')) as apply, patch('sys.stdout', new=io.StringIO()):
             self.assertEqual(u.main(['upgrade', '--roles', 'node']), 1)
         self.assertEqual(apply.call_count, 1)
         self.assertEqual(apply.call_args.args[0], 'runtime')
@@ -656,7 +651,7 @@ class UpgradeTests(unittest.TestCase):
     def test_review_declined_offers_feature_again(self):
         u.MODE.write_text('demo\n')
         u.save({'features': {'google': {'choice': 'never'}}, 'history': []})
-        with patch.object(u, 'FEATURES', (('google', 'Google', {'node'}),)), patch.object(u, 'COMMAND', self.root / 'tarasec'), patch.object(u.sys.stdin, 'isatty', return_value=True), patch('builtins.input', side_effect=['yes', 'yes']), patch.object(u, 'apply_feature') as apply, patch('sys.stdout', new=io.StringIO()):
+        with patch.object(u, 'FEATURES', (('google', 'Google', {'node'}),)), patch.object(u, 'COMMAND', self.root / 'tarasec'), patch.object(u.sys.stdin, 'isatty', return_value=True), patch('builtins.input', side_effect=['yes']), patch.object(u, 'apply_feature') as apply, patch('sys.stdout', new=io.StringIO()):
             self.assertEqual(u.main(['upgrade', '--roles', 'node', '--review-declined']), 0)
         apply.assert_called_once()
         self.assertEqual(u.load_state()['features']['google']['status'], 'completed')
@@ -671,9 +666,9 @@ class UpgradeTests(unittest.TestCase):
 
     def test_demo_medium_update_needs_no_feature_prompt(self):
         u.MODE.write_text('demo\n')
-        with patch.object(u, 'FEATURES', (('operations', 'Operations', {'node'}),)), patch.object(u, 'COMMAND', self.root / 'tarasec'), patch.object(u.sys.stdin, 'isatty', return_value=True), patch('builtins.input', side_effect=['yes']) as prompt, patch.object(u, 'apply_feature') as apply, patch('sys.stdout', new=io.StringIO()):
+        with patch.object(u, 'FEATURES', (('operations', 'Operations', {'node'}),)), patch.object(u, 'COMMAND', self.root / 'tarasec'), patch.object(u.sys.stdin, 'isatty', return_value=True), patch('builtins.input', side_effect=[]) as prompt, patch.object(u, 'apply_feature') as apply, patch('sys.stdout', new=io.StringIO()):
             self.assertEqual(u.main(['upgrade', '--roles', 'node']), 0)
-        self.assertEqual(prompt.call_count, 1)  # Roles only, no upgrade confirmation.
+        self.assertEqual(prompt.call_count, 0)
         apply.assert_called_once()
         self.assertEqual(u.load_state()['features']['operations']['approval'], 'demo_policy')
 
@@ -681,9 +676,9 @@ class UpgradeTests(unittest.TestCase):
         u.MODE.write_text('production\n')
         features = (('operations', 'Operations', {'node'}),)
         for attempt in range(2):
-            with patch.object(u, 'FEATURES', features), patch.object(u, 'COMMAND', self.root / 'tarasec'), patch.object(u.sys.stdin, 'isatty', return_value=True), patch('builtins.input', side_effect=['yes', 'yes']) as prompt, patch.object(u, 'apply_feature') as apply, patch('sys.stdout', new=io.StringIO()):
+            with patch.object(u, 'FEATURES', features), patch.object(u, 'COMMAND', self.root / 'tarasec'), patch.object(u.sys.stdin, 'isatty', return_value=True), patch('builtins.input', side_effect=['yes']) as prompt, patch.object(u, 'apply_feature') as apply, patch('sys.stdout', new=io.StringIO()):
                 self.assertEqual(u.main(['upgrade', '--roles', 'node']), 0)
-            self.assertEqual(prompt.call_count, 2)
+            self.assertEqual(prompt.call_count, 1)
             apply.assert_called_once()
             self.assertEqual(u.load_state()['features']['operations']['approval'], 'user_confirmation')
 
@@ -704,17 +699,17 @@ class UpgradeTests(unittest.TestCase):
 
     def test_existing_google_refresh_in_demo_has_no_upgrade_prompt(self):
         u.MODE.write_text('demo\n')
-        with patch.object(u, 'existing_google_setup', return_value=True), patch.object(u, 'FEATURES', (('google', 'Google', {'node'}),)), patch.object(u, 'COMMAND', self.root / 'tarasec'), patch.object(u.sys.stdin, 'isatty', return_value=True), patch('builtins.input', side_effect=['yes']) as prompt, patch.object(u, 'apply_feature') as apply, patch('sys.stdout', new=io.StringIO()):
+        with patch.object(u, 'existing_google_setup', return_value=True), patch.object(u, 'FEATURES', (('google', 'Google', {'node'}),)), patch.object(u, 'COMMAND', self.root / 'tarasec'), patch.object(u.sys.stdin, 'isatty', return_value=True), patch('builtins.input', side_effect=[]) as prompt, patch.object(u, 'apply_feature') as apply, patch('sys.stdout', new=io.StringIO()):
             self.assertEqual(u.main(['upgrade', '--roles', 'node']), 0)
-        self.assertEqual(prompt.call_count, 1)
+        self.assertEqual(prompt.call_count, 0)
         self.assertNotIn('allow_enrollment', apply.call_args.kwargs)
         self.assertEqual(u.load_state()['features']['google']['risk'], 'medium')
 
     def test_existing_google_in_production_still_requires_confirmation(self):
         u.MODE.write_text('production\n')
-        with patch.object(u, 'existing_google_setup', return_value=True), patch.object(u, 'FEATURES', (('google', 'Google', {'node'}),)), patch.object(u, 'COMMAND', self.root / 'tarasec'), patch.object(u.sys.stdin, 'isatty', return_value=True), patch('builtins.input', side_effect=['yes','no']) as prompt, patch.object(u, 'apply_feature') as apply, patch('sys.stdout', new=io.StringIO()):
+        with patch.object(u, 'existing_google_setup', return_value=True), patch.object(u, 'FEATURES', (('google', 'Google', {'node'}),)), patch.object(u, 'COMMAND', self.root / 'tarasec'), patch.object(u.sys.stdin, 'isatty', return_value=True), patch('builtins.input', side_effect=['no']) as prompt, patch.object(u, 'apply_feature') as apply, patch('sys.stdout', new=io.StringIO()):
             self.assertEqual(u.main(['upgrade', '--roles', 'node']), 0)
-        self.assertEqual(prompt.call_count, 2)
+        self.assertEqual(prompt.call_count, 1)
         apply.assert_not_called()
 
     def test_legacy_gatekeeper_only_refresh_does_not_enroll_worker(self):
@@ -811,7 +806,7 @@ class UpgradeTests(unittest.TestCase):
         u.MODE.write_text('demo\n')
         features=(('google','Google',{'node'}),('operations','Operations',{'node'}))
         partial={'pending_configuration':True,'approval_worker':'needs_configuration'}
-        with patch.object(u,'existing_google_setup',return_value=True), patch.object(u,'FEATURES',features), patch.object(u,'COMMAND',self.root/'tarasec'), patch.object(u.sys.stdin,'isatty',return_value=True), patch('builtins.input',side_effect=['yes']), patch.object(u,'apply_feature',side_effect=[partial,None]) as apply, patch('sys.stdout',new=io.StringIO()):
+        with patch.object(u,'existing_google_setup',return_value=True), patch.object(u,'FEATURES',features), patch.object(u,'COMMAND',self.root/'tarasec'), patch.object(u.sys.stdin,'isatty',return_value=True), patch('builtins.input',side_effect=[]), patch.object(u,'apply_feature',side_effect=[partial,None]) as apply, patch('sys.stdout',new=io.StringIO()):
             self.assertEqual(u.main(['upgrade','--roles','node']),0)
         self.assertEqual(apply.call_count,2)
         self.assertEqual(u.load_state()['features']['google']['status'],'partial')
@@ -871,15 +866,17 @@ class UpgradeTests(unittest.TestCase):
     def test_postponing_verification_continues_later_features(self):
         u.MODE.write_text('demo\n')
         features=(('ssh-window','SSH window',{'node'}),('operations','Operations',{'node'}))
-        with patch.object(u,'FEATURES',features),patch.object(u,'COMMAND',self.root/'tarasec'),patch.object(u.sys.stdin,'isatty',return_value=True),patch('builtins.input',side_effect=['yes','yes']),patch.object(u,'apply_feature',side_effect=[u.FeaturePostponed('Not confirmed'),None]) as apply,patch('sys.stdout',new=io.StringIO()):
+        with patch.object(u,'FEATURES',features),patch.object(u,'COMMAND',self.root/'tarasec'),patch.object(u.sys.stdin,'isatty',return_value=True),patch('builtins.input',side_effect=['yes']),patch.object(u,'apply_feature',side_effect=[u.FeaturePostponed('Not confirmed'),None]) as apply,patch('sys.stdout',new=io.StringIO()):
             self.assertEqual(u.main(['upgrade','--roles','node']),0)
         self.assertEqual(apply.call_count,2)
         self.assertEqual(u.load_state()['features']['ssh-window']['status'],'postponed')
         self.assertEqual(u.load_state()['features']['operations']['status'],'completed')
 
-    def test_mode_typo_can_be_corrected(self):
-        with patch('builtins.input',side_effect=['demoo','demo']),patch('sys.stdout',new=io.StringIO()):
-            self.assertEqual(u.choose_mode(),'demo')
+    def test_unconfigured_interactive_upgrade_defaults_to_demo_without_prompt(self):
+        with patch.object(u, 'FEATURES', ()), patch.object(u, 'COMMAND', self.root/'tarasec'), patch.object(u.sys.stdin, 'isatty', return_value=True), patch('builtins.input', side_effect=AssertionError('Unexpected prompt')), patch('sys.stdout', new=io.StringIO()) as output:
+            self.assertEqual(u.main(['upgrade', '--interactive', '--roles', 'node']), 0)
+        self.assertEqual(u.MODE.read_text(), 'demo\n')
+        self.assertIn('--interactive --mode production', output.getvalue())
 
     def test_existing_honeypot_uses_refresh_only_without_confirmation_or_policy_write(self):
         with patch.object(u,'settings',return_value={'SSH_PORT':'5822'}),patch.object(u,'existing_honeypot_setup',return_value=True),patch('builtins.input',side_effect=AssertionError('Refresh must not prompt for migration')),patch.object(u,'run') as run,patch.object(u,'set_setting') as write,patch('sys.stdout',new=io.StringIO()):
