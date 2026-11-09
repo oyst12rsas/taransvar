@@ -6,7 +6,13 @@ set -euo pipefail
 # succeeds. Hotspot client traffic must continue to use the normal WAN; wt0 is
 # management only and must never become the default Internet route.
 #
-# Normal production flow:
+# TaraSec network design: units join the overlay using a shared public join code.
+# Treat wt0 traffic as untrusted. Each server enforces access with its firewall
+# and service authentication. Phone-to-server management uses separate one-off
+# pairing confirmed by the target server. The TaraSec installation secret
+# separately links a new server to its owner.
+#
+# Current installer flow (legacy automatic enrollment):
 #   1. Generate/persist a unique TaraSec device ID.
 #   2. Contact the TaraSec HTTPS enrollment service.
 #   3. Receive a one-off NetBird setup key assigned to the restricted bootstrap
