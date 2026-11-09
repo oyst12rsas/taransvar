@@ -116,8 +116,7 @@ def optional_node_functions(root=Path('/')):
             ('Gateway/routing', gateway), ('Hotspot', hotspot)]
 
 
-def confirm_local_roles(roles, root=Path('/')):
-    """Legacy role keys select compatible adapters; they are not user-facing roles."""
+def print_local_inventory(root=Path('/')):
     print('\nCurrent TaraSec core on this server:')
     for name, status in core_node_status(root):
         print('  ' + name + ': ' + status)
@@ -127,12 +126,6 @@ def confirm_local_roles(roles, root=Path('/')):
     print('Every standard TaraSec node has tarakernel, taralink, MySQL/MariaDB, Gatekeeper and server protection.')
     print('A local TaraSec database is part of the core, not a central-server role.')
     print('This command updates an existing installation. Missing core components need initial setup; they are not silently installed.')
-    print('Confirming continues to the individual component steps; it does not change gateway, hotspot or central-server settings.')
-    while True:
-        answer = input('Continue with the TaraSec core upgrade? [yes/no; Enter = stop]: ').strip().lower()
-        if answer in ('yes', 'y'): return True
-        if answer in ('no', 'n', ''): return False
-        print('Enter yes to continue or no to stop. Never applies only to individual component steps.')
 
 
 def activity_central_host(root=Path('/')):
@@ -169,13 +162,6 @@ def confirm_verified(prompt, help_callback):
             help_callback()
         else:
             print('Not recognized. Type VERIFIED after completing the checks, no to postpone, or ? for help. This verification has not changed SSH access.')
-
-
-def choose_mode():
-    while True:
-        mode = input('Choose deployment mode [demo/production]: ').strip().lower()
-        if mode in ('demo', 'production'): return mode
-        print('Enter demo for automatic testing upgrades, or production for confirmation before each upgrade. Ctrl+C cancels.')
 
 
 def detect_roles(root=Path('/')):
@@ -1416,11 +1402,10 @@ def main(argv=None):
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         state = load_state()
         roles = args.roles.split(',') if args.roles else state.get('roles', roles)
-        mode = args.mode or (choose_mode() if old_mode == 'unconfigured' else old_mode)
-        if mode not in ('demo', 'production'): raise ValueError('Choose demo or production explicitly')
+        mode = args.mode or ('demo' if old_mode == 'unconfigured' else old_mode)
         print('Source: ' + str(REPO))
         print('Demo automatically applies none/low/medium risk upgrades; production confirms each upgrade. High/unknown risk always requires confirmation.')
-        if not confirm_local_roles(roles): return 0
+        print_local_inventory()
         # Backups and audit state are private even when the caller has a permissive umask.
         os.umask(0o077)
         stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
@@ -1428,8 +1413,9 @@ def main(argv=None):
         directory.mkdir(parents=True, mode=0o700)
         if mode != old_mode:
             print('Mode change: ' + old_mode + ' → ' + mode)
-            print('Production updates the installed web tree to enforce demo API/page restrictions; local DB credentials are preserved. Live demo services/sessions must be released first. History is preserved.')
-            if choice('Apply this mode change') != 'yes': return 0
+            if mode == 'production':
+                print('Production updates the installed web tree to enforce demo API/page restrictions; local DB credentials are preserved. Live demo services/sessions must be released first. History is preserved.')
+            if (old_mode != 'unconfigured' or args.mode) and choice('Apply this mode change') != 'yes': return 0
             if mode == 'production':
                 production_preflight(roles)
                 if Path('/var/www/html').exists():
@@ -1439,6 +1425,8 @@ def main(argv=None):
             atomic(MODE, mode + '\n', 0o644)
             state['mode'] = mode
             state['history'].append({'time': stamp, 'mode': mode, 'previous_mode': old_mode})
+        if mode == 'demo':
+            print('Running in demo mode. To switch to production, run: sudo tarasec upgrade --interactive --mode production')
         if mode == 'production':
             disable_production_migration_timer()
         state['roles'] = roles
