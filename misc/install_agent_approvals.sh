@@ -63,8 +63,11 @@ if $configure_google_ssh; then
         echo 'Automatic Google SSH setup supports Ubuntu SSH on port 22 only. Check the SSH listeners from the console.' >&2
         exit 1
     fi
-    read -r -p 'NetBird IP address of the computer you will SSH from: ' admin_ip
-    admin_source=$(python3 -c 'import ipaddress,sys; print(ipaddress.ip_network(ipaddress.ip_address(sys.argv[1])))' "$admin_ip")
+    read -r -p 'NetBird IP of the computer you will run SSH from, if known (Enter to skip): ' admin_ip
+    admin_source=''
+    if [[ -n $admin_ip ]]; then
+        admin_source=$(python3 -c 'import ipaddress,sys; print(ipaddress.ip_network(ipaddress.ip_address(sys.argv[1])))' "$admin_ip")
+    fi
 fi
 # Self-enrollment creates a unique node credential if absent and authenticates
 # updates using the existing credential. It never closes SSH or changes grants
@@ -197,8 +200,12 @@ from local_manager_policy import manager_hashes
 if not manager_hashes():
     raise SystemExit('Google SSH setup requires at least one enrolled local manager.')
 
+firewall_settings = {'SSH_PORT': '22'}
+if sys.argv[1]:
+    firewall_settings['SSH_ALLOWED_SOURCES'] = sys.argv[1]
+
 for path, settings in (
-    (Path('/etc/tarasecfw.conf'), {'SSH_PORT': '22', 'SSH_ALLOWED_SOURCES': sys.argv[1]}),
+    (Path('/etc/tarasecfw.conf'), firewall_settings),
     (Path('/etc/tarasec-server-manager.conf'), {'SSH_GOOGLE_REOPEN_ENABLED': 'yes'}),
 ):
     lines = [line for line in path.read_text().splitlines()
@@ -248,7 +255,12 @@ if $configure_google_ssh; then
     fi
     systemctl start tarasec-agent-approvals.service
     echo 'Google-controlled SSH is enabled and closed to new connections.'
-    echo 'Keep the console open. At https://tarasec.org/ops/agent/, set up your authenticator and approve a temporary opening.'
+    if [[ -z $admin_source ]]; then
+        echo 'No new SSH source was added. If no source is configured, SSH windows cannot open.'
+        echo 'From the console, use sudoedit /etc/tarasecfw.conf to set SSH_ALLOWED_SOURCES to the client IP or CIDR.'
+        echo 'Then run: sudo python3 /usr/local/lib/tarasec/ssh_google_window.py reconcile'
+    fi
+    echo 'Keep the console open. With an allowed source configured, approve a temporary opening with your authenticator at https://tarasec.org/ops/agent/.'
     echo 'Test a fresh SSH login during the opening and again after expiry. See docs/google-ssh.md.'
 else
     echo "Existing Google SSH policy retained. To set up Google SSH from the console, rerun with --configure-google-ssh."
