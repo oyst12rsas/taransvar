@@ -9,7 +9,6 @@ use Time::localtime;
 use Data::Dumper;
 use File::stat;
 use Cwd qw(getcwd);
-use File::Basename;
 use DBI;
 
 
@@ -46,39 +45,12 @@ use func;
 my $nInstallSqlVersion = installSqlVersion();
 my $cSetup = getSetup();
 
-my $szSourceMisc = $FindBin::Bin;
-my $szRepositoryRoot = dirname($szSourceMisc);
-my $szRuntimePerl = "/root/taransvar/perl";
-my $szRuntimeHtml = "/var/www/html";
-
-sub printDeploymentCommands
-{
-	my ($bDatabaseUpdateRequired) = @_;
-
-	print "\n******** DEPLOY CURRENT CHECKOUT ********\n\n";
-	print "Source checkout: $szRepositoryRoot\n";
-	print "Installed Perl runtime: $szRuntimePerl\n";
-	print "Installed web root: $szRuntimeHtml\n\n";
-	print "Review and run these commands manually in the order shown:\n\n";
-	print "sudo mkdir -p $szRuntimePerl\n";
-	print "sudo rsync -a --exclude '.git' $szSourceMisc/ $szRuntimePerl/\n";
-	print "sudo rsync -a --exclude '.git' $szRepositoryRoot/html/ $szRuntimeHtml/\n";
-
-	if ($bDatabaseUpdateRequired) {
-		print "sudo bash -c 'cd $szRuntimePerl && perl diagnose.pl'\n";
-	}
-
-	print "\nThe rsync commands update installed runtime copies; cron continues to run ";
-	print "$szRuntimePerl/crontasks.pl.\n";
-	print "They intentionally do not use --delete, so local runtime-only files are preserved.\n\n";
-}
-
 if ($nInstallSqlVersion != $cSetup->{"dbVersion"}) {
 	print "\n*********** ERROR - DB update required **********\n\n";
 	print "Install SQL version: $nInstallSqlVersion\n";
 	print "Database version: ".$cSetup->{"dbVersion"}."\n";
-	printDeploymentCommands(1);
-	print "Deploy the current scripts and run diagnose.pl as shown above, then run compile.pl again.\n";
+	print "From the TaraSec checkout, run: sudo bash ./tarasec upgrade --interactive\n";
+	print "Select the database migration and any applicable runtime updates before retrying.\n";
 	exit 1;
 }
 
@@ -190,7 +162,6 @@ if (
     exit if $answer =~ /^y/i;
 }
 
-printDeploymentCommands(0);
 print "Systemd-managed installations restart taralink.service after compilation.\n";
 print "Legacy background mode requires an explicit: sudo perl compile.pl bg\n\n";
 
