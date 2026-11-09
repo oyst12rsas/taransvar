@@ -4,7 +4,7 @@ Read `AI_TRAINING.md` for project context and `AI_INSTALL_GUIDE.md` for deployme
 
 ## Network enrollment and server access
 
-TaraSec's network design uses a shared public NetBird join code for enrolling units. Treat traffic from enrolled peers as untrusted and enforce access on each server through its firewall and service authentication. One-off phone pairing grants management access for a specific server after that server confirms it. The TaraSec installation secret separately links a new server to its owner. The current NetBird helper still requests per-unit keys by default.
+Joining TaraSec's NetBird overlay should be as open as joining the Internet. Where NetBird requires a setup key, use a shared public join code. Treat traffic from enrolled peers as untrusted. On new servers, deny inbound administrative access by default before joining the overlay. Require an independent console for setup and recovery. Open administrative access only through an explicitly authorized server-side policy, and keep it closed if authorization setup fails. One-off phone pairing grants management access for a specific server after that server confirms it. The TaraSec installation secret separately links a new server to its owner. The current NetBird helper still requests per-unit keys by default.
 
 ## Deployment hardening and shared improvements
 
