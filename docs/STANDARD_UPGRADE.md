@@ -83,9 +83,11 @@ cd ~/taransvar
 sudo ./tarasec upgrade
 ```
 
-The explicit interactive setup workflow installs the `tarasec` command, confirms
-local roles and requests an initial demo/production choice. The default staged
-maintenance command does not enter these questions. Keep this checkout
+The interactive setup workflow installs the `tarasec` command and defaults to
+Demo on unconfigured nodes. It proceeds directly to the component steps.
+Use `--interactive --mode production` to explicitly request a mode change on
+nodes using interactive maintenance. The default staged maintenance command
+uses its separately assigned policy. Keep this checkout
 at the same path; the command points to it. Normal upgrades fetch `origin/main` and fast-forward a clean `main` checkout
 before offering feature changes. Local edits, detached checkouts and unpublished
 or divergent commits stop the automatic update. Git runs as the checkout owner
