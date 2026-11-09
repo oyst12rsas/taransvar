@@ -20,9 +20,10 @@ sudo bash misc/install_agent_approvals.sh --install-secret
 
 Deploy the matching tarasec.org secret service first. On a new Ubuntu node
 with SSH on port 22, the installer asks you to confirm independent console
-access and enter the NetBird IP of your administrative client. It then closes
-new SSH connections and guides you through the first Google/TOTP-approved
-opening. Keep the console open until you have tested both opening and expiry.
+access. Enter the NetBird IP of the computer you will run SSH from if you
+already know it, or press Enter to skip. The installer closes new SSH
+connections either way. Keep the console open until you have tested both
+opening and expiry.
 Key-plus-password SSH authentication is configured separately.
 
 To set up the gate on an already enrolled Ubuntu node, run from its console:
@@ -32,8 +33,14 @@ clear
 sudo bash misc/install_agent_approvals.sh --no-enrollment --configure-google-ssh
 ```
 
-This guided setup uses the supplied client IP as the only source for approved
-windows. Use the manual policy setup below for custom ports or multiple sources.
+If supplied, the client IP becomes the only source for approved windows.
+Skipping preserves existing allowed sources. If there are none, SSH stays
+closed until you add one. From the console, use
+`sudoedit /etc/tarasecfw.conf` to set `SSH_ALLOWED_SOURCES` to a client IP
+or CIDR that the server sees. This can be a NetBird, LAN, or VM host address.
+Then run `sudo python3 /usr/local/lib/tarasec/ssh_google_window.py reconcile`
+and test an approved opening. Use the manual policy setup below for custom
+ports or multiple sources.
 
 This optional node policy rejects new admin SSH connections unless an operator
 explicitly approves a bounded opening through Google sign-in and TOTP on the
