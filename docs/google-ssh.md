@@ -18,10 +18,22 @@ clear
 sudo bash misc/install_agent_approvals.sh --install-secret
 ```
 
-Deploy the matching tarasec.org secret service first. Verify Google management,
-TOTP and independent console recovery before enabling SSH closure. Ownership
-registration does not automatically configure key-plus-password SSH login or
-certify all communication channels.
+Deploy the matching tarasec.org secret service first. On a new Ubuntu node
+with SSH on port 22, the installer asks you to confirm independent console
+access and enter the NetBird IP of your administrative client. It then closes
+new SSH connections and guides you through the first Google/TOTP-approved
+opening. Keep the console open until you have tested both opening and expiry.
+Key-plus-password SSH authentication is configured separately.
+
+To set up the gate on an already enrolled Ubuntu node, run from its console:
+
+```bash
+clear
+sudo bash misc/install_agent_approvals.sh --no-enrollment --configure-google-ssh
+```
+
+This guided setup uses the supplied client IP as the only source for approved
+windows. Use the manual policy setup below for custom ports or multiple sources.
 
 This optional node policy rejects new admin SSH connections unless an operator
 explicitly approves a bounded opening through Google sign-in and TOTP on the
