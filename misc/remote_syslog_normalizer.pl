@@ -6,6 +6,9 @@ use JSON qw(decode_json);
 use Fcntl qw(SEEK_END);
 use lib ('/root/taransvar/perl');
 use func;
+use FindBin;
+use lib $FindBin::Bin;
+use receiver_event_policy qw(is_receiver_rejection);
 
 my $logFile = $ENV{TARASEC_REMOTE_LOG} || '/var/log/tarasec/remote.log';
 my $trigger = '/root/taransvar/perl/queue_ai_assessment.pl';
@@ -42,7 +45,7 @@ sub parse_event {
             $e{dst_port} = int($j->{dst_port} || 0);
             $e{protocol} = $j->{proto} || 'tcp';
             $e{service} = ($j->{service} || '') eq 'ssh' ? 'ssh' : 'cowrie';
-            $e{is_attack} = 1;
+            $e{is_attack} = is_receiver_rejection($e{service}, $j->{event}, 1) ? 1 : 0;
             $e{action} = $j->{action} || 'observe';
             $e{severity} = int($j->{severity} || 0);
             $e{description} = join(' ', grep { defined && length } ($j->{event}, $j->{sensor}, $j->{session}));
@@ -121,4 +124,3 @@ while (1) {
     seek($fh, 0, 1) or die "Cannot clear EOF state for $logFile: $!\n";
     sleep 1;
 }
-

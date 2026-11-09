@@ -1,0 +1,16 @@
+[Unit]
+Description=TaraSec prompt receiver rejection reporting
+After=network-online.target mysql.service mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/taransvar/perl
+ExecStart=/usr/bin/perl /root/taransvar/perl/crontasks.pl threats
+Restart=always
+RestartSec=2
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
