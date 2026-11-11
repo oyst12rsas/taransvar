@@ -20,7 +20,7 @@ sudo python3 misc/ssh_port_setup.py --console-recovery
 
 The script privately prompts for the new management port, then asks for decoy
 ports/ranges. Enter retains configured decoys from SSH_HONEYPOT_PORTS in /etc/tarasecfw.conf.
-If absent or containing only the backend listener, it defaults to 1000-5000. Lists such as 22,1000-5000 are supported. The management
+If absent or containing only the backend listener, it defaults to 22,1000-5000. TCP/22 is reserved for the honeypot. At the management port prompt, Enter picks a random free port in 1000–5000. The management
 port may be inside that range: management port 2345 with range 1000-5000 works.
 
 The chosen port is not a command-line argument and is not echoed in the normal
@@ -31,7 +31,7 @@ for keys, passwords and MFA.
 SSH_HONEYPOT_PORT is the separate backend listener, normally 22; it cannot be
 the real management listener. The script refreshes the existing simulator,
 enables IPv4/IPv6 support and sets SSH_CLOSED_HONEYPOT=yes. Other live TCP
-listeners and ports in TCP_PORTS or SSH_HONEYPOT_EXCLUDE_PORTS are reserved and
+listeners, MariaDB’s default and configured TCP ports, and ports in TCP_PORTS or SSH_HONEYPOT_EXCLUDE_PORTS are reserved and
 are not hijacked by a decoy range. Include future reserved services explicitly;
 normal reconciliation discovers newly started listeners.
 
