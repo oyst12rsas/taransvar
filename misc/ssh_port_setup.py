@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import shutil
 import socket
 import stat
@@ -295,22 +296,31 @@ def migrate(console_recovery=False):
     old, sources = window.configuration()
     if not sys.stdin.isatty():
         raise RuntimeError('Run interactively in a terminal; the management port is prompted privately')
-    entered = getpass.getpass('New management SSH port (input hidden): ')
+    cfg = window.settings(str(CONF))
+    backend = int(cfg.get('SSH_HONEYPOT_PORT', '22'))
+    service_ports = set(route.excluded_ports(cfg, old, backend))
+    reserved = service_ports | {22}
+    candidates = sorted(set(range(1000, 5001)) - reserved)
+    entered = getpass.getpass('New management SSH port (hidden, Enter for a random free port): ')
+    if not entered:
+        if not candidates:
+            raise RuntimeError('No available management SSH ports in 1000–5000')
+        entered = str(secrets.choice(candidates))
     if not re.fullmatch(r'[0-9]{1,5}', entered) or not 1 <= int(entered) <= 65535:
         raise ValueError('Choose a port between 1 and 65535')
     port = int(entered)
-    cfg = window.settings(str(CONF))
-    backend = int(cfg.get('SSH_HONEYPOT_PORT', '22'))
-    if port == backend:
-        raise ValueError('Choose a management port different from the honeypot backend')
-    if port != old and listener(port):
-        raise ValueError('The chosen port is already occupied by a local TCP service')
+    if port in reserved or (port != old and listener(port)):
+        raise ValueError('Choose a management port outside the reserved and occupied TCP ports')
     current_bindings = command('ss', '-H', '-ltn', f'sport = :{old}').stdout
     default_spec = cfg.get('SSH_HONEYPOT_PORTS', '').strip()
     if not default_spec or route.ranges(default_spec) == [(backend, backend)]:
-        default_spec = '1000-5000'
+        default_spec = '22,1000-5000'
     spec = input('Honeypot ports/ranges [configured decoys; otherwise 1000-5000]: ').strip() or default_spec
-    route.ranges(spec)  # The real port is intentionally allowed inside the range.
+    if not any(lo <= 22 <= hi for lo, hi in route.ranges(spec)):
+        spec = '22,' + spec
+        route.ranges(spec)
+    if backend != 22 and old != 22 and 22 in service_ports:
+        raise ValueError('TCP/22 is already reserved by another service')
     if not console_recovery:
         console_recovery = input('Independent console available; use it instead of automatic rollback? [y/N]: ').strip().lower() in ('y', 'yes')
     for program in ('ipset', 'iptables', 'ip6tables', 'iptables-restore', 'ip6tables-restore', 'ss', 'sshd', 'systemctl', 'journalctl'):
