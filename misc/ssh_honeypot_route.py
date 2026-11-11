@@ -4,6 +4,7 @@ import ipaddress
 import json
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import time
 
@@ -56,10 +57,21 @@ def config():
     return cfg, port, backend, sources
 
 
+def mariadb_ports():
+    ports = {3306}
+    server = shutil.which('mariadbd') or shutil.which('mysqld')
+    if server:
+        defaults = run(server, '--print-defaults').stdout
+        ports.update(int(port) for port in re.findall(r'(?:^|\s)--port(?:=|\s+)([0-9]{1,5})(?=\s|$)', defaults)
+                     if 1 <= int(port) <= 65535)
+    return ports
+
+
 def excluded_ports(cfg, port, backend):
     # Protect other live TCP services, plus explicitly reserved service ports.
     # Refreshing the policy discovers newly started listeners as well.
-    excluded = {backend}
+    database_ports = mariadb_ports()
+    excluded = {backend} | database_ports
     for field in ('TCP_PORTS', 'SSH_HONEYPOT_EXCLUDE_PORTS'):
         text = cfg.get(field, '')
         if text.strip():
@@ -77,7 +89,7 @@ def excluded_ports(cfg, port, backend):
             except ValueError:
                 pass
     excluded.discard(port)
-    return sorted(excluded)
+    return sorted(excluded | database_ports)
 
 
 def prepare():
