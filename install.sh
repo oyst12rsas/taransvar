@@ -15,10 +15,14 @@ echo $SCRIPT_DIR
 cd $SCRIPT_DIR
 printf "\nInstalling Taransvar Cyber Solution\n"
 read -t 5 -p "Continuing in 5 seconds..."
+google_ssh_pending=/root/setup/google-ssh-install-pending
 # Stop before deploying TaraSec services if trusted registration fails.
 if [[ ! -f /etc/tarasec/agent-enrollment.json ]]; then
     if ! command -v python3 >/dev/null; then
         apt-get update && apt-get install -y python3 ca-certificates || exit 1
+    fi
+    if [[ ! -e /etc/tarasec-server-manager.conf ]]; then
+        touch "$google_ssh_pending" || exit 1
     fi
     python3 "$SCRIPT_DIR/misc/enroll_google_manager.py" --install-secret || exit 1
 fi
@@ -130,6 +134,11 @@ if [ $? -eq 0 ]; then
 else
     printf "******* ERROR ****** Could not compile taralink...\n"
     read -n 1 -s -p "Ctrl-C to break or press any key to continue"
+fi
+
+if [[ -f $google_ssh_pending ]]; then
+    bash "$SCRIPT_DIR/misc/install_agent_approvals.sh" --no-enrollment --configure-google-ssh || exit 1
+    rm -f "$google_ssh_pending" || exit 1
 fi
 
 printf "**** Gatekeeper is now installed ****\n\n"

@@ -31,7 +31,7 @@ def settings(path):
     return result
 
 
-def configuration(require_enabled=True):
+def configuration(require_enabled=True, *, allow_empty_sources=False):
     policy = settings(POLICY)
     if require_enabled and policy.get("SSH_GOOGLE_REOPEN_ENABLED", "no").lower() not in ("yes", "true", "on", "1"):
         raise RuntimeError("Google-controlled SSH is not enabled by the owner")
@@ -41,7 +41,9 @@ def configuration(require_enabled=True):
         raise ValueError("Invalid admin SSH port")
     sources = [ipaddress.ip_network(s.strip(), strict=False)
                for s in cfg.get("SSH_ALLOWED_SOURCES", "").split(",") if s.strip()]
-    if not sources or len(sources) > 64 or any(s.prefixlen == 0 for s in sources):
+    if not sources and not allow_empty_sources:
+        raise ValueError("Set SSH_ALLOWED_SOURCES in /etc/tarasecfw.conf before opening SSH")
+    if len(sources) > 64 or any(s.prefixlen == 0 for s in sources):
         raise ValueError("Explicit SSH_ALLOWED_SOURCES required; unrestricted sources refused")
     return port, sources
 
@@ -137,10 +139,10 @@ def migration_blocked(port):
 
 
 def reconcile():
-    port, sources = configuration()
+    port, sources = configuration(allow_empty_sources=True)
     state = read_state()
     until = int(state.get("until", 0))
-    if migration_blocked(port):
+    if not sources or migration_blocked(port):
         if until:
             state.update({"until": 0, "closed_at": int(time.time())})
             write_state(state)
@@ -207,7 +209,7 @@ def lock_now(job_id, operator_hash):
     local_manager_policy.require_manager(operator_hash)
     if not re.fullmatch(r"[a-f0-9]{32}", job_id):
         raise ValueError("Invalid closure job")
-    port, _ = configuration()
+    port, _ = configuration(allow_empty_sources=True)
     state = read_state()
     # Persist revocation before changing either firewall family; reconciliation
     # then retains the closed policy if a command fails partway through.

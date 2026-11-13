@@ -6,6 +6,7 @@ root="$(cd "$(dirname "$0")" && pwd)"
 enroll=false
 skip_enrollment=false
 update_only=false
+configure_google_ssh=false
 enroll_args=()
 gatekeeper_args=()
 gatekeeper_web_root=/var/www/html
@@ -16,7 +17,13 @@ while [[ $# -gt 0 ]]; do
             enroll=true; gatekeeper_args+=("$1" "$2");
             if [[ $1 == --web-root ]]; then gatekeeper_web_root=$2; fi
             shift 2 ;;
-        --install-secret) enroll=true; enroll_args+=("--install-secret"); shift ;;
+        --install-secret)
+            enroll=true; enroll_args+=("--install-secret")
+            if [[ ! -e /etc/tarasec/agent-enrollment.json && ! -e /etc/tarasec-server-manager.conf ]]; then
+                configure_google_ssh=true
+            fi
+            shift ;;
+        --configure-google-ssh) configure_google_ssh=true; shift ;;
         --enroll-google) enroll=true; shift ;;
         --email|--approval-url|--nickname)
             [[ $# -ge 2 ]] || { echo "Missing value for $1" >&2; exit 1; }
@@ -27,7 +34,7 @@ while [[ $# -gt 0 ]]; do
         *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac
 done
-if $update_only && $enroll; then echo "Update-only cannot enroll managers" >&2; exit 1; fi
+if $update_only && { $enroll || $configure_google_ssh; }; then echo "Update-only cannot enroll managers or configure Google SSH" >&2; exit 1; fi
 if $update_only; then
     for policy in /etc/tarasec/access.conf /etc/tarasec-server-manager.conf; do
         [[ -r $policy ]] || { echo "Missing worker policy: $policy. Update-only stopped before changing services." >&2; exit 1; }
@@ -35,10 +42,32 @@ if $update_only; then
 fi
 if ! $enroll && ! $skip_enrollment && [[ ! -f /etc/tarasec/agent-enrollment.json ]]; then
     enroll=true; enroll_args+=(--install-secret)
+    [[ -e /etc/tarasec-server-manager.conf ]] || configure_google_ssh=true
 fi
 if ! $enroll && ! $skip_enrollment && [[ -t 0 ]]; then
     read -r -p 'Google manager email (Enter to keep current enrollment): ' manager_email
     if [[ -n $manager_email ]]; then enroll=true; enroll_args+=(--email "$manager_email"); fi
+fi
+if $configure_google_ssh; then
+    [[ -t 0 ]] || { echo 'Google SSH setup requires an interactive console.' >&2; exit 1; }
+    echo 'Google SSH setup closes inbound SSH until an approved opening.'
+    read -r -p 'Log in at the physical or VM console. Type CONSOLE to confirm recovery access: ' console
+    [[ $console == CONSOLE ]] || { echo 'Run setup from the server console.' >&2; exit 1; }
+    command -v sshd >/dev/null || apt-get install -y openssh-server
+    # Ubuntu socket activation can leave this runtime directory absent until sshd starts.
+    [[ -d /run/sshd ]] || install -d -o root -g root -m 0755 /run/sshd
+    ssh_ports=$(sshd -T | awk '$1 == "port" {print $2}')
+    socket_listen=$(systemctl show -p Listen --value ssh.socket)
+    if [[ $ssh_ports != 22 ]] ||
+        [[ -n $(printf '%s\n' "$socket_listen" | sed -E 's/[^[:space:]]+:22 \(Stream\)//g;s/[[:space:]]//g') ]]; then
+        echo 'Automatic Google SSH setup supports Ubuntu SSH on port 22 only. Check the SSH listeners from the console.' >&2
+        exit 1
+    fi
+    read -r -p 'NetBird IP of the computer you will run SSH from, if known (Enter to skip): ' admin_ip
+    admin_source=''
+    if [[ -n $admin_ip ]]; then
+        admin_source=$(python3 -c 'import ipaddress,sys; print(ipaddress.ip_network(ipaddress.ip_address(sys.argv[1])))' "$admin_ip")
+    fi
 fi
 # Self-enrollment creates a unique node credential if absent and authenticates
 # updates using the existing credential. It never closes SSH or changes grants
@@ -160,6 +189,42 @@ install -o root -g root -m 0644 "$root/systemd/tarasec-agent-approvals.service" 
 install -o root -g root -m 0644 "$root/systemd/tarasec-agent-approvals.timer" /etc/systemd/system/
 install -o root -g root -m 0644 "$root/systemd/tarasec-ssh-approval-poll.service" /etc/systemd/system/
 install -o root -g root -m 0644 "$root/systemd/tarasec-ssh-approval-poll.timer" /etc/systemd/system/
+if $configure_google_ssh; then
+    cp -a --parents /etc/tarasecfw.conf "$backup/"
+    python3 - "$admin_source" <<'GOOGLE_SSH'
+from pathlib import Path
+import sys
+sys.path.insert(0, '/usr/local/lib/tarasec')
+from local_manager_policy import manager_hashes
+
+if not manager_hashes():
+    raise SystemExit('Google SSH setup requires at least one enrolled local manager.')
+
+firewall_settings = {'SSH_PORT': '22'}
+if sys.argv[1]:
+    firewall_settings['SSH_ALLOWED_SOURCES'] = sys.argv[1]
+
+for path, settings in (
+    (Path('/etc/tarasecfw.conf'), firewall_settings),
+    (Path('/etc/tarasec-server-manager.conf'), {'SSH_GOOGLE_REOPEN_ENABLED': 'yes'}),
+):
+    lines = [line for line in path.read_text().splitlines()
+             if line.partition('=')[0].strip() not in settings]
+    lines.extend(f'{key}={value}' for key, value in settings.items())
+    path.write_text('\n'.join(lines) + '\n')
+GOOGLE_SSH
+    # Reapply the gate before OpenSSH can authenticate after boot or service restart.
+    install -d -m 0755 /etc/systemd/system/ssh.service.d
+    cat > /etc/systemd/system/ssh.service.d/50-tarasec-google-ssh.conf <<'SSH_GATE'
+[Service]
+ExecStartPre=/usr/bin/python3 /usr/local/lib/tarasec/ssh_google_window.py reconcile
+SSH_GATE
+    if ! python3 /usr/local/lib/tarasec/ssh_google_window.py reconcile; then
+        systemctl stop ssh.socket ssh.service
+        echo 'Google SSH setup failed. SSH was stopped. Use the console to correct the reported error and rerun setup.' >&2
+        exit 1
+    fi
+fi
 systemctl daemon-reload
 # A coordinator already owns scheduling on enrolled coordinator installations.
 if systemctl is-enabled --quiet tarasec-node-coordinator.service 2>/dev/null; then
@@ -182,7 +247,24 @@ echo "Hardening priorities: https://tarasec.org/safety/#hardening-priorities"
 echo "Ask your AI assistant to check the next missing control, test it and fix in-scope routine failures."
 
 printf "Program backup: %s\n" "$backup"
-echo "Google SSH remains owner-configured; see docs/google-ssh.md before enabling. Existing enabled policy is retained."
+if $configure_google_ssh; then
+    if systemctl is-enabled --quiet ssh.socket; then
+        systemctl start ssh.socket
+    else
+        systemctl start ssh.service
+    fi
+    systemctl start tarasec-agent-approvals.service
+    echo 'Google-controlled SSH is enabled and closed to new connections.'
+    if [[ -z $admin_source ]]; then
+        echo 'No new SSH source was added. If no source is configured, SSH windows cannot open.'
+        echo 'From the console, use sudoedit /etc/tarasecfw.conf to set SSH_ALLOWED_SOURCES to the client IP or CIDR.'
+        echo 'Then run: sudo python3 /usr/local/lib/tarasec/ssh_google_window.py reconcile'
+    fi
+    echo 'Keep the console open. With an allowed source configured, approve a temporary opening with your authenticator at https://tarasec.org/ops/agent/.'
+    echo 'Test a fresh SSH login during the opening and again after expiry. See docs/google-ssh.md.'
+else
+    echo "Existing Google SSH policy retained. To set up Google SSH from the console, rerun with --configure-google-ssh."
+fi
 
 
 # Complete scheduling restoration before the final enrollment summary.
