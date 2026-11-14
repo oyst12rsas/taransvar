@@ -304,6 +304,9 @@ var bGatekeeperAdmin = <?php print isAdmin() ? "true" : "false"; ?>;
 ?></title>
 </head>
 <body onload="pageLoader()">
+<div id="maintenance-notice" role="status" hidden
+     style="background:#fff2c6;color:#382800;border:1px solid #956600;padding:12px;margin-bottom:12px;font-weight:bold"></div>
+<script src="maintenance-notice.js" defer></script>
 <p><strong>TaraSec mode: <?php echo htmlspecialchars(tarasecDeploymentMode(), ENT_QUOTES, 'UTF-8'); ?></strong></p>
 <div id="targetTime" style="display:none;"><?php print $szTargetTime; ?></div>
 <table class="center"><tr><td bgcolor="#AAB396" style="position: relative;">
