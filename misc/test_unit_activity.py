@@ -1,5 +1,5 @@
 import unittest
-from unit_activity import routed_flows, ssh_sessions, observe
+from unit_activity import routed_flows, ssh_sessions, observe, observe_traffic
 
 
 class ActivityTests(unittest.TestCase):
@@ -32,6 +32,29 @@ class ActivityTests(unittest.TestCase):
         self.assertEqual(count, 0)
         self.assertIsNone(observe(state, flow, set(), 700, 'boot')[0])
         self.assertIsNone(observe(state, flow, set(), 580, 'reboot')[0])
+
+    def test_traffic_busy_and_two_quiet_samples(self):
+        state = {}
+        total = 0
+        readings = [0, 396, 393, 396, 402, 404, 2601, 2405, 1892, 515, 386, 396]
+        actual = []
+        for minute, rate in enumerate(readings):
+            total += rate
+            result, state = observe_traffic(state, [total, 0], minute * 60, ['boot', '1'])
+            actual.append(result['busy'])
+        self.assertEqual(actual, [None] * 5 + [False, True, True, True, True, True, False])
+        self.assertEqual(result['baseline'], 396)
+
+    def test_traffic_reset_and_stale_gap_are_unknown(self):
+        _, state = observe_traffic({}, [200, 200], 60, ['boot', '1'])
+        for counters, now, identity in (
+            ([100, 400], 120, ['boot', '1']),
+            ([400, 400], 240, ['boot', '1']),
+            ([400, 400], 120, ['boot', '2']),
+        ):
+            result, _ = observe_traffic(state, counters, now, identity)
+            self.assertIsNone(result['packetsPerMinute'])
+            self.assertIsNone(result['busy'])
 
     def test_authenticated_ssh_only(self):
         self.assertEqual(ssh_sessions('1 sshd: alice@pts/0\n2 sshd: alice [priv]\n3 sshd: unknown [net]\n4 sshd-session: bob@notty'), [
