@@ -41,3 +41,21 @@ zero active clients. Then generate sustained routed client traffic and verify th
 count increases; stop traffic and verify expiry after five minutes. Open an SSH
 terminal and an SSH nonterminal command and verify their sessions appear; close
 them and verify disappearance. Stop reporting and verify stale/missing grouping.
+
+## Traffic load for maintenance
+
+The minute reporter reads Linux RX and TX packet counters on `wt0`. The total
+includes direct, forwarded, and automatic traffic seen on that interface.
+It requires neither conntrack accounting nor packet inspection. The existing
+routed-client and authenticated SSH columns remain available. Units without
+`wt0`, older reporters, stale reports, and invalid samples show Unknown.
+
+The first five valid rates seed a per-unit median baseline. Five consecutive
+rates below the current baseline lower it to their median. Busy begins at 130%
+of baseline, or at any positive rate when the baseline is zero. It clears after
+two consecutive valid rates at or below 120% of baseline. A reboot or interface
+replacement starts a new baseline. The rate uses elapsed monotonic time, and
+counter resets and sampling gaps produce Unknown.
+
+Compare the column with observed traffic on each affected unit before scheduling
+maintenance. Services reached through other interfaces need their own checks.
