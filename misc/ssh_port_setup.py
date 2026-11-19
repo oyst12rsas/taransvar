@@ -290,12 +290,33 @@ def confirm():
     print('New SSH login confirmed; rollback cancelled. Keep using MFA before new SSH connections.')
 
 
+def ensure_migration_dependencies():
+    for program in ('iptables', 'ip6tables', 'iptables-restore', 'ip6tables-restore',
+                    'ss', 'sshd', 'systemctl', 'journalctl'):
+        if not shutil.which(program):
+            raise RuntimeError('Missing migration dependency: ' + program)
+    if shutil.which('ipset'):
+        return
+    apt_get = shutil.which('apt-get')
+    if not apt_get:
+        raise RuntimeError('Install ipset with your system package manager, then retry')
+    print('Installing ipset for temporary SSH and honeypot routing.', flush=True)
+    try:
+        subprocess.run([apt_get, 'update'], check=True)
+        subprocess.run([apt_get, 'install', '-y', 'ipset'], check=True)
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError('Could not install ipset with APT. See the package manager output and retry.') from error
+    if not shutil.which('ipset'):
+        raise RuntimeError('APT completed but ipset is unavailable on PATH')
+
+
 def migrate(console_recovery=False):
     text = root_file(CONF)
-    ensure_sshd_runtime()
     old, sources = window.configuration()
     if not sys.stdin.isatty():
         raise RuntimeError('Run interactively in a terminal; the management port is prompted privately')
+    ensure_migration_dependencies()
+    ensure_sshd_runtime()
     cfg = window.settings(str(CONF))
     backend = int(cfg.get('SSH_HONEYPOT_PORT', '22'))
     service_ports = set(route.excluded_ports(cfg, old, backend))
@@ -323,9 +344,6 @@ def migrate(console_recovery=False):
         raise ValueError('TCP/22 is already reserved by another service')
     if not console_recovery:
         console_recovery = input('Independent console available; use it instead of automatic rollback? [y/N]: ').strip().lower() in ('y', 'yes')
-    for program in ('ipset', 'iptables', 'ip6tables', 'iptables-restore', 'ip6tables-restore', 'ss', 'sshd', 'systemctl', 'journalctl'):
-        if not shutil.which(program):
-            raise RuntimeError('Missing dependency: ' + program + '. Install ipset, iptables, iproute2 and openssh-server, then retry')
     if command('systemctl', 'show', ssh_service_name(), '-p', 'KillMode', '--value').stdout.strip() != 'process':
         raise RuntimeError('SSH service KillMode=process is required to preserve established sessions')
     repo = Path(__file__).resolve().parents[1]
