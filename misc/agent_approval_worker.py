@@ -144,7 +144,7 @@ def execute_approved_job(job):
         if success:
             # SIGTERM delivery alone is not proof the SSH sockets went away.
             try:
-                port = int(ssh_security_evidence.collect()["tarasecfw_selected_fields"]["SSH_PORT"])
+                port = int(ssh_security_evidence.collect()["tarasecfw_selected_fields"].get("SSH_PORT", "22"))
                 for attempt in range(5):
                     if not established_ssh_session_pids(port):
                         break
@@ -164,9 +164,12 @@ def execute_approved_job(job):
 def report_approved_result(job, success, token):
     """Acknowledge execution and attach bounded SSH evidence without a minute wait."""
     body = {"id": job["id"], "nonce": job["nonce"], "success": success}
-    if success and job.get("operation") in ("open_ssh_temporarily", "close_ssh_and_disconnect"):
+    operation = job.get("operation")
+    if operation == "close_ssh_and_disconnect" or (success and operation == "open_ssh_temporarily"):
         try:
-            body["ssh_access"] = google_ssh_state()
+            access = google_ssh_state()
+            if success or access.get("state") == "closed":
+                body["ssh_access"] = access
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
             # Status collection must not lose the execution receipt or rerun the job.
             print("SSH status unavailable after execution", file=sys.stderr)
