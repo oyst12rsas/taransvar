@@ -12,13 +12,14 @@ class OperatorSSHControls(unittest.TestCase):
              mock.patch.object(worker,'enabled',return_value=True), \
              mock.patch.object(worker,'terminal_state',return_value={'verified':True}), \
              mock.patch.object(worker,'run',side_effect=lambda *a:(events.append('close') or mock.Mock(returncode=0))) as run, \
-             mock.patch.object(worker.ssh_security_evidence,'collect',return_value={'tarasecfw_selected_fields':{'SSH_PORT':'5822'}}), \
-             mock.patch.object(worker,'established_ssh_session_pids',return_value=[]), \
+             mock.patch.object(worker.ssh_security_evidence,'collect',return_value={'tarasecfw_selected_fields':{}}), \
+             mock.patch.object(worker,'established_ssh_session_pids',return_value=[]) as sessions, \
              mock.patch.object(worker,'terminate_existing_ssh_sessions',side_effect=lambda *a,**k:(events.append('disconnect') or {'result':'applied'})) as terminate, \
              mock.patch.object(worker,'audit'):
             self.assertTrue(worker.execute_approved_job(self.job()))
             self.assertEqual(events,['close','disconnect'])
             self.assertIn('lock',run.call_args.args)
+            sessions.assert_called_once_with(22)
             self.assertTrue(terminate.call_args.kwargs['operator_requested'])
             manager.assert_called_with('b'*64)
 
