@@ -26,7 +26,7 @@ certify all communication channels.
 This optional node policy rejects new admin SSH connections unless an operator
 explicitly approves a bounded opening through Google sign-in and TOTP on the
 approval service. Signing in alone does not open SSH. Established connections
-survive closure; console access is the recovery route. SSH authentication and
+survive closure; console access is the recovery route. SSH authentication and any configured
 SSH_ALLOWED_SOURCES remain additional conditions. There are no permanent trusted,
 recovery-address or loopback exemptions while the gate is closed.
 
@@ -101,11 +101,11 @@ come from this repository; do not copy installed code, tokens or policies from
 another node.
 
 Set a public, non-identifying AGENT_PUBLIC_NICKNAME in /etc/tarasecfw.conf.
-SSH_PORT must match the real admin listener, and SSH_ALLOWED_SOURCES must contain
-explicit comma-separated IPv4/IPv6 addresses or CIDRs. Empty and /0 lists are
-refused. The corresponding family must also allow legitimate SSH through its
-baseline rules: the Google window returns to that policy rather than bypassing
-other firewall restrictions. Do not overlap the admin and honeypot ports.
+SSH_PORT must match the real admin listener. SSH_ALLOWED_SOURCES is optional.
+Leave it unset or empty to allow any source through the Google SSH gate during
+an approved window. To restrict sources, use comma-separated IPv4/IPv6
+addresses or CIDRs. Explicit /0 entries are refused. The baseline firewall
+still governs which connections can reach SSH. Do not overlap the admin and honeypot ports.
 
 Generate a unique root-only /etc/tarasec/agent-node.token containing 64 random
 hex characters. Register SHA-256 of the token text **without its trailing newline**
