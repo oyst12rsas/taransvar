@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 import ssh_google_window as window
+import ssh_honeypot_route as decoy
 import agent_approval_worker as worker
 
 
@@ -56,9 +57,33 @@ class GoogleWindowTests(unittest.TestCase):
                 port, sources = window.configuration()
                 self.assertEqual(port, 4810)
                 self.assertEqual([s.version for s in sources], [4, 6])
-                for source in ('', '0.0.0.0/0', '::/0', 'not-an-ip'):
+                for config in ('SSH_PORT=4810\n', 'SSH_PORT=4810\nSSH_ALLOWED_SOURCES=""\n'):
+                    cfg.write_text(config)
+                    self.assertEqual(window.configuration(), (4810, []))
+                for source in ('0.0.0.0/0', '::/0', 'not-an-ip'):
                     cfg.write_text('SSH_PORT=4810\nSSH_ALLOWED_SOURCES='+source+'\n')
                     with self.assertRaises(ValueError): window.configuration()
+
+    def test_unrestricted_window_returns_to_baseline_for_both_families(self):
+        for decoys in (False, True):
+            for until in (1000, 1300):
+                with self.subTest(decoys=decoys, until=until), \
+                     mock.patch.object(window.time, 'time', return_value=1000), \
+                     mock.patch.object(window, 'decoy_enabled', return_value=decoys), \
+                     mock.patch.object(decoy, 'prepare'), \
+                     mock.patch.object(decoy, 'run') as ipset, \
+                     mock.patch.object(window, 'command', side_effect=lambda *args, **kw: '-C' not in args) as commands:
+                    window.apply_rules(4810, [], until)
+                    for tool, version in (('iptables', 4), ('ip6tables', 6)):
+                        rules = [call.args[5:] for call in commands.call_args_list
+                                 if call.args[:5] == (tool, '-w', '5', '-A', window.CHAIN)]
+                        reject = ('-p', 'tcp', '-j', 'REJECT', '--reject-with', 'tcp-reset')
+                        match = ('-p', 'tcp', '-m', 'set', '--match-set', decoy.SETS[version], 'src,dst') if decoys else ()
+                        expected = [match + ('-j', 'RETURN'), reject] if until > 1000 else [reject]
+                        self.assertEqual(rules, expected)
+                    entries = [call.args[3] for call in ipset.call_args_list if call.args[:2] == ('ipset', 'add')]
+                    expected_entries = ['0.0.0.0/1', '128.0.0.0/1', '::/1', '8000::/1'] if decoys and until > 1000 else []
+                    self.assertEqual(entries, [f'{network},tcp:4810' for network in expected_entries])
 
     def test_closed_gate_has_no_source_or_recovery_exemptions(self):
         calls = []
