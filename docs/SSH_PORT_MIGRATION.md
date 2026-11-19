@@ -51,8 +51,10 @@ configuration after an error, and requires no ten-minute confirmation. Backups
 remain available for an explicit manual --rollback.
 
 After successful setup, open a fresh MFA window and test the new listener.
-A failure retains the current settings for console repair and marks recovery
-incomplete. Once the current configuration and listener are valid, use:
+If setup is interrupted or fails, rerun the same setup command with
+`--console-recovery` from the console. Enter the desired port and range. The
+installer reuses the original recovery snapshot, starts the honeypot backend,
+and completes configuration without automatic rollback. Once the current configuration and listener are valid, use:
 
 ```bash
 clear
