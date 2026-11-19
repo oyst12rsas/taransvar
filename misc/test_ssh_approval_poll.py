@@ -67,6 +67,18 @@ class PollTests(unittest.TestCase):
             api.assert_called_once_with('result',
                 {'id':job['id'],'nonce':job['nonce'],'success':True}, 'token')
 
+    def test_failed_disconnect_reports_verified_gate_closure(self):
+        job = {'operation':'close_ssh_and_disconnect','id':'b'*32,'nonce':'c'*32}
+        for state in ('closed', 'open', 'unverified'):
+            status = {'state':state}
+            with self.subTest(state=state), \
+                 mock.patch.object(poll.worker, 'google_ssh_state', return_value=status), \
+                 mock.patch.object(poll.worker, 'api') as api:
+                poll.worker.report_approved_result(job, False, 'token')
+                body = api.call_args.args[1]
+                self.assertFalse(body['success'])
+                self.assertEqual(body.get('ssh_access'), status if state == 'closed' else None)
+
     def test_failed_execution_does_not_claim_an_opening(self):
         job = {'operation':'open_ssh_temporarily','id':'b'*32,'nonce':'c'*32}
         with mock.patch.object(poll.worker, 'google_ssh_state') as read, \
