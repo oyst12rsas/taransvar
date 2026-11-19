@@ -17,6 +17,23 @@ import ssh_port_setup as setup
 
 
 class PolicyTests(unittest.TestCase):
+    def test_missing_ipset_is_installed_only_once(self):
+        programs = {'ipset': None}
+
+        def run(args, *, check):
+            if args[1] == 'install':
+                programs['ipset'] = '/usr/sbin/ipset'
+
+        with mock.patch.object(setup.shutil, 'which', side_effect=lambda name: programs.get(name, '/mock/' + name)), \
+             mock.patch.object(setup.subprocess, 'run', side_effect=run) as apt, \
+             contextlib.redirect_stdout(io.StringIO()):
+            setup.ensure_migration_dependencies()
+            setup.ensure_migration_dependencies()
+        self.assertEqual(apt.call_args_list, [
+            mock.call(['/mock/apt-get', 'update'], check=True),
+            mock.call(['/mock/apt-get', 'install', '-y', 'ipset'], check=True),
+        ])
+
     def test_ranges_allow_management_port_inside_and_reject_invalid_values(self):
         self.assertEqual(route.ranges('1000-5000,22'), [(22, 22), (1000, 5000)])
         for invalid in ('', '5000-1000', '0', '65536', '1-99999', '1; reboot'):
