@@ -196,7 +196,32 @@ class MigrationTests(unittest.TestCase):
                     timer = next(i for i, args in enumerate(events) if args[:3] == ('systemctl', 'enable', '--now'))
                     gate = next(i for i, args in enumerate(events) if args[0] == 'gate')
                     self.assertLess(timer, gate)
+                activate = next(i for i, args in enumerate(events)
+                                if args[0] == 'bash' and args[-1] == '--activate-decoy')
+                active_check = events.index(('systemctl', 'is-active', '--quiet', 'tarasec-ssh-honeypot.service'))
+                self.assertLess(activate, active_check)
                 self.assertEqual(conf.stat().st_mode & 0o777, 0o640)
+
+    def test_console_retry_preserves_original_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory)
+            saved = state / 'backup-original'
+            saved.mkdir()
+            pending = state / 'pending.json'
+            pending.write_text(json.dumps({
+                'backup': str(saved), 'new_port': 4810,
+                'phase': 'console_recovery_required', 'automatic_rollback': False,
+            }))
+            pending.chmod(0o600)
+            with mock.patch.object(setup, 'STATE', state), mock.patch.object(setup, 'command') as run:
+                self.assertEqual(setup.snapshot(4638, console_recovery=True), saved)
+                self.assertEqual(setup.snapshot(4810, console_recovery=True), saved)
+                run.assert_not_called()
+            receipt = json.loads(pending.read_text())
+            self.assertEqual(receipt['backup'], str(saved))
+            self.assertEqual(receipt['snapshot_port'], 4810)
+            self.assertEqual(receipt['new_port'], 4810)
+            self.assertFalse(receipt['automatic_rollback'])
 
     def test_missing_runtime_is_created_and_unsafe_runtime_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:
