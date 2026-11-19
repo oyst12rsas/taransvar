@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Default-closed, source-restricted SSH windows authorized by the operator API."""
+"""Default-closed SSH windows authorized by the operator API."""
 import fcntl
 import ipaddress
 import json
@@ -41,8 +41,8 @@ def configuration(require_enabled=True):
         raise ValueError("Invalid admin SSH port")
     sources = [ipaddress.ip_network(s.strip(), strict=False)
                for s in cfg.get("SSH_ALLOWED_SOURCES", "").split(",") if s.strip()]
-    if not sources or len(sources) > 64 or any(s.prefixlen == 0 for s in sources):
-        raise ValueError("Explicit SSH_ALLOWED_SOURCES required; unrestricted sources refused")
+    if len(sources) > 64 or any(s.prefixlen == 0 for s in sources):
+        raise ValueError("SSH_ALLOWED_SOURCES supports up to 64 entries and does not accept /0")
     return port, sources
 
 
@@ -98,9 +98,11 @@ def apply_rules(port, sources, until):
         command(tool, "-w", "5", "-N", CHAIN, check=False)
         command(tool, "-w", "5", "-F", CHAIN)
         if until > time.time():
+            extra = ["-p", "tcp", "-m", "set", "--match-set", ssh_honeypot_route.SETS[version], "src,dst"] if decoys else []
+            if not sources:
+                command(tool, "-w", "5", "-A", CHAIN, *extra, "-j", "RETURN")
             for source in sources:
                 if source.version == version:
-                    extra = ["-p", "tcp", "-m", "set", "--match-set", ssh_honeypot_route.SETS[version], "src,dst"] if decoys else []
                     command(tool, "-w", "5", "-A", CHAIN, "-s", str(source), *extra, "-j", "RETURN")
         command(tool, "-w", "5", "-A", CHAIN, "-p", "tcp", "-j", "REJECT", "--reject-with", "tcp-reset")
         jump = ["-p", "tcp", "--dport", str(port), "-m", "conntrack",

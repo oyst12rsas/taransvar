@@ -139,6 +139,10 @@ def prepare():
 
 def lease(port, sources, until):
     """A NAT exemption alone never bypasses the filter-table MFA gate."""
+    if not sources:
+        # hash:net,port cannot store /0. Two /1 entries cover each family.
+        sources = [ipaddress.ip_network(cidr)
+                   for cidr in ('0.0.0.0/1', '128.0.0.0/1', '::/1', '8000::/1')]
     for version, name in SETS.items():
         staging = name + '_next'
         run('ipset', 'create', staging, 'hash:net,port', 'family', 'inet' if version == 4 else 'inet6',
