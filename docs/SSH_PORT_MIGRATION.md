@@ -6,7 +6,8 @@ This opt-in systemd/Linux migration retains the existing Google/TOTP approval
 service and local manager/source policy. It does not change SSH authentication
 methods, authorized keys or forwarding. Initial setup requires a working enrolled
 MFA gate, an existing OpenSSH server, iptables/ip6tables, ipset and iproute2.
-Run from the current full checkout; keep an independent console available.
+On systems with APT, setup installs `ipset` if it is missing. Run from the
+current full checkout and keep an independent console available.
 
 ## Run on the target server
 
