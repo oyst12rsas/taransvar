@@ -27,13 +27,26 @@ function unitActivityOverview($conn)
             }
             $sshText = count($ssh).(count($ssh) ? ': '.implode(', ', $items) : '');
         }
+        $traffic = $activity['traffic'] ?? [];
+        $rate = $traffic['packetsPerMinute'] ?? null;
+        $baseline = $traffic['baseline'] ?? null;
+        $busy = $traffic['busy'] ?? null;
+        $load = 'Unknown';
+        if ($fresh && is_int($rate)) {
+            $load = $rate.' packets/min on wt0';
+            if (is_int($baseline) && is_bool($busy)) {
+                $load .= ' (baseline '.$baseline.') — '.($busy ? 'Busy' : 'Near baseline');
+            } else {
+                $load .= ' — Learning baseline';
+            }
+        }
         $suffix = !$fresh ? ' (stale)' : '';
-        $groups[$group] .= '<tr><td><a href="index.php?f=unitsMore&amp;id='.(int)$row['routerId'].'">'.$escape($row['name']).'</a></td><td>'.$escape($row['ip']).'</td><td>'.$escape($row['partnerStatusReceived'] ?? 'Never').' / '.$escape($row['age'] === null ? 'unknown' : $row['age'].'s').'</td><td>'.$escape(($clients === null ? 'Unknown' : $clients).$suffix).'</td><td>'.$escape($sshText.$suffix).'</td></tr>';
+        $groups[$group] .= '<tr><td><a href="index.php?f=unitsMore&amp;id='.(int)$row['routerId'].'">'.$escape($row['name']).'</a></td><td>'.$escape($row['ip']).'</td><td>'.$escape($row['partnerStatusReceived'] ?? 'Never').' / '.$escape($row['age'] === null ? 'unknown' : $row['age'].'s').'</td><td>'.$escape(($clients === null ? 'Unknown' : $clients).$suffix).'</td><td>'.$escape($sshText.$suffix).'</td><td>'.$escape($load).'</td></tr>';
     }
     $result->free();
-    $html = '<p>Client activity: routed connection packet changes observed in the last five minutes; local server traffic is excluded. SSH: authenticated sessions, including idle and non-terminal sessions. Unknown means unavailable or awaiting a baseline.</p>';
+    $html = '<p>Client activity: routed connection packet changes observed in the last five minutes; local server traffic is excluded. SSH: authenticated sessions, including idle and non-terminal sessions. Traffic load: packets received and sent on wt0, including local and automatic traffic. Busy starts at 30% above baseline and clears after two samples at or below 120% of baseline. Load is an advisory for scheduling maintenance.</p>';
     foreach ($groups as $title => $rows) {
-        $html .= '<h3>'.$escape($title).'</h3>'.($rows ? '<table><tr><th>Unit</th><th>IP</th><th>Last report / age</th><th>Active clients</th><th>SSH logins</th></tr>'.$rows.'</table>' : '<p>None.</p>');
+        $html .= '<h3>'.$escape($title).'</h3>'.($rows ? '<table><tr><th>Unit</th><th>IP</th><th>Last report / age</th><th>Active clients</th><th>SSH logins</th><th>Traffic load</th></tr>'.$rows.'</table>' : '<p>None.</p>');
     }
     return $html;
 }
