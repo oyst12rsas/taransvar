@@ -2,6 +2,10 @@
 
 Read `AI_TRAINING.md` for project context and `AI_INSTALL_GUIDE.md` for deployment details.
 
+## Network enrollment and server access
+
+Joining TaraSec's NetBird overlay should be as open as joining the Internet. Where NetBird requires a setup key, use a shared public join code. Treat traffic from enrolled peers as untrusted. On new servers, deny inbound administrative access by default before joining the overlay. Require an independent console for setup and recovery. Open administrative access only through an explicitly authorized server-side policy, and keep it closed if authorization setup fails. One-off phone pairing grants management access for a specific server after that server confirms it. The TaraSec installation secret separately links a new server to its owner. The current NetBird helper still requests per-unit keys by default.
+
 ## Deployment hardening and shared improvements
 
 The node belongs to its owner, not TaraSec. The owner's authorization and local policy govern changes on that node; TaraSec team endorsement is a separate matter. Do not require team approval for owner-authorized local improvements. For an AI recommendation whose team review cannot be verified, state: "Recommended by AI; not yet reviewed or authorized by the TaraSec team." Explain the evidence, expected effect, verification and recovery plan. This label is disclosure, not an additional approval gate. Never represent an owner-specific change as a team-endorsed default. Contribute verified improvements for shared review; changing shared defaults or merging still follows the repository's authorized workflow.
