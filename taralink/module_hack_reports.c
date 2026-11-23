@@ -546,10 +546,29 @@ static void checkHackReportsWorker()
 				continue;
 			}
 
-			/* Severity zero is an explicit clean notification. It may clear an
-			 * existing attributable infection, but must never create one. */
+			/* The gateway owns infection state for its local units. A remote
+			 * clear requires an attributed unit (above), an explicit CLEAR:
+			 * reason, and a direct report from a configured global database.
+			 * Forwarded partner observations with severity zero are evidence only. */
 			if (nSeverity == 0)
 			{
+				const char *sender = row[7];
+				const char *reason = row[8];
+				int fromGlobalDb = 0;
+				for (int n = 0; n < 3; n++) {
+					const char *globalIp = cGlobalDb.ip[n];
+					if (sender && globalIp && *globalIp && strcmp(globalIp, "0.0.0.0")
+					    && strcmp(sender, globalIp) == 0) {
+						fromGlobalDb = 1;
+						break;
+					}
+				}
+				if (!fromGlobalDb || !row[10] || strcmp(row[10], "from_dbserver")
+				    || !reason || strncmp(reason, "CLEAR:", 6)
+				    || !reason[6] || strspn(reason + 6, " \t\r\n") == strlen(reason + 6)) {
+					setHackReportAsHandled("Ignored: unauthorized infection clear", atoi(row[0]));
+					continue;
+				}
 				if (nInfectionId > 0)
 				{
 					sprintf(cSQL, "update internalInfections set active=b'0', handled=b'0', lastSeen=now() where infectionId=%d", nInfectionId);
@@ -580,8 +599,14 @@ static void checkHackReportsWorker()
 				else
 				{
 					strncpy(cWhat, "Already reg as infected. ", sizeof(cWhat) - strlen(cWhat) - 1);
-					// Ordinary reports must not undo a deliberate admin deactivation.
-					sprintf(cSQL, "update internalInfections set unitId = %d, lastSeen = now() where infectionId = %d", nUnitId, nInfectionId);
+					// A gateway finding supersedes a client declaration. Preserve
+					// deliberate manager deactivation on established findings.
+					snprintf(cSQL, sizeof(cSQL), "update internalInfections set unitId=%d, lastSeen=now(), "
+					         "handled=if(why='TaraSec app: device self-declared infected',b'0',handled), "
+					         "active=if(why='TaraSec app: device self-declared infected',b'1',active), "
+					         "severity=if(why='TaraSec app: device self-declared infected',greatest(severity,%d),severity), "
+					         "why=if(why='TaraSec app: device self-declared infected','Gateway-attributed threat report',why) "
+					         "where infectionId=%d", nUnitId, nSeverity, nInfectionId);
 					lpHackReportStatus = "infection->lastSeen updated";
 					printf("Already in internalInfections; updating lastSeen without changing active state.\n");
 				}
