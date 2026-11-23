@@ -61,6 +61,7 @@ if (filter_var($sender, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
 
 try {
     $conn = getConnection();
+    $selfDeclared = 'TaraSec app: device self-declared infected';
 
     // The app toggle describes the calling device itself. Do not create a
     // hackReport and do not infer another unit from the TCP source port.
@@ -72,11 +73,15 @@ try {
         "SELECT infectionId
            FROM internalInfections
           WHERE ip = INET_ATON(?)" .
-        ($isDemo ? " AND why LIKE 'DEMO:%'" : " AND (why IS NULL OR why NOT LIKE 'DEMO:%')") .
+        ($isDemo ? " AND why LIKE 'DEMO:%' AND COALESCE(botnetId, 0) = 0" : " AND why = ? AND COALESCE(botnetId, 0) = 0") .
         " ORDER BY infectionId DESC
           LIMIT 1";
     $stmt = $conn->prepare($lookupSql);
-    $stmt->bind_param('s', $sender);
+    if ($isDemo) {
+        $stmt->bind_param('s', $sender);
+    } else {
+        $stmt->bind_param('ss', $sender, $selfDeclared);
+    }
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
     $stmt->close();
@@ -87,7 +92,7 @@ try {
     // receiver uses the stable DEMO prefix to classify the resulting report.
     $why = $isDemo
         ? 'DEMO:TaraSec app: device self-declared infected'
-        : 'TaraSec app: device self-declared infected';
+        : $selfDeclared;
 
     if ($wantInfected) {
         if ($infectionId > 0) {
@@ -100,9 +105,15 @@ try {
                         nettmask = 4294967295,
                         why = ?,
                         lastSeen = NOW()
-                  WHERE infectionId = ?"
+                  WHERE infectionId = ?" . ($isDemo
+                      ? " AND why LIKE 'DEMO:%' AND COALESCE(botnetId, 0) = 0"
+                      : " AND why = ? AND COALESCE(botnetId, 0) = 0")
             );
-            $stmt->bind_param('isi', $severity, $why, $infectionId);
+            if ($isDemo) {
+                $stmt->bind_param('isi', $severity, $why, $infectionId);
+            } else {
+                $stmt->bind_param('isis', $severity, $why, $infectionId, $selfDeclared);
+            }
             $stmt->execute();
             $stmt->close();
         } else {
@@ -140,22 +151,46 @@ try {
                 SET active = b'0', handled = b'0', lastSeen = NOW()
               WHERE ip = INET_ATON(?)
                 AND active = b'1'
-                AND why LIKE 'DEMO:%'"
+                AND why LIKE 'DEMO:%'
+                AND COALESCE(botnetId, 0) = 0"
         );
         $stmt->bind_param('s', $sender);
         $stmt->execute();
         $changed = $stmt->affected_rows;
         $stmt->close();
-    } elseif ($infectionId > 0) {
+    } else {
+        // The client may withdraw its own initial declaration. Findings
+        // created by the gateway or assigned to a botnet must go through the
+        // router manager or the explicit global-DB clear path in Taralink.
         $stmt = $conn->prepare(
             "UPDATE internalInfections
                 SET active = b'0', handled = b'0', lastSeen = NOW()
-              WHERE infectionId = ?"
+              WHERE ip = INET_ATON(?)
+                AND active = b'1'
+                AND why = ?
+                AND COALESCE(botnetId, 0) = 0"
         );
-        $stmt->bind_param('i', $infectionId);
+        $stmt->bind_param('ss', $sender, $selfDeclared);
         $stmt->execute();
         $changed = $stmt->affected_rows;
         $stmt->close();
+
+        $stmt = $conn->prepare(
+            "SELECT 1 FROM internalInfections I
+              WHERE I.active = b'1'
+                AND (I.why IS NULL OR I.why NOT LIKE 'DEMO:%' OR COALESCE(I.botnetId, 0) <> 0)
+                AND (I.ip = INET_ATON(?) OR EXISTS (
+                    SELECT 1 FROM unit U WHERE U.unitId = I.unitId AND U.ipAddress = INET_ATON(?)
+                ))
+              LIMIT 1"
+        );
+        $stmt->bind_param('ss', $sender, $sender);
+        $stmt->execute();
+        $restricted = (bool)$stmt->get_result()->fetch_row();
+        $stmt->close();
+        if ($restricted) {
+            controlFail(409, 'Device has an active infection finding. Contact your router manager.');
+        }
     }
 
     $conn->close();
@@ -169,7 +204,7 @@ try {
         'demo' => $isDemo,
         'message' => $isDemo
             ? ($changed > 0 ? 'Demo state reset on the current TaraSec gateway' : 'This device had no active demo infection state on the current gateway')
-            : ($infectionId > 0 ? 'This device is marked clean on the local TaraSec gateway' : 'This device had no infection record')
+            : ($changed > 0 ? 'Self-declared infection cleared on the local TaraSec gateway' : 'This device had no active self-declared infection')
     ], JSON_UNESCAPED_SLASHES);
 } catch (Throwable $e) {
     error_log('appInfectionControl.php failed for ' . $sender . ': ' . $e->getMessage());
