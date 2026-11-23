@@ -60,34 +60,44 @@ The remaining clean-install acceptance sequence is:
 
 Until that sequence passes from a fresh reset, say **implemented on main, pending clean reinstall acceptance test**.
 
-## Register ownership before installation
+## Server registration and trust levels
 
-Before installing a new server, the owner signs into
-https://tarasec.org/ops/agent/install.php with the Google account they will use in
-the app and generates a single-use installation secret. Open that page on a
-trusted device and transfer the secret manually to the server console. Never ask
-the user to paste it into an AI conversation, command line, environment variable
-or support log. Secrets expire after 15 minutes and register one new server.
+Installation does not require a secret. The core, hotspot and standalone NetBird
+installers self-register the server with TaraSec at the **lowest trust level**,
+like the first step of a certification program: enough to identify the node and
+accept its reports, with low weight for its tagging until trust is raised.
+The trust levels themselves are proposed, not implemented; see
+[Node trust levels](docs/NODE_TRUST_LEVELS.md) for the rules and what remains
+to build.
 
-The core, hotspot and standalone NetBird installers register ownership before
-deploying TaraSec services or joining the management overlay. If Python is
-missing, they install Python/CA prerequisites through the OS package manager
-first. Failed registration stops installation. The hidden prompt is implemented
-by misc/enroll_google_manager.py --install-secret; that flag takes no value.
+- The installer asks for an **optional Google email** (or reads
+  `TARASEC_OWNER_EMAIL`). If given, its SHA-256 hash is registered so that
+  account can use Login with Google for this server; the raw email stays on the
+  node. Press Enter to skip; add it later with
+  `sudo python3 misc/enroll_google_manager.py --email you@gmail.com`.
+- The node's credential is a root-only bearer token in
+  `/etc/tarasec/agent-node.token` (mode 0600), created on first run and sent on
+  every later request. The user never needs to see it. The receipt is
+  `/etc/tarasec/agent-enrollment.json`.
+- Registration failure (service unreachable or refusing) is **non-fatal**:
+  `enroll_google_manager.py --auto` exits 75, keeps the local identity and the
+  install continues, including NetBird. Retry with
+  `sudo python3 misc/enroll_google_manager.py --auto`.
 
-The enrollment service derives the initial manager from the verified Google
-account and returns its hash for the local access policy. The installer creates
-or retains a unique root-only bearer credential, not an asymmetric identity key
-pair. After the normal management/Gatekeeper installation, the same Google
-account has management permission in the app without a separate manager grant.
-TOTP is still required to approve SSH operations. Secret issuance itself does not
-provide access to any existing server.
+**Raising trust (verified owner).** The owner signs into
+https://tarasec.org/ops/agent/install.php with Google on a trusted device,
+generates a single-use secret (valid 15 minutes) and enters it at the server
+console with `sudo bash misc/install_agent_approvals.sh --install-secret`
+(hidden prompt; the flag takes no value). Never paste the secret into an AI
+conversation, command line, environment variable or support log. The service
+derives the verified owner from the Google account. TOTP is still required to
+approve SSH operations; neither registration nor secret issuance grants access
+to any existing server.
 
-Deploy the matching tarasec.org enrollment service before these installers.
-Existing registered nodes keep their credentials and can use --sync or add local
-managers as before. An unregistered node cannot substitute --email for a secret
-on the public service. Lost replies can be retried with the same secret and
-credential for up to 24 hours; do not generate a replacement node credential.
+The tarasec.org enrollment service must accept low-trust self-registration
+(node credential, nickname and zero or more manager hashes, no secret) for the
+`--auto` path to succeed; until it does, installs report registration as
+deferred.
 
 Ownership enrollment authenticates the start of the management process. It does
 not certify that the OS, downloaded installer or every inter-server protocol is

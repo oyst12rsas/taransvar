@@ -34,6 +34,53 @@ class EnrollmentTests(unittest.TestCase):
 
 
 
+    def auto(self, email=(), environ=None, interactive=False, answers=()):
+        args = mock.Mock(email=list(email), approval_url=None, nickname=None)
+        replies = iter(answers)
+        with mock.patch('sys.stdout', new_callable=io.StringIO):
+            return enroll.auto_register(args, environ=environ or {}, interactive=interactive,
+                                        ask=lambda prompt: next(replies), root=self.root, opener=self.opener)
+
+    def test_auto_registers_without_secret_or_email(self):
+        self.assertEqual(self.auto(), 0)
+        data = json.loads(self.calls[0].data)
+        self.assertEqual(data['manager_hashes'], [])
+        self.assertNotIn('install_secret', data)
+        self.assertTrue((self.root/'etc/tarasec/agent-enrollment.json').exists())
+
+    def test_auto_sends_only_hash_of_given_email(self):
+        for kwargs in (dict(email=['Owner@Example.com']),
+                       dict(environ={'TARASEC_OWNER_EMAIL': 'owner@example.com'}),
+                       dict(interactive=True, answers=['not-an-email', 'owner@example.com'])):
+            with self.subTest(**{k: str(v) for k, v in kwargs.items()}):
+                self.calls.clear()
+                for f in (self.root/'etc/tarasec').glob('*'):
+                    if f.name != 'agent-node.token': f.unlink()
+                self.assertEqual(self.auto(**kwargs), 0)
+                data = json.loads(self.calls[0].data)
+                self.assertEqual(data['manager_hashes'], [local_manager_policy.email_hash('owner@example.com')])
+                self.assertNotIn('owner@example.com', self.calls[0].data.decode().lower())
+
+    def test_auto_prompt_skipped_on_enter_or_when_already_asked(self):
+        self.assertEqual(self.auto(interactive=True, answers=['']), 0)
+        self.assertEqual(json.loads(self.calls[-1].data)['manager_hashes'], [])
+        (self.root/'etc/tarasec/agent-enrollment.json').unlink()
+        ask = mock.Mock(side_effect=AssertionError('must not prompt'))
+        args = mock.Mock(email=[], approval_url=None, nickname=None)
+        with mock.patch('sys.stdout', new_callable=io.StringIO):
+            self.assertEqual(enroll.auto_register(args, environ={'TARASEC_SELF_REGISTER_TRIED': '1'},
+                interactive=True, ask=ask, root=self.root, opener=self.opener), 0)
+
+    def test_auto_rejection_is_deferred_and_keeps_identity(self):
+        self.opener.open.side_effect = urllib.error.HTTPError('u', 403, 'no', {}, None)
+        self.assertEqual(self.auto(email=['owner@example.com']), enroll.AUTO_DEFERRED)
+        self.assertTrue((self.root/'etc/tarasec/agent-node.token').exists())
+        self.assertFalse((self.root/'etc/tarasec/agent-enrollment.json').exists())
+        token = (self.root/'etc/tarasec/agent-node.token').read_text()
+        self.opener.open.side_effect = self.answer
+        self.assertEqual(self.auto(email=['owner@example.com']), 0)
+        self.assertEqual((self.root/'etc/tarasec/agent-node.token').read_text(), token)
+
     def test_install_secret_derives_and_persists_verified_owner(self):
         owner = local_manager_policy.email_hash('owner@example.com')
         def answer(req, timeout):

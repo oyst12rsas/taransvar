@@ -260,11 +260,18 @@ def main():
     parser.add_argument('--nickname')
     parser.add_argument('--install-secret', action='store_true',
                         help='Read a single-use installation secret at a hidden terminal prompt')
+    parser.add_argument('--auto', action='store_true',
+                        help='Self-register at low trust without a secret; optional --email '
+                             '(or TARASEC_OWNER_EMAIL) for Google sign-in. Failure is non-fatal (exit 75)')
     args = parser.parse_args()
     if os.geteuid() != 0: parser.error('Run with sudo on the intended server')
+    if args.auto:
+        if args.install_secret or args.sync: parser.error('--auto cannot be combined with --install-secret or --sync')
+        raise SystemExit(auto_register(args))
     secret = None
-    fresh = not Path('/etc/tarasec/agent-enrollment.json').exists()
-    if args.install_secret or (fresh and not args.sync):
+    # A secret is only needed to raise trust with a verified owner; plain
+    # registration (--email, --sync, --auto) is low-trust self-registration.
+    if args.install_secret:
         if args.email or args.sync: parser.error('Use the secret owner account for initial enrollment; add other managers later')
         if not os.isatty(0): parser.error('Initial enrollment requires a terminal for the hidden secret prompt')
         print('Register this server with your Google account before installing TaraSec.')
@@ -275,8 +282,60 @@ def main():
         secret = getpass.getpass('Installation secret (input hidden): ').strip()
     elif not args.email and not args.sync:
         args.email = [input('Google email authorized to manage this server: ').strip()]
+    result = enroll_or_explain(args.email, args.sync, args.approval_url, args.nickname, install_secret=secret)
+    print('Enrollment confirmed for %s (%d local managers).' % (result['nickname'], result['manager_count']))
+    receipt = json.loads(private_read(Path('/etc/tarasec/agent-enrollment.json')))
+    print('Google sign-in: ' + receipt['approval_url'].rsplit('/', 1)[0] + '/')
+    print('SSH policy unchanged. Verify Google/TOTP and console recovery before enabling SSH closure; see docs/google-ssh.md.')
+
+
+AUTO_DEFERRED = 75  # EX_TEMPFAIL: registration deferred, local identity retained.
+
+
+def auto_register(args, environ=os.environ, interactive=None, ask=input, root=Path('/'), opener=None):
+    """Low-trust self-registration: no secret, optional Google email, never fatal."""
+    interactive = os.isatty(0) if interactive is None else interactive
+    emails = [e.strip() for e in args.email if e.strip()]
+    if not emails and environ.get('TARASEC_OWNER_EMAIL', '').strip():
+        emails = [environ['TARASEC_OWNER_EMAIL'].strip()]
+    already_asked = bool(environ.get('TARASEC_SELF_REGISTER_TRIED'))
+    if not emails and interactive and not already_asked and not (root / 'etc/tarasec/agent-enrollment.json').exists():
+        print('Optional: a Google email lets that account sign in to manage this server.')
+        while True:
+            email = ask('Google email for Login with Google (Enter to skip, can be added later): ').strip()
+            if not email: break
+            try:
+                local_manager_policy.email_hash(email)
+            except ValueError:
+                print('That does not look like an email address; try again or press Enter to skip.')
+                continue
+            emails = [email]
+            break
+    for email in emails:
+        try:
+            local_manager_policy.email_hash(email)
+        except ValueError:
+            print('Invalid Google email; registering without one. Add it later with --email.')
+            emails = []
+            break
     try:
-        result = enroll(args.email, args.sync, args.approval_url, args.nickname, install_secret=secret)
+        result = enroll_or_explain(emails, not emails, args.approval_url, args.nickname, root=root, opener=opener)
+    except SystemExit as reason:
+        print('Self-registration deferred: %s' % reason)
+        print('The server still installs. Retry later: sudo python3 misc/enroll_google_manager.py --auto [--email you@gmail.com]')
+        return AUTO_DEFERRED
+    print('Self-registered as %s (low trust; %d Google manager%s).' % (
+        result['nickname'], result['manager_count'], '' if result['manager_count'] == 1 else 's'))
+    if not emails:
+        print('No Google email given. Add one later: sudo python3 misc/enroll_google_manager.py --email you@gmail.com')
+    print('To raise trust with a verified owner: sudo bash misc/install_agent_approvals.sh --install-secret')
+    return 0
+
+
+def enroll_or_explain(emails, sync, approval_url, nickname, install_secret=None, **kwargs):
+    """Run enroll(); convert failures into static diagnostics via SystemExit."""
+    try:
+        return enroll(emails, sync, approval_url, nickname, install_secret=install_secret, **kwargs)
     except urllib.error.HTTPError as e:
         raise SystemExit('Enrollment rejected (HTTP %s); local identity retained. Deploy the central enrollment endpoint, then retry.' % e.code)
     except urllib.error.URLError:
@@ -294,10 +353,6 @@ def main():
         raise SystemExit(reason + ' Enrollment not confirmed; local identity retained.')
     except (OSError, RuntimeError):
         raise SystemExit('Enrollment could not read/write its local configuration or contact the approval website; local identity retained.')
-    print('Enrollment confirmed for %s (%d local managers).' % (result['nickname'], result['manager_count']))
-    receipt = json.loads(private_read(Path('/etc/tarasec/agent-enrollment.json')))
-    print('Google sign-in: ' + receipt['approval_url'].rsplit('/', 1)[0] + '/')
-    print('SSH policy unchanged. Verify Google/TOTP and console recovery before enabling SSH closure; see docs/google-ssh.md.')
 
 
 if __name__ == '__main__': main()
