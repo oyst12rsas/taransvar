@@ -17,13 +17,13 @@ HOTSPOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$HOTSPOT_DIR/.." && pwd)"
 cd "$HOTSPOT_DIR"
 
-# Bind ownership before deploying hotspot services or joining the overlay.
-if [[ ! -f /etc/tarasec/agent-enrollment.json ]]; then
+# Standalone runs self-register at low trust (no secret); non-fatal.
+if [[ ! -f /etc/tarasec/agent-enrollment.json && -z "${TARASEC_SELF_REGISTER_TRIED:-}" ]]; then
     if ! command -v python3 >/dev/null; then
         apt-get update
         apt-get install -y python3 ca-certificates
     fi
-    python3 "$REPO_ROOT/misc/enroll_google_manager.py" --install-secret
+    python3 "$REPO_ROOT/misc/enroll_google_manager.py" --auto || true
 fi
 
 echo "=== TaraSec hotspot preflight ==="

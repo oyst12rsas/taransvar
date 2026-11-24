@@ -34,9 +34,10 @@ if $update_only; then
     done
 fi
 if ! $enroll && ! $skip_enrollment && [[ ! -f /etc/tarasec/agent-enrollment.json ]]; then
-    enroll=true; enroll_args+=(--install-secret)
+    # Unregistered node: low-trust self-registration (no secret, optional email).
+    enroll=true; enroll_args+=(--auto)
 fi
-if ! $enroll && ! $skip_enrollment && [[ -t 0 ]]; then
+if ! $enroll && ! $skip_enrollment && [[ -t 0 && -z "${TARASEC_SELF_REGISTER_TRIED:-}" ]]; then
     read -r -p 'Google manager email (Enter to keep current enrollment): ' manager_email
     if [[ -n $manager_email ]]; then enroll=true; enroll_args+=(--email "$manager_email"); fi
 fi
@@ -44,24 +45,33 @@ fi
 # updates using the existing credential. It never closes SSH or changes grants
 # on another node. Failed enrollment leaves identity intact for a safe retry.
 if $enroll; then
-    python3 "$root/enroll_google_manager.py" "${enroll_args[@]}"
-    # Explicit manager enrollment also enables local Gatekeeper Google sign-in.
-    # The helper skips nodes without Gatekeeper and retains legacy client config.
-    if ! command -v setfacl >/dev/null; then apt-get install -y acl; fi
-    if [[ -f "$gatekeeper_web_root/gatekeeper/google_callback.php" ]]; then
-        # Deploy the local-manager authorization path before activating its config.
-        # Compiled misc-only bundles must deploy html/ separately first.
-        if [[ -d "$root/../html/gatekeeper" ]]; then
-            for file in google_start.php google_callback.php google_local_managers.php; do
-                php -l "$root/../html/gatekeeper/$file" >/dev/null
-                install -o root -g root -m 0644 "$root/../html/gatekeeper/$file" "$gatekeeper_web_root/gatekeeper/$file"
-            done
-        fi
-        grep -q 'gatekeeperLocalManager' "$gatekeeper_web_root/gatekeeper/google_callback.php" || {
-            echo 'Deploy current html/gatekeeper/google_*.php before Gatekeeper enrollment.' >&2; exit 1;
-        }
+    status=0
+    python3 "$root/enroll_google_manager.py" "${enroll_args[@]}" || status=$?
+    # Exit 75 = self-registration deferred; install the services and retry later.
+    if [[ $status -ne 0 && ! ( $status -eq 75 && " ${enroll_args[*]} " == *" --auto "* ) ]]; then
+        exit "$status"
     fi
-    python3 "$root/enroll_gatekeeper_google.py" "${gatekeeper_args[@]}"
+    # Gatekeeper Google sign-in needs the registration receipt; after a deferred
+    # self-registration it is configured on the next successful enrollment.
+    if [[ -f /etc/tarasec/agent-enrollment.json ]]; then
+        # Explicit manager enrollment also enables local Gatekeeper Google sign-in.
+        # The helper skips nodes without Gatekeeper and retains legacy client config.
+        if ! command -v setfacl >/dev/null; then apt-get install -y acl; fi
+        if [[ -f "$gatekeeper_web_root/gatekeeper/google_callback.php" ]]; then
+            # Deploy the local-manager authorization path before activating its config.
+            # Compiled misc-only bundles must deploy html/ separately first.
+            if [[ -d "$root/../html/gatekeeper" ]]; then
+                for file in google_start.php google_callback.php google_local_managers.php; do
+                    php -l "$root/../html/gatekeeper/$file" >/dev/null
+                    install -o root -g root -m 0644 "$root/../html/gatekeeper/$file" "$gatekeeper_web_root/gatekeeper/$file"
+                done
+            fi
+            grep -q 'gatekeeperLocalManager' "$gatekeeper_web_root/gatekeeper/google_callback.php" || {
+                echo 'Deploy current html/gatekeeper/google_*.php before Gatekeeper enrollment.' >&2; exit 1;
+            }
+        fi
+        python3 "$root/enroll_gatekeeper_google.py" "${gatekeeper_args[@]}"
+    fi
 fi
 test -r /etc/tarasec/agent-node.token || {
     echo "No node identity. Run this installer with --enroll-google." >&2; exit 1;
@@ -188,7 +198,7 @@ echo "Google SSH remains owner-configured; see docs/google-ssh.md before enablin
 # Complete scheduling restoration before the final enrollment summary.
 restore_timer
 trap - EXIT
-if $enroll; then
+if $enroll && [[ -f /etc/tarasec/agent-enrollment.json ]]; then
     python3 - "$root" <<'NICKNAME'
 import json
 from pathlib import Path
