@@ -132,6 +132,20 @@ else
     read -n 1 -s -p "Ctrl-C to break or press any key to continue"
 fi
 
+# Rebuild tarakernel automatically whenever Ubuntu installs a new kernel, so an
+# unattended kernel update plus a reboot does not leave the node without its
+# module (docs/TARAKERNEL_DKMS.md). Non-fatal: the running module is unaffected.
+kernel_headers="linux-headers-$(uname -r)"
+case "$(uname -r)" in *-generic) kernel_headers="$kernel_headers linux-headers-generic" ;; esac
+# shellcheck disable=SC2086
+if DEBIAN_FRONTEND=noninteractive apt-get install -y dkms build-essential $kernel_headers \
+        && bash "$SCRIPT_DIR/misc/install_tarakernel_dkms.sh"; then
+    printf "tarakernel registered with DKMS for automatic rebuilds.\n"
+else
+    printf "WARNING: tarakernel DKMS setup failed; a new kernel will lack the module after reboot.\n"
+    printf "         Fix, then run: sudo bash %s/misc/install_tarakernel_dkms.sh\n" "$SCRIPT_DIR"
+fi
+
 printf "**** Gatekeeper is now installed ****\n\n"
 printf "TaraSec can also use a spare Wi-Fi adapter as a protected hotspot.\n"
 printf "The active Internet/uplink interface will not be converted into the hotspot.\n\n"
@@ -168,4 +182,14 @@ if [[ ! -e /usr/local/sbin/tarasec && ! -L /usr/local/sbin/tarasec ]]; then
     ln -s "$SCRIPT_DIR/tarasec" /usr/local/sbin/tarasec
 fi
 echo 'Future updates: sudo tarasec upgrade'
+
+# AI operations agent (idle-session reboots, post-reboot verification, upgrades).
+# This installs files and units only; the timer stays off until the owner connects
+# a model and the connection check passes.
+if bash "$SCRIPT_DIR/misc/install_operations_agent.sh"; then
+    echo 'Activate the AI operations agent (connects a model; then it handles reboots for kernel updates):'
+    echo '  sudo tarasec upgrade --configure-operations'
+else
+    echo 'WARNING: AI operations agent files could not be installed; retry with: sudo tarasec upgrade'
+fi
 
