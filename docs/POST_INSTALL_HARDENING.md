@@ -149,6 +149,25 @@ key, remove it with `ssh-keygen -R "[SERVER]:PORT"`.
 
 See the honeypot log: `sudo journalctl -u tarasec-ssh-honeypot.service -o cat | grep '^{'`.
 
+## 6. Connect the honeypot to TaraSec
+
+A honeypot that only logs locally protects nobody else. Reporting is what turns
+one blocked attempt into protection for every node (see
+[Collective defense](COLLECTIVE_DEFENSE.md)). Set your DB server in
+`/etc/tarasecfw.conf` and refresh the honeypot so it forwards events:
+
+```bash
+sudoedit /etc/tarasecfw.conf        # DBSERVER=<your DB server's NetBird IP>
+sudo bash misc/setup_backoffice_ai.sh sensor <your DB server's NetBird IP>
+```
+
+(Later honeypot refreshes reuse `DBSERVER` and keep forwarding configured.)
+
+Verify from a source that is **not** your admin address: the attempt must appear on
+the DB server (`syslogThreat`), the source must be tagged, and it must then be
+blocked on this node. Until that is verified, this node detects but does not take
+part in collective defense.
+
 ## Next steps
 
 * Automatic security updates: `sudo apt install unattended-upgrades`.
