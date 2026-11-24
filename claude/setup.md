@@ -58,7 +58,10 @@ for your password and succeeds. From now on, do all owner steps as `owner`.
 If the AI runs under your old admin account, give the AI its own account
 instead: `sudo adduser --disabled-password claude`. If the AI already uses
 `claude` (as on the test VM), keep it; `grant` removes it from the sudo group
-so the grant file becomes its only root access.
+so the grant file becomes its only root access. On cloud VMs, cloud-init
+usually also gives the AI account passwordless root in
+`/etc/sudoers.d/90-cloud-init-users`; `grant` moves that file to
+`/var/lib/ai-operator/disabled-sudoers/` for the same reason.
 
 ## 3. Get a trusted copy of the script
 
@@ -183,6 +186,7 @@ while an AI manages a node go into the shared TaraSec code and documentation
 | Step | Status |
 |---|---|
 | Unit tests on a fake root (grant, revoke, lock, audit, TaraSec checks) | Passing |
-| Live grant → revoke → audit on the test VM | Not yet run |
+| Live grant on the test VM (incl. disabling the cloud-init rule), audit during grant: 0 FAIL | Passed 2026-11-24 |
+| Live revoke → audit on the test VM (must be run by the owner: it ends the AI's session) | Not yet run |
 | Expiry timer (`--hours`) on a live host | Not yet run |
 | Manual emergency revoke | Not yet run |
