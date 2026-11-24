@@ -64,6 +64,23 @@ owner_accounts() {  # accounts other than the AI that can become root with their
         done
     } | sort -u
 }
+ai_rule_pattern() {  # regex matching a sudoers line that names the AI account
+    printf '(^|[[:space:],])(%s|%%%s|#%s)([[:space:],]|$)' "$AI_USER" "$AI_USER" "$(passwd_field "$AI_USER" 3)"
+}
+other_ai_sudoers() {  # sudoers.d files (other than the drop-in) with rules naming the AI
+    local f pattern
+    pattern=$(ai_rule_pattern)
+    for f in "$(p /etc/sudoers.d)"/*; do
+        [[ -f $f && $f != "$(p "$DROPIN")" ]] || continue
+        grep -vE '^[[:space:]]*(#|$|Defaults)' "$f" | grep -qE "$pattern" && echo "$f"
+    done
+    return 0
+}
+only_ai_rules() {  # file -> true if every rule line in it names the AI account
+    local pattern
+    pattern=$(ai_rule_pattern)
+    ! grep -vE '^[[:space:]]*(#|$|Defaults)' "$1" | grep -vqE "$pattern"
+}
 ai_admin_groups() {
     local g
     for g in "${ADMIN_GROUPS[@]}"; do in_group "$AI_USER" "$g" && echo "$g"; done
@@ -124,6 +141,17 @@ cmd_grant() {
     owners=$(owner_accounts)
     [[ -n $owners ]] || die "no owner account found: another account must be in sudo/admin/wheel with its own password (or root must have a password). Create one first; see claude/setup.md."
 
+    # Other sudo rules for the AI (cloud-init writes 90-cloud-init-users on cloud
+    # VMs) would survive revoke. Check them all before changing anything.
+    local others f disabled=""
+    others=$(other_ai_sudoers)
+    for f in $others; do
+        only_ai_rules "$f" || die "${f#$R} also grants other users; remove the '$AI_USER' lines from it yourself (sudo visudo -f ${f#$R}), then run grant again. Nothing changed."
+    done
+    if grep -vE '^[[:space:]]*(#|$|Defaults)' "$(p /etc/sudoers)" | grep -qE "$(ai_rule_pattern)"; then
+        die "/etc/sudoers has a rule for '$AI_USER'; remove it yourself (sudo visudo), then run grant again. Nothing changed."
+    fi
+
     # Group membership would survive deleting the drop-in, so move root access into it.
     groups=$(ai_admin_groups)
     for g in $groups; do run gpasswd -d "$AI_USER" "$g"; done
@@ -137,6 +165,11 @@ EOF
     chmod 0440 "$tmp"
     if ! visudo -cqf "$tmp"; then rm -f "$tmp"; die "generated sudoers file failed validation; nothing changed"; fi
     mv -f "$tmp" "$(p "$DROPIN")"
+    for f in $others; do
+        mkdir -p "$(p "$STATE_DIR")/disabled-sudoers"; chmod 0700 "$(p "$STATE_DIR")" "$(p "$STATE_DIR")/disabled-sudoers"
+        mv -f -- "$f" "$(p "$STATE_DIR")/disabled-sudoers/"
+        disabled+=" ${f#$R}"
+    done
 
     now=$(date +%s)
     rm -f "$(p "$STATE")"
@@ -150,6 +183,7 @@ EOF
 
     echo "Granted root to '$AI_USER' via $DROPIN."
     [[ -n $groups ]] && echo "Removed '$AI_USER' from admin group(s): $groups (the drop-in is now its only root access)."
+    [[ -n $disabled ]] && echo "Moved other sudo rule file(s) for '$AI_USER' to $STATE_DIR/disabled-sudoers/:$disabled"
     [[ -n $hours ]] && echo "Expires automatically in $hours hour(s)."
     echo "Owner account(s) that keep root: $(echo "$owners" | paste -sd, -)"
     echo "Revoke at any time: sudo $SELF --user $AI_USER revoke   (or: sudo rm $DROPIN)"
@@ -227,7 +261,7 @@ audit_sudo() {
     if [[ -n $groups ]]; then
         say FAIL "'$AI_USER' is in admin group(s) $(echo $groups) - root without the drop-in. Fix: sudo gpasswd -d $AI_USER <group>"
     fi
-    pattern="(^|[[:space:],])($AI_USER|%$AI_USER|#$(passwd_field "$AI_USER" 3))([[:space:],]|$)"
+    pattern=$(ai_rule_pattern)
     level=FAIL; $active && level=REVIEW
     for f in "$(p /etc/sudoers)" "$(p /etc/sudoers.d)"/*; do
         [[ -f $f ]] || continue
@@ -324,7 +358,7 @@ audit_processes() {
         while IFS= read -r line; do say FAIL "root process in '$AI_USER' session: $line"; done <<< "$leftovers"
     fi
     if command -v systemctl >/dev/null; then
-        systemctl list-units --all --no-legend --plain 'run-*' 2>/dev/null | awk '{print $1}' |
+        systemctl list-units --all --no-legend --plain --type=service,timer,scope 'run-*' 2>/dev/null | awk '{print $1}' |
             while read -r unit; do say REVIEW "transient systemd unit (systemd-run): $unit"; done || true
     fi
 }

@@ -96,6 +96,26 @@ class GrantTests(FakeHost):
         self.assertRegex(result.stdout, r'RUN: systemd-run .*--on-active=4h .*ai_operator_access\.sh --user claude revoke')
         self.assertIn('EXPIRES_AT=', (self.root / 'var/lib/ai-operator/grant.env').read_text())
 
+    def test_grant_disables_cloud_init_rule_for_ai(self):
+        self.add_owner()
+        self.write('etc/sudoers.d/90-cloud-init-users', '# User rules for claude\nclaude ALL=(ALL) NOPASSWD:ALL\n')
+        result = self.run_script('grant')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.root / 'etc/sudoers.d/90-cloud-init-users').exists())
+        self.assertTrue((self.root / 'var/lib/ai-operator/disabled-sudoers/90-cloud-init-users').exists())
+        self.assertIn('/etc/sudoers.d/90-cloud-init-users', result.stdout)
+        self.assertTrue(self.dropin.exists())
+
+    def test_grant_refuses_shared_sudoers_file_without_changes(self):
+        self.add_owner()
+        shared = self.write('etc/sudoers.d/50-team', 'claude ALL=(ALL) NOPASSWD:ALL\nalice ALL=(ALL) ALL\n')
+        result = self.run_script('grant')
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('also grants other users', result.stderr)
+        self.assertTrue(shared.exists())
+        self.assertFalse(self.dropin.exists())
+        self.assertNotIn('gpasswd', result.stdout)
+
     def test_rejects_bad_hours_and_root_ai_account(self):
         self.add_owner()
         for hours in ('0', '721', '1.5', 'x'):
