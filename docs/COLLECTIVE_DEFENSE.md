@@ -1,7 +1,7 @@
 # Collective defense: the whole TaraSec chain
 
 Recommended by AI; not yet reviewed or authorized by the TaraSec team.
-Status figures were observed on a test node on 2026-11-24.
+Status figures were observed on a test node and its DB server on 2026-11-24.
 
 This document is for security professionals meeting TaraSec for the first time.
 It explains what is new compared with tools you already know, the complete chain
@@ -108,17 +108,19 @@ Steps 1–4 and 7 are in [Post-install hardening](POST_INSTALL_HARDENING.md) and
 
 | Step | Status | Evidence |
 |---|---|---|
-| 1. Detect | Works | Honeypot logged every test attempt, including on the closed real port |
-| 2. Classify | Works | Attempts emitted as severity 7 `tag_host` |
-| 3. Report | **Not connected** | `DBSERVER` unset, so events stayed in the local journal |
-| 4. Tag | **Nothing arrives** | `syslogThreat`, `hackReport`, `fw_rejected` had 0 rows |
-| 5. Block locally | Untested | tarakernel loaded and taralink running, but no tag reached them |
-| 6. Share | Untested | Depends on 3–5 |
+| 1. Detect | **Proven** | Honeypot logged every attempt, including on the closed real port |
+| 2. Classify | **Proven** | Password attempts emitted as severity 7 `tag_host` |
+| 3. Report | **Proven** | After setting `DBSERVER`: test event and real attack arrived at the DB server with sensor provenance (`TARASEC_SENSOR_IP`) |
+| 4. Tag | **Proven** | Attack from a non-owner NetBird peer stored in `syslogThreat` as `tag_host`, severity 7 |
+| 5. Block locally | **Missing** | Nothing turns a `syslogThreat` tag into a block. The attacker stayed reachable; no ipset, iptables or `colorListings` entry |
+| 6. Share | **Missing for real attacks** | The block feed (`partnerRestrictions.php` + `partner_restriction_worker.php`, expiring ipset) only carries Demo 5 sessions, not `syslogThreat` tags |
 | 7. Notify source | Research prototype | Packet tagging is experimental (`AI_TRAINING.md`) |
-| 8. Expire | Untested | |
+| 8. Expire | Exists in the Demo 5 feed only | ipset entries with kernel timeouts (max 300 s) |
 
-The installer and checklist treated "honeypot listening" as done, so the missing
-link was invisible. A node that detects but does not report is **not** at the
+Detection to tagging works end to end. **The missing link is tag to block:** the
+building blocks exist (an authenticated DB feed, a node worker, expiring ipset
+blocks), but they are wired only to Demo 5 sessions. The installer and checklist
+treated "honeypot listening" as done, so this was invisible. A node that detects but does not report is **not** at the
 elevated level and must say so.
 
 ## 6. Risks to design for
