@@ -348,15 +348,21 @@ def contain_ssh(evidence, terminal, attack):
     return action
 
 
-def established_ssh_session_pids(port):
-    """Find sshd processes owning established sockets on the admin port."""
+def established_ssh_session_pids(port=None):
+    """Find sshd processes owning established sockets.
+
+    Every sshd session counts, whatever its local port: a session opened before a
+    management-port migration stays on the old port and must not survive
+    "disconnect". The honeypot is a separate (non-sshd) process and is never
+    matched. `port` is kept for callers; it no longer narrows the match.
+    """
     result = run("ss", "-Htnp", "state", "established")
     if result.returncode != 0:
         raise RuntimeError("Could not inspect established SSH sessions")
     pids = set()
     for line in result.stdout.splitlines():
         columns = line.split()
-        if len(columns) < 5 or columns[2].rsplit(":", 1)[-1] != str(port):
+        if len(columns) < 4:
             continue
         for match in re.finditer(r'\("sshd(?:-session)?",pid=([0-9]+),', line):
             pid = int(match.group(1))
