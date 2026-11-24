@@ -775,8 +775,9 @@ int sentConfiguration(int nSequenceNumber, int bIsInbound, int bReadChangesOnly)
 	    //printf("Reading black- and white listings...\n");
 		sprintf(szSQL, "select inet_ntoa(ip) as ip, upper(color), ip as aIp, handled from vListings"); 
 		
+		/* A full send marks rows handled = 0; new rows may be 0 or NULL. Both are pending. */
 		if (bReadChangesOnly)
-		    strcpy(szSQL+strlen(szSQL), " where handled is null");
+		    strcpy(szSQL+strlen(szSQL), " where coalesce(handled, 0) = 0");
 
 		sprintf(szSQL + strlen(szSQL), " limit %u", MAX_COLORLISTINGS);
 
