@@ -164,6 +164,8 @@ class MigrationTests(unittest.TestCase):
                 stack.enter_context(mock.patch.object(window, 'apply_rules', side_effect=lambda *args: events.append(('gate', args))))
                 stack.enter_context(mock.patch.object(window, 'reconcile'))
                 stack.enter_context(mock.patch.object(setup, 'socket_mode', return_value=False))
+                # Hosts with MariaDB installed would otherwise run the real mariadbd binary.
+                stack.enter_context(mock.patch.object(setup.route, 'mariadb_ports', return_value={3306}))
                 stack.enter_context(mock.patch.object(setup, 'command', side_effect=command))
                 stack.enter_context(mock.patch.object(setup, 'listener', side_effect=[False, True, backend_ready]))
                 stack.enter_context(mock.patch.object(setup.shutil, 'which', return_value='/mock'))
@@ -186,14 +188,19 @@ class MigrationTests(unittest.TestCase):
                     else:
                         self.assertEqual(conf.read_text(), original)
                         self.assertFalse((root / 'state/pending.json').exists())
+                arms = [i for i, args in enumerate(events)
+                        if args[:3] == ('systemctl', 'enable', '--now') and any(setup.ROLLBACK in a for a in args)]
+                if backend_ready:
+                    # A node that never ran the honeypot must have it started, not just refreshed.
+                    self.assertIn(('systemctl', 'enable', '--now', 'tarasec-ssh-honeypot.service'), events)
                 if console_recovery:
-                    self.assertFalse(any(args[:3] == ('systemctl','enable','--now') for args in events))
+                    self.assertFalse(arms)
                     if backend_ready:
                         receipt=json.loads((root/'state/pending.json').read_text())
                         self.assertEqual(receipt['phase'],'complete_console')
                         self.assertFalse(receipt['automatic_rollback'])
                 else:
-                    timer = next(i for i, args in enumerate(events) if args[:3] == ('systemctl', 'enable', '--now'))
+                    timer = arms[0]
                     gate = next(i for i, args in enumerate(events) if args[0] == 'gate')
                     self.assertLess(timer, gate)
                 self.assertEqual(conf.stat().st_mode & 0o777, 0o640)

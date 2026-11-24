@@ -1,0 +1,13 @@
+# Install as /etc/ssh/sshd_config.d/10-tarasec-hardening.conf
+# (sshd uses the first value it reads, so 10- overrides 50-cloud-init.conf).
+# Layered login: a valid key AND the account password are both required.
+# Key-only is an explicit owner choice: set PasswordAuthentication no and
+# AuthenticationMethods publickey.
+PubkeyAuthentication yes
+PasswordAuthentication yes
+KbdInteractiveAuthentication no
+AuthenticationMethods publickey,password
+PermitRootLogin no
+MaxAuthTries 3
+# Replace with your admin account and the address(es) you connect from.
+AllowUsers ADMIN_USER@ADMIN_SOURCE_IP
