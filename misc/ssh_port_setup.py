@@ -154,7 +154,7 @@ def guarded_snapshot(text, ports):
     return '\n'.join(result) + '\n'
 
 
-def snapshot(new_port):
+def snapshot(new_port, console_recovery=False):
     STATE.mkdir(mode=0o700, parents=True, exist_ok=True)
     info = STATE.lstat()
     if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o077:
@@ -162,6 +162,15 @@ def snapshot(new_port):
     pending = STATE / 'pending.json'
     if pending.exists():
         previous = json.loads(root_file(pending))
+        if (console_recovery and previous.get('phase') in ('staging', 'console_recovery_required')
+                and previous.get('automatic_rollback') is False):
+            saved = Path(previous['backup'])
+            if saved.parent != STATE or not saved.name.startswith('backup-'):
+                raise ValueError('Invalid migration backup')
+            previous.setdefault('snapshot_port', previous['new_port'])
+            previous.update({'new_port': new_port, 'phase': 'staging'})
+            atomic(pending, json.dumps(previous))
+            return saved
         if previous.get('phase') == 'complete_console':
             os.replace(pending, STATE / 'last-console-migration.json')
         else:
@@ -181,7 +190,8 @@ def snapshot(new_port):
         result = command('ipset', 'save', name, check=False)
         atomic(saved / name, result.stdout if result.returncode == 0 else '')
     atomic(saved / 'manifest.json', json.dumps(entries))
-    atomic(STATE / 'pending.json', json.dumps({'backup': str(saved), 'started': time.time(), 'new_port': new_port, 'phase': 'staging'}))
+    atomic(STATE / 'pending.json', json.dumps({'backup': str(saved), 'started': time.time(), 'new_port': new_port, 'phase': 'staging',
+                                               'automatic_rollback': not console_recovery}))
     return saved
 
 
@@ -233,7 +243,7 @@ def rollback():
     window.write_state({'id': '0' * 32, 'until': 0, 'port': port, 'closed_at': int(time.time())})
     window.reconcile()
     for tool in ('iptables', 'ip6tables'):
-        for guarded_port in {port, int(state['new_port'])}:
+        for guarded_port in {port, int(state['new_port']), int(state.get('snapshot_port', state['new_port']))}:
             guard = ['-p', 'tcp', '--dport', str(guarded_port), '-m', 'conntrack', '--ctstate', 'NEW',
                      '-m', 'comment', '--comment', 'tarasec-port-rollback-guard', '-j', 'REJECT', '--reject-with', 'tcp-reset']
             while command(tool, '-w', '5', '-C', 'INPUT', *guard, check=False).returncode == 0:
@@ -359,7 +369,7 @@ def migrate(console_recovery=False):
             shutil.copyfile(src, dst)
             os.chown(dst, 0, 0)
             dst.chmod(0o755)
-    saved = snapshot(port)
+    snapshot(port, console_recovery=console_recovery)
     try:
         if console_recovery:
             command('systemctl', 'disable', '--now', ROLLBACK + '.timer', check=False)
@@ -392,9 +402,12 @@ def migrate(console_recovery=False):
         else:
             raise RuntimeError('New SSH listener did not appear')
         atomic(HP, '[Service]\nEnvironment=TARASEC_SSH_HONEYPOT_IPV6=yes\n', 0o644)
-        # Refresh-only cannot perform the older temporary-ACCEPT migration.
-        command('bash', str(setup), '--refresh-only')
-        command('systemctl', 'is-active', '--quiet', 'tarasec-ssh-honeypot.service')
+        # Activate the backend without invoking the legacy SSH/firewall migration.
+        result = command('bash', str(setup), '--activate-decoy', check=False)
+        if result.returncode:
+            raise RuntimeError('Honeypot setup failed. Check the tarasec-ssh-honeypot and rsyslog journals from the console.')
+        if command('systemctl', 'is-active', '--quiet', 'tarasec-ssh-honeypot.service', check=False).returncode:
+            raise RuntimeError('The honeypot service is inactive. Check the tarasec-ssh-honeypot journal from the console.')
         if not listener(backend):
             raise RuntimeError('The honeypot backend is not listening')
         atomic(UNIT, '[Unit]\nDescription=TaraSec closed-port SSH decoys\n'
@@ -435,7 +448,7 @@ def migrate(console_recovery=False):
             pending.update({'phase': 'console_recovery_required', 'automatic_rollback': False})
             atomic(pending_path, json.dumps(pending))
             print('Setup incomplete. Settings retained for console repair; no automatic rollback was performed.')
-            print('After repairing SSH, use --recover-current; use --rollback only if you want the previous configuration restored.')
+            print('Rerun setup with --console-recovery to retry. Use --rollback only to restore the previous configuration.')
         else:
             rollback()
         raise

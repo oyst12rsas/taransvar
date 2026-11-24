@@ -9,9 +9,10 @@ DEBUG_OVERRIDE=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --refresh-only) REFRESH_ONLY=true; UPDATE_ONLY=true ;;
+        --activate-decoy) REFRESH_ONLY=true ;;
         --debug-shell) REFRESH_ONLY=true; UPDATE_ONLY=true; DEBUG_OVERRIDE=yes ;;
         --reject-logins) REFRESH_ONLY=true; UPDATE_ONLY=true; DEBUG_OVERRIDE=no ;;
-        *) echo "Usage: sudo bash $0 [--refresh-only|--debug-shell|--reject-logins]" >&2; exit 1 ;;
+        *) echo "Usage: sudo bash $0 [--refresh-only|--activate-decoy|--debug-shell|--reject-logins]" >&2; exit 1 ;;
     esac
     shift
 done
