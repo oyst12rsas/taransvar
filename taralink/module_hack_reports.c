@@ -399,7 +399,7 @@ static void checkHackReportsWorker()
 		u_int32_t nNumericIp = (row[1]?atoi(row[1]):0);
 		u_int32_t nInfectionId = 0;
 		u_int32_t nUnitId = 0;
-		char cSQL[400];
+		char cSQL[1024];
 		int bUpdateHandled = 1;
 		char *lpIp = (row[3]?row[3]:"(null)");
 		u_int32_t nInternaIpFromUnitPort = 0;
@@ -601,12 +601,18 @@ static void checkHackReportsWorker()
 					strncpy(cWhat, "Already reg as infected. ", sizeof(cWhat) - strlen(cWhat) - 1);
 					// A gateway finding supersedes a client declaration. Preserve
 					// deliberate manager deactivation on established findings.
-					snprintf(cSQL, sizeof(cSQL), "update internalInfections set unitId=%d, lastSeen=now(), "
+					int nLen = snprintf(cSQL, sizeof(cSQL), "update internalInfections set unitId=%u, lastSeen=now(), "
 					         "handled=if(why='TaraSec app: device self-declared infected',b'0',handled), "
 					         "active=if(why='TaraSec app: device self-declared infected',b'1',active), "
 					         "severity=if(why='TaraSec app: device self-declared infected',greatest(severity,%d),severity), "
 					         "why=if(why='TaraSec app: device self-declared infected','Gateway-attributed threat report',why) "
-					         "where infectionId=%d", nUnitId, nSeverity, nInfectionId);
+					         "where infectionId=%u", nUnitId, nSeverity, nInfectionId);
+					if (nLen < 0 || (size_t)nLen >= sizeof(cSQL)) {
+						// Never run a truncated UPDATE: it could lose its WHERE clause.
+						fprintf(stderr, "******** ERROR ****** internalInfections update SQL too long\n");
+						addWarningRecord("******** ERROR ****** internalInfections update SQL too long");
+						return;
+					}
 					lpHackReportStatus = "infection->lastSeen updated";
 					printf("Already in internalInfections; updating lastSeen without changing active state.\n");
 				}
