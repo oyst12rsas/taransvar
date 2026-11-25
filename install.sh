@@ -15,13 +15,6 @@ echo $SCRIPT_DIR
 cd $SCRIPT_DIR
 printf "\nInstalling Taransvar Cyber Solution\n"
 read -t 5 -p "Continuing in 5 seconds..."
-# Stop before deploying TaraSec services if trusted registration fails.
-if [[ ! -f /etc/tarasec/agent-enrollment.json ]]; then
-    if ! command -v python3 >/dev/null; then
-        apt-get update && apt-get install -y python3 ca-certificates || exit 1
-    fi
-    python3 "$SCRIPT_DIR/misc/enroll_google_manager.py" --install-secret || exit 1
-fi
 printf "Installing required linux packages...\n"
 
 apt-get update -y
@@ -155,9 +148,13 @@ esac
     perl startup.pl
 )
 
-# Deploy the encrypted management network, then the enrolled service/grants.
+# Join the NetBird bootstrap network before syncing existing management grants.
 bash "$SCRIPT_DIR/misc/install_netbird_management.sh" || exit 1
-bash "$SCRIPT_DIR/misc/install_agent_approvals.sh" --sync || exit 1
+if [[ -f /etc/tarasec/agent-enrollment.json ]]; then
+    bash "$SCRIPT_DIR/misc/install_agent_approvals.sh" --sync || exit 1
+else
+    echo 'To enable Google-controlled management later, run sudo bash misc/install_agent_approvals.sh --install-secret from the repository checkout.'
+fi
 
 echo "Next: review and verify your node security at https://tarasec.org/safety/#deployment"
 echo "Hardening priorities: https://tarasec.org/safety/#hardening-priorities"
