@@ -9,6 +9,20 @@ percentage needs no AI, so the same figures ride along as `context` instead.
 The dispatcher must answer with exactly the topics it was sent, so it needs a
 handler (prompt) for each topic before nodes switch to it.
 
+## Installation policy
+
+`install.sh` runs `misc/install_server_ai_report.sh --auto`. It installs the
+client, runner, service and hourly timer on demo nodes (`demo` in
+`/etc/tarasec-deployment-mode`, or no file yet, since unconfigured nodes keep
+demo behaviour). On production nodes it changes nothing and prints the manual
+command:
+
+    sudo bash misc/install_server_ai_report.sh
+
+A malformed mode file also skips the install. The report only runs once the node
+has a TaraSec enrollment (`/etc/tarasec/agent-enrollment.json`) or a pilot
+`/etc/tarasec/server-ai-report.env`.
+
 Check what a node would send without sending it:
 
     sudo python3 /usr/local/lib/tarasec-operations/server_ai_report_client.py --local --dry-run
@@ -71,3 +85,24 @@ Suggested prompt focus: logins from unexpected sources or methods, failures
 against real accounts, new or removed SSH keys, new accounts, unusual sudo
 commands or sudo failures. Routine repeated automation (for example root
 running `iptables -L` every minute) is expected.
+
+## Server-side work (dispatcher)
+
+A full example request body is in `docs/server_ai_samples/report_logs_auth.json`.
+It was built from made-up journal entries with the real collector.
+
+1. Accept `logs` and `auth` as topic names in `POST /reports`. The current
+   dispatcher answers HTTP 400 to them. Keep `disk` and `memory` working for
+   nodes that set `SERVER_AI_TOPICS=disk,memory`.
+2. Treat the payload as untrusted data from the node. Validate the types and
+   reject a topic over 16 KB. Put the JSON into the prompt as quoted data,
+   never as instructions: log lines can contain text an attacker chose.
+3. Return each topic's result in the existing shape,
+   `{"status": "done"|"failed", "summary": "..."}`. A short severity
+   (`ok`/`notice`/`warning`/`critical`) inside or alongside the summary would
+   let Gatekeeper sort nodes. The client prints whatever it gets.
+4. Write prompts around the "Suggested prompt focus" notes above. `new: true`,
+   priorities 0-3, failures against real accounts, logins from public
+   (`pub-…`) sources, SSH key changes and account changes deserve attention.
+   High-volume repeated automation does not.
+5. `pub-…` pseudonyms are per node. Don't try to correlate them across nodes.

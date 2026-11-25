@@ -4,7 +4,9 @@ on:
     paths:
       - 'misc/server_ai_*'
       - 'tests/server_ai_evidence_test.py'
-      - 'misc/install_operations_agent.sh'
+      - 'misc/install_server_ai_report.sh'
+      - 'install.sh'
+      - 'docs/server_ai_samples/**'
       - '.github/workflows/server-ai-report.yml'
 jobs:
   checks:
@@ -13,4 +15,5 @@ jobs:
       - uses: actions/checkout@v4
       - run: python3 tests/server_ai_evidence_test.py
       - run: python3 -m py_compile misc/server_ai_report_client.py misc/server_ai_evidence.py
-      - run: bash -n misc/install_operations_agent.sh
+      - run: bash -n misc/install_server_ai_report.sh && bash -n install.sh
+      - run: python3 -m json.tool docs/server_ai_samples/report_logs_auth.json >/dev/null

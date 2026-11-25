@@ -90,56 +90,6 @@ path.write_text(json.dumps(reference))
 path.chmod(0o644)
 PYREF
 python3 "$source_dir/configure_log_retention.py"
-install -o root -g root -m 0755 "$source_dir/server_ai_report_client.py" /usr/local/lib/tarasec-operations/
-install -o root -g root -m 0644 "$source_dir/server_ai_evidence.py" /usr/local/lib/tarasec-operations/
-cat > /usr/local/lib/tarasec-operations/run-server-ai-report <<'EOF'
-#!/bin/sh
-set -eu
-if [ ! -f /etc/tarasec/server-ai-report.env ] || [ ! -f /etc/tarasec/server-ai-node.token ]; then
-    unset SSL_CERT_FILE
-    exec /usr/bin/python3 /usr/local/lib/tarasec-operations/server_ai_report_client.py --enroll --local
-fi
-: "${SERVER_AI_URL:?Dispatcher URL is required}"
-: "${SERVER_AI_NODE_ID:?Dispatcher node ID is required}"
-SERVER_AI_NODE_TOKEN="$(cat /etc/tarasec/server-ai-node.token)"
-export SERVER_AI_NODE_TOKEN
-exec /usr/bin/python3 /usr/local/lib/tarasec-operations/server_ai_report_client.py \
-    --url "$SERVER_AI_URL" --node "$SERVER_AI_NODE_ID" --local
-EOF
-chmod 0755 /usr/local/lib/tarasec-operations/run-server-ai-report
-cat > /etc/systemd/system/tarasec-server-ai-report.service <<'EOF'
-[Unit]
-Description=Submit TaraSec log and access report for advisory analysis
-Wants=network-online.target
-After=network-online.target
-ConditionPathExists=|/etc/tarasec/agent-enrollment.json
-ConditionPathExists=|/etc/tarasec/server-ai-report.env
-
-[Service]
-Type=oneshot
-EnvironmentFile=-/etc/tarasec/server-ai-report.env
-ExecStart=/usr/local/lib/tarasec-operations/run-server-ai-report
-StateDirectory=tarasec-server-ai-report
-StateDirectoryMode=0700
-TimeoutStartSec=6min
-UMask=0077
-NoNewPrivileges=true
-ProtectSystem=strict
-PrivateTmp=true
-EOF
-cat > /etc/systemd/system/tarasec-server-ai-report.timer <<'EOF'
-[Unit]
-Description=Schedule TaraSec log and access reports
-
-[Timer]
-OnCalendar=hourly
-RandomizedDelaySec=5min
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-EOF
 systemctl daemon-reload
-systemctl enable --now tarasec-server-ai-report.timer
 echo 'Agent files installed; existing timer state retained. The standard upgrader next checks the model connection and activates the agent.'
 echo 'See docs/AI_OPERATIONS_MANUAL.md for pilot enrollment and activity-probe contract.'
