@@ -1,0 +1,16 @@
+name: Server AI report checks
+on:
+  pull_request:
+    paths:
+      - 'misc/server_ai_*'
+      - 'tests/server_ai_evidence_test.py'
+      - 'misc/install_operations_agent.sh'
+      - '.github/workflows/server-ai-report.yml'
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tests/server_ai_evidence_test.py
+      - run: python3 -m py_compile misc/server_ai_report_client.py misc/server_ai_evidence.py
+      - run: bash -n misc/install_operations_agent.sh

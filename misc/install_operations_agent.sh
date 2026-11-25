@@ -91,6 +91,7 @@ path.chmod(0o644)
 PYREF
 python3 "$source_dir/configure_log_retention.py"
 install -o root -g root -m 0755 "$source_dir/server_ai_report_client.py" /usr/local/lib/tarasec-operations/
+install -o root -g root -m 0644 "$source_dir/server_ai_evidence.py" /usr/local/lib/tarasec-operations/
 cat > /usr/local/lib/tarasec-operations/run-server-ai-report <<'EOF'
 #!/bin/sh
 set -eu
@@ -108,7 +109,7 @@ EOF
 chmod 0755 /usr/local/lib/tarasec-operations/run-server-ai-report
 cat > /etc/systemd/system/tarasec-server-ai-report.service <<'EOF'
 [Unit]
-Description=Submit TaraSec disk and memory report for advisory analysis
+Description=Submit TaraSec log and access report for advisory analysis
 Wants=network-online.target
 After=network-online.target
 ConditionPathExists=|/etc/tarasec/agent-enrollment.json
@@ -118,6 +119,8 @@ ConditionPathExists=|/etc/tarasec/server-ai-report.env
 Type=oneshot
 EnvironmentFile=-/etc/tarasec/server-ai-report.env
 ExecStart=/usr/local/lib/tarasec-operations/run-server-ai-report
+StateDirectory=tarasec-server-ai-report
+StateDirectoryMode=0700
 TimeoutStartSec=6min
 UMask=0077
 NoNewPrivileges=true
@@ -126,7 +129,7 @@ PrivateTmp=true
 EOF
 cat > /etc/systemd/system/tarasec-server-ai-report.timer <<'EOF'
 [Unit]
-Description=Schedule TaraSec disk and memory reports
+Description=Schedule TaraSec log and access reports
 
 [Timer]
 OnCalendar=hourly

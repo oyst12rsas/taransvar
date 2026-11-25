@@ -7,6 +7,7 @@ import re
 import shutil
 import ssl
 import stat
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -14,13 +15,18 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 
+import server_ai_evidence
+
+TOPICS = ("logs", "auth", "disk", "memory")
+DEFAULT_TOPICS = "logs,auth"
+
 
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs):
         return None
 
 
-def local_report(mount):
+def resource_topics(mount):
     mount = str(Path(mount).resolve(strict=True))
     disk = shutil.disk_usage(mount)
     memory = {}
@@ -29,28 +35,41 @@ def local_report(mount):
         if name in ("MemTotal", "MemAvailable"):
             memory[name] = int(value.split()[0]) * 1024
     return {
-        "topics": {
-            "disk": {
-                "path": mount,
-                "total_bytes": disk.total,
-                "used_bytes": disk.used,
-                "available_bytes": disk.free,
-                "total_gib": round(disk.total / 2**30, 2),
-                "available_gib": round(disk.free / 2**30, 2),
-                "used_percent": round(100 * disk.used / (disk.used + disk.free), 2) if disk.used + disk.free else None,
-            },
-            "memory": {
-                "total_bytes": memory["MemTotal"],
-                "available_bytes": memory["MemAvailable"],
-                "total_gib": round(memory["MemTotal"] / 2**30, 2),
-                "available_gib": round(memory["MemAvailable"] / 2**30, 2),
-                "available_percent": round(100 * memory["MemAvailable"] / memory["MemTotal"], 2),
-            },
+        "disk": {
+            "path": mount,
+            "total_bytes": disk.total,
+            "used_bytes": disk.used,
+            "available_bytes": disk.free,
+            "total_gib": round(disk.total / 2**30, 2),
+            "available_gib": round(disk.free / 2**30, 2),
+            "used_percent": round(100 * disk.used / (disk.used + disk.free), 2) if disk.used + disk.free else None,
+        },
+        "memory": {
+            "total_bytes": memory["MemTotal"],
+            "available_bytes": memory["MemAvailable"],
+            "total_gib": round(memory["MemTotal"] / 2**30, 2),
+            "available_gib": round(memory["MemAvailable"] / 2**30, 2),
+            "available_percent": round(100 * memory["MemAvailable"] / memory["MemTotal"], 2),
         },
     }
 
 
-def submit_and_poll(base_url, node, token, report, wait, emit=print, opener=None):
+def parse_topics(value):
+    topics = [t.strip() for t in value.split(",") if t.strip()]
+    if not topics or any(t not in TOPICS for t in topics):
+        raise ValueError("Topics must be a comma-separated subset of " + ",".join(TOPICS))
+    return topics
+
+
+def local_report(mount, topics, state):
+    """Build a report from this node. Returns (report, state to save after submission)."""
+    found, new_state = server_ai_evidence.collect(topics, state, mount=mount)
+    if "disk" in topics or "memory" in topics:
+        found.update({k: v for k, v in resource_topics(mount).items() if k in topics})
+    return {"topics": {t: found[t] for t in topics}}, new_state
+
+
+def submit_and_poll(base_url, node, token, report, wait, emit=print, opener=None, on_submitted=None):
     url = urlsplit(base_url)
     loopback = url.scheme == "http" and url.hostname in ("127.0.0.1", "::1")
     if (not (url.scheme == "https" or loopback) or not url.hostname
@@ -84,6 +103,8 @@ def submit_and_poll(base_url, node, token, report, wait, emit=print, opener=None
     report_id = call("/reports", report)["report_id"]
     if not isinstance(report_id, str) or not re.fullmatch(r"[a-f0-9]{32}", report_id):
         raise ValueError("Invalid report ID")
+    if on_submitted:
+        on_submitted(report_id)
     emit({"report_id": report_id})
     topics = set(report["topics"])
     completed = set()
@@ -154,10 +175,23 @@ def main():
     parser.add_argument("--node", help="Configured TaraSec node ID")
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--report", type=Path, help="Tagged JSON report to submit")
-    source.add_argument("--local", action="store_true", help="Measure Linux disk and memory")
-    parser.add_argument("--mount", default="/", help="Path to measure with --local")
+    source.add_argument("--local", action="store_true", help="Collect evidence from this node")
+    parser.add_argument("--topics", default=os.environ.get("SERVER_AI_TOPICS") or DEFAULT_TOPICS,
+                        help="Topics for --local: comma-separated subset of " + ",".join(TOPICS))
+    parser.add_argument("--state", type=Path, default=server_ai_evidence.STATE_PATH,
+                        help="Where --local remembers the last window and seen messages")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Print the --local report instead of submitting it")
+    parser.add_argument("--mount", default="/", help="Filesystem for disk figures with --local")
     parser.add_argument("--wait", type=int, default=300, help="Time limit in seconds")
     args = parser.parse_args()
+    if args.dry_run:
+        if not args.local:
+            parser.error("--dry-run needs --local")
+        report, _ = local_report(args.mount, parse_topics(args.topics),
+                                 server_ai_evidence.load_state(args.state))
+        print(json.dumps(report, indent=2))
+        return 0
     if args.enroll and (args.url or args.node):
         parser.error("--enroll supplies the URL and node ID")
     if not args.enroll and not (args.url and args.node):
@@ -167,14 +201,20 @@ def main():
             enrolled_dispatcher() if args.enroll else
             (args.url, args.node, os.environ.get("SERVER_AI_NODE_TOKEN"), None)
         )
-        report = local_report(args.mount) if args.local else json.loads(args.report.read_text())
+        new_state = None
+        if args.local:
+            report, new_state = local_report(args.mount, parse_topics(args.topics),
+                                             server_ai_evidence.load_state(args.state))
+        else:
+            report = json.loads(args.report.read_text())
         return submit_and_poll(
             url, node, token, report, args.wait, opener=opener,
             emit=lambda value: print(json.dumps(value), flush=True),
+            on_submitted=new_state and (lambda _: server_ai_evidence.save_state(new_state, args.state)),
         )
     except HTTPError as exc:
         print(f"Dispatcher HTTP error: {exc.code}", file=sys.stderr)
-    except (URLError, OSError, ValueError, TypeError, KeyError) as exc:
+    except (URLError, OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as exc:
         print(f"Report failed: {exc}", file=sys.stderr)
     return 1
 
