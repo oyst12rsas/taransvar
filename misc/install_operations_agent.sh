@@ -90,6 +90,49 @@ path.write_text(json.dumps(reference))
 path.chmod(0o644)
 PYREF
 python3 "$source_dir/configure_log_retention.py"
+install -o root -g root -m 0755 "$source_dir/server_ai_report_client.py" /usr/local/lib/tarasec-operations/
+cat > /usr/local/lib/tarasec-operations/run-server-ai-report <<'EOF'
+#!/bin/sh
+set -eu
+: "${SERVER_AI_URL:?Dispatcher URL is required}"
+: "${SERVER_AI_NODE_ID:?Dispatcher node ID is required}"
+SERVER_AI_NODE_TOKEN="$(cat /etc/tarasec/server-ai-node.token)"
+export SERVER_AI_NODE_TOKEN
+exec /usr/bin/python3 /usr/local/lib/tarasec-operations/server_ai_report_client.py \
+    --url "$SERVER_AI_URL" --node "$SERVER_AI_NODE_ID" --local
+EOF
+chmod 0755 /usr/local/lib/tarasec-operations/run-server-ai-report
+cat > /etc/systemd/system/tarasec-server-ai-report.service <<'EOF'
+[Unit]
+Description=Submit TaraSec disk and memory report for advisory analysis
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/etc/tarasec/server-ai-report.env
+ConditionPathExists=/etc/tarasec/server-ai-node.token
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/tarasec/server-ai-report.env
+ExecStart=/usr/local/lib/tarasec-operations/run-server-ai-report
+TimeoutStartSec=6min
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+PrivateTmp=true
+EOF
+cat > /etc/systemd/system/tarasec-server-ai-report.timer <<'EOF'
+[Unit]
+Description=Schedule TaraSec disk and memory reports
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
 systemctl daemon-reload
+systemctl enable --now tarasec-server-ai-report.timer
 echo 'Agent files installed; existing timer state retained. The standard upgrader next checks the model connection and activates the agent.'
 echo 'See docs/AI_OPERATIONS_MANUAL.md for pilot enrollment and activity-probe contract.'
