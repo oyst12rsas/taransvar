@@ -57,6 +57,11 @@ This removes TaraSec-owned state from this machine, including:
   * TaraSec hotspot web application under /var/www/html/hotspot
   * TaraSec files deployed from this checkout into /var/www/html
   * /etc/tarasec device/configuration state
+  * Node, SSH gate, honeypot, operations, upgrade and reporting units
+  * The TaraSec SSH management port (sshd moves back to the default port)
+  * TaraSec ipsets, nftables tables, rsyslog/sysctl drop-ins and libraries
+
+SSH authentication policy (keys, passwords, AllowUsers) is left unchanged.
 
 The current non-TaraSec WAN/default-route connection is preserved.
 Generic OS packages are preserved by default.
@@ -119,6 +124,112 @@ rm -f \
 systemctl daemon-reload || true
 
 echo
+echo "=== STOP ALL TARASEC SYSTEMD UNITS ==="
+# Node, SSH gate, operations, upgrade and reporting units keep being added, so
+# match them by name instead of a list that goes stale. Transient units (for
+# example tarasec-ssh-window-* timers) only show up in list-units.
+unit_patterns=('tarasec-*' 'taransvar*' 'taralink*' 'tara-hotspot-*')
+mapfile -t tarasec_units < <(
+    {
+        systemctl list-units --all --no-legend --plain "${unit_patterns[@]}" 2>/dev/null | awk '{print $1}'
+        systemctl list-unit-files --no-legend "${unit_patterns[@]}" 2>/dev/null | awk '{print $1}'
+    } | grep -E '\.(timer|path|socket|service)$' | sort -u || true
+)
+# Stop triggers first so nothing restarts a service we have just stopped.
+for suffix in timer path socket service; do
+    for unit in "${tarasec_units[@]}"; do
+        [ "${unit##*.}" = "$suffix" ] || continue
+        echo "Stopping $unit"
+        systemctl disable --now "$unit" >/dev/null 2>&1 || systemctl stop "$unit" 2>/dev/null || true
+    done
+done
+for pattern in "${unit_patterns[@]}"; do
+    rm -rf /etc/systemd/system/$pattern
+    find /etc/systemd/system -path '*.wants/*' -name "$pattern" -delete 2>/dev/null || true
+done
+systemctl daemon-reload || true
+systemctl reset-failed "${unit_patterns[@]}" 2>/dev/null || true
+
+if lsmod 2>/dev/null | grep -q '^tarakernel '; then
+    modprobe -r tarakernel 2>/dev/null \
+        || echo "WARNING: tarakernel module is still in use; it will not load after reboot."
+fi
+rm -f /etc/modules-load.d/tarakernel.conf
+
+echo
+echo "=== RESTORE DEFAULT SSH LISTENER ==="
+# The honeypot and decoys were stopped above, so the default port is free.
+# Only the port is reverted; authentication policy stays as the owner set it.
+ssh_backup="$(mktemp -d)"
+ssh_changed=0
+for f in /etc/systemd/system/ssh.socket.d/90-tarasec-port.conf \
+         /etc/systemd/system/ssh.service.d/90-tarasec-decoys.conf \
+         /etc/systemd/system/sshd.service.d/90-tarasec-decoys.conf; do
+    [ -e "$f" ] || continue
+    cp -a --parents "$f" "$ssh_backup/"
+    rm -f "$f"
+    rmdir --ignore-fail-on-non-empty "$(dirname "$f")"
+    echo "Removed $f"
+    ssh_changed=1
+done
+sshd_tarasec=/etc/ssh/sshd_config.d/90-tarasec.conf
+if [ -f "$sshd_tarasec" ]; then
+    cp -a --parents "$sshd_tarasec" "$ssh_backup/"
+    # ssh_port_setup may have merged owner policy into this file; keep it.
+    remaining="$(grep -viE '^[[:space:]]*(Port[[:space:]]|# Management port set by TaraSec)' "$sshd_tarasec" || true)"
+    if printf '%s\n' "$remaining" | grep -qvE '^[[:space:]]*(#|$)'; then
+        printf '%s\n' "$remaining" > "$sshd_tarasec"
+        echo "Removed the Port setting from $sshd_tarasec (other policy kept)"
+    else
+        rm -f "$sshd_tarasec"
+        echo "Removed $sshd_tarasec"
+    fi
+    ssh_changed=1
+fi
+
+restore_ssh_backup() {
+    cp -a "$ssh_backup"/. / 2>/dev/null || true
+    systemctl daemon-reload || true
+}
+
+if [ "$ssh_changed" -eq 1 ] && command -v sshd >/dev/null 2>&1; then
+    mkdir -p /run/sshd
+    if ! sshd -t; then
+        restore_ssh_backup
+        echo "ERROR: sshd rejected the configuration without the TaraSec port; restored it." >&2
+        exit 1
+    fi
+    systemctl daemon-reload
+    ssh_service=""
+    for name in ssh.service sshd.service; do
+        if [ "$(systemctl show "$name" -p LoadState --value 2>/dev/null)" = loaded ]; then
+            ssh_service="$name"
+            break
+        fi
+    done
+    if [ -z "$ssh_service" ]; then
+        echo "WARNING: no ssh.service/sshd.service found; the new port applies after reboot."
+    elif [ "$(systemctl show "$ssh_service" -p KillMode --value)" != process ]; then
+        # Restarting would end established sessions, possibly this one.
+        echo "WARNING: $ssh_service does not use KillMode=process; not restarting it."
+        echo "         The default SSH port applies after the next reboot."
+    else
+        if systemctl is-active --quiet ssh.socket || systemctl is-enabled --quiet ssh.socket 2>/dev/null; then
+            systemctl restart ssh.socket
+        fi
+        systemctl restart "$ssh_service"
+        ssh_port="$(sshd -T 2>/dev/null | awk '$1 == "port" {print $2; exit}')"
+        ssh_port="${ssh_port:-22}"
+        if ss -H -ltn "sport = :$ssh_port" 2>/dev/null | grep -q .; then
+            echo "sshd is listening on port $ssh_port; established sessions were kept."
+        else
+            echo "WARNING: nothing is listening on port $ssh_port; check sshd before logging out." >&2
+        fi
+    fi
+fi
+rm -rf "$ssh_backup"
+
+echo
 echo "=== REMOVE TARASEC CRON ENTRIES ==="
 if [ -f /var/spool/cron/crontabs/root ]; then
     tmp="$(mktemp)"
@@ -143,21 +254,40 @@ fi
 
 echo
 echo "=== REMOVE TARASEC FIREWALL CHAINS ==="
-for table in filter nat mangle; do
-    command -v iptables >/dev/null 2>&1 || break
-    while read -r chain; do
-        [ -n "$chain" ] || continue
+# Chains are named both TARASEC-* (hotspot) and TARASEC_* (SSH gate, honeypot).
+for ipt in iptables ip6tables; do
+    command -v "$ipt" >/dev/null 2>&1 || continue
+    for table in filter nat mangle raw; do
+        # Rules in built-in chains that use TaraSec ipsets or comments.
         while read -r rule; do
             [ -n "$rule" ] || continue
-            rule="${rule/-A /-D }"
-            iptables -t "$table" $rule 2>/dev/null || true
-        done < <(iptables -t "$table" -S 2>/dev/null | grep -- "-j $chain" || true)
-        iptables -t "$table" -F "$chain" 2>/dev/null || true
-        iptables -t "$table" -X "$chain" 2>/dev/null || true
-    done < <(iptables -t "$table" -S 2>/dev/null | awk '/^-N TARASEC-/{print $2}')
+            "$ipt" -t "$table" ${rule/-A /-D } 2>/dev/null || true
+        done < <("$ipt" -t "$table" -S 2>/dev/null \
+                 | grep -E -- '^-A .*(--match-set tarasec_|--comment "?tarasec)' || true)
+        while read -r chain; do
+            [ -n "$chain" ] || continue
+            while read -r rule; do
+                [ -n "$rule" ] || continue
+                "$ipt" -t "$table" ${rule/-A /-D } 2>/dev/null || true
+            done < <("$ipt" -t "$table" -S 2>/dev/null | grep -E -- "^-A .* -[jg] ${chain}( |\$)" || true)
+            "$ipt" -t "$table" -F "$chain" 2>/dev/null || true
+            "$ipt" -t "$table" -X "$chain" 2>/dev/null || true
+        done < <("$ipt" -t "$table" -S 2>/dev/null | awk '/^-N TARASEC[-_]/{print $2}')
+    done
 done
 
-nft delete table ip tarasec_hotspot_dns 2>/dev/null || true
+if command -v ipset >/dev/null 2>&1; then
+    while read -r set; do
+        [ -n "$set" ] || continue
+        ipset destroy "$set" 2>/dev/null || echo "WARNING: ipset $set is still referenced; not removed."
+    done < <(ipset list -n 2>/dev/null | grep '^tarasec_' || true)
+fi
+
+if command -v nft >/dev/null 2>&1; then
+    while read -r family name; do
+        nft delete table "$family" "$name" 2>/dev/null || true
+    done < <(nft list tables 2>/dev/null | awk '$1 == "table" && $3 ~ /^tarasec/ {print $2, $3}')
+fi
 
 rm -f /etc/NetworkManager/dnsmasq-shared.d/tarasec-status-client.conf
 if [ -L /tmp/dhcp.leases ]; then
@@ -215,11 +345,25 @@ echo
 echo "=== REMOVE TARASEC RUNTIME / CONFIGURATION ==="
 rm -rf \
     /etc/tarasec \
+    /etc/tarasec[-.]* \
+    /etc/tarasecfw.conf* \
     /root/wifi \
     /root/setup \
     /var/lib/tarasec \
+    /var/lib/tarasec-* \
     /var/log/tarasec \
-    /run/tarasec
+    /var/log/tarasec-* \
+    /run/tarasec \
+    /usr/local/lib/tarasec \
+    /usr/local/lib/tarasec-* \
+    /usr/local/sbin/tarasec \
+    /usr/local/sbin/tarasec-* \
+    /usr/local/bin/tarasec-* \
+    /opt/tarasec-google
+rm -f \
+    /etc/rsyslog.d/30-tarasec-*.conf \
+    /etc/sysctl.d/99-taransvar-ipsec.conf \
+    /etc/NetworkManager/dnsmasq-shared.d/tarasec-*.conf
 rm -f /etc/init/startup.conf /usr/lib/cgi-bin/debugserver
 
 echo
@@ -298,7 +442,7 @@ else
     echo "The TaraSec openNDS configuration was reset, so reinstall can configure it afresh."
 fi
 
-for svc in NetworkManager apache2 mysql cron; do
+for svc in NetworkManager apache2 mysql cron rsyslog; do
     if systemctl list-unit-files --no-legend "$svc.service" 2>/dev/null | grep -q .; then
         systemctl restart "$svc.service" 2>/dev/null || true
     fi
@@ -321,7 +465,25 @@ for p in \
         remaining=1
     fi
 done
+for p in /etc/tarasec* /var/lib/tarasec* /usr/local/lib/tarasec* /usr/local/sbin/tarasec* \
+         /etc/systemd/system/tarasec-* /etc/systemd/system/taralink* \
+         /etc/ssh/sshd_config.d/90-tarasec.conf /etc/systemd/system/ssh.socket.d/90-tarasec-port.conf; do
+    [ -e "$p" ] || continue
+    echo "  $p"
+    remaining=1
+done
 [ "$remaining" -eq 0 ] && echo "  none"
+
+echo
+echo "Remaining TaraSec systemd units:"
+systemctl list-units --all --no-legend --plain 'tarasec-*' 'taralink*' 2>/dev/null | awk '{print "  " $1}' | grep . || echo "  none"
+if command -v ipset >/dev/null 2>&1; then
+    echo "Remaining TaraSec ipsets:"
+    ipset list -n 2>/dev/null | grep '^tarasec_' | sed 's/^/  /' || echo "  none"
+fi
+for f in /etc/ssh/sshd_config.d/*tarasec*; do
+    [ -e "$f" ] && echo "Kept SSH authentication policy: $f"
+done
 
 echo
 if command -v nmcli >/dev/null 2>&1; then
