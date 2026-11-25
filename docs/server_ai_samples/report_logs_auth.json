@@ -1,0 +1,200 @@
+{
+  "topics": {
+    "logs": {
+      "baseline_run": true,
+      "entries": 12,
+      "distinct_messages": 4,
+      "new_messages": 4,
+      "firewall_log_lines": 50,
+      "read_limit_reached": false,
+      "groups": [
+        {
+          "source": "systemd",
+          "unit": "tarasec-ssh-approval-poll.service",
+          "priority": 3,
+          "template": "Failed to start tarasec-ssh-approval-poll.service - TaraSec lightweight approved-job poll.",
+          "example": "Failed to start tarasec-ssh-approval-poll.service - TaraSec lightweight approved-job poll.",
+          "count": 4,
+          "first": "2026-11-18T10:16:40Z",
+          "last": "2026-11-18T10:28:40Z",
+          "new": true
+        },
+        {
+          "source": "systemd",
+          "unit": "tarasec-ssh-approval-poll.service",
+          "priority": 4,
+          "template": "tarasec-ssh-approval-poll.service: Failed with result 'exit-code'.",
+          "example": "tarasec-ssh-approval-poll.service: Failed with result 'exit-code'.",
+          "count": 4,
+          "first": "2026-11-18T10:16:40Z",
+          "last": "2026-11-18T10:28:40Z",
+          "new": true
+        },
+        {
+          "source": "systemd",
+          "unit": "cron.service",
+          "priority": 4,
+          "template": "cron.service: Found left-over process N (perl) in control group while starting unit. Ignoring.",
+          "example": "cron.service: Found left-over process 5000 (perl) in control group while starting unit. Ignoring.",
+          "count": 3,
+          "first": "2026-11-18T10:16:40Z",
+          "last": "2026-11-18T10:36:40Z",
+          "new": true
+        },
+        {
+          "source": "kernel",
+          "unit": null,
+          "priority": 4,
+          "template": "EXTN-fs warning (device sdaN): extN_dx_add_entry: Directory index full!",
+          "example": "EXT4-fs warning (device sda1): ext4_dx_add_entry: Directory index full!",
+          "count": 1,
+          "first": "2026-11-18T10:36:40Z",
+          "last": "2026-11-18T10:36:40Z",
+          "new": true
+        }
+      ],
+      "context": {
+        "window": {
+          "from": "2026-11-18T10:06:40Z",
+          "to": "2026-11-18T11:06:40Z",
+          "seconds": 3600
+        },
+        "disk_used_percent": 41.2,
+        "memory_available_percent": 63.5,
+        "load_1m": 0.31,
+        "uptime_hours": 220.4
+      }
+    },
+    "auth": {
+      "read_limit_reached": false,
+      "ssh_logins": [
+        {
+          "user": "admin",
+          "method": "publickey",
+          "source": "100.68.10.7",
+          "count": 1,
+          "first": "2026-11-18T10:17:40Z",
+          "last": "2026-11-18T10:17:40Z"
+        },
+        {
+          "user": "admin",
+          "method": "password",
+          "source": "pub-3bd1aa5794",
+          "count": 1,
+          "first": "2026-11-18T10:31:40Z",
+          "last": "2026-11-18T10:31:40Z"
+        }
+      ],
+      "ssh_failures": {
+        "total": 23,
+        "local_accounts": [
+          {
+            "user": "root",
+            "count": 3,
+            "first": "2026-11-18T10:16:40Z",
+            "last": "2026-11-18T10:16:40Z"
+          }
+        ],
+        "attempts_on_unknown_names": 20,
+        "distinct_unknown_names": 4,
+        "top_sources": [
+          {
+            "source": "pub-27f664b72c",
+            "count": 20,
+            "first": "2026-11-18T10:16:40Z",
+            "last": "2026-11-18T10:16:59Z"
+          },
+          {
+            "source": "pub-599e665218",
+            "count": 3,
+            "first": "2026-11-18T10:16:40Z",
+            "last": "2026-11-18T10:16:40Z"
+          }
+        ],
+        "distinct_sources": 2
+      },
+      "ssh_not_allowed": [
+        {
+          "user": "<not a local account>",
+          "source": "100.68.10.9",
+          "reason": "not listed in AllowUsers",
+          "count": 1,
+          "first": "2026-11-18T10:16:40Z",
+          "last": "2026-11-18T10:16:40Z"
+        }
+      ],
+      "sudo": [
+        {
+          "user": "root",
+          "target": "root",
+          "command": "/usr/sbin/iptables -L -n -v --line-numbers",
+          "problem": null,
+          "count": 50,
+          "first": "2026-11-18T10:16:40Z",
+          "last": "2026-11-18T11:05:40Z"
+        },
+        {
+          "user": "admin",
+          "target": "root",
+          "command": "/usr/bin/bash",
+          "problem": "3 incorrect password attempts",
+          "count": 1,
+          "first": "2026-11-18T10:32:30Z",
+          "last": "2026-11-18T10:32:30Z"
+        }
+      ],
+      "su": [
+        {
+          "user": "admin",
+          "target": "root",
+          "result": "ok",
+          "count": 1,
+          "first": "2026-11-18T10:33:20Z",
+          "last": "2026-11-18T10:33:20Z"
+        }
+      ],
+      "account_changes": [
+        {
+          "at": "2026-11-18T10:33:30Z",
+          "tool": "useradd",
+          "message": "new user: name=support, UID=1002, GID=1002, home=/home/support, shell=/bin/bash, from=/dev/pts/0"
+        }
+      ],
+      "authorized_keys": {
+        "baseline_run": false,
+        "accounts": [
+          {
+            "user": "admin",
+            "keys": 1,
+            "added": [
+              {
+                "type": "ssh-ed25519",
+                "fingerprint": "SHA256:newKEYnewKEYnewKEYnewKEYnewKEYnewKEYnewKE",
+                "restricted": false
+              }
+            ],
+            "removed": [
+              "SHA256:oldKEYoldKEYoldKEYoldKEYoldKEYoldKEYoldKE"
+            ],
+            "current": []
+          }
+        ]
+      },
+      "honeypot": {
+        "events": 30,
+        "distinct_sources": 1
+      },
+      "context": {
+        "window": {
+          "from": "2026-11-18T10:06:40Z",
+          "to": "2026-11-18T11:06:40Z",
+          "seconds": 3600
+        },
+        "disk_used_percent": 41.2,
+        "memory_available_percent": 63.5,
+        "load_1m": 0.31,
+        "uptime_hours": 220.4
+      }
+    }
+  }
+}

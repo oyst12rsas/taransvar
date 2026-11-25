@@ -159,6 +159,11 @@ esac
 bash "$SCRIPT_DIR/misc/install_netbird_management.sh" || exit 1
 bash "$SCRIPT_DIR/misc/install_agent_approvals.sh" --sync || exit 1
 
+# Hourly operator AI log/access reports: automatic on demo nodes, manual on
+# production (the installer prints the command there). Never fatal.
+bash "$SCRIPT_DIR/misc/install_server_ai_report.sh" --auto ||
+    echo "Operator AI reports were not installed; retry: sudo bash $SCRIPT_DIR/misc/install_server_ai_report.sh" >&2
+
 echo "Next: review and verify your node security at https://tarasec.org/safety/#deployment"
 echo "Hardening priorities: https://tarasec.org/safety/#hardening-priorities"
 echo "Ask your AI assistant to check the next missing control, test it and fix in-scope routine failures."
