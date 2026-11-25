@@ -1,0 +1,9 @@
+[Unit]
+Description=Re-apply TaraSec SSH source restriction (NetBird rebuilds INPUT)
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=2min
+
+[Install]
+WantedBy=timers.target

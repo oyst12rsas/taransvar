@@ -1,0 +1,8 @@
+[Unit]
+Description=TaraSec: restrict admin SSH to allowed sources
+After=network-online.target netbird.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/tarasec-ssh-allow.sh

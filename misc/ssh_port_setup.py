@@ -394,6 +394,9 @@ def migrate(console_recovery=False):
         atomic(HP, '[Service]\nEnvironment=TARASEC_SSH_HONEYPOT_IPV6=yes\n', 0o644)
         # Refresh-only cannot perform the older temporary-ACCEPT migration.
         command('bash', str(setup), '--refresh-only')
+        # --refresh-only leaves an inactive honeypot inactive. On a node that never
+        # ran it, start it now: the old admin port is free, and TCP/22 must answer.
+        command('systemctl', 'enable', '--now', 'tarasec-ssh-honeypot.service')
         command('systemctl', 'is-active', '--quiet', 'tarasec-ssh-honeypot.service')
         if not listener(backend):
             raise RuntimeError('The honeypot backend is not listening')
@@ -419,6 +422,7 @@ def migrate(console_recovery=False):
         pending['phase'] = 'complete_console' if console_recovery else 'awaiting_confirmation'
         pending['automatic_rollback'] = not console_recovery
         atomic(pending_path, json.dumps(pending))
+        print('Your management port is not printed. To see it later: sudo grep ^SSH_PORT= /etc/tarasecfw.conf')
         if console_recovery:
             print('SSH port and honeypot routing configured. Console recovery selected; automatic rollback is disabled.')
             print('Next: open a fresh MFA window and test a NEW login using your chosen port. No timer confirmation is required.')

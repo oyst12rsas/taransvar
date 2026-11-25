@@ -159,6 +159,8 @@ esac
 bash "$SCRIPT_DIR/misc/install_netbird_management.sh" || exit 1
 bash "$SCRIPT_DIR/misc/install_agent_approvals.sh" --sync || exit 1
 
+echo "Secure SSH now (key+password, source limit, Google/Authenticator gate, honeypot on 22):"
+echo "  $SCRIPT_DIR/docs/POST_INSTALL_HARDENING.md"
 echo "Next: review and verify your node security at https://tarasec.org/safety/#deployment"
 echo "Hardening priorities: https://tarasec.org/safety/#hardening-priorities"
 echo "Ask your AI assistant to check the next missing control, test it and fix in-scope routine failures."

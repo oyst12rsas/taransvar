@@ -4,7 +4,7 @@ This file is intended for ChatGPT and other AI assistants helping a user install
 
 ## Security checklist for every deployment
 
-Use https://tarasec.org/safety/#deployment for the baseline checks and https://tarasec.org/safety/#hardening-priorities for continuing mitigation priorities. Include these links in the installation handoff. Check actual enforcement; installation completion does not certify that every listed protection is active. Select and verify the next missing control using the workflow below.
+Right after installation, walk the owner through [docs/POST_INSTALL_HARDENING.md](docs/POST_INSTALL_HARDENING.md) in order (key, key+password, source restriction, Google/Authenticator gate, private port with honeypot on 22). Use https://tarasec.org/safety/#deployment for the baseline checks and https://tarasec.org/safety/#hardening-priorities for continuing mitigation priorities. Include these links in the installation handoff. Check actual enforcement; installation completion does not certify that every listed protection is active. Select and verify the next missing control using the workflow below.
 
 ## Deployment hardening and shared improvements
 

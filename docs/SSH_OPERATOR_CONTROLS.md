@@ -30,8 +30,9 @@ The local Google gate and local session-termination permission must both be on.
 
 Execution first closes the Google SSH gate for IPv4 and IPv6. If gate closure
 fails, sessions are not terminated. It then SIGTERMs sshd/sshd-session processes
-owning established sockets on the configured admin SSH port. Other services and
-ports are excluded. Permission or console-declaration changes during execution may leave SSH
+owning established sockets, on any port: a session opened before a management-port
+migration stays on the old port and is terminated too. Only sshd processes are
+matched; the honeypot and other services are excluded. Permission or console-declaration changes during execution may leave SSH
 closed without terminating sessions; the job reports failure rather than success.
 The manual action checks that admin SSH sockets disappear after SIGTERM; lingering
 sessions or an unavailable check report failure. This is still local evidence,

@@ -1,3 +1,4 @@
+import subprocess
 import unittest
 from unittest import mock
 import agent_approval_worker as worker
@@ -41,3 +42,13 @@ class OperatorSSHControls(unittest.TestCase):
              mock.patch.object(worker,'audit'):
             self.assertFalse(worker.execute_approved_job(self.job()))
             terminate.assert_not_called()
+
+class EstablishedSessionMatching(unittest.TestCase):
+    def test_sessions_on_any_port_are_found_but_not_the_honeypot(self):
+        # -Htnp state established: Recv-Q Send-Q Local Peer Process
+        out = ('0 0 100.68.56.81:4810 100.68.10.7:45426 users:(("sshd-session",pid=301,fd=4),("sshd-session",pid=300,fd=4))\n'
+               '0 0 100.68.56.81:22 100.68.10.7:43750 users:(("sshd",pid=236527,fd=4),("sshd",pid=236453,fd=4))\n'
+               '0 0 100.68.56.81:22 203.0.113.9:51000 users:(("python3",pid=243006,fd=7))\n'
+               '0 0 127.0.0.1:3306 127.0.0.1:40000 users:(("mariadbd",pid=900,fd=20))\n')
+        with mock.patch.object(worker, 'run', return_value=subprocess.CompletedProcess([], 0, out, '')):
+            self.assertEqual(worker.established_ssh_session_pids(4810), [300, 301, 236453, 236527])

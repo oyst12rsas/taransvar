@@ -8,6 +8,10 @@ The easiest way to get started is to tell ChatGPT:
 
 ChatGPT can explain what TaraSec does, what benefits it may provide, check what your device requires, and guide you through the installation and setup process.
 
+## Why TaraSec, and the whole chain
+
+Security professionals know firewalls, honeypots and shared blocklists. TaraSec's difference is that one detection reaches every participating node **and** the network the attack came from, which can find the device and tag its later traffic. **[Collective defense: the whole TaraSec chain](docs/COLLECTIVE_DEFENSE.md)** explains this, the elevated security level every node needs, and what works today.
+
 ## AI, student and reviewer context
 
 Before drawing conclusions from individual source files, read **[AI_TRAINING.md](AI_TRAINING.md)**. It explains the TaraSec concept, the current prototype status, the difference between experimental kernel code and the broader architecture, privacy principles, the hotspot testbed, and how AI/reviewers should interpret the repository.
