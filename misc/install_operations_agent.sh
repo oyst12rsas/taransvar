@@ -94,6 +94,10 @@ install -o root -g root -m 0755 "$source_dir/server_ai_report_client.py" /usr/lo
 cat > /usr/local/lib/tarasec-operations/run-server-ai-report <<'EOF'
 #!/bin/sh
 set -eu
+if [ ! -f /etc/tarasec/server-ai-report.env ] || [ ! -f /etc/tarasec/server-ai-node.token ]; then
+    unset SSL_CERT_FILE
+    exec /usr/bin/python3 /usr/local/lib/tarasec-operations/server_ai_report_client.py --enroll --local
+fi
 : "${SERVER_AI_URL:?Dispatcher URL is required}"
 : "${SERVER_AI_NODE_ID:?Dispatcher node ID is required}"
 SERVER_AI_NODE_TOKEN="$(cat /etc/tarasec/server-ai-node.token)"
@@ -107,12 +111,12 @@ cat > /etc/systemd/system/tarasec-server-ai-report.service <<'EOF'
 Description=Submit TaraSec disk and memory report for advisory analysis
 Wants=network-online.target
 After=network-online.target
-ConditionPathExists=/etc/tarasec/server-ai-report.env
-ConditionPathExists=/etc/tarasec/server-ai-node.token
+ConditionPathExists=|/etc/tarasec/agent-enrollment.json
+ConditionPathExists=|/etc/tarasec/server-ai-report.env
 
 [Service]
 Type=oneshot
-EnvironmentFile=/etc/tarasec/server-ai-report.env
+EnvironmentFile=-/etc/tarasec/server-ai-report.env
 ExecStart=/usr/local/lib/tarasec-operations/run-server-ai-report
 TimeoutStartSec=6min
 UMask=0077
