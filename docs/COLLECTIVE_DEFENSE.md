@@ -112,7 +112,7 @@ Steps 1–4 and 7 are in [Post-install hardening](POST_INSTALL_HARDENING.md) and
 | 2. Classify | **Proven** | Password attempts emitted as severity 7 `tag_host` |
 | 3. Report | **Proven** | After setting `DBSERVER`: test event and real attack arrived at the DB server with sensor provenance (`TARASEC_SENSOR_IP`) |
 | 4. Tag | **Proven** | Attack from a non-owner NetBird peer stored in `syslogThreat` as `tag_host`, severity 7 |
-| 5. Block locally | **Missing** | Nothing turns a `syslogThreat` tag into a block. The attacker stayed reachable; no ipset, iptables or `colorListings` entry |
+| 5. Block locally | **Partly proven** | Enforcement works: with the attacker in `colorListings` (black), tarakernel dropped its SSH and HTTP traffic (both timed out; kernel log `Dropping traffic from blacklisted sender`). Needs the fixes in PR #334. Still missing: nothing adds the entry automatically from a `syslogThreat` tag |
 | 6. Share | **Missing for real attacks** | The block feed (`partnerRestrictions.php` + `partner_restriction_worker.php`, expiring ipset) only carries Demo 5 sessions, not `syslogThreat` tags |
 | 7. Notify source | Research prototype | Packet tagging is experimental (`AI_TRAINING.md`) |
 | 8. Expire | Exists in the Demo 5 feed only | ipset entries with kernel timeouts (max 300 s) |
