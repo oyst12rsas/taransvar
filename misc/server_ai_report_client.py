@@ -124,8 +124,13 @@ def enrolled_dispatcher():
     request = Request(url.geturl() + "?action=report_credential", data=b"{}",
                       headers={"Content-Type": "application/json",
                                "Authorization": "Bearer " + credential})
-    with build_opener(NoRedirect()).open(request, timeout=15) as response:
-        data = response.read(32769)
+    try:
+        with build_opener(NoRedirect()).open(request, timeout=15) as response:
+            data = response.read(32769)
+    except HTTPError as exc:
+        raise ValueError(f"TaraSec enrollment API HTTP error: {exc.code}") from exc
+    except URLError as exc:
+        raise ValueError(f"TaraSec enrollment API connection failed: {exc.reason}") from exc
     if len(data) > 32768:
         raise ValueError("Enrollment response too large")
     answer = json.loads(data)
