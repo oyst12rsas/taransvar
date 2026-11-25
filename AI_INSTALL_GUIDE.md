@@ -60,20 +60,25 @@ The remaining clean-install acceptance sequence is:
 
 Until that sequence passes from a fresh reset, say **implemented on main, pending clean reinstall acceptance test**.
 
-## Register ownership before installation
+## NetBird bootstrap and Google ownership enrollment
 
-Before installing a new server, the owner signs into
-https://tarasec.org/ops/agent/install.php with the Google account they will use in
-the app and generates a single-use installation secret. Open that page on a
-trusted device and transfer the secret manually to the server console. Never ask
-the user to paste it into an AI conversation, command line, environment variable
-or support log. Secrets expire after 15 minutes and register one new server.
+The core and hotspot installers use `misc/install_netbird_management.sh` to
+join the restricted NetBird bootstrap group. The helper requests a single-use
+setup key over HTTPS from tarasec.org and discards it after joining. Fresh
+installs require no Google ownership code for this step.
 
-The core, hotspot and standalone NetBird installers register ownership before
-deploying TaraSec services or joining the management overlay. If Python is
-missing, they install Python/CA prerequisites through the OS package manager
-first. Failed registration stops installation. The hidden prompt is implemented
-by misc/enroll_google_manager.py --install-secret; that flag takes no value.
+To enable Google-controlled management after installation, sign into
+https://tarasec.org/ops/agent/install.php using the account that will manage this
+node. Generate a single-use installation secret, then run this on the node from
+the repository checkout:
+
+```sh
+sudo bash misc/install_agent_approvals.sh --install-secret
+```
+
+Paste the secret at the hidden console prompt. Keep it out of command-line
+arguments, environment variables and support logs. Secrets expire after 15
+minutes and register one new server.
 
 The enrollment service derives the initial manager from the verified Google
 account and returns its hash for the local access policy. The installer creates
