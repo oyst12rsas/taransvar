@@ -17,14 +17,6 @@ HOTSPOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$HOTSPOT_DIR/.." && pwd)"
 cd "$HOTSPOT_DIR"
 
-# Bind ownership before deploying hotspot services or joining the overlay.
-if [[ ! -f /etc/tarasec/agent-enrollment.json ]]; then
-    if ! command -v python3 >/dev/null; then
-        apt-get update
-        apt-get install -y python3 ca-certificates
-    fi
-    python3 "$REPO_ROOT/misc/enroll_google_manager.py" --install-secret
-fi
 
 echo "=== TaraSec hotspot preflight ==="
 if [ ! -r /etc/os-release ]; then
@@ -309,7 +301,11 @@ EOF
     chmod 0644 /etc/tarasecfw.conf
 fi
 
-bash "$REPO_ROOT/misc/install_agent_approvals.sh" --sync
+if [[ -f /etc/tarasec/agent-enrollment.json ]]; then
+    bash "$REPO_ROOT/misc/install_agent_approvals.sh" --sync
+else
+    echo 'To enable Google-controlled management later, run sudo bash misc/install_agent_approvals.sh --install-secret from the repository checkout.'
+fi
 
 # openNDS normally offloads established client flows. TaraSec must continue to
 # see every packet destined for DEMO_NODES so it can preserve the traffic tag.
