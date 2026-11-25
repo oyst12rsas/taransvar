@@ -49,7 +49,10 @@ char *interpretColoredList(char *lpBlockDescriptor, char *lpIpList)
 		//asdf
 		
                 //Check if there's room for more elements in the setup.
-		if (pSetup->nElementsInArray[nBlockDescriptor] >= pSetup->nConfigurationArraySize[nBlockDescriptor])
+		//Size 0 means the array is not allocated yet: storeColoredIp() allocates it
+		//on the first element, so it must not be refused here (0 >= 0).
+		if (pSetup->nConfigurationArraySize[nBlockDescriptor] > 0
+		    && pSetup->nElementsInArray[nBlockDescriptor] >= pSetup->nConfigurationArraySize[nBlockDescriptor])
 		{
 			pr_info("tarakernel: ***** WARNING! Too many elements in array for %s. Aborting.. Please clean up or report the problem.\n", lpBlockDescriptor);
     		        lpFound = strchr(lpFound+1, '|');
