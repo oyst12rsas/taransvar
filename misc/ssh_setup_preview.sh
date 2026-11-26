@@ -21,7 +21,7 @@ resume_ssh_activation() {
     printf '\nOpen Machine control and make sure this node is listed. Set up or verify your authenticator there.\n'
     printf '  https://tarasec.org/ops/agent/\n'
     python3 "$helper_dir/standard_upgrade.py" upgrade --configure-ssh-window || return 1
-    printf '\nBefore applying the saved port, approve an opening with TOTP and test a new login on the current port.\n'
+    printf '\nRefresh Machine control. If the button is still disabled, wait for the next node report and refresh again.\nApprove an opening with TOTP and test a new login on the current port before applying the saved port.\n'
     python3 "$helper_dir/ssh_port_setup.py" --from-install
 }
 
