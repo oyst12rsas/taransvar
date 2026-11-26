@@ -435,7 +435,11 @@ def migrate(console_recovery=False, from_install=False):
         print('From that new login, confirm with:')
         print('sudo --preserve-env=SSH_CONNECTION python3 /usr/local/lib/tarasec/ssh_port_setup.py --confirm')
         print('Without confirmation, the previous port and firewall are restored automatically.')
-    except BaseException:
+    except BaseException as error:
+        if isinstance(error, route.DecoyCommandError):
+            print(f'SSH migration command failed: {error.tool} (exit {error.status})', file=sys.stderr)
+            if error.detail:
+                print(error.detail, file=sys.stderr)
         if console_recovery:
             pending_path = STATE / 'pending.json'
             pending = json.loads(root_file(pending_path))
