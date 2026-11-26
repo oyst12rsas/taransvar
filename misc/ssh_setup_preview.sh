@@ -21,7 +21,12 @@ resume_ssh_activation() {
     printf '\nOpen Machine control and make sure this node is listed. Set up or verify your authenticator there.\n'
     printf '  https://tarasec.org/ops/agent/\n'
     python3 "$helper_dir/standard_upgrade.py" upgrade --configure-ssh-window || return 1
-    printf '\nRefresh Machine control. If the button is still disabled, wait for the next node report and refresh again.\nApprove an opening with TOTP and test a new login on the current port before applying the saved port.\n'
+    local current_ports requested_port
+    current_ports=$(set -o pipefail; sshd -T | awk '/^port / {print $2}') || return 1
+    requested_port=$(python3 -c 'import json; print(json.load(open("/var/lib/tarasec/ssh-install-choices.json"))["port"])') || return 1
+    printf '\nOpenSSH currently configured on TCP: %s\n' "$current_ports"
+    printf 'Requested management port: TCP/%s. The saved settings have not been applied by this wizard yet.\n' "$requested_port"
+    printf '\nRefresh Machine control. If the button is still disabled, wait for the next node report and refresh again.\nApprove an opening with TOTP and test a new login on the current port above. The next step applies the saved port with automatic rollback.\n'
     python3 "$helper_dir/ssh_port_setup.py" --from-install
 }
 
@@ -148,7 +153,7 @@ with tempfile.NamedTemporaryFile(mode="w", dir=directory, delete=False) as pendi
 PY
 result=$?
 (( result == 0 )) || exit "$result"
-printf '\nSSH choices saved.\n'
+printf '\nSSH choices saved. The management port and honeypot settings have not been applied yet.\n'
 if [[ -t 0 ]]; then
     resume_ssh_activation
 else
