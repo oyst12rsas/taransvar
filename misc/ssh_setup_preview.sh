@@ -1,5 +1,35 @@
 #!/usr/bin/env bash
 
+resume_ssh_activation() {
+    local helper_dir
+    helper_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)" || return 1
+    if [[ $EUID != 0 || ! -t 0 || -n ${SSH_CONNECTION:-} || -n ${SSH_TTY:-} ]]; then
+        printf 'Resume from the VM or physical console with sudo.\n' >&2
+        return 1
+    fi
+    if [[ ! -r /var/lib/tarasec/ssh-install-choices.json ]]; then
+        printf 'Save SSH setup choices with --stage first.\n' >&2
+        return 1
+    fi
+    printf '\nTo resume these saved choices later, run from the checkout:\n'
+    printf '  sudo bash misc/ssh_setup_preview.sh --activate\n'
+    if [[ ! -f /etc/tarasec/agent-enrollment.json ]]; then
+        printf '\nSign in with your chosen Google account and generate a one-use enrollment code:\n'
+        printf '  https://tarasec.org/ops/agent/install.php\n'
+        bash "$helper_dir/install_agent_approvals.sh" --install-secret || return 1
+    fi
+    printf '\nOpen Machine control and make sure this node is listed. Set up or verify your authenticator there.\n'
+    printf '  https://tarasec.org/ops/agent/\n'
+    python3 "$helper_dir/standard_upgrade.py" upgrade --configure-ssh-window || return 1
+    printf '\nBefore applying the saved port, approve an opening with TOTP and test a new login on the current port.\n'
+    python3 "$helper_dir/ssh_port_setup.py" --from-install
+}
+
+if [[ $# -eq 1 && $1 == --activate ]]; then
+    resume_ssh_activation
+    exit $?
+fi
+
 mode=${1:---preview}
 case "$mode" in
     --preview|--stage) ;;
@@ -118,5 +148,10 @@ with tempfile.NamedTemporaryFile(mode="w", dir=directory, delete=False) as pendi
 PY
 result=$?
 (( result == 0 )) || exit "$result"
-printf '\nSSH choices saved. When Google-controlled SSH and MFA are ready, run from this checkout:\n'
-printf '  sudo python3 misc/ssh_port_setup.py --from-install\n'
+printf '\nSSH choices saved.\n'
+if [[ -t 0 ]]; then
+    resume_ssh_activation
+else
+    printf 'To continue from the VM or physical console, run from the checkout:\n'
+    printf '  sudo bash misc/ssh_setup_preview.sh --activate\n'
+fi
