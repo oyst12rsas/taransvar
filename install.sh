@@ -148,6 +148,11 @@ systemctl is-active --quiet taralink.service || exit 1
     perl startup.pl
 ) || exit 1
 
+# Report to the central DB server (Global DB 1) and forward security telemetry
+# over TCP/5514. A failure here leaves events in the local journal only.
+bash "$SCRIPT_DIR/misc/configure_global_db.sh" ||
+    echo 'WARNING: central DB forwarding not configured; run sudo bash misc/configure_global_db.sh later.' >&2
+
 if [[ -f /etc/tarasec/agent-enrollment.json ]]; then
     bash "$SCRIPT_DIR/misc/install_agent_approvals.sh" --sync || exit 1
 else
