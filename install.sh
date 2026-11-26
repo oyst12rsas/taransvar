@@ -163,5 +163,13 @@ echo 'Future updates: sudo tarasec upgrade'
 
 
 printf '\nTaraSec installation complete.\n'
-printf 'Recommended next step: run the SSH protection setup from this checkout.\n'
+if [[ -t 0 ]] &&
+    read -r -p 'Set up SSH protection now? [y/N]: ' ssh_setup_answer &&
+    [[ $ssh_setup_answer == [yY] || $ssh_setup_answer == [yY][eE][sS] ]]; then
+    if bash "$SCRIPT_DIR/misc/ssh_setup_preview.sh" --stage; then
+        exit 0
+    fi
+    printf '\nSSH setup did not finish.\n' >&2
+fi
+printf 'To start SSH protection setup later, run from this checkout:\n'
 printf '  sudo bash misc/ssh_setup_preview.sh --stage\n'
