@@ -399,7 +399,7 @@ static void checkHackReportsWorker()
 		u_int32_t nNumericIp = (row[1]?atoi(row[1]):0);
 		u_int32_t nInfectionId = 0;
 		u_int32_t nUnitId = 0;
-		char cSQL[400];
+		char cSQL[512];
 		int bUpdateHandled = 1;
 		char *lpIp = (row[3]?row[3]:"(null)");
 		u_int32_t nInternaIpFromUnitPort = 0;

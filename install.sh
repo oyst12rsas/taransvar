@@ -1,7 +1,6 @@
 #!/bin/bash
 #Taransvar Cyber Security
 #To install: sudo bash install.sh
-
 if [ "$(id -u)" -ne 0 ]; then
         echo 'This script must be run by root.\nStart with: sudo bash install.sh' >&2
         exit 1
@@ -15,13 +14,6 @@ echo $SCRIPT_DIR
 cd $SCRIPT_DIR
 printf "\nInstalling Taransvar Cyber Solution\n"
 read -t 5 -p "Continuing in 5 seconds..."
-# Stop before deploying TaraSec services if trusted registration fails.
-if [[ ! -f /etc/tarasec/agent-enrollment.json ]]; then
-    if ! command -v python3 >/dev/null; then
-        apt-get update && apt-get install -y python3 ca-certificates || exit 1
-    fi
-    python3 "$SCRIPT_DIR/misc/enroll_google_manager.py" --install-secret || exit 1
-fi
 printf "Installing required linux packages...\n"
 
 apt-get update -y
@@ -56,9 +48,21 @@ perl -MCPAN -e "URI"
 perl -MCPAN -e "LWP"
 
 printf "Installing the database\n"
-printf "The install routine may now generate some error message while trying to create DB user.\n"
-mysql -e "create database taransvar;"
+mariadb -e 'CREATE DATABASE IF NOT EXISTS taransvar' || exit 1
+table_count=$(mariadb -NBe "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'taransvar'") || exit 1
+if [[ $table_count == 0 ]]; then
+    mariadb taransvar < db/taransvar.sql || exit 1
+    mariadb taransvar < db/postcreate.sql || exit 1
+fi
+expected_version=$(awk '/^#version[[:space:]]+[0-9]+/ { if ($2 > max) max = $2 } END { print max }' misc/install.sql) || exit 1
+installed_version=$(mariadb -NB taransvar -e 'SELECT dbVersion FROM setup') || exit 1
+if [[ ! $expected_version =~ ^[0-9]+$ || $installed_version != "$expected_version" ]]; then
+    printf 'TaraSec schema is %s, but this checkout requires %s. Existing tables were kept.\n' \
+        "$installed_version" "$expected_version" >&2
+    exit 1
+fi
 
+printf "The install routine may now generate some error message while trying to create DB user.\n"
 (
     cd misc
     perl createUsers.pl
@@ -95,29 +99,13 @@ if ! grep -q startup.pl "/var/spool/cron/crontabs/root" ; then
 fi
 service cron reload
 
-mariadb taransvar < db/taransvar.sql
-mariadb taransvar < db/postcreate.sql
 
 echo "Database created. Copying files/"
 mkdir -p /root/taransvar/perl
-rsync -a --exclude '.git' misc/ /root/taransvar/perl/
+rsync -a --exclude '.git' misc/ /root/taransvar/perl/ || exit 1
 
 echo "Copying (rsync) html files..."
-rsync -a --exclude '.git' html/ /var/www/html/
-
-printf "\nWe're now about to do network installation.\n\nIf you know how to set this up youself, then you probably want to skip this.\n\n"
-read -p "Do you want to run network installation script? (y/n): " answer
-
-if [[ "$answer" == "y" || "$answer" == "Y" ]]; then
-    echo "Running network installation..."
-    sleep 5
-    (
-        cd misc
-        perl setup_network.pl
-    )
-else
-    echo "Skipping network installation."
-fi
+rsync -a --exclude '.git' html/ /var/www/html/ || exit 1
 
 (
     cd misc
@@ -126,10 +114,10 @@ fi
 
 if [ $? -eq 0 ]; then
     printf "Successfully compiled..\n"
-    cp taralink/taralink /root/taransvar
+    cp taralink/taralink /root/taransvar || exit 1
 else
     printf "******* ERROR ****** Could not compile taralink...\n"
-    read -n 1 -s -p "Ctrl-C to break or press any key to continue"
+    exit 1
 fi
 
 printf "**** Gatekeeper is now installed ****\n\n"
@@ -143,21 +131,28 @@ case "$answer" in
         # This is an explicit owner opt-in from the general installer. The
         # hotspot-specific installer therefore goes straight to hotspot setup
         # and only asks about an optional test subscriber/quota.
-        TARASEC_HOTSPOT_REQUESTED=1 bash "$SCRIPT_DIR/hotspot/distro/install.sh"
+        TARASEC_HOTSPOT_REQUESTED=1 bash "$SCRIPT_DIR/hotspot/distro/install.sh" || exit 1
         ;;
     *)
         echo "Skipping hotspot installation."
         ;;
 esac
 
+# Join NetBird before starting the systemd-owned Taralink runtime.
+bash "$SCRIPT_DIR/misc/install_netbird_management.sh" || exit 1
+bash "$SCRIPT_DIR/misc/install_taralink_service.sh" --core-install || exit 1
+systemctl is-active --quiet taralink.service || exit 1
+
 (
     cd misc
     perl startup.pl
-)
+) || exit 1
 
-# Deploy the encrypted management network, then the enrolled service/grants.
-bash "$SCRIPT_DIR/misc/install_netbird_management.sh" || exit 1
-bash "$SCRIPT_DIR/misc/install_agent_approvals.sh" --sync || exit 1
+if [[ -f /etc/tarasec/agent-enrollment.json ]]; then
+    bash "$SCRIPT_DIR/misc/install_agent_approvals.sh" --sync || exit 1
+else
+    echo 'To enable Google-controlled management later, run sudo bash misc/install_agent_approvals.sh --install-secret from the repository checkout.'
+fi
 
 echo "Next: review and verify your node security at https://tarasec.org/safety/#deployment"
 echo "Hardening priorities: https://tarasec.org/safety/#hardening-priorities"
@@ -165,7 +160,19 @@ echo "Ask your AI assistant to check the next missing control, test it and fix i
 
 # Keep upgrade orchestration in this checkout; future changes use one command.
 if [[ ! -e /usr/local/sbin/tarasec && ! -L /usr/local/sbin/tarasec ]]; then
-    ln -s "$SCRIPT_DIR/tarasec" /usr/local/sbin/tarasec
+    ln -s "$SCRIPT_DIR/tarasec" /usr/local/sbin/tarasec || exit 1
 fi
 echo 'Future updates: sudo tarasec upgrade'
 
+
+printf '\nTaraSec installation complete.\n'
+if [[ -t 0 ]] &&
+    read -r -p 'Set up SSH protection now? [y/N]: ' ssh_setup_answer &&
+    [[ $ssh_setup_answer == [yY] || $ssh_setup_answer == [yY][eE][sS] ]]; then
+    if bash "$SCRIPT_DIR/misc/ssh_setup_preview.sh" --stage --configure; then
+        exit 0
+    fi
+    printf '\nSSH setup did not finish.\n' >&2
+fi
+printf 'To start SSH protection setup later, run from this checkout:\n'
+printf '  sudo bash misc/ssh_setup_preview.sh --stage\n'

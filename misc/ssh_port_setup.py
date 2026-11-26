@@ -181,7 +181,10 @@ def snapshot(new_port):
         result = command('ipset', 'save', name, check=False)
         atomic(saved / name, result.stdout if result.returncode == 0 else '')
     atomic(saved / 'manifest.json', json.dumps(entries))
-    atomic(STATE / 'pending.json', json.dumps({'backup': str(saved), 'started': time.time(), 'new_port': new_port, 'phase': 'staging'}))
+    honeypot_active = command('systemctl', 'is-active', '--quiet', 'tarasec-ssh-honeypot.service',
+                              check=False).returncode == 0
+    atomic(STATE / 'pending.json', json.dumps({'backup': str(saved), 'started': time.time(),
+           'new_port': new_port, 'phase': 'staging', 'honeypot_active': honeypot_active}))
     return saved
 
 
@@ -225,8 +228,11 @@ def rollback():
             shutil.copy2(entry['backup'], path)
         else:
             path.unlink(missing_ok=True)
+    if state.get('honeypot_active') is False:
+        command('systemctl', 'stop', 'tarasec-ssh-honeypot.service', check=False)
     reload_sshd()
-    command('systemctl', 'restart', 'tarasec-ssh-honeypot.service', check=False)
+    if state.get('honeypot_active') is not False:
+        command('systemctl', 'restart', 'tarasec-ssh-honeypot.service', check=False)
     # Rollback restores the previous port, never a stale open window. The snapshot
     # guard remains until closed rules have been reapplied in both families.
     port, sources = window.configuration()
@@ -295,26 +301,44 @@ def ensure_migration_dependencies():
                     'ss', 'sshd', 'systemctl', 'journalctl'):
         if not shutil.which(program):
             raise RuntimeError('Missing migration dependency: ' + program)
-    if shutil.which('ipset'):
-        return
-    apt_get = shutil.which('apt-get')
-    if not apt_get:
-        raise RuntimeError('Install ipset with your system package manager, then retry')
-    print('Installing ipset for temporary SSH and honeypot routing.', flush=True)
-    try:
-        subprocess.run([apt_get, 'update'], check=True)
-        subprocess.run([apt_get, 'install', '-y', 'ipset'], check=True)
-    except subprocess.CalledProcessError as error:
-        raise RuntimeError('Could not install ipset with APT. See the package manager output and retry.') from error
+    packages = []
     if not shutil.which('ipset'):
-        raise RuntimeError('APT completed but ipset is unavailable on PATH')
+        packages.append('ipset')
+    if command('/usr/bin/python3', '-c', 'import paramiko', check=False).returncode:
+        packages.append('python3-paramiko')
+    if packages:
+        apt_get = shutil.which('apt-get')
+        if not apt_get:
+            raise RuntimeError('Install the missing migration packages: ' + ', '.join(packages))
+        print('Installing SSH migration dependencies: ' + ', '.join(packages), flush=True)
+        subprocess.run([apt_get, 'update'], check=True)
+        subprocess.run([apt_get, 'install', '-y', *packages], check=True)
+    if not shutil.which('ipset') or command('/usr/bin/python3', '-c', 'import paramiko', check=False).returncode:
+        raise RuntimeError('SSH migration requires ipset and Python Paramiko')
 
 
-def migrate(console_recovery=False):
+def print_ssh_opening_steps(cfg, port):
+    policy = window.settings(window.POLICY)
+    api = policy.get('AGENT_APPROVAL_URL') or 'https://tarasec.org/ops/agent/api.php'
+    url = api.rsplit('/', 1)[0] + '/'
+    nickname = cfg.get('AGENT_PUBLIC_NICKNAME') or 'the machine you enrolled'
+    print('\nApprove a temporary SSH opening')
+    print(f'  1. Open {url} and select {nickname}.')
+    print('  2. Choose a duration and click Open SSH temporarily.')
+    print('  3. Enter a fresh six-digit Authenticator code and click Approve on the request.')
+    print(f'  4. When the countdown starts for {nickname}, make a NEW SSH login on TCP/{port}.')
+
+
+def migrate(console_recovery=False, from_install=False):
     text = root_file(CONF)
     old, sources = window.configuration()
     if not sys.stdin.isatty():
         raise RuntimeError('Run interactively in a terminal; the management port is prompted privately')
+    staged = json.loads(root_file(Path('/var/lib/tarasec/ssh-install-choices.json'))) if from_install else None
+    if staged:
+        print('Staged Google account: ' + staged['email'])
+        if input('Did you approve an SSH window with MFA and test a new login on the current port? [y/N]: ').strip().lower() not in ('y', 'yes'):
+            raise RuntimeError('Complete Google-controlled SSH and MFA setup before applying these choices')
     ensure_migration_dependencies()
     ensure_sshd_runtime()
     cfg = window.settings(str(CONF))
@@ -322,7 +346,7 @@ def migrate(console_recovery=False):
     service_ports = set(route.excluded_ports(cfg, old, backend))
     reserved = service_ports | {22}
     candidates = sorted(set(range(1000, 5001)) - reserved)
-    entered = getpass.getpass('New management SSH port (hidden, Enter for a random free port): ')
+    entered = str(staged['port']) if staged else getpass.getpass('New management SSH port (hidden, Enter for a random free port): ')
     if not entered:
         if not candidates:
             raise RuntimeError('No available management SSH ports in 1000–5000')
@@ -336,13 +360,13 @@ def migrate(console_recovery=False):
     default_spec = cfg.get('SSH_HONEYPOT_PORTS', '').strip()
     if not default_spec or route.ranges(default_spec) == [(backend, backend)]:
         default_spec = '22,1000-5000'
-    spec = input('Honeypot ports/ranges [configured decoys; otherwise 1000-5000]: ').strip() or default_spec
+    spec = staged['range'] if staged else input('Honeypot ports/ranges [configured decoys; otherwise 1000-5000]: ').strip() or default_spec
     if not any(lo <= 22 <= hi for lo, hi in route.ranges(spec)):
         spec = '22,' + spec
         route.ranges(spec)
     if backend != 22 and old != 22 and 22 in service_ports:
         raise ValueError('TCP/22 is already reserved by another service')
-    if not console_recovery:
+    if not console_recovery and not from_install:
         console_recovery = input('Independent console available; use it instead of automatic rollback? [y/N]: ').strip().lower() in ('y', 'yes')
     if command('systemctl', 'show', ssh_service_name(), '-p', 'KillMode', '--value').stdout.strip() != 'process':
         raise RuntimeError('SSH service KillMode=process is required to preserve established sessions')
@@ -372,6 +396,8 @@ def migrate(console_recovery=False):
         window.write_state({'id': '0' * 32, 'until': 0, 'port': port, 'closed_at': int(time.time())})
         updated = config_text(text, {'SSH_PORT': port, 'SSH_HONEYPOT': 'on',
                                     'SSH_HONEYPOT_PORTS': spec, 'SSH_CLOSED_HONEYPOT': 'yes'})
+        if staged:
+            updated = config_text(updated, {'SSH_ALLOWED_SOURCES': ','.join(staged['sources'])})
         atomic(CONF, updated)
         atomic(SSHD, sshd_port_text(root_file(SSHD) if SSHD.exists() else '', port), 0o644)
         if socket_mode():
@@ -392,8 +418,9 @@ def migrate(console_recovery=False):
         else:
             raise RuntimeError('New SSH listener did not appear')
         atomic(HP, '[Service]\nEnvironment=TARASEC_SSH_HONEYPOT_IPV6=yes\n', 0o644)
-        # Refresh-only cannot perform the older temporary-ACCEPT migration.
-        command('bash', str(setup), '--refresh-only')
+        # Provision the backend after verifying that OpenSSH moved off its port.
+        # This path skips the older temporary-ACCEPT migration.
+        command('bash', str(setup), '--start-after-migration')
         command('systemctl', 'is-active', '--quiet', 'tarasec-ssh-honeypot.service')
         if not listener(backend):
             raise RuntimeError('The honeypot backend is not listening')
@@ -421,14 +448,19 @@ def migrate(console_recovery=False):
         atomic(pending_path, json.dumps(pending))
         if console_recovery:
             print('SSH port and honeypot routing configured. Console recovery selected; automatic rollback is disabled.')
-            print('Next: open a fresh MFA window and test a NEW login using your chosen port. No timer confirmation is required.')
+            print_ssh_opening_steps(cfg, port)
+            print('No timer confirmation is required.')
             return
-        print('SSH port and honeypot routing staged; rollback is armed for ten minutes.')
-        print('Next: open an MFA window in the app and make a NEW login using your chosen port.')
+        print(f'SSH port TCP/{port} is now listening. Rollback is armed for ten minutes.')
+        print_ssh_opening_steps(cfg, port)
         print('From that new login, confirm with:')
         print('sudo --preserve-env=SSH_CONNECTION python3 /usr/local/lib/tarasec/ssh_port_setup.py --confirm')
         print('Without confirmation, the previous port and firewall are restored automatically.')
-    except BaseException:
+    except BaseException as error:
+        if isinstance(error, route.DecoyCommandError):
+            print(f'SSH migration command failed: {error.tool} (exit {error.status})', file=sys.stderr)
+            if error.detail:
+                print(error.detail, file=sys.stderr)
         if console_recovery:
             pending_path = STATE / 'pending.json'
             pending = json.loads(root_file(pending_path))
@@ -444,8 +476,8 @@ def migrate(console_recovery=False):
 def main():
     if os.geteuid() != 0:
         raise SystemExit('Run with sudo on the server whose SSH port you are changing')
-    if sys.argv[1:] not in ([], ['--confirm'], ['--rollback'], ['--boot'], ['--console-recovery'], ['--recover-current']):
-        raise SystemExit('Usage: sudo python3 misc/ssh_port_setup.py [--console-recovery|--recover-current|--confirm|--rollback]')
+    if sys.argv[1:] not in ([], ['--confirm'], ['--rollback'], ['--boot'], ['--console-recovery'], ['--recover-current'], ['--from-install']):
+        raise SystemExit('Usage: sudo python3 misc/ssh_port_setup.py [--console-recovery|--recover-current|--confirm|--rollback|--from-install]')
     Path(window.LOCK).parent.mkdir(parents=True, exist_ok=True)
     with open(window.LOCK, 'a') as lock:
         os.chmod(window.LOCK, 0o600)
@@ -459,7 +491,8 @@ def main():
         elif sys.argv[1:] == ['--recover-current']:
             recover_current()
         else:
-            migrate(console_recovery=sys.argv[1:] == ['--console-recovery'])
+            migrate(console_recovery=sys.argv[1:] == ['--console-recovery'],
+                    from_install=sys.argv[1:] == ['--from-install'])
 
 
 if __name__ == '__main__':

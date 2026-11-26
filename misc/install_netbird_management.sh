@@ -20,16 +20,9 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-# A standalone management-plane install must also establish its owner first.
-helper_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ ! -f /etc/tarasec/agent-enrollment.json ]]; then
-    if ! command -v python3 >/dev/null; then
-        apt-get update
-        apt-get install -y python3 ca-certificates
-    fi
-    python3 "$helper_dir/enroll_google_manager.py" --install-secret
-fi
 
+# NetBird bootstrap uses its own HTTPS setup key. Google ownership is enrolled
+# separately by install_agent_approvals.sh and must never gate network joining.
 TARASEC_DIR="${TARASEC_DIR:-/etc/tarasec}"
 DEVICE_ID_FILE="$TARASEC_DIR/device-id"
 ENROLL_URL="${TARASEC_ENROLL_URL:-https://tarasec.org/script/hotspotNetbirdEnroll.php}"

@@ -14,6 +14,9 @@ import secrets
 import shutil
 import stat
 import tempfile
+import hashlib
+import socket
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -252,6 +255,38 @@ def publish_ssh_approval_target(receipt, root=Path('/')):
     return json.loads(payload)
 
 
+def browser_install_secret(email, api_url):
+    endpoint = enrollment_url(api_url).rsplit('/', 1)[0] + '/install.php'
+    token = node_token(Path('/etc/tarasec/agent-node.token'))
+    secret = secrets.token_hex(32)
+    opener = urllib.request.build_opener(NoRedirect())
+
+    def post(action, data):
+        request = urllib.request.Request(endpoint + '?action=' + action,
+            data=json.dumps(data).encode(), method='POST',
+            headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token})
+        with opener.open(request, timeout=15) as response:
+            result = json.loads(response.read(8192))
+        if not isinstance(result, dict) or result.get('ok') is not True:
+            raise ValueError('Unexpected browser enrollment response')
+        return result
+
+    result = post('link-start', {'email': email.strip(), 'host': socket.gethostname().split('.')[0],
+                                'secret_hash': hashlib.sha256(secret.encode()).hexdigest()})
+    link = result.get('link', '')
+    if not isinstance(link, str) or not re.fullmatch('[a-f0-9]{48}', link):
+        raise ValueError('Unexpected browser enrollment link')
+    print('Open this link, sign in with %s, and approve this node:' % email, flush=True)
+    print(endpoint + '?link=' + link, flush=True)
+    print('Waiting for browser approval…', flush=True)
+    deadline = time.monotonic() + 600
+    while time.monotonic() < deadline:
+        if post('link-status', {'link': link}).get('approved') is True:
+            return secret
+        time.sleep(4)
+    raise SystemExit('Approval link expired. Resume the SSH wizard for a new link.')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--email', action='append', default=[], help='Google manager email; repeat to add managers')
@@ -260,11 +295,15 @@ def main():
     parser.add_argument('--nickname')
     parser.add_argument('--install-secret', action='store_true',
                         help='Read a single-use installation secret at a hidden terminal prompt')
+    parser.add_argument('--browser-email', help='Request browser approval from this Google account')
     args = parser.parse_args()
     if os.geteuid() != 0: parser.error('Run with sudo on the intended server')
     secret = None
     fresh = not Path('/etc/tarasec/agent-enrollment.json').exists()
-    if args.install_secret or (fresh and not args.sync):
+    if args.browser_email is not None:
+        if not fresh or args.install_secret or args.email or args.sync:
+            parser.error('Browser approval is for initial enrollment only')
+    elif args.install_secret or (fresh and not args.sync):
         if args.email or args.sync: parser.error('Use the secret owner account for initial enrollment; add other managers later')
         if not os.isatty(0): parser.error('Initial enrollment requires a terminal for the hidden secret prompt')
         print('Register this server with your Google account before installing TaraSec.')
@@ -276,6 +315,10 @@ def main():
     elif not args.email and not args.sync:
         args.email = [input('Google email authorized to manage this server: ').strip()]
     try:
+        if args.browser_email is not None:
+            policy = Path('/etc/tarasec-server-manager.conf')
+            configured = setting(private_read(policy), 'AGENT_APPROVAL_URL') if policy.exists() else None
+            secret = browser_install_secret(args.browser_email, args.approval_url or configured or DEFAULT_URL)
         result = enroll(args.email, args.sync, args.approval_url, args.nickname, install_secret=secret)
     except urllib.error.HTTPError as e:
         raise SystemExit('Enrollment rejected (HTTP %s); local identity retained. Deploy the central enrollment endpoint, then retry.' % e.code)

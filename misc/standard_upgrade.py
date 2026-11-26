@@ -350,19 +350,25 @@ def feature_guidance(name, root=Path('/')):
         cfg = settings(root / 'etc/tarasecfw.conf')
         nickname = cfg.get('AGENT_PUBLIC_NICKNAME', '')
         if not re.fullmatch(r'[A-Za-z][A-Za-z0-9 _-]{2,31}', nickname): nickname = 'not configured'
-        print('Server nickname on the approvals page: ' + nickname)
+        print('\nTaraSec SSH protection')
+        print(f'  This server       {os.uname().nodename}')
+        print(f'  Machine control   {nickname}')
         manager = settings(root / 'etc/tarasec-server-manager.conf')
         url = manager.get('AGENT_APPROVAL_URL', 'https://tarasec.org/ops/agent/api.php')
         parsed = urllib.parse.urlsplit(url)
         if parsed.scheme == 'https' and parsed.hostname and not parsed.username and not parsed.password and not parsed.query and not parsed.fragment:
-            print('Open the approvals page in your browser: ' + urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rsplit('/', 1)[0] + '/', '', '')))
+            print('  Approvals page    ' + urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rsplit('/', 1)[0] + '/', '', '')))
         else:
-            print('Find your approval service URL in AGENT_APPROVAL_URL in /etc/tarasec-server-manager.conf.')
-        print('Sign in with the enrolled Google account and authenticator (TOTP), then select this nickname and approve a temporary SSH opening.')
-        print('Google sign-in alone does not open SSH. Keep a working VM/hypervisor or physical console open for recovery.')
-        print('A console is independent of SSH: for a VM, open its console in the hypervisor. Keep it open while testing.')
-        print('After enabling, test a NEW SSH connection while closed, after an approved opening, and after expiry.')
-        print('Only type VERIFIED after checking the Google/TOTP flow and console access. Otherwise choose no or press Ctrl+C.')
+            print('  See AGENT_APPROVAL_URL in /etc/tarasec-server-manager.conf.')
+        print('\nBefore enabling')
+        print('  1. Keep this VM or physical console open throughout setup.')
+        print('  2. Check that your authenticator is set up for your Google account.')
+        print('  3. Open a second terminal on your workstation for testing.')
+        print('     For guidance, you can use Codex CLI or Claude Code in that terminal.')
+        print('\nAfter enabling')
+        print(f'  Select {nickname} in Machine control and approve a temporary SSH window.')
+        print('  Test a fresh login from the second terminal. New SSH connections are blocked outside an approved window.')
+        print()
     elif name == 'honeypot':
         print('An existing setup is refreshed without changing administrator SSH ports or firewall rules.')
         print('Only an actual port migration changes SSH and arms a recovery timer.')
@@ -1109,12 +1115,12 @@ def apply_feature(name, directory, allow_enrollment=False, configure_activity=Fa
             raise ValueError('New Google enrollment requires explicit confirmation')
         print('Verify Google/TOTP and console recovery before enabling temporary SSH closure; see docs/google-ssh.md.')
     elif name == 'ssh-window':
-        feature_guidance('ssh-window')
         if not Path('/etc/tarasec/agent-enrollment.json').exists():
             raise ValueError('Complete Google enrollment first')
         if os.environ.get('SSH_CONNECTION') or os.environ.get('SSH_TTY'):
             raise ValueError('Enable SSH closure from the independent console, not an SSH session')
-        confirm_verified('Confirm Google/TOTP opening AND independent console recovery', lambda: feature_guidance('ssh-window'))
+        feature_guidance('ssh-window')
+        confirm_verified('Authenticator ready and recovery console open?', lambda: feature_guidance('ssh-window'))
         policy = Path('/etc/tarasec-server-manager.conf')
         backup(policy, directory)
         set_setting(policy, 'SSH_GOOGLE_REOPEN_ENABLED', 'yes')
@@ -1323,11 +1329,31 @@ def main(argv=None):
     parser.add_argument('--mode', choices=('demo', 'production'))
     parser.add_argument('--roles', help='Comma-separated local roles: database,gateway,node')
     parser.add_argument('--review-declined', action='store_true')
+    parser.add_argument('--configure-ssh-window', action='store_true',
+                        help='Enable Google-controlled SSH access only, from the console')
     parser.add_argument('--configure-operations', action='store_true', help='Resume model/activity setup and activation of the existing operations agent only')
     parser.add_argument('--configure-activity', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--status', action='store_true', help='Read status without changing anything')
     parser.add_argument('--plan', action='store_true', help='Show applicable features without changing anything')
     args = parser.parse_args(argv)
+    if args.configure_ssh_window:
+        if any((args.enable_daily, args.interactive, args.assign_roles, args.automatic,
+                args.mode, args.roles, args.review_declined, args.configure_operations,
+                args.configure_activity, args.status, args.plan)):
+            parser.error('--configure-ssh-window must be used on its own')
+        if os.geteuid() != 0 or not sys.stdin.isatty():
+            parser.error('Run --configure-ssh-window with sudo from the independent console')
+        STATE.parent.mkdir(parents=True, exist_ok=True)
+        with (STATE.parent / 'upgrade.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if not ssh_window_current():
+                stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
+                try:
+                    apply_feature('ssh-window', STATE.parent / 'backups' / stamp)
+                except FeaturePostponed as error:
+                    print(error)
+                    return 1
+        return 0
     state = load_state()
     roles = args.roles.split(',') if args.roles else (state.get('roles') or detect_roles())
     if not roles or any(r not in ROLES for r in roles): parser.error('Invalid roles')
