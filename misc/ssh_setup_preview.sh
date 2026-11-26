@@ -31,20 +31,17 @@ printf 'Enter the IP addresses or subnets you use to manage this node, one per l
 printf '  TaraSec NetBird: 100.68.0.0/16\n'
 printf '  TaraSec LAN VPN: 10.0.0.0/8\n'
 printf '  Example for one NetBird device: 100.68.10.7/32\n'
-printf 'Press Enter on an empty line when done.\n\n'
+printf '\n'
+read -r -p 'First allowed IP or subnet (required): ' source_ip || exit 0
+while [[ -z $source_ip ]]; do
+    read -r -p 'Enter at least one allowed IP or subnet: ' source_ip || exit 0
+done
+allowed_sources=("$source_ip")
 
-allowed_sources=()
-while read -r -p 'Allowed source IP or subnet: ' source_ip; do
-    if [[ -z $source_ip ]]; then
-        if (( ${#allowed_sources[@]} > 0 )); then
-            break
-        fi
-        printf 'Enter at least one allowed source.\n'
-        continue
-    fi
+while read -r -p 'Additional allowed IP or subnet (Enter to finish): ' source_ip; do
+    [[ -n $source_ip ]] || break
     allowed_sources+=("$source_ip")
 done
-(( ${#allowed_sources[@]} > 0 )) || exit 0
 
 printf '\nChoose the TCP port range for the SSH honeypot.\n'
 printf 'The management SSH port can be inside this range, for example 4810 within 1000-5000.\n'
