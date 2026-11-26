@@ -29,6 +29,9 @@ SYSTEMD = Path('/etc/systemd/system')
 SSH_SERVICE_DROPINS = (SYSTEMD / 'ssh.service.d/90-tarasec-decoys.conf',
                        SYSTEMD / 'sshd.service.d/90-tarasec-decoys.conf')
 ROLLBACK = 'tarasec-ssh-port-rollback'
+CONFIRM_HELPER = Path('/usr/local/sbin/tarasec-ssh-confirm')
+CONFIRM_NOTICE = Path('/etc/profile.d/tarasec-ssh-migration.sh')
+CONFIRM_COMMAND = 'sudo --preserve-env=SSH_CONNECTION tarasec-ssh-confirm'
 
 
 def command(*args, check=True, input=None):
@@ -209,6 +212,7 @@ def rollback():
         raise ValueError('Invalid migration backup')
     state['phase'] = 'rollback'
     atomic(pending, json.dumps(state))
+    CONFIRM_NOTICE.unlink(missing_ok=True)
     ensure_sshd_runtime()
     command('systemctl', 'disable', '--now', 'tarasec-ssh-decoys.service', check=False)
     # Restore NAT/filter first, then listener/configuration and previous window state.
@@ -279,6 +283,7 @@ def recover_current():
         pending = json.loads(root_file(pending_path))
         pending.update({'phase': 'complete_console', 'automatic_rollback': False})
         atomic(pending_path, json.dumps(pending))
+    CONFIRM_NOTICE.unlink(missing_ok=True)
     print('Current SSH settings retained; stale guard cleared and automatic rollback stopped.')
     print('Next: open a fresh MFA window and test a new connection.')
 
@@ -291,8 +296,12 @@ def confirm():
     pending = STATE / 'pending.json'
     if not pending.exists():
         raise RuntimeError('There is no pending port migration')
+    state = json.loads(root_file(pending))
+    if state.get('phase') != 'awaiting_confirmation' or state.get('new_port') != port:
+        raise RuntimeError('The current port migration is not awaiting login confirmation')
     command('systemctl', 'disable', '--now', ROLLBACK + '.timer')
     pending.unlink()
+    CONFIRM_NOTICE.unlink(missing_ok=True)
     print('New SSH login confirmed; rollback cancelled. Keep using MFA before new SSH connections.')
 
 
@@ -327,6 +336,19 @@ def print_ssh_opening_steps(cfg, port):
     print('  2. Choose a duration and click Open SSH temporarily.')
     print('  3. Enter a fresh six-digit Authenticator code and click Approve on the request.')
     print(f'  4. When the countdown starts for {nickname}, make a NEW SSH login on TCP/{port}.')
+
+
+def install_confirmation_notice(port):
+    atomic(CONFIRM_HELPER, '#!/bin/sh\nexec /usr/bin/python3 '
+           + str(LIB / 'ssh_port_setup.py') + ' --confirm\n', 0o755)
+    atomic(CONFIRM_NOTICE,
+           '# TaraSec temporary SSH migration login reminder\n'
+           'case "$-:${SSH_CONNECTION-}" in\n'
+           f'    *i*:*" {port}")\n'
+           "        printf '%s\\n' 'SSH port migration is pending. Confirm this login before rollback:'\n"
+           f"        printf '%s\\n' '{CONFIRM_COMMAND}'\n"
+           '        ;;\n'
+           'esac\n', 0o644)
 
 
 def migrate(console_recovery=False, from_install=False):
@@ -451,10 +473,12 @@ def migrate(console_recovery=False, from_install=False):
             print_ssh_opening_steps(cfg, port)
             print('No timer confirmation is required.')
             return
-        print(f'SSH port TCP/{port} is now listening. Rollback is armed for ten minutes.')
+        install_confirmation_notice(port)
+        print(f'SSH port TCP/{port} is now listening. The rollback timer started before the port changed.')
+        print('Complete the following steps before the ten-minute timer expires.')
         print_ssh_opening_steps(cfg, port)
-        print('From that new login, confirm with:')
-        print('sudo --preserve-env=SSH_CONNECTION python3 /usr/local/lib/tarasec/ssh_port_setup.py --confirm')
+        print('  5. From that new SSH login, run this command on one line:')
+        print(CONFIRM_COMMAND)
         print('Without confirmation, the previous port and firewall are restored automatically.')
     except BaseException as error:
         if isinstance(error, route.DecoyCommandError):

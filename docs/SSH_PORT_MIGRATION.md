@@ -84,11 +84,12 @@ Open a fresh MFA window. In Termux use the updated helper and the privately chos
 port, with --gateway/--user if several servers are saved. The helper's --connect
 default is 5822, so a different management port needs --port.
 
-From the new real SSH session run:
+The pending migration reminder appears in the new interactive SSH login on
+Ubuntu login shells that load `/etc/profile.d`. Run this command in that session:
 
 ```bash
 clear
-sudo --preserve-env=SSH_CONNECTION python3 /usr/local/lib/tarasec/ssh_port_setup.py --confirm
+sudo --preserve-env=SSH_CONNECTION tarasec-ssh-confirm
 ```
 
 Confirmation requires SSH_CONNECTION to identify the new server port. The old
