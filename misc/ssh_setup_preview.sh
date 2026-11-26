@@ -1,5 +1,34 @@
 #!/usr/bin/env bash
 
+print_ssh_test_command() {
+    local port=$1 address=$2 login=$3
+    printf '  ssh -o ControlMaster=no -o ControlPath=none -p %s %q\n' "$port" "$login@$address"
+}
+
+diagnose_ssh_hardening() {
+    if [[ $EUID != 0 ]]; then
+        printf 'Run diagnostics with sudo from the open console.\n' >&2
+        return 1
+    fi
+    hostname
+    printf '\nNetBird IPv4 addresses\n'
+    ip -4 -o addr show dev wt0 2>/dev/null || true
+    printf '\nSSH listeners\n'
+    ss -ltnp | awk 'NR == 1 || /sshd|ssh-honeypot/'
+    printf '\nGoogle SSH policy\n'
+    grep -E '^[[:space:]]*SSH_GOOGLE_REOPEN_ENABLED[[:space:]]*=' /etc/tarasec-server-manager.conf || true
+    printf '\nApproval worker and timer\n'
+    systemctl show -p ActiveState -p Result tarasec-agent-approvals.service tarasec-agent-approvals.timer
+    printf '\nGoogle SSH firewall chains\n'
+    iptables -nvL TARASEC_SSH_GOOGLE 2>/dev/null || true
+    ip6tables -nvL TARASEC_SSH_GOOGLE 2>/dev/null || true
+}
+
+if [[ $# -eq 1 && $1 == --diagnose ]]; then
+    diagnose_ssh_hardening
+    exit $?
+fi
+
 resume_ssh_activation() {
     local helper_dir
     helper_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)" || return 1
@@ -20,14 +49,35 @@ resume_ssh_activation() {
     fi
     printf '\nOpen Machine control and make sure this node is listed. Set up or verify your authenticator there.\n'
     printf '  https://tarasec.org/ops/agent/\n'
-    python3 "$helper_dir/standard_upgrade.py" upgrade --configure-ssh-window || return 1
-    local current_ports requested_port
+    local current_ports requested_port address login port
+    address=$(ip -4 -o addr show dev wt0 2>/dev/null | awk '{sub(/\/.*/, "", $4); print $4; exit}')
+    if [[ -z $address ]]; then
+        address=$(hostname -f) || return 1
+        printf '\nNo NetBird IPv4 address detected. The example uses the server hostname.\n'
+    fi
+    login=${SUDO_USER:-}
+    if [[ -z $login || $login == root ]]; then
+        login=YOUR_LINUX_USER
+    fi
+    printf '\nSSH hardening changes how new logins reach this server.\n'
+    printf 'Keep this VM or physical console open throughout the process.\n'
+    printf 'For guided troubleshooting, you can install Codex CLI or Claude Code on your workstation before continuing.\n'
+    printf 'If something goes wrong, run this from the open console to inspect the SSH configuration:\n'
+    printf '  sudo bash misc/ssh_setup_preview.sh --diagnose\n'
     current_ports=$(set -o pipefail; sshd -T | awk '/^port / {print $2}') || return 1
     requested_port=$(python3 -c 'import json; print(json.load(open("/var/lib/tarasec/ssh-install-choices.json"))["port"])') || return 1
     printf '\nOpenSSH currently configured on TCP: %s\n' "$current_ports"
     printf 'Requested management port: TCP/%s. The saved settings have not been applied by this wizard yet.\n' "$requested_port"
+    printf '\nAfter you enable and approve the first SSH window, use a new terminal on your workstation.\n'
+    printf 'Use your Linux login on this server if it differs from the one shown.\n'
+    while IFS= read -r port; do
+        print_ssh_test_command "$port" "$address" "$login"
+    done <<< "$current_ports"
+    python3 "$helper_dir/standard_upgrade.py" upgrade --configure-ssh-window || return 1
     printf '\nRefresh Machine control. If the button is still disabled, wait for the next node report and refresh again.\nApprove an opening with TOTP and test a new login on the current port above. The next step applies the saved port with automatic rollback.\n'
-    python3 "$helper_dir/ssh_port_setup.py" --from-install
+    python3 "$helper_dir/ssh_port_setup.py" --from-install || return 1
+    printf '\nAfter approving a fresh SSH window, test the new port from your workstation:\n'
+    print_ssh_test_command "$requested_port" "$address" "$login"
 }
 
 if [[ $# -eq 1 && $1 == --activate ]]; then
