@@ -5,32 +5,38 @@ case "$mode" in
     --preview|--stage) ;;
     *) exit 2 ;;
 esac
+if [[ $# -gt 2 || ( $# -eq 2 && ( $mode != --stage || $2 != --configure ) ) ]]; then
+    printf 'Usage: %s [--preview | --stage [--configure]]\n' "$0" >&2
+    exit 2
+fi
 if [[ $mode == --stage ]]; then
     [[ $EUID == 0 ]] || exit 1
     command -v python3 >/dev/null || { printf 'Install Python 3 before staging SSH settings.\n' >&2; exit 1; }
 fi
 
-if [[ -t 1 && -n ${TERM:-} ]]; then
+if [[ ${2:-} != --configure && -t 1 && -n ${TERM:-} ]]; then
     clear
 fi
 
 printf 'TaraSec · SSH protection on %s\n\n' "$(hostname)"
-printf '  1) Configure SSH protection\n'
-printf '  2) Skip SSH protection for now\n\n'
+if [[ ${2:-} != --configure ]]; then
+    printf '  1) Configure SSH protection\n'
+    printf '  2) Skip SSH protection for now\n\n'
 
-read -r -p 'Choose [1/2]: ' choice || exit 1
-case "$choice" in
-    1) ;;
-    2)
-        printf '\nSSH protection setup skipped.\n'
-        exit 0
-        ;;
-    *)
-        printf '\nChoose 1 or 2.\n' >&2
-        exit 1
-        ;;
-esac
+    read -r -p 'Choose [1/2]: ' choice || exit 1
+    case "$choice" in
+        1) ;;
+        2)
+            printf '\nSSH protection setup skipped.\n'
+            exit 0
+            ;;
+        *)
+            printf '\nChoose 1 or 2.\n' >&2
+            exit 1
+            ;;
+    esac
 
+fi
 printf '\n'
 printf 'You can set up Google Authenticator later, before approving an SSH opening.\n'
 read -r -p 'Google account email for SSH approvals: ' google_email || exit 1
