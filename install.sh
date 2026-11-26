@@ -1,6 +1,18 @@
 #!/bin/bash
 #Taransvar Cyber Security
 #To install: sudo bash install.sh
+#To preview SSH setup: bash install.sh --preview-ssh-setup
+
+case "${1:-}" in
+    --preview-ssh-setup)
+        if [[ $# -ne 1 ]]; then
+            printf 'Usage: bash install.sh --preview-ssh-setup\n' >&2
+            exit 2
+        fi
+        preview_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)" || exit 1
+        exec bash "$preview_dir/misc/ssh_setup_preview.sh"
+        ;;
+esac
 
 if [ "$(id -u)" -ne 0 ]; then
         echo 'This script must be run by root.\nStart with: sudo bash install.sh' >&2
