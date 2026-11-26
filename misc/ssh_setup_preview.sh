@@ -47,8 +47,6 @@ resume_ssh_activation() {
         owner_email=$(python3 -c 'import json; print(json.load(open("/var/lib/tarasec/ssh-install-choices.json"))["email"])') || return 1
         bash "$helper_dir/install_agent_approvals.sh" --browser-email "$owner_email" || return 1
     fi
-    printf '\nOpen Machine control and make sure this node is listed. Set up or verify your authenticator there.\n'
-    printf '  https://tarasec.org/ops/agent/\n'
     local current_ports requested_port address login port
     address=$(ip -4 -o addr show dev wt0 2>/dev/null | awk '{sub(/\/.*/, "", $4); print $4; exit}')
     if [[ -z $address ]]; then
@@ -73,8 +71,12 @@ resume_ssh_activation() {
     while IFS= read -r port; do
         print_ssh_test_command "$port" "$address" "$login"
     done <<< "$current_ports"
+    printf '\nThe wizard will now enable Google-controlled SSH on this server. Keep this console open.\n'
     python3 "$helper_dir/standard_upgrade.py" upgrade --configure-ssh-window || return 1
-    printf '\nRefresh Machine control. If the button is still disabled, wait for the next node report and refresh again.\nApprove an opening with TOTP and test a new login on the current port above. The next step applies the saved port with automatic rollback.\n'
+    printf '\nLocal SSH gate setup is complete. Open or refresh Machine control:\n'
+    printf '  https://tarasec.org/ops/agent/\n'
+    printf 'When Open SSH temporarily becomes available, approve a window with TOTP.\n'
+    printf 'Test a new login on the current port before applying the saved port with automatic rollback.\n'
     python3 "$helper_dir/ssh_port_setup.py" --from-install || return 1
     printf '\nAfter approving a fresh SSH window, test the new port from your workstation:\n'
     print_ssh_test_command "$requested_port" "$address" "$login"
