@@ -318,7 +318,7 @@ def migrate(console_recovery=False, from_install=False):
     staged = json.loads(root_file(Path('/var/lib/tarasec/ssh-install-choices.json'))) if from_install else None
     if staged:
         print('Staged Google account: ' + staged['email'])
-        if input('Can this account already approve SSH windows using MFA? [y/N]: ').strip().lower() not in ('y', 'yes'):
+        if input('Did you approve an SSH window with MFA and test a new login on the current port? [y/N]: ').strip().lower() not in ('y', 'yes'):
             raise RuntimeError('Complete Google-controlled SSH and MFA setup before applying these choices')
     ensure_migration_dependencies()
     ensure_sshd_runtime()
@@ -430,8 +430,8 @@ def migrate(console_recovery=False, from_install=False):
             print('SSH port and honeypot routing configured. Console recovery selected; automatic rollback is disabled.')
             print('Next: open a fresh MFA window and test a NEW login using your chosen port. No timer confirmation is required.')
             return
-        print('SSH port and honeypot routing staged; rollback is armed for ten minutes.')
-        print('Next: open an MFA window in the app and make a NEW login using your chosen port.')
+        print(f'SSH port TCP/{port} is now listening. Rollback is armed for ten minutes.')
+        print(f'Next: open an MFA window in the app and make a NEW login on TCP/{port}.')
         print('From that new login, confirm with:')
         print('sudo --preserve-env=SSH_CONNECTION python3 /usr/local/lib/tarasec/ssh_port_setup.py --confirm')
         print('Without confirmation, the previous port and firewall are restored automatically.')
