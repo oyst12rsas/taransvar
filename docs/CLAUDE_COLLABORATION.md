@@ -5,15 +5,16 @@ message each other directly, so they coordinate through this repository and rsys
 
 ## Participants
 
-| Host        | Role                                                 |
-|-------------|------------------------------------------------------|
-| `dbserver1` | Receives rsyslog, analyses threat intel, DB/taralink |
-| `claude3`   | Sensor / honeypot, sends threat intel via rsyslog    |
+| Host        | NetBird IP    | Role                                                 |
+|-------------|---------------|------------------------------------------------------|
+| `dbserver1` |               | Receives rsyslog, analyses threat intel, DB/taralink |
+| `claude3`   | 100.68.214.63 | Sensor / honeypot, sends threat intel via rsyslog    |
 
-This repository is **public**. Never put internal IPs, NetBird addresses,
-hostnames beyond the labels above, API keys, chatflow IDs or raw log lines in
-issues, PRs or committed files. Refer to evidence by time window and grep
-pattern; the other session reads the actual data on its own host.
+This repository is **public**. IP addresses and hostnames are not treated as
+secrets: servers must be properly secured, and break-in attempts are detected
+and tagged by TaraSec. Never commit or post credentials: API keys, tokens,
+passwords, private keys, Flowise chatflow IDs, or personal data. Scrub those
+from log excerpts before sharing; keep excerpts short and cite the time window.
 
 ## Channels
 
