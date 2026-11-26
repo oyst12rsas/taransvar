@@ -19,6 +19,12 @@ if [ "$(id -u)" -ne 0 ]; then
         exit 1
 fi
 
+# Collect SSH choices before provisioning. Unattended installs skip the menu.
+if [[ -t 0 ]]; then
+    setup_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)" || exit 1
+    bash "$setup_dir/misc/ssh_setup_preview.sh" --stage || exit 1
+fi
+
 #Uses these because some scripts are also run from crontab (can't relate to current user while installing)
 mkdir -p /root/setup/log
 
@@ -166,6 +172,10 @@ if [[ -f /etc/tarasec/agent-enrollment.json ]]; then
     bash "$SCRIPT_DIR/misc/install_agent_approvals.sh" --sync || exit 1
 else
     echo 'To enable Google-controlled management later, run sudo bash misc/install_agent_approvals.sh --install-secret from the repository checkout.'
+fi
+
+if [[ -f /var/lib/tarasec/ssh-install-choices.json ]]; then
+    echo 'SSH choices saved. After Google-controlled SSH and MFA are ready, run sudo python3 misc/ssh_port_setup.py --from-install from the checkout.'
 fi
 
 echo "Next: review and verify your node security at https://tarasec.org/safety/#deployment"
