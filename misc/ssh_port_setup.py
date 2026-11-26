@@ -317,6 +317,18 @@ def ensure_migration_dependencies():
         raise RuntimeError('SSH migration requires ipset and Python Paramiko')
 
 
+def print_ssh_opening_steps(cfg, port):
+    policy = window.settings(window.POLICY)
+    api = policy.get('AGENT_APPROVAL_URL') or 'https://tarasec.org/ops/agent/api.php'
+    url = api.rsplit('/', 1)[0] + '/'
+    nickname = cfg.get('AGENT_PUBLIC_NICKNAME') or 'the machine you enrolled'
+    print('\nApprove a temporary SSH opening')
+    print(f'  1. Open {url} and select {nickname}.')
+    print('  2. Choose a duration and click Open SSH temporarily.')
+    print('  3. Enter a fresh six-digit Authenticator code and click Approve on the request.')
+    print(f'  4. When the countdown starts for {nickname}, make a NEW SSH login on TCP/{port}.')
+
+
 def migrate(console_recovery=False, from_install=False):
     text = root_file(CONF)
     old, sources = window.configuration()
@@ -436,10 +448,11 @@ def migrate(console_recovery=False, from_install=False):
         atomic(pending_path, json.dumps(pending))
         if console_recovery:
             print('SSH port and honeypot routing configured. Console recovery selected; automatic rollback is disabled.')
-            print('Next: open a fresh MFA window and test a NEW login using your chosen port. No timer confirmation is required.')
+            print_ssh_opening_steps(cfg, port)
+            print('No timer confirmation is required.')
             return
         print(f'SSH port TCP/{port} is now listening. Rollback is armed for ten minutes.')
-        print(f'Next: open an MFA window in the app and make a NEW login on TCP/{port}.')
+        print_ssh_opening_steps(cfg, port)
         print('From that new login, confirm with:')
         print('sudo --preserve-env=SSH_CONNECTION python3 /usr/local/lib/tarasec/ssh_port_setup.py --confirm')
         print('Without confirmation, the previous port and firewall are restored automatically.')
