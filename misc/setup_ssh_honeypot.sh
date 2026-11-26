@@ -8,10 +8,11 @@ UPDATE_ONLY=false
 DEBUG_OVERRIDE=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --start-after-migration) REFRESH_ONLY=true ;;
         --refresh-only) REFRESH_ONLY=true; UPDATE_ONLY=true ;;
         --debug-shell) REFRESH_ONLY=true; UPDATE_ONLY=true; DEBUG_OVERRIDE=yes ;;
         --reject-logins) REFRESH_ONLY=true; UPDATE_ONLY=true; DEBUG_OVERRIDE=no ;;
-        *) echo "Usage: sudo bash $0 [--refresh-only|--debug-shell|--reject-logins]" >&2; exit 1 ;;
+        *) echo "Usage: sudo bash $0 [--refresh-only|--start-after-migration|--debug-shell|--reject-logins]" >&2; exit 1 ;;
     esac
     shift
 done
@@ -380,7 +381,7 @@ case "${SSH_HONEYPOT,,}" in
                     echo "Honeypot files updated; existing inactive service remains inactive. SSH/firewall unchanged."
                     exit 0
                 fi
-                systemctl enable --now "$HONEYPOT_SERVICE"
+                systemctl start "$HONEYPOT_SERVICE"
             else
                 systemctl restart "$HONEYPOT_SERVICE"
             fi
