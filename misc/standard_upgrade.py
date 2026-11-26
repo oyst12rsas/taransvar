@@ -355,10 +355,10 @@ def feature_guidance(name, root=Path('/')):
         url = manager.get('AGENT_APPROVAL_URL', 'https://tarasec.org/ops/agent/api.php')
         parsed = urllib.parse.urlsplit(url)
         if parsed.scheme == 'https' and parsed.hostname and not parsed.username and not parsed.password and not parsed.query and not parsed.fragment:
-            print('Open the approvals page in your browser: ' + urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rsplit('/', 1)[0] + '/', '', '')))
+            print('If you still need to set up your authenticator, use: ' + urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rsplit('/', 1)[0] + '/', '', '')))
         else:
             print('Find your approval service URL in AGENT_APPROVAL_URL in /etc/tarasec-server-manager.conf.')
-        print('Before enabling, sign in with the enrolled Google account, select this node, and make sure your authenticator is set up.')
+        print('Before enabling, make sure your authenticator is set up for the enrolled Google account. You do not need to request an SSH opening yet.')
         print('Google sign-in alone does not open SSH. Keep a working VM/hypervisor or physical console open for recovery.')
         print('A console is independent of SSH: for a VM, open its console in the hypervisor. Keep it open while testing.')
         print('The opening button is disabled until this step enables the SSH gate and the node reports its new state.')
