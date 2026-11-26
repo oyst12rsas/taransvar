@@ -32,16 +32,16 @@ printf '  TaraSec NetBird: 100.68.0.0/16\n'
 printf '  TaraSec LAN VPN: 10.0.0.0/8\n'
 printf '  Example for one NetBird device: 100.68.10.7/32\n'
 printf '\n'
-read -r -p 'First allowed IP or subnet (required): ' source_ip || exit 0
-while [[ -z $source_ip ]]; do
-    read -r -p 'Enter at least one allowed IP or subnet: ' source_ip || exit 0
-done
-allowed_sources=("$source_ip")
-
-while read -r -p 'Additional allowed IP or subnet (Enter to finish): ' source_ip; do
-    [[ -n $source_ip ]] || break
+printf 'If you do not know your NetBird IP yet, you can add it later.\n'
+allowed_sources=()
+read -r -p 'Allowed IP or subnet (Enter for no source-IP restriction): ' source_ip || exit 0
+if [[ -n $source_ip ]]; then
     allowed_sources+=("$source_ip")
-done
+    while read -r -p 'Additional allowed IP or subnet (Enter to finish): ' source_ip; do
+        [[ -n $source_ip ]] || break
+        allowed_sources+=("$source_ip")
+    done
+fi
 
 printf '\nChoose the TCP port range for the SSH honeypot.\n'
 printf 'The management SSH port can be inside this range, for example 4810 within 1000-5000.\n'
@@ -52,5 +52,9 @@ printf '  Google account:      %s\n' "$google_email"
 printf '  Management SSH port: %s\n' "${ssh_port:-22}"
 printf '  Honeypot TCP ports:  %s\n' "${honeypot_range:-1000-5000}"
 printf '  Allowed sources:\n'
-printf '    - %s\n' "${allowed_sources[@]}"
+if (( ${#allowed_sources[@]} )); then
+    printf '    - %s\n' "${allowed_sources[@]}"
+else
+    printf '    No source-IP restriction\n'
+fi
 printf '\nPreview only. No settings applied.\n'
