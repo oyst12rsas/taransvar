@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shlex
 import shutil
 import socket
 import stat
@@ -326,7 +327,27 @@ def print_ssh_opening_steps(cfg, port):
     print(f'  1. Open {url} and select {nickname}.')
     print('  2. Choose a duration and click Open SSH temporarily.')
     print('  3. Enter a fresh six-digit Authenticator code and click Approve on the request.')
-    print(f'  4. When the countdown starts for {nickname}, make a NEW SSH login on TCP/{port}.')
+    print(f'  4. When {nickname} starts counting down, test from a second terminal on your workstation.')
+    print('     Keep this server console open until the new login is confirmed.')
+
+    addresses = command('ip', '-4', '-o', 'addr', 'show', 'dev', 'wt0', check=False)
+    fields = addresses.stdout.split()
+    address = fields[3].split('/')[0] if addresses.returncode == 0 and len(fields) >= 4 else 'SERVER_ADDRESS'
+    user = os.environ.get('SUDO_USER') or 'LINUX_USER'
+    if user == 'root':
+        user = 'LINUX_USER'
+    target = shlex.quote(f'{user}@{address}')
+    ssh = 'ssh -F /dev/null -o ControlMaster=no -o ControlPath=none -o ConnectTimeout=5'
+    if address == 'SERVER_ADDRESS':
+        print('  Replace SERVER_ADDRESS with the address you use to reach this server.')
+    if user == 'LINUX_USER':
+        print('  Replace LINUX_USER with your Linux account on this server.')
+    print('\n  If this server accepts your Linux password:')
+    print(f'    {ssh} -o PubkeyAuthentication=no -p {port} {target}')
+    print('  If you use a key, or see "Too many authentication failures", select one key:')
+    print(f'    {ssh} -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 -p {port} {target}')
+    print('  Replace the key path if needed. Enter the Linux password too if the server requires both.')
+    print('  If the connection is refused, check the countdown, address and port. Leave rollback armed if login fails.\n')
 
 
 def migrate(console_recovery=False, from_install=False):
