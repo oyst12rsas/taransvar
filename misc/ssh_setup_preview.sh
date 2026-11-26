@@ -74,7 +74,10 @@ resume_ssh_activation() {
     printf '\nThe wizard will now enable Google-controlled SSH on this server. Keep this console open.\n'
     python3 "$helper_dir/standard_upgrade.py" upgrade --configure-ssh-window || return 1
     printf '\nLocal SSH gate setup is complete. Open or refresh Machine control:\n'
-    printf '  https://tarasec.org/ops/agent/\n'
+    local machine_name approvals_url
+    machine_name=$(python3 -c 'import json; print(json.load(open("/etc/tarasec/agent-enrollment.json"))["nickname"])') || return 1
+    approvals_url=$(python3 -c 'import json; print(json.load(open("/etc/tarasec/agent-enrollment.json"))["approval_url"].rsplit("/", 1)[0] + "/")') || return 1
+    printf '  %s — %s\n' "$machine_name" "$approvals_url"
     printf 'When Open SSH temporarily becomes available, approve a window with TOTP.\n'
     printf 'Test a new login on the current port before applying the saved port with automatic rollback.\n'
     python3 "$helper_dir/ssh_port_setup.py" --from-install || return 1
