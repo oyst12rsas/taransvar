@@ -310,11 +310,16 @@ def ensure_migration_dependencies():
         raise RuntimeError('APT completed but ipset is unavailable on PATH')
 
 
-def migrate(console_recovery=False):
+def migrate(console_recovery=False, from_install=False):
     text = root_file(CONF)
     old, sources = window.configuration()
     if not sys.stdin.isatty():
         raise RuntimeError('Run interactively in a terminal; the management port is prompted privately')
+    staged = json.loads(root_file(Path('/var/lib/tarasec/ssh-install-choices.json'))) if from_install else None
+    if staged:
+        print('Staged Google account: ' + staged['email'])
+        if input('Can this account already approve SSH windows using MFA? [y/N]: ').strip().lower() not in ('y', 'yes'):
+            raise RuntimeError('Complete Google-controlled SSH and MFA setup before applying these choices')
     ensure_migration_dependencies()
     ensure_sshd_runtime()
     cfg = window.settings(str(CONF))
@@ -322,7 +327,7 @@ def migrate(console_recovery=False):
     service_ports = set(route.excluded_ports(cfg, old, backend))
     reserved = service_ports | {22}
     candidates = sorted(set(range(1000, 5001)) - reserved)
-    entered = getpass.getpass('New management SSH port (hidden, Enter for a random free port): ')
+    entered = str(staged['port']) if staged else getpass.getpass('New management SSH port (hidden, Enter for a random free port): ')
     if not entered:
         if not candidates:
             raise RuntimeError('No available management SSH ports in 1000–5000')
@@ -336,13 +341,13 @@ def migrate(console_recovery=False):
     default_spec = cfg.get('SSH_HONEYPOT_PORTS', '').strip()
     if not default_spec or route.ranges(default_spec) == [(backend, backend)]:
         default_spec = '22,1000-5000'
-    spec = input('Honeypot ports/ranges [configured decoys; otherwise 1000-5000]: ').strip() or default_spec
+    spec = staged['range'] if staged else input('Honeypot ports/ranges [configured decoys; otherwise 1000-5000]: ').strip() or default_spec
     if not any(lo <= 22 <= hi for lo, hi in route.ranges(spec)):
         spec = '22,' + spec
         route.ranges(spec)
     if backend != 22 and old != 22 and 22 in service_ports:
         raise ValueError('TCP/22 is already reserved by another service')
-    if not console_recovery:
+    if not console_recovery and not from_install:
         console_recovery = input('Independent console available; use it instead of automatic rollback? [y/N]: ').strip().lower() in ('y', 'yes')
     if command('systemctl', 'show', ssh_service_name(), '-p', 'KillMode', '--value').stdout.strip() != 'process':
         raise RuntimeError('SSH service KillMode=process is required to preserve established sessions')
@@ -372,6 +377,8 @@ def migrate(console_recovery=False):
         window.write_state({'id': '0' * 32, 'until': 0, 'port': port, 'closed_at': int(time.time())})
         updated = config_text(text, {'SSH_PORT': port, 'SSH_HONEYPOT': 'on',
                                     'SSH_HONEYPOT_PORTS': spec, 'SSH_CLOSED_HONEYPOT': 'yes'})
+        if staged:
+            updated = config_text(updated, {'SSH_ALLOWED_SOURCES': ','.join(staged['sources'])})
         atomic(CONF, updated)
         atomic(SSHD, sshd_port_text(root_file(SSHD) if SSHD.exists() else '', port), 0o644)
         if socket_mode():
@@ -444,8 +451,8 @@ def migrate(console_recovery=False):
 def main():
     if os.geteuid() != 0:
         raise SystemExit('Run with sudo on the server whose SSH port you are changing')
-    if sys.argv[1:] not in ([], ['--confirm'], ['--rollback'], ['--boot'], ['--console-recovery'], ['--recover-current']):
-        raise SystemExit('Usage: sudo python3 misc/ssh_port_setup.py [--console-recovery|--recover-current|--confirm|--rollback]')
+    if sys.argv[1:] not in ([], ['--confirm'], ['--rollback'], ['--boot'], ['--console-recovery'], ['--recover-current'], ['--from-install']):
+        raise SystemExit('Usage: sudo python3 misc/ssh_port_setup.py [--console-recovery|--recover-current|--confirm|--rollback|--from-install]')
     Path(window.LOCK).parent.mkdir(parents=True, exist_ok=True)
     with open(window.LOCK, 'a') as lock:
         os.chmod(window.LOCK, 0o600)
@@ -459,7 +466,8 @@ def main():
         elif sys.argv[1:] == ['--recover-current']:
             recover_current()
         else:
-            migrate(console_recovery=sys.argv[1:] == ['--console-recovery'])
+            migrate(console_recovery=sys.argv[1:] == ['--console-recovery'],
+                    from_install=sys.argv[1:] == ['--from-install'])
 
 
 if __name__ == '__main__':
