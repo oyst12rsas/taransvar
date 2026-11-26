@@ -138,13 +138,16 @@ case "$answer" in
         ;;
 esac
 
+# Join NetBird before starting the systemd-owned Taralink runtime.
+bash "$SCRIPT_DIR/misc/install_netbird_management.sh" || exit 1
+bash "$SCRIPT_DIR/misc/install_taralink_service.sh" --core-install || exit 1
+systemctl is-active --quiet taralink.service || exit 1
+
 (
     cd misc
     perl startup.pl
 ) || exit 1
 
-# Join the NetBird bootstrap network before syncing existing management grants.
-bash "$SCRIPT_DIR/misc/install_netbird_management.sh" || exit 1
 if [[ -f /etc/tarasec/agent-enrollment.json ]]; then
     bash "$SCRIPT_DIR/misc/install_agent_approvals.sh" --sync || exit 1
 else
