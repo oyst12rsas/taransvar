@@ -350,19 +350,25 @@ def feature_guidance(name, root=Path('/')):
         cfg = settings(root / 'etc/tarasecfw.conf')
         nickname = cfg.get('AGENT_PUBLIC_NICKNAME', '')
         if not re.fullmatch(r'[A-Za-z][A-Za-z0-9 _-]{2,31}', nickname): nickname = 'not configured'
-        print('Server nickname on the approvals page: ' + nickname)
+        print('\nTaraSec SSH protection')
+        print(f'  This server       {os.uname().nodename}')
+        print(f'  Machine control   {nickname}')
         manager = settings(root / 'etc/tarasec-server-manager.conf')
         url = manager.get('AGENT_APPROVAL_URL', 'https://tarasec.org/ops/agent/api.php')
         parsed = urllib.parse.urlsplit(url)
         if parsed.scheme == 'https' and parsed.hostname and not parsed.username and not parsed.password and not parsed.query and not parsed.fragment:
-            print('If you still need to set up your authenticator, use: ' + urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rsplit('/', 1)[0] + '/', '', '')))
+            print('  Approvals page    ' + urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rsplit('/', 1)[0] + '/', '', '')))
         else:
-            print('Find your approval service URL in AGENT_APPROVAL_URL in /etc/tarasec-server-manager.conf.')
-        print('Before enabling, make sure your authenticator is set up for the enrolled Google account. You do not need to request an SSH opening yet.')
-        print('Google sign-in alone does not open SSH. Keep a working VM/hypervisor or physical console open for recovery.')
-        print('A console is independent of SSH: for a VM, open its console in the hypervisor. Keep it open while testing.')
-        print('The opening button is disabled until this step enables the SSH gate and the node reports its new state.')
-        print('Type VERIFIED after checking your authenticator and independent console access. You will test the SSH opening after enabling.')
+            print('  See AGENT_APPROVAL_URL in /etc/tarasec-server-manager.conf.')
+        print('\nBefore enabling')
+        print('  1. Keep this VM or physical console open throughout setup.')
+        print('  2. Check that your authenticator is set up for your Google account.')
+        print('  3. Open a second terminal on your workstation for testing.')
+        print('     For guidance, you can use Codex CLI or Claude Code in that terminal.')
+        print('\nAfter enabling')
+        print(f'  Select {nickname} in Machine control and approve a temporary SSH window.')
+        print('  Test a fresh login from the second terminal. New SSH connections are blocked outside an approved window.')
+        print()
     elif name == 'honeypot':
         print('An existing setup is refreshed without changing administrator SSH ports or firewall rules.')
         print('Only an actual port migration changes SSH and arms a recovery timer.')
@@ -1109,12 +1115,12 @@ def apply_feature(name, directory, allow_enrollment=False, configure_activity=Fa
             raise ValueError('New Google enrollment requires explicit confirmation')
         print('Verify Google/TOTP and console recovery before enabling temporary SSH closure; see docs/google-ssh.md.')
     elif name == 'ssh-window':
-        feature_guidance('ssh-window')
         if not Path('/etc/tarasec/agent-enrollment.json').exists():
             raise ValueError('Complete Google enrollment first')
         if os.environ.get('SSH_CONNECTION') or os.environ.get('SSH_TTY'):
             raise ValueError('Enable SSH closure from the independent console, not an SSH session')
-        confirm_verified('Confirm authenticator setup AND independent console recovery', lambda: feature_guidance('ssh-window'))
+        feature_guidance('ssh-window')
+        confirm_verified('Authenticator ready and recovery console open?', lambda: feature_guidance('ssh-window'))
         policy = Path('/etc/tarasec-server-manager.conf')
         backup(policy, directory)
         set_setting(policy, 'SSH_GOOGLE_REOPEN_ENABLED', 'yes')
