@@ -1,5 +1,15 @@
 #!/usr/bin/env bash
 
+mode=${1:---preview}
+case "$mode" in
+    --preview|--stage) ;;
+    *) exit 2 ;;
+esac
+if [[ $mode == --stage ]]; then
+    [[ $EUID == 0 ]] || exit 1
+    command -v python3 >/dev/null || { printf 'Install Python 3 before staging SSH settings.\n' >&2; exit 1; }
+fi
+
 if [[ -t 1 && -n ${TERM:-} ]]; then
     clear
 fi
@@ -8,11 +18,11 @@ printf 'TaraSec · SSH protection on %s\n\n' "$(hostname)"
 printf '  1) Configure SSH protection\n'
 printf '  2) Skip SSH protection for now\n\n'
 
-read -r -p 'Choose [1/2]: ' choice || exit 0
+read -r -p 'Choose [1/2]: ' choice || exit 1
 case "$choice" in
     1) ;;
     2)
-        printf '\nSSH protection skipped in this preview.\n'
+        printf '\nSSH protection setup skipped.\n'
         exit 0
         ;;
     *)
@@ -23,8 +33,8 @@ esac
 
 printf '\n'
 printf 'You can set up Google Authenticator later, before approving an SSH opening.\n'
-read -r -p 'Google account email for SSH approvals: ' google_email || exit 0
-read -r -p 'Management SSH port [22]: ' ssh_port || exit 0
+read -r -p 'Google account email for SSH approvals: ' google_email || exit 1
+read -r -p 'Management SSH port [4810]: ' ssh_port || exit 1
 
 printf '\nAllowed sources\n'
 printf 'Enter the IP addresses or subnets you use to manage this node, one per line.\n'
@@ -34,7 +44,7 @@ printf '  Example for one NetBird device: 100.68.10.7/32\n'
 printf '\n'
 printf 'If you do not know your NetBird IP yet, you can add it later.\n'
 allowed_sources=()
-read -r -p 'Allowed IP or subnet (Enter for no source-IP restriction): ' source_ip || exit 0
+read -r -p 'Allowed IP or subnet (Enter for no source-IP restriction): ' source_ip || exit 1
 if [[ -n $source_ip ]]; then
     allowed_sources+=("$source_ip")
     while read -r -p 'Additional allowed IP or subnet (Enter to finish): ' source_ip; do
@@ -45,11 +55,11 @@ fi
 
 printf '\nChoose the TCP port range for the SSH honeypot.\n'
 printf 'The management SSH port can be inside this range, for example 4810 within 1000-5000.\n'
-read -r -p 'SSH honeypot port range [1000-5000]: ' honeypot_range || exit 0
+read -r -p 'SSH honeypot port range [1000-5000]: ' honeypot_range || exit 1
 
-printf '\nPreview\n'
+printf '\nSSH setup choices\n'
 printf '  Google account:      %s\n' "$google_email"
-printf '  Management SSH port: %s\n' "${ssh_port:-22}"
+printf '  Management SSH port: %s\n' "${ssh_port:-4810}"
 printf '  Honeypot TCP ports:  %s\n' "${honeypot_range:-1000-5000}"
 printf '  Allowed sources:\n'
 if (( ${#allowed_sources[@]} )); then
@@ -57,4 +67,46 @@ if (( ${#allowed_sources[@]} )); then
 else
     printf '    No source-IP restriction\n'
 fi
-printf '\nPreview only. No settings applied.\n'
+if [[ $mode == --preview ]]; then
+    printf '\nPreview only. No settings applied.\n'
+    exit 0
+fi
+
+read -r -p 'Save these choices for SSH activation and start installation? [y/N]: ' confirm || exit 1
+[[ $confirm == [yY] || $confirm == [yY][eE][sS] ]] || exit 1
+
+python3 - "$google_email" "${ssh_port:-4810}" "${honeypot_range:-1000-5000}" "${allowed_sources[@]}" <<'PY'
+import ipaddress
+import json
+import os
+from pathlib import Path
+import re
+import sys
+import tempfile
+
+email, port, spec, *sources = sys.argv[1:]
+try:
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+        raise ValueError("Enter a valid Google account email.")
+    if not re.fullmatch(r"[0-9]{1,5}", port) or not 1 <= int(port) <= 65535 or int(port) == 22:
+        raise ValueError("Choose a management port from 1 to 65535. TCP/22 is reserved for the honeypot.")
+    limits = re.fullmatch(r"([0-9]{1,5})-([0-9]{1,5})", spec)
+    if limits is None or not 1 <= int(limits[1]) <= int(limits[2]) <= 65535:
+        raise ValueError("Enter a valid honeypot range, for example 1000-5000.")
+    networks = [ipaddress.ip_network(source, strict=False) for source in sources]
+    if len(networks) > 64 or any(network.prefixlen == 0 for network in networks):
+        raise ValueError("Use up to 64 allowed sources. Leave the list blank for no source-IP restriction.")
+except ValueError as error:
+    raise SystemExit(str(error))
+
+directory = Path("/var/lib/tarasec")
+directory.mkdir(mode=0o755, parents=True, exist_ok=True)
+with tempfile.NamedTemporaryFile(mode="w", dir=directory, delete=False) as pending:
+    try:
+        json.dump({"email": email, "port": int(port), "range": spec,
+                   "sources": [str(network) for network in networks]}, pending)
+        pending.close()
+        os.replace(pending.name, directory / "ssh-install-choices.json")
+    finally:
+        Path(pending.name).unlink(missing_ok=True)
+PY
