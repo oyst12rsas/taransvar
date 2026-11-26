@@ -16,6 +16,9 @@ while [[ $# -gt 0 ]]; do
             enroll=true; gatekeeper_args+=("$1" "$2");
             if [[ $1 == --web-root ]]; then gatekeeper_web_root=$2; fi
             shift 2 ;;
+        --browser-email)
+            [[ $# -ge 2 ]] || { echo "Missing Google account email" >&2; exit 2; }
+            enroll=true; enroll_args+=("$1" "$2"); shift 2 ;;
         --install-secret) enroll=true; enroll_args+=("--install-secret"); shift ;;
         --enroll-google) enroll=true; shift ;;
         --email|--approval-url|--nickname)
