@@ -1,28 +1,9 @@
 #!/bin/bash
 #Taransvar Cyber Security
 #To install: sudo bash install.sh
-#To preview SSH setup: bash install.sh --preview-ssh-setup
-
-case "${1:-}" in
-    --preview-ssh-setup)
-        if [[ $# -ne 1 ]]; then
-            printf 'Usage: bash install.sh --preview-ssh-setup\n' >&2
-            exit 2
-        fi
-        preview_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)" || exit 1
-        exec bash "$preview_dir/misc/ssh_setup_preview.sh"
-        ;;
-esac
-
 if [ "$(id -u)" -ne 0 ]; then
         echo 'This script must be run by root.\nStart with: sudo bash install.sh' >&2
         exit 1
-fi
-
-# Collect SSH choices before provisioning. Unattended installs skip the menu.
-if [[ -t 0 ]]; then
-    setup_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)" || exit 1
-    bash "$setup_dir/misc/ssh_setup_preview.sh" --stage || exit 1
 fi
 
 #Uses these because some scripts are also run from crontab (can't relate to current user while installing)
@@ -121,10 +102,10 @@ service cron reload
 
 echo "Database created. Copying files/"
 mkdir -p /root/taransvar/perl
-rsync -a --exclude '.git' misc/ /root/taransvar/perl/
+rsync -a --exclude '.git' misc/ /root/taransvar/perl/ || exit 1
 
 echo "Copying (rsync) html files..."
-rsync -a --exclude '.git' html/ /var/www/html/
+rsync -a --exclude '.git' html/ /var/www/html/ || exit 1
 
 (
     cd misc
@@ -133,10 +114,10 @@ rsync -a --exclude '.git' html/ /var/www/html/
 
 if [ $? -eq 0 ]; then
     printf "Successfully compiled..\n"
-    cp taralink/taralink /root/taransvar
+    cp taralink/taralink /root/taransvar || exit 1
 else
     printf "******* ERROR ****** Could not compile taralink...\n"
-    read -n 1 -s -p "Ctrl-C to break or press any key to continue"
+    exit 1
 fi
 
 printf "**** Gatekeeper is now installed ****\n\n"
@@ -150,7 +131,7 @@ case "$answer" in
         # This is an explicit owner opt-in from the general installer. The
         # hotspot-specific installer therefore goes straight to hotspot setup
         # and only asks about an optional test subscriber/quota.
-        TARASEC_HOTSPOT_REQUESTED=1 bash "$SCRIPT_DIR/hotspot/distro/install.sh"
+        TARASEC_HOTSPOT_REQUESTED=1 bash "$SCRIPT_DIR/hotspot/distro/install.sh" || exit 1
         ;;
     *)
         echo "Skipping hotspot installation."
@@ -160,7 +141,7 @@ esac
 (
     cd misc
     perl startup.pl
-)
+) || exit 1
 
 # Join the NetBird bootstrap network before syncing existing management grants.
 bash "$SCRIPT_DIR/misc/install_netbird_management.sh" || exit 1
@@ -170,17 +151,17 @@ else
     echo 'To enable Google-controlled management later, run sudo bash misc/install_agent_approvals.sh --install-secret from the repository checkout.'
 fi
 
-if [[ -f /var/lib/tarasec/ssh-install-choices.json ]]; then
-    echo 'SSH choices saved. After Google-controlled SSH and MFA are ready, run sudo python3 misc/ssh_port_setup.py --from-install from the checkout.'
-fi
-
 echo "Next: review and verify your node security at https://tarasec.org/safety/#deployment"
 echo "Hardening priorities: https://tarasec.org/safety/#hardening-priorities"
 echo "Ask your AI assistant to check the next missing control, test it and fix in-scope routine failures."
 
 # Keep upgrade orchestration in this checkout; future changes use one command.
 if [[ ! -e /usr/local/sbin/tarasec && ! -L /usr/local/sbin/tarasec ]]; then
-    ln -s "$SCRIPT_DIR/tarasec" /usr/local/sbin/tarasec
+    ln -s "$SCRIPT_DIR/tarasec" /usr/local/sbin/tarasec || exit 1
 fi
 echo 'Future updates: sudo tarasec upgrade'
 
+
+printf '\nTaraSec installation complete.\n'
+printf 'Recommended next step: run the SSH protection setup from this checkout.\n'
+printf '  sudo bash misc/ssh_setup_preview.sh --stage\n'
