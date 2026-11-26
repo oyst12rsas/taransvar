@@ -181,7 +181,10 @@ def snapshot(new_port):
         result = command('ipset', 'save', name, check=False)
         atomic(saved / name, result.stdout if result.returncode == 0 else '')
     atomic(saved / 'manifest.json', json.dumps(entries))
-    atomic(STATE / 'pending.json', json.dumps({'backup': str(saved), 'started': time.time(), 'new_port': new_port, 'phase': 'staging'}))
+    honeypot_active = command('systemctl', 'is-active', '--quiet', 'tarasec-ssh-honeypot.service',
+                              check=False).returncode == 0
+    atomic(STATE / 'pending.json', json.dumps({'backup': str(saved), 'started': time.time(),
+           'new_port': new_port, 'phase': 'staging', 'honeypot_active': honeypot_active}))
     return saved
 
 
@@ -225,8 +228,11 @@ def rollback():
             shutil.copy2(entry['backup'], path)
         else:
             path.unlink(missing_ok=True)
+    if state.get('honeypot_active') is False:
+        command('systemctl', 'stop', 'tarasec-ssh-honeypot.service', check=False)
     reload_sshd()
-    command('systemctl', 'restart', 'tarasec-ssh-honeypot.service', check=False)
+    if state.get('honeypot_active') is not False:
+        command('systemctl', 'restart', 'tarasec-ssh-honeypot.service', check=False)
     # Rollback restores the previous port, never a stale open window. The snapshot
     # guard remains until closed rules have been reapplied in both families.
     port, sources = window.configuration()
@@ -295,19 +301,20 @@ def ensure_migration_dependencies():
                     'ss', 'sshd', 'systemctl', 'journalctl'):
         if not shutil.which(program):
             raise RuntimeError('Missing migration dependency: ' + program)
-    if shutil.which('ipset'):
-        return
-    apt_get = shutil.which('apt-get')
-    if not apt_get:
-        raise RuntimeError('Install ipset with your system package manager, then retry')
-    print('Installing ipset for temporary SSH and honeypot routing.', flush=True)
-    try:
-        subprocess.run([apt_get, 'update'], check=True)
-        subprocess.run([apt_get, 'install', '-y', 'ipset'], check=True)
-    except subprocess.CalledProcessError as error:
-        raise RuntimeError('Could not install ipset with APT. See the package manager output and retry.') from error
+    packages = []
     if not shutil.which('ipset'):
-        raise RuntimeError('APT completed but ipset is unavailable on PATH')
+        packages.append('ipset')
+    if command('/usr/bin/python3', '-c', 'import paramiko', check=False).returncode:
+        packages.append('python3-paramiko')
+    if packages:
+        apt_get = shutil.which('apt-get')
+        if not apt_get:
+            raise RuntimeError('Install the missing migration packages: ' + ', '.join(packages))
+        print('Installing SSH migration dependencies: ' + ', '.join(packages), flush=True)
+        subprocess.run([apt_get, 'update'], check=True)
+        subprocess.run([apt_get, 'install', '-y', *packages], check=True)
+    if not shutil.which('ipset') or command('/usr/bin/python3', '-c', 'import paramiko', check=False).returncode:
+        raise RuntimeError('SSH migration requires ipset and Python Paramiko')
 
 
 def migrate(console_recovery=False, from_install=False):
@@ -399,8 +406,9 @@ def migrate(console_recovery=False, from_install=False):
         else:
             raise RuntimeError('New SSH listener did not appear')
         atomic(HP, '[Service]\nEnvironment=TARASEC_SSH_HONEYPOT_IPV6=yes\n', 0o644)
-        # Refresh-only cannot perform the older temporary-ACCEPT migration.
-        command('bash', str(setup), '--refresh-only')
+        # Provision the backend after verifying that OpenSSH moved off its port.
+        # This path skips the older temporary-ACCEPT migration.
+        command('bash', str(setup), '--start-after-migration')
         command('systemctl', 'is-active', '--quiet', 'tarasec-ssh-honeypot.service')
         if not listener(backend):
             raise RuntimeError('The honeypot backend is not listening')
