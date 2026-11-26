@@ -26,6 +26,7 @@ class PolicyTests(unittest.TestCase):
 
         with mock.patch.object(setup.shutil, 'which', side_effect=lambda name: programs.get(name, '/mock/' + name)), \
              mock.patch.object(setup.subprocess, 'run', side_effect=run) as apt, \
+             mock.patch.object(setup, 'command', return_value=subprocess.CompletedProcess([], 0)), \
              contextlib.redirect_stdout(io.StringIO()):
             setup.ensure_migration_dependencies()
             setup.ensure_migration_dependencies()
@@ -33,6 +34,38 @@ class PolicyTests(unittest.TestCase):
             mock.call(['/mock/apt-get', 'update'], check=True),
             mock.call(['/mock/apt-get', 'install', '-y', 'ipset'], check=True),
         ])
+
+    def test_confirmation_notice_only_in_interactive_ssh_login_on_new_port(self):
+        with tempfile.TemporaryDirectory() as directory:
+            helper = Path(directory) / 'confirm'
+            notice = Path(directory) / 'notice.sh'
+            with mock.patch.object(setup, 'CONFIRM_HELPER', helper), \
+                 mock.patch.object(setup, 'CONFIRM_NOTICE', notice):
+                setup.install_confirmation_notice(4810)
+                for flags, connection, expected in (
+                    ('-ic', 'a 1234 b 4810', True),
+                    ('-ic', 'a 1234 b 22', False),
+                    ('-ic', '', False),
+                    ('-c', 'a 1234 b 4810', False),
+                ):
+                    result = subprocess.run(
+                        ['/bin/sh', flags, '. "$1"', 'sh', str(notice)],
+                        env={**os.environ, 'SSH_CONNECTION': connection},
+                        capture_output=True, text=True, check=True,
+                    )
+                    self.assertEqual(setup.CONFIRM_COMMAND in result.stdout.splitlines(), expected)
+                pending = Path(directory) / 'pending.json'
+                pending.write_text(json.dumps({'phase': 'awaiting_confirmation', 'new_port': 4810}))
+                with mock.patch.object(setup, 'STATE', pending.parent), \
+                     mock.patch.object(setup, 'root_file', side_effect=Path.read_text), \
+                     mock.patch.object(window, 'configuration', return_value=(4810, [])), \
+                     mock.patch.dict(os.environ, {'SSH_CONNECTION': 'a 1234 b 4810'}), \
+                     mock.patch.object(setup, 'command') as command, \
+                     contextlib.redirect_stdout(io.StringIO()):
+                    setup.confirm()
+                command.assert_called_once_with('systemctl', 'disable', '--now', setup.ROLLBACK + '.timer')
+                self.assertFalse(notice.exists())
+                self.assertFalse(pending.exists())
 
     def test_ranges_allow_management_port_inside_and_reject_invalid_values(self):
         self.assertEqual(route.ranges('1000-5000,22'), [(22, 22), (1000, 5000)])
@@ -152,7 +185,8 @@ class MigrationTests(unittest.TestCase):
             replacements = {'CONF': conf, 'SSHD_RUNTIME': root / 'run/sshd', 'STATE': root / 'state', 'LIB': root / 'lib',
                             'SSHD': root / 'etc/sshd/90-tarasec.conf', 'SOCKET': root / 'socket/override.conf',
                             'HP': root / 'honeypot/override.conf', 'UNIT': root / 'systemd/decoys.service',
-                            'SYSTEMD': root / 'systemd'}
+                            'SYSTEMD': root / 'systemd', 'CONFIRM_HELPER': root / 'confirm',
+                            'CONFIRM_NOTICE': root / 'profile.d/notice.sh'}
             replacements['SSH_SERVICE_DROPINS'] = (root / 'systemd/ssh.service.d/decoys.conf',
                                                    root / 'systemd/sshd.service.d/decoys.conf')
             with contextlib.ExitStack() as stack:
@@ -175,7 +209,8 @@ class MigrationTests(unittest.TestCase):
                     setup.migrate(console_recovery=console_recovery)
                     self.assertIn('SSH_PORT="2345"', conf.read_text())
                     self.assertTrue((root / 'state/pending.json').exists())
-                    self.assertNotIn('2345', output.getvalue())
+                    self.assertEqual(setup.CONFIRM_COMMAND in output.getvalue().splitlines(), not console_recovery)
+                    self.assertEqual(setup.CONFIRM_NOTICE.exists(), not console_recovery)
                 else:
                     with self.assertRaisesRegex(RuntimeError, 'backend is not listening'):
                         setup.migrate(console_recovery=console_recovery)
@@ -236,6 +271,7 @@ class MigrationTests(unittest.TestCase):
                 return subprocess.CompletedProcess(args,0,'port 5822\n' if args[:2]==('sshd','-T') else '','')
             with mock.patch.object(setup,'STATE',state),mock.patch.object(setup,'SSHD_RUNTIME',root/'run/sshd'), \
                  mock.patch.object(setup,'command',side_effect=command),mock.patch.object(setup,'listener',return_value=True), \
+                 mock.patch.object(setup,'CONFIRM_NOTICE',root/'notice.sh'), \
                  mock.patch.object(window,'configuration',return_value=(5822,[])), \
                  mock.patch.object(window,'write_state') as closed, \
                  mock.patch.object(window,'reconcile',side_effect=lambda:calls.append(('reconcile',))), \
