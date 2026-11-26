@@ -1,3 +1,4 @@
+-- Fresh TaraSec schema, version 100. Seed data is in postcreate.sql.
 CREATE TABLE `LanguageElement` (
   `ElementKey` varchar(100) DEFAULT NULL,
   `TxtENG` text DEFAULT NULL
@@ -33,7 +34,7 @@ CREATE TABLE `assistanceRequest` (
   `port` int(10) unsigned DEFAULT NULL,
   `senderIp` int(10) unsigned DEFAULT NULL,
   `senderPort` int(10) unsigned DEFAULT NULL,
-  `category` enum('bruteForce','spoofing','test','other','cancel') DEFAULT NULL,
+  category varchar(64) null,
   `regardingRequestId` int(10) unsigned DEFAULT NULL,
   `comment` varchar(200) DEFAULT NULL,
   `handlingComment` varchar(200) DEFAULT NULL,
@@ -207,7 +208,7 @@ CREATE TABLE `hackReport` (
   `partnerIp` int(10) unsigned DEFAULT NULL,
   `partnerPort` smallint(5) unsigned DEFAULT NULL,
   `sentByIp` int(10) unsigned DEFAULT NULL,
-  `status` varchar(40) DEFAULT NULL,
+  status varchar(255),
   `handledTime` timestamp NULL DEFAULT NULL,
   `unitId` int(10) unsigned DEFAULT NULL,
   `lastSeen` timestamp NOT NULL DEFAULT current_timestamp(),
@@ -215,6 +216,16 @@ CREATE TABLE `hackReport` (
   `sentGlobalDB` timestamp NULL DEFAULT NULL,
   `ipOwnerId` varchar(100) DEFAULT NULL,
   `sendAttemptCount` int(11) NOT NULL DEFAULT 0,
+  infoSharePartners varchar(255),
+  severity int not null default 0,
+  botnetId int null,
+  partnerId int null,
+  infectionId int null,
+  remoteUnitId int null,
+  ownerConfirmedTime timestamp null,
+  count int unsigned not null default 0,
+  why varchar(255),
+  hrCategory enum ('login_fail','tagged_traffic','from_dbserver', 'from_partner', 'ssh_fail', 'ssh_when_blocked', 'iptables', 'attack_severity_1', 'attack_severity_3', 'attack_severity_7', 'unverified_threat_info', 'other','demo'),
   PRIMARY KEY (`reportId`),
   KEY `idx_hackreport_pending` (`handledTime`,`created`,`reportId`)
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -273,9 +284,15 @@ CREATE TABLE `internalInfections` (
   `inserted` timestamp NOT NULL DEFAULT current_timestamp(),
   `handled` bit(1) DEFAULT NULL,
   `unitId` int(11) DEFAULT NULL,
+  foreignUnitId int(11) null,
   `active` bit(1) NOT NULL DEFAULT b'1',
   `lastSeen` timestamp NOT NULL DEFAULT current_timestamp(),
   `taransvarId` int(10) unsigned DEFAULT NULL,
+  infoSharePartner varchar(255),
+  infoSharePartners varchar(255),
+  severity int not null default 0,
+  botnetId int null,
+  why varchar(255),
   PRIMARY KEY (`infectionId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 CREATE TABLE `internalServers` (
@@ -396,6 +413,10 @@ CREATE TABLE `partner` (
   `techEmail` varchar(150) DEFAULT NULL,
   `techPhone` varchar(150) DEFAULT NULL,
   `handled` bit(1) DEFAULT NULL,
+  infoAdmin varchar(255),
+  infoTech varchar(255),
+  infoSharePartner varchar(255),
+  infoSharePartners varchar(255),
   PRIMARY KEY (`partnerId`)
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 CREATE TABLE `partnerRouter` (
@@ -406,6 +427,9 @@ CREATE TABLE `partnerRouter` (
   `taggedTrafficRoute` int(10) unsigned DEFAULT NULL,
   `taggedTrafficRouteUpdated` timestamp NULL DEFAULT NULL,
   `handled` bit(1) DEFAULT NULL,
+  statusOk bit(1) not null default b'0',
+  showToAdminsOnly bit(1) not null default b'0',
+  status text,
   `demoStatusReceived` timestamp NULL DEFAULT NULL,
   `demoStatusReplied` timestamp NULL DEFAULT NULL,
   `partnerStatusReceived` timestamp NULL DEFAULT NULL,
@@ -430,6 +454,7 @@ CREATE TABLE `pendingWget` (
   `category` enum('AssistanceRequest','Other') DEFAULT NULL,
   `regardingId` int(10) unsigned DEFAULT NULL,
   `handled` timestamp NULL DEFAULT NULL,
+  reply text,
   PRIMARY KEY (`wgetId`)
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 CREATE TABLE `ping` (
@@ -593,6 +618,8 @@ CREATE TABLE `setup` (
   `internalNic` varchar(20) DEFAULT NULL,
   `externalNic` varchar(20) DEFAULT NULL,
   `statusIntervalSec` tinyint(4) NOT NULL DEFAULT 60,
+  isDbServer bit(1) not NULL default b'0',
+  doingNAT bit(1) not NULL default b'0',
   `showStatus` bit(1) NOT NULL DEFAULT b'1',
   `showPreRoutePartner` bit(1) NOT NULL DEFAULT b'1',
   `showPreRouteNonPartner` bit(1) NOT NULL DEFAULT b'1',
@@ -609,9 +636,16 @@ CREATE TABLE `setup` (
   `doInspection` bit(1) NOT NULL DEFAULT b'1',
   `doBlocking` bit(1) NOT NULL DEFAULT b'1',
   `doOther` bit(1) NOT NULL DEFAULT b'1',
+  iptablesSetupChanged bit(1) not null default b'0',
+  whoMaySsh int unsigned default 0,
+  sshPort tinyint not null default 0,
+  iptablesAllowSsh bit(1) not null default b'1',
+  iptablesAllowPing bit(1) not null default b'1',
   `requestReboot` bit(1) NOT NULL DEFAULT b'0',
   `requestShutdown` bit(1) NOT NULL DEFAULT b'0',
   `hotspot` bit(1) NOT NULL DEFAULT b'1',
+  requireRegistration bit(1) not null default b'0',
+  selfRegistration bit(1) not null default b'1',
   `ssid` varchar(150) NOT NULL DEFAULT '',
   `isGlobalDbServer` bit(1) NOT NULL DEFAULT b'0',
   `globalDb1ip` int(10) unsigned DEFAULT NULL,
@@ -625,16 +659,25 @@ CREATE TABLE `setup` (
   `portUsageChecked` timestamp NULL DEFAULT NULL,
   `portUsageAdded` timestamp NULL DEFAULT NULL,
   `networkStatusChecked` timestamp NULL DEFAULT NULL,
-  `networkStatus` varchar(255) DEFAULT NULL,
+  networkStatus text,
   `dmesg` mediumtext DEFAULT NULL,
   `dmesgUpdated` timestamp NULL DEFAULT NULL,
   `secondsSinceBoot` int(10) unsigned NOT NULL DEFAULT 1000000,
   `blockIncomingTaggedTrafficThreshold` tinyint(4) NOT NULL DEFAULT 15,
+  blockSshThreshold tinyint not null default 0,
   `background` varchar(20) DEFAULT NULL,
   `uptime` float NOT NULL DEFAULT 1000000,
   `workshopId` int(10) unsigned DEFAULT NULL,
   `suspendHotspotLoginUntil` timestamp NULL DEFAULT NULL,
-  `suspendGKLoginUntil` timestamp NULL DEFAULT NULL
+  `suspendGKLoginUntil` timestamp NULL DEFAULT NULL,
+  dontDmesgIPs varchar(150),
+  nickname varchar(100),
+  systemMessage varchar(255),
+  systemErrorSet timestamp null,
+  systemErrorSeverity tinyint unsigned,
+  systemError varchar(255),
+  aiAssessment text,
+  aiAssessmentTime timestamp null
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 CREATE TABLE `systemMessage` (
   `systemMessageId` int(10) unsigned NOT NULL AUTO_INCREMENT,
@@ -694,8 +737,13 @@ CREATE TABLE `user` (
   `inserted` timestamp NOT NULL DEFAULT current_timestamp(),
   `emailSent` timestamp NULL DEFAULT NULL,
   `verified` bit(1) NOT NULL DEFAULT b'0',
+  isAdmin bit(1) not null default b'0',
   `suspendedUntil` timestamp NULL DEFAULT NULL,
   `suspendedMinutes` timestamp NULL DEFAULT NULL,
+  lastLogin timestamp null,
+  loginFailsSinceSuccess int unsigned not null default 0,
+  lastLoginIp int unsigned null,
+  loginFailReportedTime timestamp null,
   PRIMARY KEY (`userId`)
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 CREATE TABLE `usergroup` (
@@ -739,3 +787,353 @@ CREATE TABLE `workshop` (
   `lastseen` timestamp NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`workshopId`,`ip`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+CREATE TABLE `syslog` (
+  syslogId int unsigned not null auto_increment,
+  senderIp int unsigned not null,
+  senderPort smallint unsigned not null,
+  created timestamp not null default current_timestamp,
+  pri integer null,
+  facility integer null,
+  severity integer null,
+  hostname varchar(256),
+  tag varchar(128),
+  message text,
+  rawmessage text,
+  isSyslog tinyint null,
+  lastSeen timestamp null,
+  count int unsigned not null default 1,
+  handled bit(1) not null default b'0',
+  primary key(syslogId)
+);
+CREATE TABLE `syslogThreat` (
+  syslogThreatId int unsigned not null auto_increment,
+  syslogId int unsigned,
+  created timestamp not null default current_timestamp,
+  owner_id int unsigned null,
+  unit_id int unsigned null,
+  confirmed_unit_id int unsigned null,
+  is_attack smallint unsigned null,
+  action char(32),
+  src_ip int unsigned not null,
+  src_port smallint unsigned not null,
+  dst_ip int unsigned not null,
+  dst_port int unsigned not null,
+  protocol varchar(16),
+  device varchar(128),
+  botnetId int unsigned null,
+  severity int unsigned null,
+  handled bit(1),
+  service enum ('iptables','cisco','fortinet','palo_alto','cowrie','ssh','ddos','firewall','honeypot','web-service','login_attempt','db','other'),
+  description varchar(255),
+  count integer not null default 1,
+  lastSeen timestamp null,
+  handling varchar(255),
+  demoSshSessionId bigint unsigned null,
+  primary key(syslogThreatId),
+  key idx_syslogthreat_pending (handled, syslogThreatId),
+  key idx_syslogThreat_demoSshSession(demoSshSessionId)
+);
+CREATE TABLE `dhcpEvent` (
+  dhcpEventId BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  seenAt DATETIME(6) NOT NULL,
+  interfaceName VARCHAR(64) NOT NULL,
+  srcIp INT UNSIGNED NULL,
+  dstIp INT UNSIGNED NULL,
+  clientMac VARCHAR(17) NOT NULL,
+  yourIp INT UNSIGNED NULL,
+  hostname VARCHAR(255) NULL,
+  vendorClass VARCHAR(255) NULL,
+  dhcpMessageType TINYINT UNSIGNED NULL,
+  rawLine TEXT NULL,
+  handled bit(1) not null default b'0',
+  unitId int unsigned null,
+  PRIMARY KEY (dhcpEventId),
+  KEY idx_seenAt (seenAt),
+  KEY idx_clientMac (clientMac),
+  KEY idx_yourIp (yourIp),
+  KEY idx_srcIp (srcIp)
+);
+CREATE TABLE dhcpClientState (
+    dhcpClientStateId BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    clientMac VARCHAR(17) NOT NULL,
+    currentIp INT UNSIGNED NULL,
+    hostname VARCHAR(255) NULL,
+    vendorClass VARCHAR(255) NULL,
+    firstSeen DATETIME(6) NULL,
+    lastSeen DATETIME(6) NULL,
+    eventCount INT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (dhcpClientStateId),
+    UNIQUE KEY uq_clientMac (clientMac),
+    KEY idx_currentIp (currentIp),
+    KEY idx_lastSeen (lastSeen)
+);
+create table dmesg (
+    dmesgId BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    created timestamp not null default current_timestamp,
+    txt varchar(255),
+    primary key(dmesgId)
+);
+create table logTotals (
+	ip int unsigned not null,
+	last_seen timestamp null,
+	iptables_last_hour int unsigned null,
+	iptables_last_day int unsigned null,
+	iptables_last_week int unsigned null,
+	iptables_last_month int unsigned null,
+	ssh_last_hour int unsigned null,
+	ssh_last_day int unsigned null,
+	ssh_last_week int unsigned null,
+	ssh_last_month int unsigned null,
+	untagged_rejects_last_hour int unsigned null,
+	untagged_rejects_last_day int unsigned null,
+	untagged_rejects_last_week int unsigned null,
+	untagged_rejects_last_month int unsigned null,
+	primary key(ip)
+);
+CREATE TABLE `partnerRouterStatusLog` (
+  ip int unsigned not null,
+  created DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  status text null,
+  primary key(ip, created)
+);
+create table aiResponse (
+    aiResponseId BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+	created timestamp not null default current_timestamp,
+	seconds int null,
+	response text null,
+	primary key (aiResponseId)
+);
+create table managerRequest (
+	managerRequestId int unsigned not null auto_increment,
+	created timestamp not null default current_timestamp,
+	email varchar(255) not null,
+	requestTokenHash char(64) not null,
+	credentialPlain varchar(128) null,
+	credentialHash char(64) null,
+	credentialCreatedTime timestamp null,
+	credentialClaimedTime timestamp null,
+	emailVerifyTokenPlain varchar(128) null,
+	emailVerifyTokenHash char(64) null,
+	emailSentTime timestamp null,
+	emailVerifiedTime timestamp null,
+	gatewayApprovedTime timestamp null,
+	approvedByUserId int unsigned null,
+	rejectedTime timestamp null,
+	active bit(1) not null default b'0',
+	lastUsedTime timestamp null,
+	expires timestamp null,
+	primary key(managerRequestId),
+	key idx_manager_email(email),
+	key idx_manager_credential(credentialHash),
+	key idx_manager_email_token(emailVerifyTokenHash)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+create table demoSshNodeB (
+	demoSshNodeBId int unsigned not null auto_increment,
+	name varchar(128) not null,
+	ip int unsigned not null,
+	port smallint unsigned not null,
+	sensorTokenHash char(64) not null,
+	username varchar(16) null,
+	passwordPlain varchar(32) null,
+	passwordHash char(64) null,
+	credentialGeneration int unsigned not null default 0,
+	credentialCreated timestamp null,
+	active bit(1) not null default b'1',
+	created timestamp not null default current_timestamp,
+	primary key(demoSshNodeBId),
+	unique key uq_demoSshNodeB_endpoint(ip,port)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE `demoSshSetup` (
+  demoSshSetupId int unsigned not null auto_increment,
+  name varchar(128) not null,
+  nodeAIp int unsigned not null,
+  nodeAPort smallint unsigned not null default 22,
+  demoSshNodeBId int unsigned not null,
+  challengeTtlSeconds smallint unsigned not null default 1800,
+  active bit(1) not null default b'1',
+  created timestamp not null default current_timestamp,
+  primary key(demoSshSetupId),
+  key idx_demoSshSetup_nodes(nodeAIp,demoSshNodeBId,active),
+  constraint fk_demoSshSetup_nodeB foreign key(demoSshNodeBId) references demoSshNodeB(demoSshNodeBId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE `demoSshSession` (
+  demoSshSessionId bigint unsigned not null auto_increment,
+  demoSshSetupId int unsigned not null,
+  demoSshNodeBId int unsigned not null,
+  sourceIp int unsigned not null,
+  unitId int unsigned null,
+  nodeBSourcePort smallint unsigned null,
+  credentialGeneration int unsigned not null,
+  accessTokenHash char(64) not null,
+  state enum('created','awaiting_node_a','demo_infected','awaiting_node_b','cleared','owner_clear_required','expired','cancelled','real_infection_detected') not null default 'awaiting_node_a',
+  attempts tinyint unsigned not null default 0,
+  nodeAEvidenceId int unsigned null,
+  nodeBEvidenceId int unsigned null,
+  created timestamp not null default current_timestamp,
+  expires timestamp not null,
+  completed timestamp null,
+  lastSeen timestamp not null default current_timestamp,
+  gatewayVerified BIT(1) NOT NULL DEFAULT b'0',
+  primary key(demoSshSessionId),
+  key idx_demoSshSession_source(sourceIp,state,expires),
+  key idx_demoSshSession_access(accessTokenHash),
+  key idx_demoSshSession_unit(unitId,state,expires),
+  constraint fk_demoSshSession_setup foreign key(demoSshSetupId) references demoSshSetup(demoSshSetupId),
+  constraint fk_demoSshSession_nodeB foreign key(demoSshNodeBId) references demoSshNodeB(demoSshNodeBId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+create table demoSshEvent (
+	demoSshEventId bigint unsigned not null auto_increment,
+	demoSshSessionId bigint unsigned not null,
+	created timestamp not null default current_timestamp,
+	eventType enum('created','node_a_observed','node_b_attempt','cleared','rejected','expired','cancelled','real_infection') not null,
+	nodeIp int unsigned null,
+	sourceIp int unsigned null,
+	syslogThreatId int unsigned null,
+	details varchar(255) null,
+	primary key(demoSshEventId),
+	key idx_demoSshEvent_session(demoSshSessionId,created),
+	constraint fk_demoSshEvent_session foreign key(demoSshSessionId) references demoSshSession(demoSshSessionId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+create table demoSshAttempt (
+	demoSshAttemptId bigint unsigned not null auto_increment,
+	demoSshNodeBId int unsigned not null,
+	demoSshSessionId bigint unsigned null,
+	created timestamp not null default current_timestamp,
+	sourceIp int unsigned not null,
+	sourcePort smallint unsigned not null,
+	destinationPort smallint unsigned not null,
+	unitId int unsigned null,
+	credentialGeneration int unsigned not null,
+	credentialValid bit(1) not null default b'0',
+	correlation enum('unit','single_source','pending','none') not null default 'pending',
+	primary key(demoSshAttemptId),
+	key idx_demoSshAttempt_tuple(sourceIp,sourcePort,destinationPort,created),
+	key idx_demoSshAttempt_session(demoSshSessionId),
+	constraint fk_demoSshAttempt_nodeB foreign key(demoSshNodeBId) references demoSshNodeB(demoSshNodeBId),
+	constraint fk_demoSshAttempt_session foreign key(demoSshSessionId) references demoSshSession(demoSshSessionId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE gatewayDemoConfiguration (
+	gatewayIp int unsigned not null,
+	gatewayName varchar(120) not null default '',
+	demo1ReceiverIp int unsigned null,
+	demo1ReceiverName varchar(120) not null default '',
+	demoSshSetupId int unsigned null,
+	demo4RouterId int null,
+	organisationLabel varchar(120) not null default '',
+	updated timestamp not null default current_timestamp on update current_timestamp,
+	primary key(gatewayIp),
+	constraint fk_gatewayDemoConfiguration_ssh foreign key(demoSshSetupId) references demoSshSetup(demoSshSetupId),
+	constraint fk_gatewayDemoConfiguration_demo4 foreign key(demo4RouterId) references partnerRouter(routerId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE demo4GatewayState (
+	gatewayIp int unsigned not null,
+	routerId int not null,
+	state enum('configured','applied','error') not null default 'configured',
+	message varchar(255) not null default '',
+	reported timestamp not null default current_timestamp on update current_timestamp,
+	primary key(gatewayIp,routerId),
+	constraint fk_demo4GatewayState_router foreign key(routerId) references partnerRouter(routerId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE `demoAssistanceSession` (
+  sessionId INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  name VARCHAR(120) NOT NULL DEFAULT 'Community infection exercise',
+  threshold TINYINT UNSIGNED NOT NULL DEFAULT 7,
+  state ENUM('setup','active','contained','releasing','closed') NOT NULL DEFAULT 'setup',
+  controllerToken CHAR(64) NOT NULL,
+  targetIp VARCHAR(45) NOT NULL,
+  visibility ENUM('public','group') NOT NULL DEFAULT 'public',
+  groupLabel VARCHAR(120) NOT NULL DEFAULT '',
+  joinCodeHash CHAR(64) NULL,
+  containmentSeconds SMALLINT UNSIGNED NOT NULL DEFAULT 120,
+  assistanceRequestId INT UNSIGNED NULL,
+  releaseRequestId INT UNSIGNED NULL,
+  startsAt DATETIME NULL,
+  blockAt DATETIME NULL,
+  assistanceIssuedAt DATETIME NULL,
+  releaseAt DATETIME NULL,
+  closedAt DATETIME NULL,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (sessionId),
+  UNIQUE KEY uq_demo_assistance_controller (controllerToken),
+  KEY ix_demo_assistance_state (state, sessionId),
+  KEY ix_demo_assistance_visibility (visibility, state, sessionId),
+  KEY ix_demo_assistance_block (state, blockAt),
+  KEY ix_demo_assistance_release (state, releaseAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE `demoAssistanceParticipant` (
+  participantId INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  sessionId INT UNSIGNED NOT NULL,
+  participantToken CHAR(64) NOT NULL,
+  nickname VARCHAR(80) NOT NULL DEFAULT '',
+  observedIp VARCHAR(45) NOT NULL,
+  severity tinyint unsigned null default null,
+  decision enum('pending','connected','silent','recovered','left') not null default 'pending',
+  joinedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  lastSeenAt DATETIME NULL,
+  firstSilentAt DATETIME NULL,
+  recoveredAt DATETIME NULL,
+  leftAt DATETIME NULL,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (participantId),
+  UNIQUE KEY uq_demo_assistance_participant_token (participantToken),
+  KEY ix_demo_assistance_session (sessionId, participantId),
+  KEY ix_demo_assistance_seen (sessionId, lastSeenAt),
+  CONSTRAINT fk_demo_assistance_participant_session
+        FOREIGN KEY (sessionId) REFERENCES demoAssistanceSession(sessionId)
+        ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE demo4Session (
+    sessionId CHAR(32) NOT NULL,
+    tokenHash CHAR(64) NOT NULL,
+    gatewayIp INT UNSIGNED NOT NULL,
+    routerId INT NOT NULL,
+    destinationIp INT UNSIGNED NOT NULL,
+    relayIp INT UNSIGNED NOT NULL,
+    createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expiresAt DATETIME NOT NULL,
+    cleanGatewayAt DATETIME NULL,
+    infectedGatewayAt DATETIME NULL,
+    cleanWebsiteIp INT UNSIGNED NULL,
+    cleanWebsiteAt DATETIME NULL,
+    infectedWebsiteIp INT UNSIGNED NULL,
+    infectedWebsiteAt DATETIME NULL,
+    PRIMARY KEY (sessionId),
+    KEY idx_demo4_session_expiry (expiresAt),
+    KEY idx_demo4_session_gateway (gatewayIp, createdAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE demoSshIdentityProof (
+    tokenHash CHAR(64) NOT NULL PRIMARY KEY,
+    unitId INT UNSIGNED NOT NULL,
+    clientIp INT UNSIGNED NOT NULL,
+    expires DATETIME NOT NULL,
+    KEY idx_demoSshIdentityProof_expiry (expires)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE issue (
+    issueId BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    nodeIp INT UNSIGNED NOT NULL,
+    issueKey VARCHAR(255) NOT NULL,
+    discoveredAt DOUBLE NOT NULL,
+    lastSeenAt DOUBLE NOT NULL,
+    checkedAt DOUBLE NOT NULL,
+    description TEXT NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    commands TEXT NULL,
+    verification VARCHAR(64) NOT NULL,
+    blocker TEXT NULL,
+    nextActionAt DOUBLE NULL,
+    solvedAt DOUBLE NULL,
+    UNIQUE KEY idx_issue_node_key (nodeIp, issueKey),
+    KEY idx_issue_pending (status, nextActionAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE issueReport (
+    reportId BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    issueId BIGINT UNSIGNED NOT NULL,
+    eventId CHAR(64) NOT NULL,
+    reportedAt DOUBLE NOT NULL,
+    kind VARCHAR(32) NOT NULL,
+    detail TEXT NOT NULL,
+    UNIQUE KEY idx_issue_report_event (issueId, eventId),
+    KEY idx_issue_report_history (issueId, reportedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TRIGGER pendingWget_assistance_retry BEFORE UPDATE ON pendingWget FOR EACH ROW SET NEW.handled = IF(NEW.category = 'AssistanceRequest' AND NEW.reply IS NOT NULL AND TRIM(REPLACE(REPLACE(REPLACE(NEW.reply, CHAR(13), ''), CHAR(10), ''), CHAR(9), '')) <> 'ok', NULL, NEW.handled);
