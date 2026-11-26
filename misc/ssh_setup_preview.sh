@@ -78,8 +78,8 @@ if [[ $mode == --preview ]]; then
     exit 0
 fi
 
-read -r -p 'Save these choices for SSH activation? [y/N]: ' confirm || exit 1
-[[ $confirm == [yY] || $confirm == [yY][eE][sS] ]] || exit 1
+read -r -p 'Save these choices for SSH activation? [Y/n]: ' confirm || exit 1
+[[ -z $confirm || $confirm == [yY] || $confirm == [yY][eE][sS] ]] || exit 1
 
 python3 - "$google_email" "${ssh_port:-4810}" "${honeypot_range:-1000-5000}" "${allowed_sources[@]}" <<'PY'
 import ipaddress
