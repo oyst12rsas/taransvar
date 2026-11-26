@@ -14,9 +14,9 @@ resume_ssh_activation() {
     printf '\nTo resume these saved choices later, run from the checkout:\n'
     printf '  sudo bash misc/ssh_setup_preview.sh --activate\n'
     if [[ ! -f /etc/tarasec/agent-enrollment.json ]]; then
-        printf '\nSign in with your chosen Google account and generate a one-use enrollment code:\n'
-        printf '  https://tarasec.org/ops/agent/install.php\n'
-        bash "$helper_dir/install_agent_approvals.sh" --install-secret || return 1
+        local owner_email
+        owner_email=$(python3 -c 'import json; print(json.load(open("/var/lib/tarasec/ssh-install-choices.json"))["email"])') || return 1
+        bash "$helper_dir/install_agent_approvals.sh" --browser-email "$owner_email" || return 1
     fi
     printf '\nOpen Machine control and make sure this node is listed. Set up or verify your authenticator there.\n'
     printf '  https://tarasec.org/ops/agent/\n'
