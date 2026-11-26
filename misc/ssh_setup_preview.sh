@@ -72,7 +72,7 @@ if [[ $mode == --preview ]]; then
     exit 0
 fi
 
-read -r -p 'Save these choices for SSH activation and start installation? [y/N]: ' confirm || exit 1
+read -r -p 'Save these choices for SSH activation? [y/N]: ' confirm || exit 1
 [[ $confirm == [yY] || $confirm == [yY][eE][sS] ]] || exit 1
 
 python3 - "$google_email" "${ssh_port:-4810}" "${honeypot_range:-1000-5000}" "${allowed_sources[@]}" <<'PY'
@@ -110,3 +110,7 @@ with tempfile.NamedTemporaryFile(mode="w", dir=directory, delete=False) as pendi
     finally:
         Path(pending.name).unlink(missing_ok=True)
 PY
+result=$?
+(( result == 0 )) || exit "$result"
+printf '\nSSH choices saved. When Google-controlled SSH and MFA are ready, run from this checkout:\n'
+printf '  sudo python3 misc/ssh_port_setup.py --from-install\n'
