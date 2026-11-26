@@ -1323,11 +1323,27 @@ def main(argv=None):
     parser.add_argument('--mode', choices=('demo', 'production'))
     parser.add_argument('--roles', help='Comma-separated local roles: database,gateway,node')
     parser.add_argument('--review-declined', action='store_true')
+    parser.add_argument('--configure-ssh-window', action='store_true',
+                        help='Enable Google-controlled SSH access only, from the console')
     parser.add_argument('--configure-operations', action='store_true', help='Resume model/activity setup and activation of the existing operations agent only')
     parser.add_argument('--configure-activity', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--status', action='store_true', help='Read status without changing anything')
     parser.add_argument('--plan', action='store_true', help='Show applicable features without changing anything')
     args = parser.parse_args(argv)
+    if args.configure_ssh_window:
+        if any((args.enable_daily, args.interactive, args.assign_roles, args.automatic,
+                args.mode, args.roles, args.review_declined, args.configure_operations,
+                args.configure_activity, args.status, args.plan)):
+            parser.error('--configure-ssh-window must be used on its own')
+        if os.geteuid() != 0 or not sys.stdin.isatty():
+            parser.error('Run --configure-ssh-window with sudo from the independent console')
+        STATE.parent.mkdir(parents=True, exist_ok=True)
+        with (STATE.parent / 'upgrade.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if not ssh_window_current():
+                stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
+                apply_feature('ssh-window', STATE.parent / 'backups' / stamp)
+        return 0
     state = load_state()
     roles = args.roles.split(',') if args.roles else (state.get('roles') or detect_roles())
     if not roles or any(r not in ROLES for r in roles): parser.error('Invalid roles')
