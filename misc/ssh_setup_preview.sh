@@ -109,7 +109,7 @@ if [[ ${2:-} != --configure && -t 1 && -n ${TERM:-} ]]; then
 fi
 
 printf 'TaraSec · SSH protection on %s\n\n' "$(hostname)"
-if [[ ${2:-} != --configure ]]; then
+if [[ $mode == --preview ]]; then
     printf '  1) Configure SSH protection\n'
     printf '  2) Skip SSH protection for now\n\n'
 
