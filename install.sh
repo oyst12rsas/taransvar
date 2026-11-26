@@ -116,20 +116,6 @@ rsync -a --exclude '.git' misc/ /root/taransvar/perl/
 echo "Copying (rsync) html files..."
 rsync -a --exclude '.git' html/ /var/www/html/
 
-printf "\nWe're now about to do network installation.\n\nIf you know how to set this up youself, then you probably want to skip this.\n\n"
-read -p "Do you want to run network installation script? (y/n): " answer
-
-if [[ "$answer" == "y" || "$answer" == "Y" ]]; then
-    echo "Running network installation..."
-    sleep 5
-    (
-        cd misc
-        perl setup_network.pl
-    )
-else
-    echo "Skipping network installation."
-fi
-
 (
     cd misc
     perl compile.pl install
