@@ -169,7 +169,7 @@ printf '\nTaraSec installation complete.\n'
 if [[ -t 0 ]] &&
     read -r -p 'Set up SSH protection now? [y/N]: ' ssh_setup_answer &&
     [[ $ssh_setup_answer == [yY] || $ssh_setup_answer == [yY][eE][sS] ]]; then
-    if bash "$SCRIPT_DIR/misc/ssh_setup_preview.sh" --stage; then
+    if bash "$SCRIPT_DIR/misc/ssh_setup_preview.sh" --stage --configure; then
         exit 0
     fi
     printf '\nSSH setup did not finish.\n' >&2
