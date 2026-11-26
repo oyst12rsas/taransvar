@@ -13,10 +13,21 @@ CHAIN = 'TARASEC_SSH_DECOY'
 SETS = {4: 'tarasec_ssh_real4', 6: 'tarasec_ssh_real6'}
 
 
+class DecoyCommandError(RuntimeError):
+    def __init__(self, tool, result):
+        super().__init__('SSH decoy policy command failed; inspect locally with administrator access')
+        self.tool = tool
+        self.status = result.returncode
+        self.detail = result.stderr.strip()[:600] if tool in (
+            'ipset', 'iptables', 'ip6tables', 'iptables-restore', 'ip6tables-restore',
+            'iptables-save', 'ip6tables-save',
+        ) else ''
+
+
 def run(*args, check=True, input=None):
     result = subprocess.run(args, input=input, text=True, capture_output=True, timeout=20)
     if check and result.returncode:
-        raise RuntimeError('SSH decoy policy command failed; inspect locally with administrator access')
+        raise DecoyCommandError(args[0], result)
     return result
 
 
