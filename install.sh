@@ -67,9 +67,21 @@ perl -MCPAN -e "URI"
 perl -MCPAN -e "LWP"
 
 printf "Installing the database\n"
-printf "The install routine may now generate some error message while trying to create DB user.\n"
-mysql -e "create database taransvar;"
+mariadb -e 'CREATE DATABASE IF NOT EXISTS taransvar' || exit 1
+table_count=$(mariadb -NBe "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'taransvar'") || exit 1
+if [[ $table_count == 0 ]]; then
+    mariadb taransvar < db/taransvar.sql || exit 1
+    mariadb taransvar < db/postcreate.sql || exit 1
+fi
+expected_version=$(awk '/^#version[[:space:]]+[0-9]+/ { if ($2 > max) max = $2 } END { print max }' misc/install.sql) || exit 1
+installed_version=$(mariadb -NB taransvar -e 'SELECT dbVersion FROM setup') || exit 1
+if [[ ! $expected_version =~ ^[0-9]+$ || $installed_version != "$expected_version" ]]; then
+    printf 'TaraSec schema is %s, but this checkout requires %s. Existing tables were kept.\n' \
+        "$installed_version" "$expected_version" >&2
+    exit 1
+fi
 
+printf "The install routine may now generate some error message while trying to create DB user.\n"
 (
     cd misc
     perl createUsers.pl
@@ -106,8 +118,6 @@ if ! grep -q startup.pl "/var/spool/cron/crontabs/root" ; then
 fi
 service cron reload
 
-mariadb taransvar < db/taransvar.sql
-mariadb taransvar < db/postcreate.sql
 
 echo "Database created. Copying files/"
 mkdir -p /root/taransvar/perl
