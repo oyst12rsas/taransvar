@@ -358,11 +358,11 @@ def feature_guidance(name, root=Path('/')):
             print('Open the approvals page in your browser: ' + urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rsplit('/', 1)[0] + '/', '', '')))
         else:
             print('Find your approval service URL in AGENT_APPROVAL_URL in /etc/tarasec-server-manager.conf.')
-        print('Sign in with the enrolled Google account and authenticator (TOTP), then select this nickname and approve a temporary SSH opening.')
+        print('Before enabling, sign in with the enrolled Google account, select this node, and make sure your authenticator is set up.')
         print('Google sign-in alone does not open SSH. Keep a working VM/hypervisor or physical console open for recovery.')
         print('A console is independent of SSH: for a VM, open its console in the hypervisor. Keep it open while testing.')
-        print('After enabling, test a NEW SSH connection while closed, after an approved opening, and after expiry.')
-        print('Only type VERIFIED after checking the Google/TOTP flow and console access. Otherwise choose no or press Ctrl+C.')
+        print('The opening button is disabled until this step enables the SSH gate and the node reports its new state.')
+        print('Type VERIFIED after checking your authenticator and independent console access. You will test the SSH opening after enabling.')
     elif name == 'honeypot':
         print('An existing setup is refreshed without changing administrator SSH ports or firewall rules.')
         print('Only an actual port migration changes SSH and arms a recovery timer.')
@@ -1114,7 +1114,7 @@ def apply_feature(name, directory, allow_enrollment=False, configure_activity=Fa
             raise ValueError('Complete Google enrollment first')
         if os.environ.get('SSH_CONNECTION') or os.environ.get('SSH_TTY'):
             raise ValueError('Enable SSH closure from the independent console, not an SSH session')
-        confirm_verified('Confirm Google/TOTP opening AND independent console recovery', lambda: feature_guidance('ssh-window'))
+        confirm_verified('Confirm authenticator setup AND independent console recovery', lambda: feature_guidance('ssh-window'))
         policy = Path('/etc/tarasec-server-manager.conf')
         backup(policy, directory)
         set_setting(policy, 'SSH_GOOGLE_REOPEN_ENABLED', 'yes')
@@ -1342,7 +1342,11 @@ def main(argv=None):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             if not ssh_window_current():
                 stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
-                apply_feature('ssh-window', STATE.parent / 'backups' / stamp)
+                try:
+                    apply_feature('ssh-window', STATE.parent / 'backups' / stamp)
+                except FeaturePostponed as error:
+                    print(error)
+                    return 1
         return 0
     state = load_state()
     roles = args.roles.split(',') if args.roles else (state.get('roles') or detect_roles())
