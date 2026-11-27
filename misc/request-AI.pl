@@ -186,10 +186,14 @@ sub requestAssessment {
         "select inet_ntoa(st.src_ip) source_ip,count(distinct st.dst_ip) distinct_targets,count(*) threat_records,sum(st.`count`) occurrences,max(coalesce(st.severity,0)) max_severity from syslogThreat st left join partnerRouter pr on pr.ip=st.src_ip where unix_timestamp(coalesce(st.lastSeen,st.created)) > unix_timestamp(now())-? and (st.owner_id is null or coalesce(st.confirmed_unit_id,st.unit_id) is null) and pr.ip is null group by st.src_ip having count(distinct st.dst_ip)>=? order by distinct_targets desc limit $nMaxRowsPerSection",
         [$cutoff,$nMinimumIpsVisited], qw(source_ip distinct_targets threat_records occurrences max_severity));
 
-    add_query_section($dbh, \$logs, 'timed observations for demo correlation (bounded sample)',
-        'event_id,owner_id,unit_id,source_ip,dst_ip,dst_port,first_seen,last_seen,occurrences,demo_session_id',
-        "SELECT syslogThreatId event_id,owner_id,COALESCE(confirmed_unit_id,unit_id) unit_id,INET_NTOA(src_ip) source_ip,INET_NTOA(dst_ip) dst_ip,dst_port,created first_seen,COALESCE(lastSeen,created) last_seen,`count` occurrences,demoSshSessionId demo_session_id FROM syslogThreat WHERE unix_timestamp(COALESCE(lastSeen,created))>unix_timestamp(now())-? ORDER BY COALESCE(lastSeen,created) DESC LIMIT $nMaxRowsPerSection",
-        [$cutoff], qw(event_id owner_id unit_id source_ip dst_ip dst_port first_seen last_seen occurrences demo_session_id));
+    # Grouped in SQL: identical observations differ only by id and time, and
+    # the newest-500-rows sample covered hours, not the 30-day window. Each
+    # group keeps its time range, record/occurrence counts and up to 5 event
+    # ids, so demo evidence ids can still be matched.
+    add_query_section($dbh, \$logs, 'grouped observations for demo correlation (identical id/time-masked events merged)',
+        'owner_id,unit_id,source_ip,dst_ip,dst_port,demo_session_id,records,occurrences,first_seen,last_seen,event_ids',
+        "SELECT owner_id,COALESCE(confirmed_unit_id,unit_id) unit_id,INET_NTOA(src_ip) source_ip,INET_NTOA(dst_ip) dst_ip,dst_port,demoSshSessionId demo_session_id,COUNT(*) records,SUM(COALESCE(`count`,1)) occurrences,MIN(created) first_seen,MAX(COALESCE(lastSeen,created)) last_seen,SUBSTRING_INDEX(GROUP_CONCAT(syslogThreatId ORDER BY syslogThreatId DESC SEPARATOR '|'),'|',5) event_ids FROM syslogThreat WHERE unix_timestamp(COALESCE(lastSeen,created))>unix_timestamp(now())-? GROUP BY owner_id,COALESCE(confirmed_unit_id,unit_id),src_ip,dst_ip,dst_port,demoSshSessionId ORDER BY records DESC,last_seen DESC LIMIT $nMaxRowsPerSection",
+        [$cutoff], qw(owner_id unit_id source_ip dst_ip dst_port demo_session_id records occurrences first_seen last_seen event_ids));
 
     # Completed sessions still explain observations inside their original window.
     my $demoTables = $dbh->selectall_arrayref("SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('demoSshSession','demoSshSetup','demoSshNodeB')");
