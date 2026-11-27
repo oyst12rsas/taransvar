@@ -51,6 +51,16 @@ class ForwarderTests(unittest.TestCase):
             self.assertNotRegex(code, r'\b514\b', path)
             self.assertIn('Sys::Syslog', code, path)
 
+    def test_upgrade_refreshes_forwarder_when_template_changes(self):
+        # setup_ssh_honeypot.sh --refresh-only re-renders the forwarder, so a
+        # template change must mark the honeypot component as changed.
+        import sys
+        sys.path.insert(0, str(ROOT / 'misc'))
+        import managed_upgrade
+        paths = managed_upgrade.PATHS['honeypot']
+        self.assertIn('misc/rsyslog/30-tarasec-forward.conf.example', paths)
+        self.assertIn('misc/setup_backoffice_ai.sh', paths)
+
     def test_cowrie_ident_matches_forwarder(self):
         self.assertRegex(COWRIE.read_text(), r'\$SYSLOG_IDENT\s*=\s*"cowrie"')
 
