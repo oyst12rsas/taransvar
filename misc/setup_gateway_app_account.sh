@@ -6,7 +6,15 @@ repo_dir="$(cd "$(dirname "$0")/.." && pwd)"
 for tool in php mysql systemctl; do command -v "$tool" >/dev/null; done
 for file in html/script/unitLinkCommon.php html/script/nodePublicMetadata.php html/script/gatewayAppLinkCommon.php html/script/unitGatewayLink.php misc/gateway_app_poll.php; do php -l "$repo_dir/$file"; done
 config=/etc/tarasec/unit-link.php
-[[ -f $config && -f /var/www/html/dbfunc.php ]] || { echo 'Install the existing hosted account/linking configuration first.' >&2; exit 1; }
+[[ -f /var/www/html/dbfunc.php ]] || { echo 'Install the TaraSec web files first (misc/deploy_web.sh).' >&2; exit 1; }
+if [[ ! -f $config ]]; then
+    # Fresh node: create the stable gateway identity and subject key. Existing
+    # nodes keep theirs, so already linked apps stay valid.
+    [[ -d /etc/tarasec ]] || install -d -m 0750 -o root -g www-data /etc/tarasec
+    (umask 0027; php -r '$c=["gateway_id"=>bin2hex(random_bytes(16)),"subject_key"=>bin2hex(random_bytes(32))]; file_put_contents($argv[1],"<?php\nreturn ".var_export($c,true).";\n");' "$config")
+    chown root:www-data "$config"; chmod 0640 "$config"
+    echo "Created a new node identity in $config."
+fi
 php -r 'require $argv[2]; $c=require $argv[3]; $c["mode"]="hosted_gateway"; $c["transport"]="account_service"; $c["base_url"]=rtrim($argv[1],"/"); unitLinkValidateConfig($c);' "$1" "$repo_dir/html/script/unitLinkCommon.php" "$config"
 backup=$(mktemp -d /var/backups/tarasec-app-account.XXXXXX)
 cp -a "$config" "$backup/unit-link.php"
@@ -59,7 +67,7 @@ if systemctl cat tarasec-unit-link-transport.timer >/dev/null 2>&1; then
     systemctl stop tarasec-unit-link-transport.service
 fi
 # Remove only the old rule at its previous configured destination/interface/port.
-readarray -t old < <(php -r '$c=require $argv[1]; $u=parse_url($c["base_url"]); foreach([$u["host"],$u["port"]??80,$c["netbird_interface"]??""] as $v) echo $v,"\n";' "$backup/unit-link.php")
+readarray -t old < <(php -r '$c=require $argv[1]; $u=parse_url($c["base_url"]??"") ?: []; foreach([$u["host"]??"",$u["port"]??80,$c["netbird_interface"]??""] as $v) echo $v,"\n";' "$backup/unit-link.php")
 if [[ -n ${old[2]} ]]; then
     command -v iptables >/dev/null
     while iptables -C INPUT -d "${old[0]}" -p tcp --dport "${old[1]}" ! -i "${old[2]}" -j REJECT 2>/dev/null; do
