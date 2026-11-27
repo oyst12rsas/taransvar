@@ -38,6 +38,7 @@
     "gatekeeper": "ready",
     "google": "ready",
     "honeypot": "ready",
+    "manager-requests": "ready",
     "operations": "being_tested",
     "tarakernel": "requires_local_testing",
     "ssh-key": "requires_manual_installation",

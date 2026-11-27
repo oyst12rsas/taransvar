@@ -181,6 +181,37 @@ class ManagedTests(unittest.TestCase):
         self.assertIn('database',selected);self.assertIn('gatekeeper',selected)
 
 
+    def test_manager_requests_is_planned_only_where_a_local_database_exists(self):
+        self.release['managed_tasks']['manager-requests']='ready'
+        selected,skipped=m.feature_plan(self.policy,self.release,'fleet')
+        self.assertNotIn('manager-requests',selected)
+        self.assertNotIn('manager-requests',[task['component'] for task in skipped])
+        self.policy['roles']=['database','node']
+        selected,_=m.feature_plan(self.policy,self.release,'fleet')
+        self.assertIn('manager-requests',selected)
+        self.assertLess(selected.index('runtime'),selected.index('manager-requests'))
+
+    def test_manager_requests_adapter_runs_installer_after_prerequisites(self):
+        u=types.SimpleNamespace(REPO=self.root)
+        with patch.object(m.Path,'exists',return_value=False),patch.object(m,'run') as run:
+            with self.assertRaises(m.Prerequisite): m.apply_component('manager-requests',u,self.policy,self.root/'backup')
+            run.assert_not_called()
+        with patch.object(m.Path,'exists',return_value=True),patch.object(m.Path,'is_file',return_value=True),patch.object(m,'run') as run:
+            m.apply_component('manager-requests',u,self.policy,self.root/'backup')
+            run.assert_called_once_with(['bash',self.root/'misc/setup_manager_requests.sh'])
+
+    def test_manager_requests_health_needs_worker_and_active_timer(self):
+        u=types.SimpleNamespace()
+        with patch.object(m.Path,'is_file',return_value=True),patch.object(m,'active',return_value=False):
+            self.assertFalse(m.healthy('manager-requests',u,self.policy))
+        with patch.object(m.Path,'is_file',return_value=True),patch.object(m,'active',return_value=True) as active:
+            self.assertTrue(m.healthy('manager-requests',u,self.policy))
+            active.assert_called_with('tarasec-manager-requests.timer')
+
+    def test_release_catalog_lists_manager_requests(self):
+        release=json.loads((Path(__file__).resolve().parents[1]/'release.json').read_text())
+        self.assertEqual(release['managed_tasks'].get('manager-requests'),'ready')
+
     def test_archive_rejects_unrelated_source_revision(self):
         with patch.object(m,'git',side_effect=RuntimeError('Not an ancestor')):
             with self.assertRaises(RuntimeError):m.export_release(self.policy,'b'*40,self.root)
