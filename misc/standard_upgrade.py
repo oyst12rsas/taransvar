@@ -1094,6 +1094,7 @@ def apply_feature(name, directory, allow_enrollment=False, configure_activity=Fa
             raise ValueError('Gatekeeper is not installed; complete initial installation first')
         backup(target, directory)
         copy_tree(REPO / 'html', target, ('dbfunc.php',))
+        run(['bash', REPO / 'misc/remove_apache_default_page.sh', target])
         run(['php', '-l', target / 'deploymentMode.php'])
         import grp
         rollout = Path('/var/lib/tarasec-rollout')

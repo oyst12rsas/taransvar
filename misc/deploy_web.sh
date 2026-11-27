@@ -15,6 +15,7 @@ sudo mkdir -p "$DST"
 # Copy the complete web tree, including nested script/, gatekeeper/, ajax/, etc.
 # The old 'cp ../html/*.* /var/www/html' pattern copied only top-level files.
 sudo cp -a "$SRC"/. "$DST"/
+sudo bash "$REPO_ROOT/misc/remove_apache_default_page.sh" "$DST"
 
 critical=(
   "$DST/script/managerAuth.php"
