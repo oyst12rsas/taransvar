@@ -4,7 +4,7 @@ set -euo pipefail
 [[ $# -eq 1 ]] || { echo 'Usage: sudo bash misc/setup_gateway_app_account.sh NODE_ORIGIN' >&2; exit 2; }
 repo_dir="$(cd "$(dirname "$0")/.." && pwd)"
 for tool in php mysql systemctl; do command -v "$tool" >/dev/null; done
-for file in html/script/unitLinkCommon.php html/script/nodePublicMetadata.php html/script/gatewayAppLinkCommon.php html/script/unitGatewayLink.php misc/gateway_app_poll.php; do php -l "$repo_dir/$file"; done
+for file in html/gatekeeper/google_local_managers.php html/script/unitLinkCommon.php html/script/nodePublicMetadata.php html/script/gatewayAppLinkCommon.php html/script/unitGatewayLink.php misc/gateway_app_poll.php; do php -l "$repo_dir/$file"; done
 config=/etc/tarasec/unit-link.php
 [[ -f /var/www/html/dbfunc.php ]] || { echo 'Install the TaraSec web files first (misc/deploy_web.sh).' >&2; exit 1; }
 if [[ ! -f $config ]]; then
@@ -21,7 +21,8 @@ cp -a "$config" "$backup/unit-link.php"
 cp -a /var/www/html/script "$backup/script"
 [[ ! -f /usr/local/lib/tarasec/unit_link_transport_guard.sh ]] || cp -a /usr/local/lib/tarasec/unit_link_transport_guard.sh "$backup/"
 mysql taransvar < "$repo_dir/misc/gateway_app_link.sql"
-install -d -m 0755 /usr/local/share/tarasec/gateway-app/html/script /usr/local/share/tarasec/gateway-app/misc
+install -d -m 0755 /usr/local/share/tarasec/gateway-app/html/script /usr/local/share/tarasec/gateway-app/html/gatekeeper /usr/local/share/tarasec/gateway-app/misc
+install -m 0644 "$repo_dir/html/gatekeeper/google_local_managers.php" /usr/local/share/tarasec/gateway-app/html/gatekeeper/
 for name in unitLinkCommon unitLinkRequestCommon gatewayAppLinkCommon serviceDiscoveryCommon nodePublicMetadata; do
     install -m 0644 "$repo_dir/html/script/$name.php" /var/www/html/script/
     install -m 0644 "$repo_dir/html/script/$name.php" /usr/local/share/tarasec/gateway-app/html/script/

@@ -3,6 +3,7 @@ declare(strict_types=1);
 // This separate, read-only web projection is written only by root enrollment.
 // Never expose the agent token or the root-only SSH policy to the web process.
 function gatekeeperLocalManager(string $email, string $path = '/etc/tarasec/gatekeeper-managers.json'): bool {
+    clearstatcache(true, $path); // never trust a cached owner/mode in long-running processes
     if (is_link($path)) return false;
     $info = @stat($path);
     if (!$info || $info['uid'] !== 0 || ($info['mode'] & 0022) !== 0 || $info['size'] > 16384) return false;

@@ -17,10 +17,12 @@ anchor.
 In **My units → Link a node**, enter its address, sign in to the selected account
 service and choose **Request app link**. Open or copy the HTTPS approval URL to
 any browser. The administrator signs in with a freshly verified Google email and
-checks the matching code. The node checks that email against its current local
-`user.username` and `isAdmin` permission before approving, so the node needs a
-local administrator whose username is that Google email. Without one, every
-approval is refused. An ordinary Google login
+checks the matching code. The node approves when that email is one of its enrolled
+Google managers: the same list (`/etc/tarasec/gatekeeper-managers.json`, written by
+root from the node's access policy) that Gatekeeper's Google login and the SSH gate
+use. No separate local account is needed. On nodes without Google enrollment, a
+local administrator whose `user.username` is that email and has `isAdmin` is
+accepted instead. An ordinary Google login
 or LAN connection does not grant access. If the administrator uses a password-only
 local account, configure its username as the matching verified Google email before
 using this hosted approval flow; password login remains separate.
