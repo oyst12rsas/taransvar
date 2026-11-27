@@ -225,6 +225,16 @@ sub agentStatusForReport {
 	return $value;
 }
 
+sub statusDeploymentMode {
+	my ($szPath) = @_;
+	$szPath //= "/etc/tarasec-deployment-mode";
+	open(my $fh, "<", $szPath) or return "";
+	my $mode = <$fh> // "";
+	close($fh);
+	$mode =~ s/^\s+|\s+$//g;
+	return lc($mode);
+}
+
 sub configuredNodeGatewayRole {
 	my ($szConfig) = @_;
 	$szConfig //= "/etc/tarasecfw.conf";
@@ -433,6 +443,19 @@ sub reportStatus {
 		}
 	}
 
+	# SSH login controls still missing on this node (read-only, cached 5 min).
+	my $sshControlsPath = __FILE__;
+	$sshControlsPath =~ s{[^/]+$}{ssh_controls_status.py};
+	if (-f $sshControlsPath && open(my $sshPipe, "-|", "/usr/bin/python3", $sshControlsPath)) {
+		local $/;
+		my $sshText = <$sshPipe>;
+		if (close($sshPipe)) {
+			my $ssh = eval { JSON::decode_json($sshText) };
+			$json{"sshCtl"} = { missing => $ssh->{"missing_labels"}, checked => $ssh->{"checked_at"} }
+				if ref($ssh) eq "HASH" && ref($ssh->{"missing_labels"}) eq "ARRAY";
+		}
+	}
+
 	#Find seconds since the last dmesg was logged.
 	my $szSQL = "select TIMESTAMPDIFF(SECOND, created, NOW()) AS seconds_since from dmesg order by dmesgId desc limit 1";
 	my $sth = $dbh->prepare($szSQL);
@@ -584,6 +607,10 @@ sub reportStatus {
 	}
 	$sthSessionScans->finish();
 
+	# The local Gatekeeper always sees SSH control gaps. Outside demo mode they
+	# stay on the unit and are not sent to DB servers.
+	my $cLocalJson = encode_json(\%json);
+	delete $json{"sshCtl"} unless statusDeploymentMode() eq "demo";
 	my $cJson = encode_json(\%json);
 	print "Status: $cJson\n";
 	my $szReply;
@@ -678,7 +705,7 @@ sub reportStatus {
 
 	$szSQL = "update setup set networkStatus = ?, networkStatusChecked = now()";
 	$sthSetup = $dbh->prepare($szSQL) or die "prepare statement failed: $dbh->errstr()";
-	$sthSetup->execute($cJson) or die "execution failed: $sthSetup->errstr()";
+	$sthSetup->execute($cLocalJson) or die "execution failed: $sthSetup->errstr()";
 	print "Status stored in setup table\n";
 }
 
