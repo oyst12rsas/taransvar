@@ -1066,6 +1066,9 @@ def apply_feature(name, directory, allow_enrollment=False, configure_activity=Fa
         reporter = target / 'crontasks.pl'
         atomic(reporter, patched_source(reporter.read_text()), 0o644)
         run(['bash', REPO / 'misc/install_upgrade_monitor.sh'])
+        # The manager SSH timer runs a separate installed copy; refresh it when present.
+        if Path('/usr/local/share/tarasec/manager-ssh/misc/manager_ssh_worker.php').exists():
+            run(['bash', REPO / 'misc/setup_manager_ssh.sh', '--refresh-only'])
     elif name == 'taralink':
         target = Path('/usr/local/sbin/taralink')
         if not target.exists() or subprocess.run(['systemctl', 'cat', '--quiet', 'taralink.service']).returncode:
