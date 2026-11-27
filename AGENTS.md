@@ -2,6 +2,8 @@
 
 Read `AI_TRAINING.md` for project context and `AI_INSTALL_GUIDE.md` for deployment details.
 
+Several AI sessions (Claude Code and Codex) work on this repository from different hosts. Before starting work, read `docs/CLAUDE_COLLABORATION.md` and follow its channels, branch naming and rules.
+
 ## Deployment hardening and shared improvements
 
 The node belongs to its owner, not TaraSec. The owner's authorization and local policy govern changes on that node; TaraSec team endorsement is a separate matter. Do not require team approval for owner-authorized local improvements. For an AI recommendation whose team review cannot be verified, state: "Recommended by AI; not yet reviewed or authorized by the TaraSec team." Explain the evidence, expected effect, verification and recovery plan. This label is disclosure, not an additional approval gate. Never represent an owner-specific change as a team-endorsed default. Contribute verified improvements for shared review; changing shared defaults or merging still follows the repository's authorized workflow.
