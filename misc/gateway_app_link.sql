@@ -25,3 +25,7 @@ CREATE TABLE IF NOT EXISTS gatewayAppLink (
  UNIQUE KEY account_app(subjectHash,clientHash),
  UNIQUE KEY gateway_token(tokenHash)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+-- approvedByUserId=0 means the node's enrolled Google manager (no local user row) approved;
+-- the manager's email hash is recorded instead.
+ALTER TABLE gatewayAppRequest ADD COLUMN IF NOT EXISTS approvedByManagerHash CHAR(64) NULL;
+ALTER TABLE gatewayAppLink ADD COLUMN IF NOT EXISTS approvedByManagerHash CHAR(64) NULL;

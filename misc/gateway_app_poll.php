@@ -4,6 +4,8 @@ if (PHP_SAPI!=='cli') { http_response_code(404); exit; }
 require_once __DIR__.'/../html/script/gatewayAppLinkCommon.php';
 require_once __DIR__.'/../html/script/nodePublicMetadata.php';
 require_once __DIR__.'/../html/dbfunc.php';
+// Same root-written Google manager list that Gatekeeper's Google login uses.
+require_once __DIR__.'/../html/gatekeeper/google_local_managers.php';
 function gatewayAccountCall(array $cfg,array $extra=[]): array {
     $provider=taraAccountServices()['identity_api_base'];
     $body=['action'=>'node_poll','service_node_id'=>unitServiceNodeId($cfg),'node_secret'=>unitServiceNodeSecret($cfg),'gateway_id'=>$cfg['gateway_id'],'node_label'=>substr(gethostname() ?: 'TaraSec node',0,100)]+$extra;
@@ -28,13 +30,22 @@ function gatewayApplyHosted(mysqli $db,array $cfg,array $r): string {
         return $local && $local['decision']==='approved' && $active?'approved':'revoked';
     }
     if ($r['state']!=='decision') return 'rejected';
-    $q=unitLinkQuery($db,'SELECT userId FROM user WHERE LOWER(username)=? AND CAST(isAdmin AS UNSIGNED)=1 LIMIT 2',[strtolower((string)($r['adminEmail'] ?? ''))]);
-    $admins=$q->get_result()->fetch_all(MYSQLI_ASSOC); $q->close();
-    if (count($admins)!==1) return 'rejected';
+    // The node's managers are the Google accounts enrolled for it (the same list
+    // Gatekeeper's Google login and the SSH gate use). A local password admin
+    // whose username is the email is still accepted for nodes without enrollment.
+    $email=(string)($r['adminEmail'] ?? '');
+    if (gatekeeperLocalManager($email, defined('TARA_GATEKEEPER_MANAGERS') ? TARA_GATEKEEPER_MANAGERS : '/etc/tarasec/gatekeeper-managers.json')) {
+        $admin=0;
+    } else {
+        $q=unitLinkQuery($db,'SELECT userId FROM user WHERE LOWER(username)=? AND CAST(isAdmin AS UNSIGNED)=1 LIMIT 2',[strtolower($email)]);
+        $admins=$q->get_result()->fetch_all(MYSQLI_ASSOC); $q->close();
+        if (count($admins)!==1) return 'rejected';
+        $admin=(int)$admins[0]['userId'];
+    }
     if (!$local) {
         $q=unitLinkQuery($db,'INSERT INTO gatewayAppRequest(requestId,gatewayId,provider,subjectHash,clientHash,confirmationCode,expiresAt) VALUES(?,?,?,?,?,?,?)',[$id,$cfg['gateway_id'],$provider,$hash,$client,$r['confirmationCode'],$r['expiresAt']]); $q->close();
     }
-    try { gatewayAppDecide($db,$cfg,$id,(int)$admins[0]['userId'],true,(string)$r['adminEmail']); return 'approved'; }
+    try { gatewayAppDecide($db,$cfg,$id,$admin,true,(string)$r['adminEmail']); return 'approved'; }
     catch(UnitLinkException $e) { return 'rejected'; }
 }
 if (realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? ''))===__FILE__) {

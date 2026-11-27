@@ -29,19 +29,31 @@ function gatewayAppDecide(mysqli $db,array $cfg,string $id,int $admin,bool $appr
     if (!preg_match('/^[a-f0-9]{32}$/D',$id)) throw new UnitLinkException('Invalid app-link request.');
     $db->begin_transaction();
     try {
-        // Serialize against administrator demotion while making the decision.
-        $sql='SELECT userId FROM user WHERE userId=? AND CAST(isAdmin AS UNSIGNED)=1'; $values=[$admin];
-        if ($adminEmail!==null) { $sql.=' AND LOWER(username)=?'; $values[]=strtolower($adminEmail); }
-        $q=unitLinkQuery($db,$sql.' FOR UPDATE',$values);
-        $authorized=$q->get_result()->fetch_assoc(); $q->close();
-        if (!$authorized) throw new UnitLinkException('Gateway administrator login required.');
+        $managerHash=null;
+        if ($admin===0) {
+            // Enrolled Google manager (no local user row). The root-written manager
+            // list is checked again here, so removing the owner stops new approvals.
+            if ($adminEmail===null || !function_exists('gatekeeperLocalManager')
+                || !gatekeeperLocalManager($adminEmail, defined('TARA_GATEKEEPER_MANAGERS') ? TARA_GATEKEEPER_MANAGERS : '/etc/tarasec/gatekeeper-managers.json'))
+                throw new UnitLinkException('Gateway administrator login required.');
+            $managerHash=hash('sha256',strtolower(trim($adminEmail)));
+        } else {
+            // Serialize against administrator demotion while making the decision.
+            $sql='SELECT userId FROM user WHERE userId=? AND CAST(isAdmin AS UNSIGNED)=1'; $values=[$admin];
+            if ($adminEmail!==null) { $sql.=' AND LOWER(username)=?'; $values[]=strtolower($adminEmail); }
+            $q=unitLinkQuery($db,$sql.' FOR UPDATE',$values);
+            $authorized=$q->get_result()->fetch_assoc(); $q->close();
+            if (!$authorized) throw new UnitLinkException('Gateway administrator login required.');
+        }
         $q=unitLinkQuery($db,"SELECT * FROM gatewayAppRequest WHERE requestId=? AND decision='pending' AND expiresAt>NOW() FOR UPDATE",[$id]);
         $r=$q->get_result()->fetch_assoc(); $q->close();
         if (!$r || $r['gatewayId']!==$cfg['gateway_id'] || $r['provider']!==taraAccountServices()['identity_api_base']) throw new UnitLinkException('App-link request expired, changed or already decided.');
         if ($approve) {
             $q=unitLinkQuery($db,"INSERT INTO gatewayAppLink(gatewayId,provider,subjectHash,clientHash,approvedByUserId) VALUES(?,?,?,?,?) ON DUPLICATE KEY UPDATE gatewayId=VALUES(gatewayId),provider=VALUES(provider),active=b'1',approvedByUserId=VALUES(approvedByUserId),tokenHash=NULL,expiresAt=NULL",[$cfg['gateway_id'],$r['provider'],$r['subjectHash'],$r['clientHash'],$admin]); $q->close();
+            if ($managerHash!==null) { $q=unitLinkQuery($db,'UPDATE gatewayAppLink SET approvedByManagerHash=? WHERE subjectHash=? AND clientHash=?',[$managerHash,$r['subjectHash'],$r['clientHash']]); $q->close(); }
         }
         $q=unitLinkQuery($db,'UPDATE gatewayAppRequest SET decision=?,decidedAt=NOW(),approvedByUserId=? WHERE requestId=?',[$approve?'approved':'rejected',$admin,$id]); $q->close();
+        if ($managerHash!==null) { $q=unitLinkQuery($db,'UPDATE gatewayAppRequest SET approvedByManagerHash=? WHERE requestId=?',[$managerHash,$id]); $q->close(); }
         $db->commit();
     } catch (Throwable $e) { $db->rollback(); throw $e; }
 }

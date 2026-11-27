@@ -17,8 +17,12 @@ anchor.
 In **My units → Link a node**, enter its address, sign in to the selected account
 service and choose **Request app link**. Open or copy the HTTPS approval URL to
 any browser. The administrator signs in with a freshly verified Google email and
-checks the matching code. The node checks that email against its current local
-`user.username` and `isAdmin` permission before approving. An ordinary Google login
+checks the matching code. The node approves when that email is one of its enrolled
+Google managers: the same list (`/etc/tarasec/gatekeeper-managers.json`, written by
+root from the node's access policy) that Gatekeeper's Google login and the SSH gate
+use. No separate local account is needed. On nodes without Google enrollment, a
+local administrator whose `user.username` is that email and has `isAdmin` is
+accepted instead. An ordinary Google login
 or LAN connection does not grant access. If the administrator uses a password-only
 local account, configure its username as the matching verified Google email before
 using this hosted approval flow; password login remains separate.
@@ -45,7 +49,9 @@ prevent acknowledgement retries from restoring revoked grants.
    for the browser approval endpoint.
 3. Node: update `taransvar`; run
    `sudo bash misc/setup_gateway_app_account.sh http://NODE_ADDRESS` (or its HTTPS
-   origin). The installer preserves installed DB credentials, gateway ID and key,
+   origin). On a fresh node it creates the gateway ID and subject key in
+   `/etc/tarasec/unit-link.php`; no earlier linking setup is needed. The
+   installer preserves installed DB credentials, gateway ID and key,
    backs up affected files, installs the worker and verifies HTTPS registration.
    It then disables the obsolete transport timer and removes only its exact HTTP
    reject rule. Existing owner INPUT/SSH policy remains responsible for reachability.
