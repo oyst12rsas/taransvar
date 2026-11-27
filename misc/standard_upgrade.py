@@ -1066,6 +1066,8 @@ def apply_feature(name, directory, allow_enrollment=False, configure_activity=Fa
         reporter = target / 'crontasks.pl'
         atomic(reporter, patched_source(reporter.read_text()), 0o644)
         run(['bash', REPO / 'misc/install_upgrade_monitor.sh'])
+        # Move the launcher off a user-writable checkout so automatic upgrades can run.
+        run(['bash', REPO / 'misc/setup_upgrade_source.sh', REPO])
     elif name == 'taralink':
         target = Path('/usr/local/sbin/taralink')
         if not target.exists() or subprocess.run(['systemctl', 'cat', '--quiet', 'taralink.service']).returncode:

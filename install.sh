@@ -158,10 +158,9 @@ echo "Next: review and verify your node security at https://tarasec.org/safety/#
 echo "Hardening priorities: https://tarasec.org/safety/#hardening-priorities"
 echo "Ask your AI assistant to check the next missing control, test it and fix in-scope routine failures."
 
-# Keep upgrade orchestration in this checkout; future changes use one command.
-if [[ ! -e /usr/local/sbin/tarasec && ! -L /usr/local/sbin/tarasec ]]; then
-    ln -s "$SCRIPT_DIR/tarasec" /usr/local/sbin/tarasec || exit 1
-fi
+# Upgrades run as root from a root-owned checkout so the operations agent may
+# apply them; a home-directory checkout gets a root-owned clone in /opt/tarasec/src.
+bash "$SCRIPT_DIR/misc/setup_upgrade_source.sh" "$SCRIPT_DIR" || exit 1
 echo 'Future updates: sudo tarasec upgrade'
 
 
