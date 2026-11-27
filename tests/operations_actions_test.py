@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1] / 'misc'))
 import unittest
 import tempfile
-from operations_actions import validate_command, validate_resource, pressure, perform_resource
+from operations_actions import validate_command, validate_resource, pressure, perform_resource, inspection_only, reconcile_interrupted
 
 class ActionsTest(unittest.TestCase):
     def decision(self):
@@ -123,5 +123,30 @@ class ActionsTest(unittest.TestCase):
         result=pressure(dict(disk_used_percent=0))
         self.assertTrue(result['triggered'])
         self.assertIn('memory_available_percent',result)
+
+    def test_inspection_only_recognises_fixed_read_commands(self):
+        for argv in (['/usr/sbin/ss', '-ltnp'], ['/usr/bin/ss', '-tlnp', '-4'], ['/usr/bin/systemctl', 'status', 'taralink', '--no-pager'],
+                     ['/usr/bin/systemctl', 'show', 'x', '-p', 'ActiveState', '--value'], ['/usr/bin/journalctl', '-u', 'x', '-n', '50'],
+                     ['/usr/sbin/iptables', '-S', 'INPUT'], ['/usr/sbin/ip6tables', '-w', '-L', '-n', '-v'],
+                     ['/usr/sbin/ip', '-br', 'addr'], ['/usr/sbin/ip', 'route', 'show'], ['/usr/bin/uptime'], ['/usr/bin/df', '-h']):
+            self.assertTrue(inspection_only(argv), argv)
+    def test_inspection_only_rejects_changes_and_unknown_commands(self):
+        for argv in (['/usr/sbin/ss', '-K', 'dst', '1.2.3.4'], ['/usr/sbin/ss', '-D', '/tmp/x'], ['/usr/sbin/ss', '--kill'],
+                     ['/usr/bin/systemctl', 'restart', 'taralink'], ['/usr/bin/systemctl', 'stop', 'x'], ['/usr/bin/systemctl'],
+                     ['/usr/bin/journalctl', '--vacuum-size=1M'], ['/usr/bin/journalctl', '--rotate'],
+                     ['/usr/sbin/iptables', '-F'], ['/usr/sbin/iptables', '-L', '-Z'], ['/usr/sbin/iptables', '-D', 'INPUT', '1'],
+                     ['/usr/sbin/ip', 'route', 'del', 'default'], ['/usr/sbin/ip', 'link', 'set', 'eth0', 'down'],
+                     ['/usr/bin/bash', '-c', 'ss -ltnp'], ['/tmp/ss', '-ltnp'], ['/usr/sbin/../../tmp/ss'], ['ss', '-l'], [], None,
+                     ['/usr/bin/apt-get', 'upgrade']):
+            self.assertFalse(inspection_only(argv), argv)
+    def test_reconcile_clears_only_inspection_markers(self):
+        state = {'command_pending': {'argv': ['/usr/sbin/ss', '-ltnp'], 'reason': 'r'}}
+        cleared = reconcile_interrupted(state, 'boot-b')
+        self.assertNotIn('command_pending', state)
+        self.assertEqual(cleared['reconciled'], 'inspection_only')
+        state = {'command_pending': {'argv': ['/usr/bin/systemctl', 'restart', 'taralink']}}
+        self.assertIsNone(reconcile_interrupted(state, 'boot-b'))
+        self.assertIn('command_pending', state, 'A possibly half-applied change waits for the owner, even after reboot')
+        self.assertIsNone(reconcile_interrupted({}, 'boot-b'))
 
 if __name__ == '__main__': unittest.main()

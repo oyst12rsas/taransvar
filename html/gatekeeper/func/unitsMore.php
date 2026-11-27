@@ -51,6 +51,14 @@ function collectUnitIssues($status, $secondsSince)
             addUnitIssue($issues, 'yellow', 'Operations agent', $message);
     }
 
+    // Reported by crontasks.pl from ssh_controls_status.py. Non-demo units keep
+    // this on their own Gatekeeper; only demo units send it to DB servers.
+    $sshMissing = $status['sshCtl']['missing'] ?? null;
+    if (is_array($sshMissing)) {
+        $sshMissing = array_values(array_filter(array_map(fn($item) => substr((string)$item, 0, 80), array_slice($sshMissing, 0, 8)), 'strlen'));
+        if ($sshMissing) addUnitIssue($issues, 'yellow', 'SSH security', 'Not yet in place: '.implode(', ', $sshMissing).'.');
+    }
+
     if ($secondsSince > 200)
         addUnitIssue($issues, "red", "Status reporting", "No status received for ".$secondsSince." seconds.");
     elseif ($secondsSince > 130)

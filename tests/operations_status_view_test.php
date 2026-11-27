@@ -50,6 +50,13 @@ foreach (array(70 => null, 77 => null, 84 => null, 85 => 'yellow', 89 => 'yellow
 }
 checkOperationsView(diskStatusPercent('11G 8.5G 2.5G') === 77, 'Decimal disk sizes mismatch');
 
+$ssh = array_values(array_filter(collectUnitIssues(array('sshCtl' => array('missing' => array('manager SSH worker healthy', '<b>x</b>'))), 0), fn($issue) => $issue['label'] === 'SSH security'));
+checkOperationsView(count($ssh) === 1 && $ssh[0]['severity'] === 'yellow' && strpos($ssh[0]['message'], 'manager SSH worker healthy') !== false, 'SSH control gap warning missing');
+checkOperationsView(!array_filter(collectUnitIssues(array('sshCtl' => array('missing' => array())), 0), fn($issue) => $issue['label'] === 'SSH security'), 'Complete SSH controls must not warn');
+checkOperationsView(!array_filter(collectUnitIssues(array(), 0), fn($issue) => $issue['label'] === 'SSH security'), 'Units without SSH control reporting must not warn');
+ob_start(); printUnitIssues(array('sshCtl' => array('missing' => array('<b>x</b>'))), 0); $html = ob_get_clean();
+checkOperationsView(strpos($html, '<b>x</b>') === false && strpos($html, 'SSH security') !== false, 'SSH control labels must be escaped');
+
 $custom = array('df' => '100G 77G 23G', 'operationsAgent' => array('status' => 'monitoring', 'resource_pressure' => array('disk_threshold_percent' => 75)));
 checkOperationsView(diskStatusThreshold($custom) === 75.0, 'Configured threshold missing');
 checkOperationsView(count(array_filter(collectUnitIssues($custom, 0), fn($issue) => $issue['label'] === 'Disk usage')) === 1, 'Configured maintenance warning missing');
