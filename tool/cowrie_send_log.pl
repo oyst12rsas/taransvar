@@ -6,22 +6,26 @@
 #
 #  If you're installing Cowrie ssh honeypot in your network, 
 #  then set up this script to send threat info to the Taransvar router
-#  Save it somewhere and set it up to start when your honeypot start
-#  In runs forever, captures the log, sends it to the IP specified below
-#  where (hopefully) Taralink listens to port 514 and logs to 
-#  syslog and syslogThreat tables along with logs from Cisco, Fortinet, ipbables and others. 
+#  Save it somewhere and set it up to start when your honeypot starts.
+#  It runs forever, reads Cowrie's JSON log and writes each event as one JSON
+#  line to the local syslog with the program name "cowrie". The TaraSec rsyslog
+#  forwarder (misc/configure_global_db.sh) sends those lines to the DB server
+#  over TCP/5514, where remote_syslog_normalizer.pl stores them in the syslog
+#  and syslogThreat tables. See docs/REMOTE_THREAT_EVENT_FORMAT.md.
 #
-#  Nothing received? 
-#  - Run on receiver: 	sudo tcpdump -i any -nn udp port 514
-#  - Open port: 		sudo iptables -I INPUT 1 -i <nic_here> -s <network/ip here> -p udp --dport 514  -j ACCEPT
+#  This script no longer sends UDP/514 directly: UDP senders can be spoofed and
+#  the DB server could not tell which sensor reported the event.
+#
+#  Nothing received?
+#  - Here:          journalctl -t cowrie -n 5
+#  - Forwarder:     sudo bash misc/configure_global_db.sh <DB server IPv4>
+#  - DB server:     grep 'PROGRAM=cowrie' /var/log/tarasec/remote.log | tail -n 5
 #
 # --------------------------------------------------
 # Configuration
 # --------------------------------------------------
 my $COWRIE_JSON   = "/home/cowrie/cowrie/var/log/cowrie/cowrie.json";
-my $REPORT_TO_IP   = "100.68.181.35";   # change if needed
-my $ROUTERVM_PORT = 514;             # Use port 514 UDP if you want taralink to handle it on receiving end.
-my $ALERT_PROTO = "udp";
+my $SYSLOG_IDENT  = "cowrie";         # Must match the forwarder's programname filter.
 my $SENSOR_NAME   = "cowrie";
 
 my $OBSERVED_PROTO  = "tcp";			# Protocol used in attack - ssh (TCP)
@@ -37,7 +41,7 @@ my $SEND_COMMAND_EVENTS = 1;
 
 use strict;
 use warnings;
-use IO::Socket::INET;
+use Sys::Syslog qw(openlog syslog);
 use JSON::PP;
 use Time::HiRes qw(time sleep);
 
@@ -47,17 +51,13 @@ use Time::HiRes qw(time sleep);
 my %session_map;
 my $json = JSON::PP->new->utf8->allow_nonref;
 
-my $sock = IO::Socket::INET->new(
-	PeerAddr => $REPORT_TO_IP,
-	PeerPort => $ROUTERVM_PORT,
-	Proto    => $ALERT_PROTO,
-) or die "Could not create UDP socket to $REPORT_TO_IP:$ROUTERVM_PORT: $!";
+openlog($SYSLOG_IDENT, 'pid', 'local0');
 
 $| = 1;
 
 print "Starting Cowrie watcher\n";
 print "Reading: $COWRIE_JSON\n";
-print "Sending alerts to $REPORT_TO_IP:$ROUTERVM_PORT\n";
+print "Writing events to syslog as '$SYSLOG_IDENT'\n";
 
 monitor_cowrie();
 
@@ -343,10 +343,9 @@ sub send_event
         return;
     }
 
-    print "Reporting to $REPORT_TO_IP:$ROUTERVM_PORT: $msg\n";
+    print "Reporting: $msg\n";
 
-    my $ok = $sock->send($msg);
-    warn "UDP send failed: $!\n" unless defined $ok;
+    eval { syslog('notice', '%s', $msg); 1 } or warn "syslog failed: $@\n";
 }
 
 # --------------------------------------------------

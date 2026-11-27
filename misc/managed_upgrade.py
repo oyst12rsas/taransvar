@@ -32,7 +32,8 @@ PATHS = {'database': ('misc/install.sql',), 'runtime': ('misc/',),
                     'misc/ssh_security_evidence.py', 'misc/local_manager_policy.py',
                     'misc/enroll_google_manager.py', 'misc/enroll_gatekeeper_google.py'),
          'operations': ('misc/operations*.py', 'misc/install_operations*.py', 'misc/install_operations_agent.sh'),
-         'honeypot': ('misc/setup_ssh_honeypot.sh', 'misc/tarasec_ssh_honeypot.py')}
+         'honeypot': ('misc/setup_ssh_honeypot.sh', 'misc/tarasec_ssh_honeypot.py',
+                      'misc/setup_backoffice_ai.sh', 'misc/rsyslog/30-tarasec-forward.conf.example')}
 
 
 def run(argv, **kwargs):
