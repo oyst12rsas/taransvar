@@ -188,13 +188,69 @@ class ManagedTests(unittest.TestCase):
     def test_pause_after_download_prevents_execution(self):
         first=dict(allowed=True,target_revision='a'*40,generation=1,cohort='canary')
         git=[Mock(stdout='https://github.com/oyst12rsas/taransvar.git'),Mock(),Mock(stdout='a'*40),Mock(stdout='{"version":8}')]
-        with patch.object(m,'STATE',self.root/'missing.json'),patch.object(m,'git',side_effect=git),patch.object(m,'gate',side_effect=[first,dict(allowed=False,reason='Paused')]),patch.object(m,'quiet',return_value=True),patch.object(m,'export_release'),patch.object(m,'scheduler_notice'),patch.object(m,'run') as execute:
+        with patch.object(m,'STATE',self.root/'missing.json'),patch.object(m,'git',side_effect=git),patch.object(m,'gate',side_effect=[first,dict(allowed=False,reason='Paused')]),patch.object(m,'quiet',return_value=True),patch.object(m,'collab_freeze',return_value=False),patch.object(m,'export_release'),patch.object(m,'scheduler_notice'),patch.object(m,'run') as execute:
             self.assertEqual(m.daily(self.policy),0)
             execute.assert_not_called()
 
     def test_gate_wait_does_not_execute_release_or_overwrite_test_receipt(self):
         with patch.object(m,'STATE',self.root/'none.json'),patch.object(m,'git',side_effect=[Mock(stdout='https://github.com/oyst12rsas/taransvar.git'),Mock(),Mock(stdout='a'*40),Mock(stdout='{"version":8}')]),patch.object(m,'gate',return_value=dict(allowed=False,reason='Paused')),patch.object(m,'scheduler_notice') as notice,patch.object(m,'export_release') as export:
             self.assertEqual(m.daily(self.policy),0);notice.assert_called_once_with('waiting','Paused');export.assert_not_called()
+
+    def daily_ready(self,**patches):
+        allowed=dict(allowed=True,target_revision='a'*40,generation=1,cohort='canary')
+        git=[Mock(stdout='https://github.com/oyst12rsas/taransvar.git'),Mock(),Mock(stdout='a'*40),Mock(stdout='{"version":8}')]
+        return [patch.object(m,'STATE',self.root/'missing.json'),patch.object(m,'git',side_effect=git),
+                patch.object(m,'gate',return_value=allowed),patch.object(m,'quiet',return_value=True)]
+
+    def test_open_freeze_holds_daily_upgrade_before_download(self):
+        import contextlib
+        with contextlib.ExitStack() as stack:
+            for p in self.daily_ready(): stack.enter_context(p)
+            stack.enter_context(patch.object(m,'collab_freeze',return_value=True))
+            notice=stack.enter_context(patch.object(m,'scheduler_notice'))
+            export=stack.enter_context(patch.object(m,'export_release'))
+            execute=stack.enter_context(patch.object(m,'run'))
+            self.assertEqual(m.daily(self.policy),0)
+            export.assert_not_called();execute.assert_not_called()
+            self.assertIn('freeze',notice.call_args[0][1])
+
+    def test_unreachable_freeze_status_counts_as_frozen(self):
+        import contextlib
+        with contextlib.ExitStack() as stack:
+            for p in self.daily_ready(): stack.enter_context(p)
+            stack.enter_context(patch.object(m.urllib.request,'urlopen',side_effect=OSError('offline')))
+            stack.enter_context(patch.object(m,'scheduler_notice'))
+            export=stack.enter_context(patch.object(m,'export_release'))
+            self.assertEqual(m.daily(self.policy),0)
+            export.assert_not_called()
+
+    def test_freeze_opened_during_download_prevents_execution(self):
+        import contextlib
+        with contextlib.ExitStack() as stack:
+            for p in self.daily_ready(): stack.enter_context(p)
+            stack.enter_context(patch.object(m,'collab_freeze',side_effect=[False,True]))
+            stack.enter_context(patch.object(m,'scheduler_notice'))
+            export=stack.enter_context(patch.object(m,'export_release'))
+            execute=stack.enter_context(patch.object(m,'run'))
+            self.assertEqual(m.daily(self.policy),0)
+            export.assert_called_once();execute.assert_not_called()
+
+    def test_freeze_reads_only_trusted_open_issues(self):
+        import io as _io
+        def reply(issues):
+            response=Mock();response.__enter__=lambda s:_io.BytesIO(json.dumps(issues).encode());response.__exit__=lambda *a:False
+            return response
+        outsider=[{'state':'open','author_association':'NONE','labels':[{'name':'freeze'}]}]
+        pull=[{'state':'open','author_association':'OWNER','pull_request':{},'labels':[{'name':'freeze'}]}]
+        owner=[{'state':'open','author_association':'OWNER','labels':[{'name':'freeze'}]}]
+        for issues,frozen in ((outsider,False),(pull,False),(owner,True),([],False)):
+            with patch.object(m.urllib.request,'urlopen',return_value=reply(issues)):
+                self.assertEqual(m.collab_freeze(self.policy),frozen)
+
+    def test_owner_can_disable_freeze_check(self):
+        with patch.object(m.urllib.request,'urlopen') as urlopen:
+            self.assertFalse(m.collab_frozen(dict(self.policy,collab_freeze_check=False)))
+            urlopen.assert_not_called()
 
 class SchedulerDiagnosticTests(unittest.TestCase):
     def test_failed_command_reports_stage_and_exit_code_without_argv_or_output(self):

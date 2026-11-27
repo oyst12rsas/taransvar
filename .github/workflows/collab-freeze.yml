@@ -1,0 +1,46 @@
+name: Collaboration freeze
+# Any agent can stop merges by opening an issue labelled `freeze`.
+# Only FREEZE_RELEASERS can lift it. Make `collab-freeze` a required status
+# check on `main` (Settings > Branches) for this to block merges.
+#
+# pull_request_target runs this workflow from `main`, never from the pull
+# request, so a pull request cannot change the check that judges it. The job
+# does not check out or run any pull request code.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+  issues:
+    types: [opened, closed, reopened, labeled, unlabeled, deleted]
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: collab-freeze
+  cancel-in-progress: false
+
+env:
+  FREEZE_RELEASERS: oyst12rsas
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  freeze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: misc/collab_freeze.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Undo a freeze lift by anyone other than a releaser
+        if: github.event_name == 'issues'
+        run: python3 misc/collab_freeze.py guard
+      - name: Set collab-freeze status on open pull requests
+        run: python3 misc/collab_freeze.py publish-statuses

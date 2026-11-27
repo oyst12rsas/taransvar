@@ -1,0 +1,15 @@
+name: Collaboration freeze tests
+on:
+  pull_request:
+    paths:
+      - 'misc/collab_freeze.py'
+      - 'tests/collab_freeze_test.py'
+      - '.github/workflows/collab-freeze.yml'
+      - '.github/workflows/collab-freeze-tests.yml'
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tests/collab_freeze_test.py
+      - run: python3 -m py_compile misc/collab_freeze.py
