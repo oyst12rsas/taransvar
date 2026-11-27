@@ -70,44 +70,32 @@ function vpn_demo()
 
 	$setupRow = getNetworkStatusThisComputer($conn);
 
-	$szWhere = !isAdmin()?"where showToAdminsOnly = b'0'":"";
-	$szSQL = "select routerId, name, inet_ntoa(ip) as ip, partnerStatusReceived, status, TIMESTAMPDIFF(SECOND, partnerStatusReceived, NOW()) AS seconds_since from partnerRouter R join partner P on P.partnerId = R.partnerId $szWhere";
-	//print "<br>$szSQL<br>";
-	$conn->query($szSQL) or die(mysql_error());
-	$result = $conn->query($szSQL);
+	$result = partnerStatusListRows($conn);
 
-	if ($result->num_rows > 0) 
+	print '<h2>Involved sites</h2>';
+	if (isAdmin())
+		print '<p><a href="index.php?f=partners">Manage partner visibility</a></p>';
+	if ($result->num_rows > 0)
+		print '<p>If a site does not open, check that your VPN allows 100.68.0.0/16.</p>';
+
+	print '<table id="involvedSitesTbl">';
+	print '<tr><th>Site</th><th>IP</th><th>Status *</th><th>Gatekeeper</th><th>Sample bank</th><th>Honey</th></tr>';
+	$localName = htmlspecialchars($setupRow['name'] ?? '', ENT_QUOTES, 'UTF-8');
+	print '<tr><td>Me ('.$localName.')</td><td></td><td><div id="s0">&nbsp;</div></td><td></td>';
+	print '<td><a href="../samplebank/index.php">[go to]</a></td><td><a href="../honeypot/index.php">[go to]</a></td></tr>';
+
+	while ($row = $result->fetch_assoc())
 	{
-		// output data of each row  
-		print "<h2>Involved sites:</h2>";
-		$nCount=0;
-		while($row = $result->fetch_assoc()) 
-		{
-			if (!$nCount) 
-			{
-				print "<b>NOTE</b> ! If you have problems opening these, then check that you VPN setup, Allowed IPs contain 100.68.0.0/16 (add if not)<br>";
-
-				print '<table id ="involvedSitesTbl">';
-				print "<tr><td>Site</td><td>IP</td><td>Status *)</td><td>Gatekeeper</td><td>Sample bank</td><td>Honey</td></tr>";
-				print "<tr><td>Me (".$setupRow["name"].")</td><td>&nbsp;</td></div><td><div id=\"s0\">";
-
-				print "&nbsp";
-
-				print "</div></td><td>&nbsp;</td><td><a href=\"../samplebank/index.php\">[go to]</a></td><td><a href=\"../honeypot/index.php\">[go to]</a></td></tr>";
-			}
-
-			$szGatekeeper = "http://".$row["ip"]."/gatekeeper/index.php";
-			$szSamplebank = "http://".$row["ip"]."/samplebank/index.php";
-			$szHoneypot =  "http://".$row["ip"]."/honeypot/index.php";
-			print "<tr><td>".$row["name"]."</td><td>".$row["ip"]."</td><td><div id=\"s".$row["routerId"]."\">";
-			
-			printServerStatus($row["seconds_since"], $row["status"], $row["routerId"]);
-			print "</div></td><td><a href=\"".$szGatekeeper."\">[go to]</td><td><a href=\"".$szSamplebank."\">[go to]</h></td><td><a href=\"".$szHoneypot."\">[go to]</h></td></tr>";
-			$nCount++;
-		}
-		print "</table>";
-		print "*) Dots: tarakernel, taralink, crontasks, dmesg, traffic data, sql connections. Number: Active routed clients last 5 minutes (unknown on older nodes).";
+		$name = htmlspecialchars($row['name'], ENT_QUOTES, 'UTF-8');
+		$ip = htmlspecialchars($row['ip'], ENT_QUOTES, 'UTF-8');
+		print '<tr><td>'.$name.'</td><td>'.$ip.'</td><td><div id="s'.(int)$row['routerId'].'">';
+		printServerStatus($row['seconds_since'], $row['status'], $row['routerId']);
+		print '</div></td><td><a href="http://'.$ip.'/gatekeeper/index.php">[go to]</a></td>';
+		print '<td><a href="http://'.$ip.'/samplebank/index.php">[go to]</a></td>';
+		print '<td><a href="http://'.$ip.'/honeypot/index.php">[go to]</a></td></tr>';
 	}
+	print '</table>';
+	print '* Dots: hover over a dot for its status. Click the dots for details.';
 	$result->free();//260717
 	$conn->close();
 }

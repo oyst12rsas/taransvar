@@ -12,7 +12,27 @@ function editRouter()
         return;
     }
 
+    $_SESSION['partnerStatusListCsrf'] ??= bin2hex(random_bytes(32));
+    $csrf = $_SESSION['partnerStatusListCsrf'];
     $conn = getConnection();
+
+    if (isset($_POST['saveStatusVisibility']))
+    {
+        $postedCsrf = $_POST['csrf'] ?? null;
+        if (!is_string($postedCsrf) || !hash_equals($csrf, $postedCsrf))
+        {
+            print "Invalid request token.";
+            $conn->close();
+            return;
+        }
+
+        $showInStatusList = ($_POST['showInStatusList'] ?? '') === '1' ? 1 : 0;
+        $stmt = $conn->prepare("UPDATE partnerRouter SET showInStatusList = ? WHERE routerId = ?");
+        $stmt->bind_param("ii", $showInStatusList, $routerId);
+        $stmt->execute();
+        $stmt->close();
+        print "Status list visibility saved.<br><br>";
+    }
 
     if (isset($_GET['submit']))
     {
@@ -35,7 +55,7 @@ function editRouter()
     }
 
     $sql = "select partnerId, INET_NTOA(ip) destinationIp, INET_NTOA(nettmask) netmask, " .
-        "COALESCE(INET_NTOA(taggedTrafficRoute),'') taggedRoute, taggedTrafficRouteUpdated " .
+        "COALESCE(INET_NTOA(taggedTrafficRoute),'') taggedRoute, taggedTrafficRouteUpdated, showInStatusList " .
         "from partnerRouter where routerId=?";
     $stmt = $conn->prepare($sql);
     $stmt->bind_param("i", $routerId);
@@ -58,6 +78,11 @@ function editRouter()
 <tr><td colspan="2">Only tagged traffic to this registered destination may use this next hop.</td></tr>
 <tr><td>&nbsp;</td><td><input name="f" type="hidden" value="editRouter"><input name="id" type="hidden" value="<?php print $routerId; ?>"><input type="submit" name="submit" value="Save"></td></tr>
 </table></form>
+<form method="post" action="index.php?f=editRouter&amp;id=<?php print $routerId; ?>">
+<p><label><input name="showInStatusList" type="checkbox" value="1"<?php print $row['showInStatusList'] ? ' checked' : ''; ?>> Show in Units status list</label></p>
+<input type="hidden" name="csrf" value="<?php print htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8'); ?>">
+<button name="saveStatusVisibility" value="1">Save visibility</button>
+</form>
 <a href="index.php?f=partner&id=<?php print (int)$row['partnerId']; ?>">Back to partner</a>
 <?php
 }

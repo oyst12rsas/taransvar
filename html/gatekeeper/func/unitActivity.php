@@ -5,6 +5,15 @@ function unitActivityIsAdmin()
     return isset($_SESSION['isAdmin']) && $_SESSION['isAdmin'] == 1;
 }
 
+function partnerStatusListRows($conn)
+{
+    $adminFilter = unitActivityIsAdmin() ? '' : " AND R.showToAdminsOnly = b'0'";
+    return $conn->query("SELECT R.routerId, P.name, INET_NTOA(R.ip) AS ip, R.status,
+        TIMESTAMPDIFF(SECOND, R.partnerStatusReceived, NOW()) AS seconds_since
+        FROM partnerRouter R JOIN partner P ON P.partnerId = R.partnerId
+        WHERE R.showInStatusList = 1".$adminFilter);
+}
+
 function unitActivityOverview($conn)
 {
     if (!unitActivityIsAdmin()) return '';
