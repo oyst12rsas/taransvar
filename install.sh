@@ -106,6 +106,7 @@ rsync -a --exclude '.git' misc/ /root/taransvar/perl/ || exit 1
 
 echo "Copying (rsync) html files..."
 rsync -a --exclude '.git' html/ /var/www/html/ || exit 1
+bash misc/remove_apache_default_page.sh /var/www/html || exit 1
 
 (
     cd misc
