@@ -395,6 +395,35 @@ class DailyBlocked(ValueError):
         super().__init__(stage + ' failed (' + type(error).__name__ + suffix + ')')
 
 
+def collab_freeze(policy):
+    """True while an AI collaboration freeze is open (docs/CLAUDE_COLLABORATION.md).
+
+    Kept self-contained: this file runs from its installed copy, which must not
+    depend on a module that only a later upgrade would install. An unreachable
+    GitHub counts as frozen, because waiting is the safe direction. The node
+    owner can turn the check off with "collab_freeze_check": false.
+    """
+    if policy.get('collab_freeze_check', True) is False:
+        return False
+    request = urllib.request.Request(
+        'https://api.github.com/repos/oyst12rsas/taransvar/issues?state=open&labels=freeze&per_page=100',
+        headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'tarasec-managed-upgrade'})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        issues = json.load(response)
+    if not isinstance(issues, list):
+        raise ValueError('Unexpected freeze response')
+    return any(isinstance(i, dict) and i.get('state') == 'open' and 'pull_request' not in i
+               and i.get('author_association') in ('OWNER', 'MEMBER', 'COLLABORATOR')
+               for i in issues)
+
+
+def collab_frozen(policy):
+    try:
+        return collab_freeze(policy)
+    except Exception:  # Any failure to read the freeze state means wait.
+        return True
+
+
 def daily_step(stage, action, *args, **kwargs):
     try: return action(*args, **kwargs)
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
@@ -428,13 +457,18 @@ def daily(policy):
         scheduler_notice('waiting','Waiting for quiet activity and inactive sessions')
         print('Daily upgrade waiting for quiet activity and inactive sessions.')
         return 0
+    if collab_frozen(policy):
+        scheduler_notice('waiting','AI collaboration freeze open or freeze status unavailable')
+        print('Daily upgrade waiting: AI collaboration freeze open or freeze status unavailable.')
+        return 0
     with tempfile.TemporaryDirectory(prefix='tarasec-release-') as tmp:
         repo = Path(tmp)
         daily_step('Release archive',export_release,policy, target, repo)
         # Recheck pause/generation and activity after download/export, immediately before dispatch.
         latest=daily_step('Central rollout recheck',gate,policy,offered,manifest['version'])
-        if (latest.get('allowed') is not True or latest.get('target_revision')!=target or latest.get('generation')!=generation or latest.get('cohort')!=decision.get('cohort') or not daily_step('Local activity recheck',quiet,policy)):
-            scheduler_notice('waiting','Rollout or activity changed before dispatch')
+        if (latest.get('allowed') is not True or latest.get('target_revision')!=target or latest.get('generation')!=generation or latest.get('cohort')!=decision.get('cohort') or not daily_step('Local activity recheck',quiet,policy)
+                or collab_frozen(policy)):
+            scheduler_notice('waiting','Rollout, activity or freeze changed before dispatch')
             return 0
         # Execute only a controller from a revision which has passed this unit's central gate.
         try:
