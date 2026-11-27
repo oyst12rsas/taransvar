@@ -62,7 +62,14 @@ resume_ssh_activation() {
     printf 'For guided troubleshooting, you can install Codex CLI or Claude Code on your workstation before continuing.\n'
     printf 'If something goes wrong, run this from the open console to inspect the SSH configuration:\n'
     printf '  sudo bash misc/ssh_setup_preview.sh --diagnose\n'
+    if [[ ! -d /run/sshd ]]; then
+        install -d -o root -g root -m 0755 /run/sshd || return 1
+    fi
     current_ports=$(set -o pipefail; sshd -T | awk '/^port / {print $2}') || return 1
+    if [[ -z $current_ports ]]; then
+        printf 'OpenSSH did not report a configured port. Check ssh.service or ssh.socket from this console.\n' >&2
+        return 1
+    fi
     requested_port=$(python3 -c 'import json; print(json.load(open("/var/lib/tarasec/ssh-install-choices.json"))["port"])') || return 1
     printf '\nOpenSSH currently configured on TCP: %s\n' "$current_ports"
     printf 'Requested management port: TCP/%s. The saved settings have not been applied by this wizard yet.\n' "$requested_port"
@@ -109,7 +116,7 @@ if [[ ${2:-} != --configure && -t 1 && -n ${TERM:-} ]]; then
 fi
 
 printf 'TaraSec · SSH protection on %s\n\n' "$(hostname)"
-if [[ ${2:-} != --configure ]]; then
+if [[ $mode == --preview ]]; then
     printf '  1) Configure SSH protection\n'
     printf '  2) Skip SSH protection for now\n\n'
 
