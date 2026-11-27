@@ -676,8 +676,12 @@ CREATE TABLE IF NOT EXISTS issueReport (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 UPDATE setup SET dbVersion = 100;
 
+#version 101
+ALTER TABLE partnerRouter ADD COLUMN IF NOT EXISTS showInStatusList TINYINT(1) NOT NULL DEFAULT 1;
+UPDATE setup SET dbVersion = 101;
+
 #******** NEXT TIME ALSO add *****
-#update setup set dbVersion = 101;
+#update setup set dbVersion = 102;
 
 #NOTE! The versions (#version nn ...) are imported by the installed
 #diagnostics script. Deploy misc to /root/taransvar/perl, then run:

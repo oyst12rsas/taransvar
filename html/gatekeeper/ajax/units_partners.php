@@ -376,22 +376,13 @@ function units_partners()
     CXmlCommand::setInnerHTML("s0", "", $status);//, $cMoreParamsArr = array())
 	//CXmlCommand::alert("Er her nå");
 
-	$szWhere = "";//!isAdmin()?"where showToAdminsOnly = b'0'":"";
-	$szSQL = "select routerId, name, inet_ntoa(ip) as ip, partnerStatusReceived, status, TIMESTAMPDIFF(SECOND, partnerStatusReceived, NOW()) AS seconds_since from partnerRouter R join partner P on P.partnerId = R.partnerId $szWhere";
-	//print "<br>$szSQL<br>";
-	$conn->query($szSQL) or die(mysql_error());
-	$result = $conn->query($szSQL);
-
-	if ($result->num_rows > 0) 
+	$result = partnerStatusListRows($conn);
+	while ($row = $result->fetch_assoc())
 	{
-		while($row = $result->fetch_assoc()) 
-		{
-			$szDots = getServerStatus($row["seconds_since"], $row["status"], $row["routerId"]);
-		    CXmlCommand::setInnerHTML("s".$row["routerId"], "", $szDots);//, $cMoreParamsArr = array())
-
-		}
+		$dots = getServerStatus($row["seconds_since"], $row["status"], $row["routerId"]);
+		CXmlCommand::setInnerHTML("s".$row["routerId"], "", $dots);
 	}
+	$result->free();
 }
-
 
 ?>

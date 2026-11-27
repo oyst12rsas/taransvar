@@ -429,6 +429,7 @@ CREATE TABLE `partnerRouter` (
   `handled` bit(1) DEFAULT NULL,
   statusOk bit(1) not null default b'0',
   showToAdminsOnly bit(1) not null default b'0',
+  showInStatusList tinyint(1) NOT NULL DEFAULT 1,
   status text,
   `demoStatusReceived` timestamp NULL DEFAULT NULL,
   `demoStatusReplied` timestamp NULL DEFAULT NULL,
