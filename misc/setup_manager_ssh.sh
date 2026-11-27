@@ -11,9 +11,26 @@ case ${1:-} in
         systemctl disable --now tarasec-manager-ssh-rollback.timer
         echo 'Timed gate kept enabled; automatic rollback cancelled after operator verification.'
         exit ;;
-    *) echo 'Usage: setup_manager_ssh.sh [--enforce-gate|--confirm-gate]' >&2; exit 2 ;;
+    --refresh-only) [[ $# -eq 1 ]] || exit 2 ;;
+    *) echo 'Usage: setup_manager_ssh.sh [--enforce-gate|--confirm-gate|--refresh-only]' >&2; exit 2 ;;
 esac
 repo_dir="$(cd "$(dirname "$0")/.." && pwd)"
+if [[ ${1:-} == --refresh-only ]]; then
+    # Upgrade path: replace the installed worker code only. Owner enablement,
+    # gate enforcement, timers, schema and web pages are left unchanged.
+    bundle=/usr/local/share/tarasec/manager-ssh
+    [[ -f $bundle/misc/manager_ssh_worker.php ]] || { echo 'Manager SSH worker not installed; nothing to refresh.'; exit 0; }
+    for file in html/script/managerSshCommon.php misc/manager_ssh_worker.php; do php -l "$repo_dir/$file" >/dev/null; done
+    php "$repo_dir/misc/manager_ssh_worker.php" --check
+    backup=$(mktemp -d /var/backups/tarasec-manager-ssh.XXXXXX)
+    cp -a "$bundle" "$backup/worker"
+    install -m 0644 -o root -g root "$repo_dir/html/script/managerSshCommon.php" "$bundle/html/script/managerSshCommon.php.new"
+    install -m 0644 -o root -g root "$repo_dir/misc/manager_ssh_worker.php" "$bundle/misc/manager_ssh_worker.php.new"
+    mv -f "$bundle/html/script/managerSshCommon.php.new" "$bundle/html/script/managerSshCommon.php"
+    mv -f "$bundle/misc/manager_ssh_worker.php.new" "$bundle/misc/manager_ssh_worker.php"
+    printf 'Refreshed manager SSH worker; access policy unchanged. Backup: %s\n' "$backup"
+    exit 0
+fi
 for tool in php mysql systemctl ipset iptables ip6tables ss; do command -v "$tool" >/dev/null; done
 [[ -f /etc/tarasecfw.conf && -f /var/www/html/dbfunc.php ]] || { echo 'Existing gateway installation required.' >&2; exit 1; }
 for file in html/script/managerSshCommon.php html/script/managerSshApprovalTarget.php html/script/managerGoogleSession.php html/script/managerSsh.php misc/manager_ssh_worker.php; do php -l "$repo_dir/$file"; done

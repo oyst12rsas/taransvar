@@ -878,6 +878,17 @@ class UpgradeTests(unittest.TestCase):
         self.assertEqual(u.MODE.read_text(), 'demo\n')
         self.assertIn('--interactive --mode production', output.getvalue())
 
+    def test_runtime_refreshes_installed_manager_ssh_worker_only_when_present(self):
+        worker=Path('/usr/local/share/tarasec/manager-ssh/misc/manager_ssh_worker.php')
+        for present in (True, False):
+            real_exists=Path.exists
+            with patch.object(u,'backup'),patch.object(u,'copy_tree'),patch.object(u,'atomic'),patch.object(u,'run') as run,\
+                 patch('install_operations_reporter_bridge.patched_source',return_value=''),patch.object(Path,'read_text',return_value=''),\
+                 patch.object(Path,'exists',lambda p: present if p==worker else real_exists(p)):
+                u.apply_feature('runtime',self.root/'backup')
+            refresh=['bash',u.REPO/'misc/setup_manager_ssh.sh','--refresh-only']
+            self.assertEqual(refresh in [c.args[0] for c in run.call_args_list], present)
+
     def test_existing_honeypot_uses_refresh_only_without_confirmation_or_policy_write(self):
         with patch.object(u,'settings',return_value={'SSH_PORT':'5822'}),patch.object(u,'existing_honeypot_setup',return_value=True),patch('builtins.input',side_effect=AssertionError('Refresh must not prompt for migration')),patch.object(u,'run') as run,patch.object(u,'set_setting') as write,patch('sys.stdout',new=io.StringIO()):
             result=u.apply_feature('honeypot',self.root/'backup')

@@ -33,6 +33,12 @@ try {
     sshExpect(sshConfig($tmp)===5822,'Read root configuration');
     file_put_contents($tmp,"SSH_PORT=22\nSSH_HONEYPOT=on\nSSH_HONEYPOT_PORT=22\n");
     try { sshConfig($tmp); throw new RuntimeException('Honeypot port accepted'); } catch (RuntimeException $e) { sshExpect(str_contains($e->getMessage(),'overlaps'),'Reject honeypot collision'); }
+    file_put_contents($tmp,"SSH_PORT=4563\nSSH_HONEYPOT=on\nSSH_HONEYPOT_PORT=22\nSSH_HONEYPOT_PORTS=22,1000-5000\n");
+    try { sshConfig($tmp); throw new RuntimeException('Open decoy overlap accepted'); } catch (RuntimeException $e) { sshExpect(str_contains($e->getMessage(),'overlaps'),'Reject decoy range covering SSH without closed honeypot'); }
+    file_put_contents($tmp,"SSH_PORT=4563\nSSH_HONEYPOT=on\nSSH_HONEYPOT_PORT=22\nSSH_HONEYPOT_PORTS=22,1000-5000\nSSH_CLOSED_HONEYPOT=\"yes\"\n");
+    sshExpect(sshConfig($tmp)===4563,'Closed honeypot decoy range may cover the real SSH port');
+    file_put_contents($tmp,"SSH_PORT=22\nSSH_HONEYPOT=on\nSSH_HONEYPOT_PORT=22\nSSH_CLOSED_HONEYPOT=yes\n");
+    try { sshConfig($tmp); throw new RuntimeException('Honeypot listener accepted'); } catch (RuntimeException $e) { sshExpect(str_contains($e->getMessage(),'overlaps'),'Closed honeypot still rejects sharing the honeypot listener'); }
 } finally { unlink($tmp); }
 echo "SSH authorization, bounded duration, request validation, stale-state, firewall order and honeypot isolation passed\n";
 if (in_array('--database',$argv,true)) {

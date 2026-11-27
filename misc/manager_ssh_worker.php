@@ -119,8 +119,14 @@ function sshConfig(string $path): int {
     sshAllowedSources($cfg); // Never silently discard an owner source restriction.
     $port=filter_var($cfg['SSH_PORT'] ?? '22',FILTER_VALIDATE_INT,['options'=>['min_range'=>1,'max_range'=>65535]]);
     if ($port===false) throw new RuntimeException('Invalid configured SSH port');
-    if (in_array(strtolower($cfg['SSH_HONEYPOT'] ?? 'off'),['on','1','yes','true'],true)) {
-        foreach (preg_split('/[,\s]+/',$cfg['SSH_HONEYPOT_PORTS'] ?? ($cfg['SSH_HONEYPOT_PORT'] ?? '22')) as $range) {
+    $on=fn(string $key): bool => in_array(strtolower(trim((string)($cfg[$key] ?? 'off'))),['on','1','yes','true'],true);
+    if ($on('SSH_HONEYPOT')) {
+        // SSH_CLOSED_HONEYPOT=yes (written by ssh_port_setup.py) deliberately
+        // lets the decoy range cover the real port: ssh_honeypot_route.py
+        // redirects it to the honeypot unless a timed window admits the source,
+        // and firewall.sh accepts the same overlap. Only the honeypot's own
+        // listener ports must remain distinct from real SSH.
+        if (!$on('SSH_CLOSED_HONEYPOT')) foreach (preg_split('/[,\s]+/',$cfg['SSH_HONEYPOT_PORTS'] ?? ($cfg['SSH_HONEYPOT_PORT'] ?? '22')) as $range) {
             $parts=explode('-',$range);
             if ($port >= (int)$parts[0] && $port <= (int)($parts[1] ?? $parts[0])) throw new RuntimeException('SSH port overlaps honeypot');
         }
