@@ -38,13 +38,52 @@ our $szAiKey = $aiCfg->{TARASEC_FLOWISE_API_KEY} // $aiCfg->{FLOWISE_API_KEY} //
 die "TARASEC_FLOWISE_URL is not configured in /etc/tarasec.conf\n" unless length $szAiUrl;
 die "TARASEC_FLOWISE_API_KEY is not configured in /etc/tarasec.conf\n" unless length $szAiKey;
 
+# question: legacy, the whole evidence text is the Flowise question.
+# vars: a short constant question (the only text embedded for policy retrieval)
+#       plus the evidence in overrideConfig.vars.evidence. The chatflow must
+#       allow vars override and use {{$vars.evidence}} in the analysis prompt.
+our $szEvidenceMode = lc($aiCfg->{TARASEC_AI_EVIDENCE_MODE} // 'question');
+die "TARASEC_AI_EVIDENCE_MODE must be 'question' or 'vars'\n" unless $szEvidenceMode =~ /^(question|vars)$/;
+our $nAiTimeout = config_int($aiCfg, 'TARASEC_AI_TIMEOUT_SECONDS', 300, 30, 900);
+# Evidence rows are capped so the prompt fits the model context (Ollama
+# silently drops the start of an over-long prompt). Rules and the output
+# contract are appended after the cap and are never truncated.
+our $nMaxEvidenceBytes = config_int($aiCfg, 'TARASEC_AI_MAX_EVIDENCE_BYTES', 24000, 4000, 500000);
+our $szRetrievalQuestion = 'TaraSec threat assessment policy: botnet clustering, false-positive clearing, '.
+    'severity and block rules for SSH, honeypot and iptables evidence.';
+
+sub config_int {
+    my ($cfg, $key, $default, $min, $max) = @_;
+    my $value = $cfg->{$key};
+    return $default unless defined $value && length $value;
+    die "$key must be an integer between $min and $max\n"
+        unless $value =~ /^\d+$/ && $value >= $min && $value <= $max;
+    return $value + 0;
+}
+
+sub cap_evidence {
+    my ($text, $limit) = @_;
+    return $text if length($text) <= $limit;
+    my $cut = rindex($text, "\n", $limit);
+    $cut = $limit if $cut < 0;
+    my $omitted = length($text) - $cut;
+    warn "Evidence truncated: $omitted of ".length($text)." bytes omitted (limit $limit).\n";
+    return substr($text, 0, $cut)."\n[TRUNCATED: $omitted bytes of evidence rows omitted to fit the model context.]\n";
+}
+
+sub request_body {
+    my ($logs) = @_;
+    return { question => $logs } if $szEvidenceMode eq 'question';
+    return { question => $szRetrievalQuestion, overrideConfig => { vars => { evidence => $logs } } };
+}
+
 sub sendRequest {
     my ($logs) = @_;
-    my $json = encode_json({ question => $logs });
+    my $json = encode_json(request_body($logs));
     open(my $out, '>', '/tmp/flowise-request.json');
     print $out $json;
     close($out);
-    my $ua = LWP::UserAgent->new(timeout => 60, agent => 'TaraSec-AI/1.3');
+    my $ua = LWP::UserAgent->new(timeout => $nAiTimeout, agent => 'TaraSec-AI/1.4');
     my $response = $ua->post(
         $szAiUrl,
         'Content-Type' => 'application/json',
@@ -147,10 +186,14 @@ sub requestAssessment {
         "select inet_ntoa(st.src_ip) source_ip,count(distinct st.dst_ip) distinct_targets,count(*) threat_records,sum(st.`count`) occurrences,max(coalesce(st.severity,0)) max_severity from syslogThreat st left join partnerRouter pr on pr.ip=st.src_ip where unix_timestamp(coalesce(st.lastSeen,st.created)) > unix_timestamp(now())-? and (st.owner_id is null or coalesce(st.confirmed_unit_id,st.unit_id) is null) and pr.ip is null group by st.src_ip having count(distinct st.dst_ip)>=? order by distinct_targets desc limit $nMaxRowsPerSection",
         [$cutoff,$nMinimumIpsVisited], qw(source_ip distinct_targets threat_records occurrences max_severity));
 
-    add_query_section($dbh, \$logs, 'timed observations for demo correlation (bounded sample)',
-        'event_id,owner_id,unit_id,source_ip,dst_ip,dst_port,first_seen,last_seen,occurrences,demo_session_id',
-        "SELECT syslogThreatId event_id,owner_id,COALESCE(confirmed_unit_id,unit_id) unit_id,INET_NTOA(src_ip) source_ip,INET_NTOA(dst_ip) dst_ip,dst_port,created first_seen,COALESCE(lastSeen,created) last_seen,`count` occurrences,demoSshSessionId demo_session_id FROM syslogThreat WHERE unix_timestamp(COALESCE(lastSeen,created))>unix_timestamp(now())-? ORDER BY COALESCE(lastSeen,created) DESC LIMIT $nMaxRowsPerSection",
-        [$cutoff], qw(event_id owner_id unit_id source_ip dst_ip dst_port first_seen last_seen occurrences demo_session_id));
+    # Grouped in SQL: identical observations differ only by id and time, and
+    # the newest-500-rows sample covered hours, not the 30-day window. Each
+    # group keeps its time range, record/occurrence counts and up to 5 event
+    # ids, so demo evidence ids can still be matched.
+    add_query_section($dbh, \$logs, 'grouped observations for demo correlation (identical id/time-masked events merged)',
+        'owner_id,unit_id,source_ip,dst_ip,dst_port,demo_session_id,records,occurrences,first_seen,last_seen,event_ids',
+        "SELECT owner_id,COALESCE(confirmed_unit_id,unit_id) unit_id,INET_NTOA(src_ip) source_ip,INET_NTOA(dst_ip) dst_ip,dst_port,demoSshSessionId demo_session_id,COUNT(*) records,SUM(COALESCE(`count`,1)) occurrences,MIN(created) first_seen,MAX(COALESCE(lastSeen,created)) last_seen,SUBSTRING_INDEX(GROUP_CONCAT(syslogThreatId ORDER BY syslogThreatId DESC SEPARATOR '|'),'|',5) event_ids FROM syslogThreat WHERE unix_timestamp(COALESCE(lastSeen,created))>unix_timestamp(now())-? GROUP BY owner_id,COALESCE(confirmed_unit_id,unit_id),src_ip,dst_ip,dst_port,demoSshSessionId ORDER BY records DESC,last_seen DESC LIMIT $nMaxRowsPerSection",
+        [$cutoff], qw(owner_id unit_id source_ip dst_ip dst_port demo_session_id records occurrences first_seen last_seen event_ids));
 
     # Completed sessions still explain observations inside their original window.
     my $demoTables = $dbh->selectall_arrayref("SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('demoSshSession','demoSshSetup','demoSshNodeB')");
@@ -167,6 +210,7 @@ sub requestAssessment {
             "SELECT sessionId session_id,INET_NTOA(sourceIp) source_ip,INET_NTOA(receiverIp) receiver_ip,receiverPort receiver_port,state,created,expiresAt expires FROM demo5Session WHERE expiresAt>=NOW()-INTERVAL 30 DAY ORDER BY created DESC LIMIT $nMaxRowsPerSection",
             [], qw(session_id source_ip receiver_ip receiver_port state created expires));
     }
+    $logs = cap_evidence($logs, $nMaxEvidenceBytes);
     $logs .= "\nEVIDENCE RULES: Probing alone does not establish malicious intent. Consider authorised scanning and maintenance. Existing severity is not independent proof; demo reports must not corroborate real infection.\n";
     $logs .= "\nDEMO RULES: Expected probes matching a registered demo's identity, endpoint and time window are test activity, not evidence of compromise. Explain the matching demo/session. A shared source IP or aggregate totals alone cannot establish a match. Preserve unexplained/out-of-window activity and real_infection_detected findings; state uncertainty if exact correlation is missing.\n";
 
@@ -186,15 +230,25 @@ sub requestAssessment {
     return ($response, time()-$started);
 }
 
-my ($response,$elapsed)=requestAssessment();
-my $rawResponse=$response->decoded_content;
-my $decoded=decodeAiResponse($rawResponse);
-print "\nDecoded response:\n$rawResponse\n\n";
-print "Summary: ".($decoded->{summary}//'(none)')."\n";
-print "Reasoning: ".($decoded->{reasoning}//'(none)')."\n";
+# Any failure must reach systemd as a failed unit. Exit 2, never 1:
+# the unit reserves 75 for "another run holds the lock".
+my $ok = eval {
+    my ($response,$elapsed)=requestAssessment();
+    my $rawResponse=$response->decoded_content;
+    my $decoded=decodeAiResponse($rawResponse);
+    print "\nDecoded response:\n$rawResponse\n\n";
+    print "Summary: ".($decoded->{summary}//'(none)')."\n";
+    print "Reasoning: ".($decoded->{reasoning}//'(none)')."\n";
 
-my $dbh=getConnection();
-my $sth=$dbh->prepare('insert into aiResponse (seconds,response) values (?,?)') or die $dbh->errstr."\n";
-$sth->execute(int($elapsed+0.5),$rawResponse) or die $sth->errstr."\n";
-$sth->finish();
-$dbh->disconnect();
+    my $dbh=getConnection();
+    my $sth=$dbh->prepare('insert into aiResponse (seconds,response) values (?,?)') or die $dbh->errstr."\n";
+    $sth->execute(int($elapsed+0.5),$rawResponse) or die $sth->errstr."\n";
+    print "Stored aiResponse id ".$dbh->{mysql_insertid}."\n";
+    $sth->finish();
+    $dbh->disconnect();
+    1;
+};
+unless ($ok) {
+    print STDERR "AI assessment failed: ".($@ || "unknown error\n");
+    exit 2;
+}
