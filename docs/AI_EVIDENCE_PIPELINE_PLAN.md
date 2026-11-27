@@ -23,14 +23,19 @@ codebase with `setup.isGlobalDbServer = 1`; nodes find it through
 
 - the minute status JSON from `crontasks.pl` and `hackReport` rows;
 - honeypot/SSH events via rsyslog over TCP/5514 (disk-backed queue), stored
-  raw in `syslog`, normalized into `syslogThreat`, with higher-severity
-  login/command events queued for AI assessment.
+  raw in `syslog` and normalized into `syslogThreat` (confirmed end to end
+  from claude3 on 2026-11-27, #347).
 
-So honeypot evidence already has a path. What does not: node operational
-evidence (unit failures, approval-poll DNS/timeouts, SSH window and port
-migration/rollback events, real-sshd accept/fail). claude3 itself has no
-`DBSERVER` line and no TaraSec rsyslog forwarding configured, so even its
-honeypot events from 2026-11-26 never reached dbserver1.
+Honeypot evidence reaches the DB server, but **stops there** (dbserver1
+review, #347/#350): nothing turns a `syslogThreat` row into a local
+`hackReport` row or a block (`colorListings` is empty), the event's
+`action`/`severity` is ignored, and there is no per-event AI queue
+(`request-AI.pl` only summarizes rows with `owner_id` or a `partnerRouter`
+source). dbserver1 is fixing the receiver side; Phase 3 depends on it.
+
+Also missing: node operational evidence (unit failures, approval-poll
+DNS/timeouts, SSH window and port migration/rollback events, real-sshd
+accept/fail).
 
 ## Current AI paths
 
@@ -96,10 +101,16 @@ only `standard_upgrade.py`, so new nodes get the agent in inspect mode.
 - Do not push the new digests through rsyslog: they are structured JSON, not
   log lines, and need authentication. Instead add an endpoint next to
   `script/operationsActivity.php` (e.g. `script/nodeDigest.php`), discovered
-  the same way (globalDb1ip, NetBird HTTP overlay with wt0 route check,
-  otherwise HTTPS) and authenticated with the same separately enrolled
-  central node key. Stores `node_digest` rows
-  (node, kind, window, JSON, received_at).
+  the same way (globalDb1ip, NetBird HTTP overlay with wt0 route check).
+- Authentication reuses the operations-activity *mechanism*
+  (`X-TaraSec-Operations-Token`, per-source-IP registry, remote verify) with a
+  separate `node_digest` scope. Never the read-only operations key: a write
+  path must not be unlocked by it. Remote verify only accepts mesh callers
+  (100.64.0.0/10), so nodes off the mesh are out of scope for Phase 2 until
+  they get their own verify path.
+- Stores `node_digest` rows (source IP, kind, window, JSON, received_at). The
+  node is identified by its authenticated source IP, as `hackReport.sentByIp`
+  already is, never by a name the node sends.
 - Node coordinator uploads `ssh_events` + `network_errors` every 5 min,
   `recent_failures` on change. Missed uploads are skipped, not queued.
 - Retention: 30 days raw digests; aggregates kept longer.
@@ -117,6 +128,10 @@ Deterministic first, model second:
    for ranking/explanation. Model output stored as advisory verdicts with
    reasons; promotion to an enforced block or FP clearance follows existing
    DB policy (thresholds or operator approval).
+4. Cluster results go into the existing, currently unused
+   `syslogThreat.botnetId` / `hackReport.botnetId` columns, not a new table.
+   Existing `hackReport.ownerConfirmedTime`/`remoteUnitId` and `partnerRouter`
+   provide the false-positive and registered-partner checks.
 
 ## First live test case: owner self-lockout false positive
 
@@ -146,6 +161,12 @@ management session):
 | 1 | App confirm (default) | Tag is listed in the app as "possibly you"; owner clears it with fresh Google + TOTP. Evidence from level 0 is shown as a hint, not applied. |
 | 2 | App confirm + delay | As 1, but clearing takes effect after a cool-down (e.g. 15 min) and is cancellable from the app/Ops page. |
 | 3 | Central only | No local clearing; the tag goes to the DB server, which clears only after correlation (Phase 3) or operator review. |
+
+Independent of the level, the DB server never auto-tags mesh addresses
+(100.64.0.0/10) or `partnerRouter` IPs; they become false-positive
+candidates. That makes the owner self-lockout case mostly automatic
+(dbserver1, #350). Pentest sources in `203.0.113.0/24` stay taggable so
+campaigns can prove blocking works (`docs/PENETRATION_TESTING.md`).
 
 Rules regardless of level:
 
@@ -187,8 +208,8 @@ become a management problem.
 
 ## Open questions
 
-- Confirm the operations-activity central node key is the right credential to
-  reuse for digest upload (vs. a separate key per purpose).
+- ~~Reuse the operations-activity key for digest upload?~~ No: same
+  mechanism, separate `node_digest` scope (dbserver1, #350).
 - Flowise: one chatflow per purpose (local ops, global) or one with routing?
 - `tarasec-ai.service` on `dbserver1` fails with Flowise HTTP 500 (reported
   2026-11-26); the existing AI assessment path must work before Phase 3.
