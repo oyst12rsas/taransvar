@@ -13,7 +13,7 @@ import urllib.parse
 import urllib.error
 from operations_model_errors import read_model_http_error
 from operations_diagnostics import CATALOG, diagnose
-from operations_actions import validate_command, pressure, validate_resource, perform_resource, read_only_command, automatic_log_rotation
+from operations_actions import validate_command, pressure, validate_resource, perform_resource, read_only_command, automatic_log_rotation, reconcile_interrupted
 from operations_prompt import build_prompt, validate_decision, progress_feedback, completed_check_feedback, reboot_decision_feedback
 from operations_tools import gateway_tools, resolve_tool
 from operations_reporting import local_report, stage_error
@@ -161,7 +161,7 @@ def model(policy, prompt):
     return decision
 
 
-SAFE_ERRORS = frozenset({'Unknown model provider', 'Configure the direct OpenAI model name', 'Direct model response refused or incomplete', 'Direct OpenAI key is empty', 'Interrupted command requires owner reconciliation before more commands', 'Symlink log paths are prohibited', 'Assistance adapter not configured', 'Disposable log must be a regular file', 'Configure an HTTPS Flowise agent prediction URL without embedded credentials', 'Policy/procedure path must be root owned and not group/world writable', 'Experimental commands require explicit demo authorization', 'Invalid service name', 'Use the separately governed reboot action', 'Invalid or repeated diagnostic request', 'Resource action requires Demo or Production mode and measured pressure', 'Service is not designated nonessential', 'Approved procedure changed', 'Disposable logs must be explicit paths under /var/log', 'Command must be a bounded argv array with an absolute executable', 'Log is not explicitly disposable', 'Log changed type', 'Task state must be an object', 'Model must return one JSON decision', 'Procedure lacks matching deployment-test evidence', 'Daily reboot limit reached', 'Unknown model action', 'Command requires reason, expected result and recovery plan', 'Local policy prohibits autonomous mutation', 'Unknown resource operation', 'Reboot disabled by local owner policy', 'Model response too large'})
+SAFE_ERRORS = frozenset({'Unknown model provider', 'Configure the direct OpenAI model name', 'Direct model response refused or incomplete', 'Direct OpenAI key is empty', 'Interrupted command requires owner reconciliation before more commands: run operations_agent.py --reconcile after checking it', 'Symlink log paths are prohibited', 'Assistance adapter not configured', 'Disposable log must be a regular file', 'Configure an HTTPS Flowise agent prediction URL without embedded credentials', 'Policy/procedure path must be root owned and not group/world writable', 'Experimental commands require explicit demo authorization', 'Invalid service name', 'Use the separately governed reboot action', 'Invalid or repeated diagnostic request', 'Resource action requires Demo or Production mode and measured pressure', 'Service is not designated nonessential', 'Approved procedure changed', 'Disposable logs must be explicit paths under /var/log', 'Command must be a bounded argv array with an absolute executable', 'Log is not explicitly disposable', 'Log changed type', 'Task state must be an object', 'Model must return one JSON decision', 'Procedure lacks matching deployment-test evidence', 'Daily reboot limit reached', 'Unknown model action', 'Command requires reason, expected result and recovery plan', 'Local policy prohibits autonomous mutation', 'Unknown resource operation', 'Reboot disabled by local owner policy', 'Model response too large'})
 
 def safe_error(error):
     if type(error) is ValueError and str(error) in SAFE_ERRORS:
@@ -203,13 +203,50 @@ def diagnostic_feedback(name, results, round_number):
     return None
 
 
+def append_audit(directory, event):
+    event['at'] = time.time()
+    audit = directory / 'audit.jsonl'
+    if audit.exists() and audit.stat().st_size > 2 * 1024 * 1024:
+        oldest = directory / 'audit.jsonl.2'
+        oldest.unlink(missing_ok=True)
+        previous = directory / 'audit.jsonl.1'
+        if previous.exists():
+            previous.replace(oldest)
+        audit.replace(previous)
+    with audit.open('a') as stream:
+        stream.write(json.dumps(event) + '\n')
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def owner_reconcile(directory):
+    path = directory / 'state.json'
+    with (directory / 'lock').open('w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        state = json.loads(path.read_text()) if path.exists() else {}
+        pending = state.pop('command_pending', None)
+        if pending is None:
+            print('No interrupted command recorded.')
+            return 0
+        print('Clearing interrupted command: ' + json.dumps(pending.get('argv')))
+        append_audit(directory, {'owner_reconciled': pending})
+        state['last_action_result'] = {'action': 'command', 'argv': pending.get('argv'),
+                                       'interrupted': True, 'reconciled': 'owner'}
+        save(path, state)
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', default='/etc/tarasec/operations-agent.json')
     parser.add_argument('--tick', action='store_true', help='Cheap scheduled check; model only on a trigger')
+    parser.add_argument('--reconcile', action='store_true',
+                        help='Owner confirms an interrupted command was checked; clears its marker')
     args = parser.parse_args()
     if os.geteuid() != 0:
         raise SystemExit('Run as root')
+    if args.reconcile:
+        raise SystemExit(owner_reconcile(Path('/var/lib/tarasec-operations')))
     policy = effective_policy(json.loads(trusted(args.config).read_text()))
     directory = Path('/var/lib/tarasec-operations')
     directory.mkdir(mode=0o700, exist_ok=True)
@@ -240,19 +277,14 @@ def main():
     save(path, state)
 
     def record(event):
-        event['at'] = time.time()
-        audit = directory / 'audit.jsonl'
-        if audit.exists() and audit.stat().st_size > 2 * 1024 * 1024:
-            oldest = directory / 'audit.jsonl.2'
-            oldest.unlink(missing_ok=True)
-            previous = directory / 'audit.jsonl.1'
-            if previous.exists():
-                previous.replace(oldest)
-            audit.replace(previous)
-        with audit.open('a') as stream:
-            stream.write(json.dumps(event) + '\n')
-            stream.flush()
-            os.fsync(stream.fileno())
+        append_audit(directory, event)
+
+    cleared = reconcile_interrupted(state, boot)
+    if cleared:
+        record({'interrupted_command_reconciled': cleared})
+        state['last_action_result'] = {'action': 'command', 'argv': cleared.get('argv'),
+                                       'interrupted': True, 'reconciled': cleared['reconciled']}
+        save(path, state)
 
     try:
         state['current_stage'] = 'snapshot'
@@ -516,7 +548,7 @@ def main():
             return
         if action == 'command':
             if state.get('command_pending'):
-                raise ValueError('Interrupted command requires owner reconciliation before more commands')
+                raise ValueError('Interrupted command requires owner reconciliation before more commands: run operations_agent.py --reconcile after checking it')
             argv = validate_command(decision, policy)
             if read_only_command(argv, diagnostic_results):
                 record({'read_only_command_start': argv})

@@ -35,6 +35,67 @@ def read_only_command(argv, results):
             and argv in (['/usr/bin/bash', '-n', path], ['/bin/bash', '-n', path]))
 
 
+_BIN_DIRS = ('/usr/sbin/', '/usr/bin/', '/sbin/', '/bin/')
+_SYSTEMCTL_READ = {'status', 'is-active', 'is-enabled', 'is-failed', 'show', 'cat',
+                   'list-units', 'list-timers', 'list-unit-files'}
+_JOURNAL_WRITES = ('--vacuum', '--rotate', '--flush', '--sync', '--setup-keys', '--relinquish',
+                   '--smart-relinquish', '--update-catalog', '--output-fields')
+_IPTABLES_READ = {'-S', '-L', '-n', '-v', '-x', '-w', '-t', '--line-numbers', '--list',
+                  '--list-rules', '--numeric', '--verbose', '--exact'}
+
+
+def inspection_only(argv):
+    """Fixed inspection commands whose interruption cannot leave partial changes.
+
+    Used only to reconcile an interrupted command marker, not to widen what the
+    model may execute. Anything not recognised stays with the owner.
+    """
+    if not isinstance(argv, list) or not argv or not all(isinstance(x, str) for x in argv):
+        return False
+    head, args = argv[0], argv[1:]
+    if not head.startswith(_BIN_DIRS) or '/' in head[len(next(d for d in _BIN_DIRS if head.startswith(d))):]:
+        return False
+    name = Path(head).name
+    if name in ('uptime', 'uname', 'df', 'free', 'lsmod', 'id', 'ps', 'who', 'w', 'lsblk', 'findmnt'):
+        return True
+    if name == 'ss':
+        return all(re.fullmatch(r'-[ltunapeimHxsw46orbOE]+', x) for x in args)
+    if name == 'systemctl':
+        verbs = [x for x in args if not x.startswith('-')]
+        return bool(verbs) and verbs[0] in _SYSTEMCTL_READ and all(
+            x in ('--no-pager', '--all', '-a', '--full', '-l', '--no-legend', '--plain', '--failed')
+            or x.startswith(('-p', '--property', '--value', '--type', '--state'))
+            or not x.startswith('-') for x in args)
+    if name == 'journalctl':
+        return not any(x.startswith(_JOURNAL_WRITES) for x in args)
+    if name in ('iptables', 'ip6tables'):
+        flags = [x for x in args if x.startswith('-')]
+        return any(x in ('-S', '-L', '--list', '--list-rules') for x in flags) and all(x in _IPTABLES_READ for x in flags)
+    if name == 'ip':
+        words = [x for x in args if not x.startswith('-')]
+        return bool(words) and words[0] in ('a', 'addr', 'address', 'l', 'link', 'r', 'route', 'rule', 'n', 'neigh') \
+            and (len(words) == 1 or words[1] in ('show', 'list', 'ls', 'get')) and len(words) <= 4
+    return False
+
+
+def reconcile_interrupted(state, boot_id):
+    """Clear a stale command marker when that is provably safe.
+
+    The marker is set before dispatch and removed after completion, so a marker
+    seen by a later run means the worker died mid-command. Inspection commands
+    changed nothing and are cleared. A changing command stays blocked until the
+    owner runs --reconcile, even after a reboot, because it may be half applied.
+    Returns the cleared marker or None.
+    """
+    pending = state.get('command_pending')
+    if not isinstance(pending, dict):
+        return None
+    if inspection_only(pending.get('argv')):
+        state.pop('command_pending', None)
+        return dict(pending, reconciled='inspection_only', reconciled_boot=boot_id)
+    return None
+
+
 def pressure(config):
     disk = os.statvfs('/')
     used = 100 * (disk.f_blocks - disk.f_bfree) / max(1, disk.f_blocks - disk.f_bfree + disk.f_bavail)
