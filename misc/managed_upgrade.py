@@ -23,7 +23,7 @@ POLICY = Path('/etc/tarasec/managed-upgrade.json')
 STATE = Path('/var/lib/tarasec/upgrade/state.json')
 INSTALL = Path('/usr/local/lib/tarasec-upgrade')
 CORE = ('tarakernel', 'database', 'runtime', 'taralink', 'gatekeeper', 'google', 'operations',
-        'ssh-key', 'ssh-auth', 'ssh-window', 'honeypot')
+        'ssh-key', 'ssh-auth', 'ssh-window', 'honeypot', 'manager-requests')
 SHA = re.compile(r'[a-f0-9]{40}')
 PATHS = {'database': ('misc/install.sql',), 'runtime': ('misc/',),
          'taralink': ('taralink/',), 'gatekeeper': ('html/',),
@@ -32,7 +32,9 @@ PATHS = {'database': ('misc/install.sql',), 'runtime': ('misc/',),
                     'misc/ssh_security_evidence.py', 'misc/local_manager_policy.py',
                     'misc/enroll_google_manager.py', 'misc/enroll_gatekeeper_google.py'),
          'operations': ('misc/operations*.py', 'misc/install_operations*.py', 'misc/install_operations_agent.sh'),
-         'honeypot': ('misc/setup_ssh_honeypot.sh', 'misc/tarasec_ssh_honeypot.py')}
+         'honeypot': ('misc/setup_ssh_honeypot.sh', 'misc/tarasec_ssh_honeypot.py'),
+         'manager-requests': ('misc/setup_manager_requests.sh', 'misc/manager_requests.pl',
+                              'misc/systemd/tarasec-manager-requests.service', 'misc/systemd/tarasec-manager-requests.timer')}
 
 
 def run(argv, **kwargs):
@@ -143,7 +145,7 @@ def feature_plan(policy, release, cohort='fleet'):
     selected, skipped = [], []
     for name in CORE:
         if name in policy.get('excluded_features', []): continue
-        if name in ('database', 'gatekeeper') and not set(policy['roles']) & {'database', 'gateway'}:
+        if name in ('database', 'gatekeeper', 'manager-requests') and not set(policy['roles']) & {'database', 'gateway'}:
             continue
         status = tasks.get(name, 'requires_local_testing')
         if status == 'ready' or (status == 'being_tested' and cohort == 'canary'):
@@ -210,6 +212,8 @@ def healthy(name, u, policy):
             return 0<=time.time()-snapshot.get('checked_at',0)<=180 and snapshot.get('approval_service') in ('connected','checking')
         except (OSError,ValueError): return False
     if name == 'operations': return u.operations_installed() and active('tarasec-operations-agent.timer')
+    if name == 'manager-requests':
+        return Path('/root/taransvar/perl/manager_requests.pl').is_file() and active('tarasec-manager-requests.timer')
     if name == 'ssh-window': return u.ssh_window_current()
     if name == 'ssh-auth': return u.ssh_auth_policy(policy['admin_user']).get('authenticationmethods') == 'publickey,password'
     if name == 'ssh-key':
@@ -277,6 +281,12 @@ def apply_component(name, u, policy, backup):
             raise Prerequisite('Google/TOTP reopening and recovery console must be verified once before closing SSH')
         run(['python3', '/usr/local/lib/tarasec/ssh_google_window.py', 'reconcile'])
         return {'existing_window_policy': 'reconciled'}
+    if name == 'manager-requests':
+        # Needs the local DB and Perl runtime that the database/runtime components provide.
+        if not Path('/var/lib/mysql/taransvar').exists() or not Path('/root/taransvar/perl/func.pm').is_file():
+            raise Prerequisite('Local TaraSec database and runtime must be installed first')
+        run(['bash', u.REPO/'misc/setup_manager_requests.sh'])
+        return {'manager_requests_timer': 'installed_or_refreshed'}
     if name == 'database' and not Path('/var/lib/mysql/taransvar').exists():
         raise Prerequisite('Initial local TaraSec database and credentials must be provisioned')
     if name == 'gatekeeper' and not Path('/var/www/html/dbfunc.php').exists():

@@ -13,9 +13,6 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 mkdir -p "$RUNTIME_DIR"
-install -m 0755 "$ROOT_DIR/manager_requests.pl" "$RUNTIME_DIR/manager_requests.pl"
-install -m 0644 "$ROOT_DIR/systemd/tarasec-manager-requests.service" "$SYSTEMD_DIR/tarasec-manager-requests.service"
-install -m 0644 "$ROOT_DIR/systemd/tarasec-manager-requests.timer" "$SYSTEMD_DIR/tarasec-manager-requests.timer"
 
 install -m 0755 "$ROOT_DIR/hotspot_watch.pl" "$RUNTIME_DIR/hotspot_watch.pl"
 install -m 0755 "$ROOT_DIR/dhcp_capture.pl" "$RUNTIME_DIR/dhcp_capture.pl"
@@ -27,7 +24,7 @@ install -m 0644 "$ROOT_DIR/systemd/tarasec-dhcp-capture@.service" "$SYSTEMD_DIR/
 bash "$ROOT_DIR/setup_gateway_ai.sh"
 
 systemctl daemon-reload
-systemctl enable --now tarasec-manager-requests.timer
+bash "$ROOT_DIR/setup_manager_requests.sh"
 systemctl enable --now tarasec-hotspot-watch.timer
 
 if [[ -x "$ROOT_DIR/deploy_web.sh" ]]; then
